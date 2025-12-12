@@ -21,6 +21,7 @@
 # include  "PScope.h"
 # include  "pform_types.h"
 # include  "netlist.h"
+# include  "netassoc.h"
 # include  "netclass.h"
 # include  "netdarray.h"
 # include  "netenum.h"
@@ -30,7 +31,10 @@
 # include  "netstruct.h"
 # include  "netvector.h"
 # include  "netmisc.h"
+# include  "compiler.h"
+# include  "Module.h"
 # include  <typeinfo>
+# include  <sstream>
 # include  "ivl_assert.h"
 
 using namespace std;
@@ -196,6 +200,59 @@ ivl_type_t string_type_t::elaborate_type_raw(Design*, NetScope*) const
       return &netstring_t::type_string;
 }
 
+// Helper to find the Module definition for an interface by name
+static Module* find_interface_module(perm_string name)
+{
+      extern std::map<perm_string,Module*> pform_modules;
+      auto it = pform_modules.find(name);
+      if (it != pform_modules.end() && it->second->is_interface) {
+            return it->second;
+      }
+      return nullptr;
+}
+
+/*
+ * Virtual interface elaboration: Creates a netvirtual_interface_t that stores
+ * the interface name and a pointer to the interface definition scope.
+ *
+ * Note: At type elaboration time, the interface instance scope may not be
+ * available yet because interface instances are elaborated during scope
+ * elaboration. We store the interface_def as null if not found.
+ * The actual interface scope will be bound at runtime when the virtual
+ * interface variable is assigned to an actual interface instance.
+ *
+ * For compile-time member checking, we use the Module definition from
+ * pform_modules to verify that the interface has the requested members.
+ */
+ivl_type_t virtual_interface_type_t::elaborate_type_raw(Design*des, NetScope*) const
+{
+      // First check if the interface definition exists in pform_modules
+      Module* iface_mod = find_interface_module(interface_name);
+
+      // Search for the interface scope in root scopes (for interfaces instantiated at top level)
+      const NetScope* interface_def = nullptr;
+
+      for (NetScope*root : des->find_root_scopes()) {
+            if (root->is_interface() && root->module_name() == interface_name) {
+                  interface_def = root;
+                  break;
+            }
+
+            // Also search children of root scopes (for interfaces instantiated inside modules)
+            // At type elaboration time, child scopes may not exist yet, but check anyway
+            if (const NetScope* child = root->child_byname(interface_name)) {
+                  if (child->is_interface()) {
+                        interface_def = child;
+                        break;
+                  }
+            }
+      }
+
+      (void)iface_mod; // Mark as intentionally unused for now
+
+      return new netvirtual_interface_t(interface_name, interface_def);
+}
+
 ivl_type_t parray_type_t::elaborate_type_raw(Design*des, NetScope*scope) const
 {
       netranges_t packed;
@@ -267,7 +324,9 @@ static ivl_type_t elaborate_darray_check_type(Design *des, const LineInfo &li,
       if (dynamic_cast<const netvector_t*>(type) ||
 	  dynamic_cast<const netparray_t*>(type) ||
 	  dynamic_cast<const netreal_t*>(type) ||
-	  dynamic_cast<const netstring_t*>(type))
+	  dynamic_cast<const netstring_t*>(type) ||
+	  dynamic_cast<const netstruct_t*>(type) ||
+	  dynamic_cast<const netclass_t*>(type))
 	    return type;
 
       cerr << li.get_fileline() << ": Sorry: "
@@ -372,9 +431,26 @@ ivl_type_t elaborate_array_type(Design *des, NetScope *scope,
 		  type = elaborate_darray_check_type(des, li, type, "Dynamic array");
 		  type = new netdarray_t(type);
 		  continue;
+	    } else if (PETypename *ptype = dynamic_cast<PETypename*>(lidx)) {
+		    // Special case: Detect the mark for an ASSOCIATIVE ARRAY
+		    // with a typed index, which is [data_type].
+		  type = elaborate_static_array_type(des, li, type, dimensions);
+		  type = elaborate_darray_check_type(des, li, type, "Associative array");
+		  ivl_type_t idx_type = ptype->get_type()->elaborate_type(des, scope);
+		  type = new netassoc_t(type, idx_type);
+		  continue;
 	    } else if (dynamic_cast<PENull*>(lidx)) {
 		    // Special case: Detect the mark for a QUEUE declaration,
 		    // which is the dimensions [null:max_idx].
+		    // Also detect wildcard associative array [*] which is
+		    // marked as [PENull:PENumber(1)].
+		  if (ridx && dynamic_cast<PENumber*>(ridx)) {
+			// Wildcard associative array [*]
+			type = elaborate_static_array_type(des, li, type, dimensions);
+			type = elaborate_darray_check_type(des, li, type, "Associative array");
+			type = new netassoc_t(type, nullptr);
+			continue;
+		  }
 		  type = elaborate_static_array_type(des, li, type, dimensions);
 		  type = elaborate_queue_type(des, scope, li, type, ridx);
 		  continue;
@@ -403,11 +479,156 @@ ivl_type_t uarray_type_t::elaborate_type_raw(Design*des, NetScope*scope) const
       return elaborate_array_type(des, scope, *this, btype, *dims.get());
 }
 
+/*
+ * Helper function to generate a unique mangled name for a class specialization.
+ * For example: holder#(int, 16) -> holder$$int$$16
+ */
+static perm_string make_specialization_name(perm_string base_name,
+                                            const std::list<class_spec_param_t*>* spec_params,
+                                            Design*des, NetScope*scope)
+{
+      std::ostringstream name_stream;
+      name_stream << base_name.str() << "$$";
+
+      bool first = true;
+      for (const auto* param : *spec_params) {
+            if (!first) name_stream << "$$";
+            first = false;
+
+            if (param->type_param) {
+                  // For type parameters, use the type name
+                  ivl_type_t elab_type = param->type_param->elaborate_type(des, scope);
+                  if (elab_type) {
+                        // Get a string representation of the type
+                        std::ostringstream type_str;
+                        type_str << *elab_type;
+                        // Replace spaces and special chars with underscore
+                        std::string ts = type_str.str();
+                        for (char& c : ts) {
+                              if (!isalnum(c)) c = '_';
+                        }
+                        name_stream << ts;
+                  } else {
+                        name_stream << "unknown";
+                  }
+            } else if (param->value_param) {
+                  // For value parameters, try to evaluate to a constant
+                  NetExpr*expr = elab_and_eval(des, scope, param->value_param, -1);
+                  if (NetEConst*ce = dynamic_cast<NetEConst*>(expr)) {
+                        name_stream << ce->value().as_long();
+                  } else {
+                        name_stream << "expr";
+                  }
+            }
+      }
+
+      return lex_strings.make(name_stream.str());
+}
+
 ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
 {
       if (!s) {
 	    // Try to recover
 	    return new netvector_t(IVL_VT_LOGIC);
+      }
+
+      // Check if this is a class with specialization parameters
+      if (spec_params && !spec_params->empty()) {
+            // Get the base type to check if it's a class
+            // Try to cast directly since basic_type may not be set for class types
+            const class_type_t* class_def = dynamic_cast<const class_type_t*>(type->get_data_type());
+            if (class_def && !class_def->parameters.empty()) {
+                        // Generate a unique name for this specialization
+                        perm_string spec_name = make_specialization_name(class_def->name, spec_params, des, s);
+
+                        // Check if this specialization already exists
+                        netclass_t* existing = s->find_class(des, spec_name);
+                        if (existing) {
+                              return existing;
+                        }
+
+                        // Get the unspecialized base class
+                        netclass_t* base_class = s->find_class(des, class_def->name);
+                        if (!base_class) {
+                              cerr << get_fileline() << ": error: "
+                                   << "Cannot find base class " << class_def->name
+                                   << " for specialization." << endl;
+                              des->errors++;
+                              return type->elaborate_type(des, s);
+                        }
+
+                        // Create a new specialized class
+                        // Note: The specialized class inherits from the base class (the template)
+                        // so that methods defined in the template are inherited
+                        netclass_t* spec_class = new netclass_t(spec_name, base_class);
+
+                        // Create a new scope for the specialization
+                        // Use the base class scope as parent so that type parameters can be found
+                        const NetScope* base_class_scope = base_class->class_scope();
+                        NetScope* definition_scope = base_class->definition_scope();
+                        if (!definition_scope) definition_scope = s;
+
+                        // Note: We make spec_scope a child of the base class scope
+                        // so that type parameter typedefs can be found during elaboration
+                        NetScope* spec_scope = new NetScope(const_cast<NetScope*>(base_class_scope),
+                                                           hname_t(spec_name),
+                                                           NetScope::CLASS,
+                                                           definition_scope->unit());
+                        spec_scope->set_line(this);
+                        spec_scope->set_class_def(spec_class);
+                        spec_class->set_class_scope(spec_scope);
+                        spec_class->set_definition_scope(definition_scope);
+
+                        // Apply specialization parameters
+                        auto param_it = class_def->parameters.begin();
+                        auto spec_it = spec_params->begin();
+
+                        while (param_it != class_def->parameters.end() && spec_it != spec_params->end()) {
+                              class_param_t* formal = *param_it;
+                              class_spec_param_t* actual = *spec_it;
+
+                              if (formal->is_type) {
+                                    // Type parameter - elaborate the actual type
+                                    ivl_type_t actual_type = nullptr;
+                                    if (actual->type_param) {
+                                          actual_type = actual->type_param->elaborate_type(des, s);
+                                    } else if (formal->default_type) {
+                                          actual_type = formal->default_type->elaborate_type(des, s);
+                                    }
+                                    if (actual_type) {
+                                          // Store as a type parameter in the scope
+                                          spec_scope->set_type_parameter(formal->name, actual_type);
+                                    }
+                              } else {
+                                    // Value parameter - create a parameter with the actual value
+                                    PExpr* val_expr = actual->value_param;
+                                    if (!val_expr && formal->default_expr) {
+                                          val_expr = formal->default_expr;
+                                    }
+                                    if (val_expr) {
+                                          // Evaluate the expression
+                                          NetExpr* net_expr = elab_and_eval(des, s, val_expr, -1);
+                                          if (net_expr) {
+                                                spec_scope->set_parameter(formal->name, net_expr, *this);
+                                          }
+                                    }
+                              }
+
+                              ++param_it;
+                              ++spec_it;
+                        }
+
+                        // Elaborate properties using the specialized scope
+                        for (const auto& prop : class_def->properties) {
+                              ivl_type_t prop_type = prop.second.type->elaborate_type(des, spec_scope);
+                              spec_class->set_property(prop.first, prop.second.qual, prop_type);
+                        }
+
+                        // Add the specialized class to the definition scope
+                        definition_scope->add_class(spec_class);
+
+                        return spec_class;
+            }
       }
 
       return type->elaborate_type(des, s);

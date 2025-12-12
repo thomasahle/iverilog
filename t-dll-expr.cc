@@ -429,6 +429,15 @@ void dll_target::expr_property(const NetEProperty*net)
 	    index = expr_;
 	    expr_ = 0;
       }
+
+      // Handle nested property access
+      ivl_expr_t base = 0;
+      if (net->is_nested()) {
+	    net->get_base_expr()->expr_scan(this);
+	    base = expr_;
+	    expr_ = 0;
+      }
+
       assert(expr_ == 0);
       expr_ = static_cast<ivl_expr_t>(calloc(1, sizeof(struct ivl_expr_s)));
       expr_->width_  = net->expr_width();
@@ -438,9 +447,33 @@ void dll_target::expr_property(const NetEProperty*net)
       FILE_NAME(expr_, net);
       expr_->value_  = net->expr_type();
       expr_->net_type= net->net_type();
-      expr_->u_.property_.sig = find_signal(des_, net->get_sig());
+      expr_->u_.property_.sig = net->is_nested() ? 0 : find_signal(des_, net->get_sig());
+      expr_->u_.property_.base = base;
       expr_->u_.property_.prop_idx = net->property_idx();
       expr_->u_.property_.index = index;
+}
+
+void dll_target::expr_virtual_property(const NetEVirtualProperty*net)
+{
+      // Scan the virtual interface expression (class property access to get vif)
+      net->get_vif_expr()->expr_scan(this);
+      ivl_expr_t vif_expr = expr_;
+      expr_ = 0;
+
+      assert(expr_ == 0);
+      expr_ = static_cast<ivl_expr_t>(calloc(1, sizeof(struct ivl_expr_s)));
+      expr_->width_  = net->expr_width();
+      expr_->signed_ = net->has_sign();
+      expr_->sized_  = 1;
+      expr_->type_   = IVL_EX_VIFPROP;
+      FILE_NAME(expr_, net);
+      expr_->value_  = net->expr_type();
+      expr_->net_type= net->net_type();
+      expr_->u_.vifprop_.vif_expr = vif_expr;
+      expr_->u_.vifprop_.member_name = net->member_name();
+      // Note: member_sig is in the interface scope which isn't in the DLL hierarchy.
+      // The runtime will look up the signal by name from the virtual interface's scope.
+      expr_->u_.vifprop_.member_sig = 0;
 }
 
 void dll_target::expr_event(const NetEEvent*net)
@@ -671,6 +704,7 @@ void dll_target::expr_ufunc(const NetEUFunc*net)
       unsigned cnt = net->parm_count();
       expr->u_.ufunc_.parms = cnt;
       expr->u_.ufunc_.parm = new ivl_expr_t[cnt];
+      expr->u_.ufunc_.is_virtual = net->is_virtual() ? 1 : 0;
 
 	/* make up the parameter expressions. */
       for (unsigned idx = 0 ;  idx < cnt ;  idx += 1) {

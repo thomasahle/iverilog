@@ -130,4 +130,22 @@ template <class T> inline T*vvp_object_t::peek(void) const
       return dynamic_cast<T*> (ref_);
 }
 
+/*
+ * vvp_scope_ref is a simple wrapper to store a scope pointer (like an
+ * interface instance) as a vvp_object. This is used for virtual interface
+ * assignment where the interface scope needs to be stored as a class property.
+ */
+class __vpiScope;
+
+class vvp_scope_ref : public vvp_object {
+    public:
+      explicit vvp_scope_ref(class __vpiScope*scope) : scope_(scope) { }
+      ~vvp_scope_ref() override;
+
+      class __vpiScope* get_scope() const { return scope_; }
+
+    private:
+      class __vpiScope* scope_;
+};
+
 #endif /* IVL_vvp_object_H */

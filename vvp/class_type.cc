@@ -19,6 +19,7 @@
 
 # include  "class_type.h"
 # include  "compile.h"
+# include  "factory_registry.h"
 # include  "vpi_priv.h"
 # include  "config.h"
 # include  <map>
@@ -49,6 +50,7 @@ class class_property_t {
 
       virtual void set_vec4(char*buf, const vvp_vector4_t&val);
       virtual void get_vec4(char*buf, vvp_vector4_t&val);
+      virtual bool supports_vec4() const { return false; }
 
       virtual void set_real(char*buf, double val);
       virtual double get_real(char*buf);
@@ -137,6 +139,7 @@ template <class T> class property_atom : public class_property_t {
 
       void set_vec4(char*buf, const vvp_vector4_t&val) override;
       void get_vec4(char*buf, vvp_vector4_t&val) override;
+      bool supports_vec4() const override { return true; }
 
       void copy(char*dst, char*src) override;
 };
@@ -159,6 +162,7 @@ class property_bit : public class_property_t {
 
       void set_vec4(char*buf, const vvp_vector4_t&val) override;
       void get_vec4(char*buf, vvp_vector4_t&val) override;
+      bool supports_vec4() const override { return true; }
 
       void copy(char*dst, char*src) override;
 
@@ -184,6 +188,7 @@ class property_logic : public class_property_t {
 
       void set_vec4(char*buf, const vvp_vector4_t&val) override;
       void get_vec4(char*buf, vvp_vector4_t&val) override;
+      bool supports_vec4() const override { return true; }
 
       void copy(char*dst, char*src) override;
 
@@ -397,9 +402,21 @@ void property_object::copy(char*dst, char*src)
 /* **** */
 
 class_type::class_type(const string&nam, size_t nprop)
-: class_name_(nam), properties_(nprop)
+: class_name_(nam), parent_(0), properties_(nprop)
 {
       instance_size_ = 0;
+}
+
+bool class_type::is_derived_from(const class_type*target_class) const
+{
+      // Walk up the inheritance hierarchy looking for target_class
+      const class_type*cur = this;
+      while (cur) {
+	    if (cur == target_class)
+		  return true;
+	    cur = cur->parent_;
+      }
+      return false;
 }
 
 class_type::~class_type()
@@ -516,6 +533,13 @@ void class_type::get_vec4(class_type::inst_t obj, size_t pid,
       properties_[pid].type->get_vec4(buf, val);
 }
 
+bool class_type::property_supports_vec4(size_t pid) const
+{
+      if (pid >= properties_.size())
+	    return false;
+      return properties_[pid].type->supports_vec4();
+}
+
 void class_type::set_real(class_type::inst_t obj, size_t pid,
 			  double val) const
 {
@@ -577,15 +601,73 @@ int class_type::get_type_code(void) const
       return vpiClassDefn;
 }
 
+void class_type::register_method(const string& name, __vpiScope* scope, struct vvp_code_s* entry)
+{
+      method_info info;
+      info.scope = scope;
+      info.entry = entry;
+      methods_[name] = info;
+}
+
+void class_type::set_method_entry(const string& name, struct vvp_code_s* entry)
+{
+      auto it = methods_.find(name);
+      if (it != methods_.end())
+	    it->second.entry = entry;
+}
+
+const class_type::method_info* class_type::get_method(const string& name) const
+{
+      auto it = methods_.find(name);
+      if (it != methods_.end())
+	    return &it->second;
+      return 0;
+}
+
 static class_type*compile_class = 0;
 
-void compile_class_start(char*lab, char*nam, unsigned ntype)
+// Deferred parent resolution for forward-declared classes
+static std::vector<std::pair<class_type*, std::string>> deferred_parents;
+
+void compile_class_start(char*lab, char*nam, unsigned ntype, char*parent_lab)
 {
       assert(compile_class == 0);
       compile_class = new class_type(nam, ntype);
+
+      // If parent_lab is specified, try to look up the parent class
+      if (parent_lab) {
+	    vpiHandle parent_h = vvp_lookup_handle(parent_lab);
+	    if (parent_h) {
+		  class_type*parent = dynamic_cast<class_type*>(parent_h);
+		  if (parent)
+			compile_class->set_parent(parent);
+	    } else {
+		  // Parent not found yet - store for deferred resolution
+		  deferred_parents.push_back(std::make_pair(compile_class, std::string(parent_lab)));
+	    }
+	    free(parent_lab);
+      }
+
       compile_vpi_symbol(lab, compile_class);
       free(lab);
       delete[]nam;
+}
+
+void compile_class_resolve_parents(void)
+{
+      // Resolve all deferred parent links now that all classes are defined
+      for (auto& dp : deferred_parents) {
+	    class_type* child = dp.first;
+	    const std::string& parent_lab = dp.second;
+	    vpiHandle parent_h = vvp_lookup_handle(parent_lab.c_str());
+	    if (parent_h) {
+		  class_type* parent = dynamic_cast<class_type*>(parent_h);
+		  if (parent) {
+			child->set_parent(parent);
+		  }
+	    }
+      }
+      deferred_parents.clear();
 }
 
 void compile_class_property(unsigned idx, char*nam, char*typ, uint64_t array_size)
@@ -604,6 +686,38 @@ void compile_class_done(void)
       compile_class->finish_setup();
       scope->classes[compile_class->class_name()] = compile_class;
       compile_class = 0;
+}
+
+/*
+ * Factory registration: .factory "type_name", class_label ;
+ * This registers a class with the UVM factory under the given type name.
+ */
+void compile_factory(char*type_name, char*class_label)
+{
+      // Look up the class definition from the label
+      vpiHandle class_h = vvp_lookup_handle(class_label);
+      if (!class_h) {
+	    fprintf(stderr, "ERROR: .factory: class label '%s' not found\n",
+		    class_label);
+	    delete[]type_name;
+	    free(class_label);
+	    return;
+      }
+
+      class_type*class_def = dynamic_cast<class_type*>(class_h);
+      if (!class_def) {
+	    fprintf(stderr, "ERROR: .factory: '%s' is not a class\n",
+		    class_label);
+	    delete[]type_name;
+	    free(class_label);
+	    return;
+      }
+
+      // Register with the factory
+      vvp_factory_registry::instance().register_class(type_name, class_def);
+
+      delete[]type_name;
+      free(class_label);
 }
 
 #ifdef CHECK_WITH_VALGRIND

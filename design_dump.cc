@@ -120,6 +120,9 @@ ostream& operator << (ostream&o, ivl_variable_type_t val)
 	  case IVL_VT_QUEUE:
 	    o << "queue";
 	    break;
+	  case IVL_VT_ASSOC:
+	    o << "assoc";
+	    break;
       }
       return o;
 }
@@ -1873,6 +1876,11 @@ void NetEProperty::dump(ostream&o) const
       o << net_->name() << ".<" << pidx_ << ">";
       if (index_)
 	    o << "[" << *index_ << "]";
+}
+
+void NetEVirtualProperty::dump(ostream&o) const
+{
+      o << "<vif:" << vif_type_->interface_name() << "." << member_name_ << ">";
 }
 
 void NetEScope::dump(ostream&o) const

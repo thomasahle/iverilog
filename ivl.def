@@ -151,6 +151,11 @@ ivl_lval_property_idx
 ivl_lval_sel_type
 ivl_lval_sig
 ivl_lval_width
+ivl_lval_is_vif
+ivl_lval_vif_member
+ivl_lval_vif_sig
+ivl_lval_vif_base_sig
+ivl_lval_vif_nest
 
 ivl_nature_name
 

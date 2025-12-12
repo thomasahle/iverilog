@@ -247,7 +247,8 @@ typedef enum ivl_expr_type_e {
       IVL_EX_TERNARY = 11,
       IVL_EX_UFUNC = 12,
       IVL_EX_ULONG = 13,
-      IVL_EX_UNARY = 14
+      IVL_EX_UNARY = 14,
+      IVL_EX_VIFPROP = 27  /* Virtual interface property access */
 } ivl_expr_type_t;
 
 typedef enum ivl_select_type_e ENUM_UNSIGNED_INT {
@@ -467,6 +468,7 @@ typedef enum ivl_variable_type_e ENUM_UNSIGNED_INT {
       IVL_VT_DARRAY  = 6,  /* Array (esp. dynamic array) */
       IVL_VT_CLASS   = 7,  /* SystemVerilog class instances */
       IVL_VT_QUEUE   = 8,  /* SystemVerilog queue instances */
+      IVL_VT_ASSOC   = 9,  /* SystemVerilog associative array */
       IVL_VT_VECTOR = IVL_VT_LOGIC /* For compatibility */
 } ivl_variable_type_t;
 
@@ -937,6 +939,8 @@ extern const char* ivl_expr_bits(ivl_expr_t net);
 extern ivl_branch_t ivl_expr_branch(ivl_expr_t net);
   /* IVL_EX_UFUNC */
 extern ivl_scope_t ivl_expr_def(ivl_expr_t net);
+  /* IVL_EX_UFUNC - is this a virtual method call? */
+extern int ivl_expr_ufunc_is_virtual(ivl_expr_t net);
   /* IVL_EX_DELAY */
 extern uint64_t ivl_expr_delay_val(ivl_expr_t net);
   /* IVL_EX_REALNUM */
@@ -969,6 +973,12 @@ extern ivl_select_type_t ivl_expr_sel_type(ivl_expr_t net);
 extern ivl_event_t ivl_expr_event(ivl_expr_t net);
   /* IVL_EX_PROPERTY */
 extern int ivl_expr_property_idx(ivl_expr_t net);
+  /* IVL_EX_PROPERTY - base expression for nested property access (returns 0 if direct) */
+extern ivl_expr_t ivl_expr_property_base(ivl_expr_t net);
+  /* IVL_EX_VIFPROP - virtual interface property access */
+extern ivl_expr_t ivl_expr_vifprop_base(ivl_expr_t net);  /* vif expression */
+extern const char* ivl_expr_vifprop_member(ivl_expr_t net);  /* member name */
+extern ivl_signal_t ivl_expr_vifprop_sig(ivl_expr_t net);  /* member signal */
   /* IVL_EX_SCOPE */
 extern ivl_scope_t ivl_expr_scope(ivl_expr_t net);
   /* IVL_EX_PROPERTY IVL_EX_SIGNAL */
@@ -1562,6 +1572,15 @@ extern ivl_select_type_t ivl_lval_sel_type(ivl_lval_t net);
 extern int ivl_lval_property_idx(ivl_lval_t net);
 extern ivl_signal_t ivl_lval_sig(ivl_lval_t net);
 extern ivl_lval_t  ivl_lval_nest(ivl_lval_t net);
+
+/* Virtual interface member l-value access */
+extern int ivl_lval_is_vif(ivl_lval_t net);
+extern const char* ivl_lval_vif_member(ivl_lval_t net);
+extern ivl_signal_t ivl_lval_vif_sig(ivl_lval_t net);
+/* VIF can be accessed via signal path (this.vif) or nested path.
+ * These return the base signal or nested lval for VIF. */
+extern ivl_signal_t ivl_lval_vif_base_sig(ivl_lval_t net);
+extern ivl_lval_t ivl_lval_vif_nest(ivl_lval_t net);
 
 
 /* NEXUS
@@ -2399,6 +2418,7 @@ extern const char* ivl_type_name(ivl_type_t net);
 extern int         ivl_type_properties(ivl_type_t net);
 extern const char* ivl_type_prop_name(ivl_type_t net, int idx);
 extern ivl_type_t  ivl_type_prop_type(ivl_type_t net, int idx);
+extern ivl_type_t  ivl_type_super(ivl_type_t net);
 
 
 #if defined(__MINGW32__) || defined (__CYGWIN__)

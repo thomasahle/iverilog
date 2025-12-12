@@ -78,6 +78,18 @@ typedef std::pair<perm_string, unsigned> pform_ident_t;
  */
 typedef std::pair<PExpr*,PExpr*> pform_range_t;
 
+/*
+ * The inside_range_t holds a single item for the "inside" operator.
+ * It can be either a single value or a range [low:high].
+ */
+struct inside_range_t {
+      PExpr* single_val;   // Non-null for single value
+      PExpr* low_val;      // Non-null for range
+      PExpr* high_val;     // Non-null for range
+
+      inside_range_t() : single_val(0), low_val(0), high_val(0) { }
+};
+
 /* The lgate is gate instantiation information. */
 struct lgate : public LineInfo {
       explicit lgate() : parms(0), parms_by_name(0), ranges(0) { }
@@ -205,8 +217,22 @@ public:
       perm_string name;
 };
 
+/*
+ * A class specialization parameter can be either a type or a value expression.
+ * For example: holder#(int, 8) has a type param (int) and a value param (8).
+ */
+struct class_spec_param_t {
+      data_type_t* type_param;  // Non-null if this is a type parameter
+      PExpr* value_param;       // Non-null if this is a value parameter
+
+      class_spec_param_t() : type_param(0), value_param(0) { }
+};
+
 struct typeref_t : public data_type_t {
-      explicit typeref_t(typedef_t *t, PScope *s = 0) : scope(s), type(t) {}
+      explicit typeref_t(typedef_t *t, PScope *s = 0) : scope(s), type(t), spec_params(0) {}
+
+      void set_spec_params(std::list<class_spec_param_t*>* params) { spec_params = params; }
+      std::list<class_spec_param_t*>* get_spec_params() const { return spec_params; }
 
       ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
       NetScope *find_scope(Design* des, NetScope *scope) const override;
@@ -216,6 +242,7 @@ struct typeref_t : public data_type_t {
 private:
       PScope *scope;
       typedef_t *type;
+      std::list<class_spec_param_t*>* spec_params;  // Specialization parameters
 };
 
 struct type_parameter_t : data_type_t {
@@ -371,6 +398,35 @@ struct string_type_t : public data_type_t {
       ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
 };
 
+/*
+ * The virtual_interface_type_t represents a virtual interface property.
+ * It stores the name of the interface type for later elaboration.
+ */
+struct virtual_interface_type_t : public data_type_t {
+      inline explicit virtual_interface_type_t(perm_string n) : interface_name(n) { }
+      ~virtual_interface_type_t() override;
+
+      ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
+      void pform_dump(std::ostream&out, unsigned indent) const override;
+
+      perm_string interface_name;
+};
+
+/*
+ * The class_param_t represents a single parameter in a parameterized class.
+ * For example: class foo #(type T = int, int WIDTH = 8);
+ * Each T and WIDTH would have its own class_param_t.
+ */
+struct class_param_t : public LineInfo {
+      inline class_param_t() : is_type(false), default_type(nullptr), default_expr(nullptr) { }
+
+      perm_string name;         // Parameter name (e.g., "T" or "WIDTH")
+      bool is_type;             // true for type parameters, false for value parameters
+      data_type_t *type;        // For value parameters: the declared type (e.g., int)
+      data_type_t *default_type; // For type parameters: the default type (e.g., int)
+      PExpr *default_expr;      // For value parameters: the default expression
+};
+
 struct class_type_t : public data_type_t {
 
       inline explicit class_type_t(perm_string n) : name(n) { }
@@ -386,6 +442,10 @@ struct class_type_t : public data_type_t {
       std::vector<named_pexpr_t> base_args;
 
       bool virtual_class;
+
+	// Class type parameters from parameterized class declaration.
+	// For example: class foo #(type T = int, int WIDTH = 8);
+      std::vector<class_param_t*> parameters;
 
 	// This is a map of the properties. Map the name to the type.
       struct prop_info_t : public LineInfo {

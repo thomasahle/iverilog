@@ -916,10 +916,38 @@ static void draw_number_vec4(ivl_expr_t expr)
 static void draw_property_vec4(ivl_expr_t expr)
 {
       ivl_signal_t sig = ivl_expr_signal(expr);
+      ivl_expr_t base = ivl_expr_property_base(expr);
       unsigned pidx = ivl_expr_property_idx(expr);
 
-      fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+      if (base) {
+	    // Nested property access - evaluate base expression first
+	    draw_eval_object(base);
+      } else {
+	    // Direct property access - load signal
+	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+      }
       fprintf(vvp_out, "    %%prop/v %u;\n", pidx);
+      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+}
+
+/*
+ * Virtual interface property access: vif.signal_name
+ * This evaluates the virtual interface expression (getting the scope pointer),
+ * then loads the vector value from the named signal within that scope.
+ */
+static void draw_vifprop_vec4(ivl_expr_t expr)
+{
+      ivl_expr_t vif_expr = ivl_expr_vifprop_base(expr);
+      const char* member_name = ivl_expr_vifprop_member(expr);
+      ivl_signal_t member_sig = ivl_expr_vifprop_sig(expr);
+      unsigned wid = ivl_expr_width(expr);
+
+      /* Evaluate the virtual interface expression to get scope on object stack */
+      draw_eval_object(vif_expr);
+
+      /* Load vector from virtual interface member signal */
+      fprintf(vvp_out, "    %%vif/load/v \"%s\", %u; // member_sig=v%p_0\n",
+              member_name, wid, member_sig);
       fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 }
 
@@ -957,6 +985,21 @@ static void draw_select_vec4(ivl_expr_t expr)
 	    assert(base);
 	    draw_eval_expr_into_integer(base, 3);
 	    fprintf(vvp_out, "    %%load/dar/vec4 v%p_0;\n", sig);
+	    if (ivl_expr_value(expr) == IVL_VT_BOOL)
+		  fprintf(vvp_out, "    %%cast2;\n");
+
+	    return;
+      }
+
+      if (ivl_expr_value(subexpr)==IVL_VT_ASSOC) {
+	    ivl_signal_t sig = ivl_expr_signal(subexpr);
+	    assert(sig);
+	    assert(ivl_signal_data_type(sig)==IVL_VT_ASSOC);
+
+	    assert(base);
+	      /* Evaluate the index expression onto the string stack */
+	    draw_eval_string(base);
+	    fprintf(vvp_out, "    %%load/assoc/vec4 v%p_0;\n", sig);
 	    if (ivl_expr_value(expr) == IVL_VT_BOOL)
 		  fprintf(vvp_out, "    %%cast2;\n");
 
@@ -1046,6 +1089,77 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
       }
       if (strcmp(ivl_expr_name(expr),"$ivl_queue_method$pop_front")==0) {
 	    draw_darray_pop(expr);
+	    return;
+      }
+
+      if (strcmp(ivl_expr_name(expr),"$ivl_randomize")==0) {
+	      /* The argument is a class object expression. Push it to the object
+	         stack, then call %randomize which will randomize its properties
+	         and push the result (1=success) to the vec4 stack. */
+	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+
+	      /* Use draw_eval_object to handle any object expression type,
+	         including signals and properties. */
+	    draw_eval_object(arg);
+	    fprintf(vvp_out, "    %%randomize;\n");
+	    return;
+      }
+
+      if (strcmp(ivl_expr_name(expr),"$ivl_cast")==0) {
+	      /* $cast(dest, src) - check if src's actual type is compatible
+	         with dest's declared type. If yes, assign and return 1.
+	         If no, return 0.
+	         Arguments: arg0 = dest signal, arg1 = src expression */
+	    ivl_expr_t dst_expr = ivl_expr_parm(expr, 0);
+	    ivl_expr_t src_expr = ivl_expr_parm(expr, 1);
+
+	    /* Get the destination signal and its declared class type */
+	    ivl_signal_t dst_sig = NULL;
+	    ivl_type_t dst_type = NULL;
+
+	    if (ivl_expr_type(dst_expr) == IVL_EX_SIGNAL) {
+		  dst_sig = ivl_expr_signal(dst_expr);
+		  dst_type = ivl_signal_net_type(dst_sig);
+	    } else if (ivl_expr_type(dst_expr) == IVL_EX_PROPERTY) {
+		  /* Cast to property - need to:
+		     1. Load the object containing the property
+		     2. Evaluate source onto object stack
+		     3. Check compatibility and store to property
+		  */
+		  dst_type = ivl_expr_net_type(dst_expr);
+		  int prop_idx = ivl_expr_property_idx(dst_expr);
+		  ivl_signal_t sig = ivl_expr_signal(dst_expr);
+		  ivl_expr_t base = ivl_expr_property_base(dst_expr);
+
+		  /* Load the object that owns the property */
+		  if (base) {
+			draw_eval_object(base);
+		  } else if (sig) {
+			fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+		  } else {
+			fprintf(vvp_out, "; ERROR: $cast to property - cannot find object\n");
+			fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
+			return;
+		  }
+		  /* Evaluate source onto object stack */
+		  draw_eval_object(src_expr);
+		  /* Use %cast/prop opcode: checks type, stores if compatible */
+		  fprintf(vvp_out, "    %%cast/prop %d, C%p;\n", prop_idx, dst_type);
+		  return;
+	    } else {
+		  fprintf(vvp_out, "; ERROR: $cast destination must be signal or property (got type %d)\n", ivl_expr_type(dst_expr));
+		  /* Push 0 (cast failed) */
+		  fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
+		  return;
+	    }
+
+	    /* Generate code:
+	       1. Evaluate source expression onto object stack (handles any expression type)
+	       2. Call %cast with dest signal and dest class type label
+	       Result: If compatible, stores to dest and pushes 1 to vec4 stack
+	               If not compatible, pushes 0 to vec4 stack */
+	    draw_eval_object(src_expr);
+	    fprintf(vvp_out, "    %%cast v%p_0, C%p;\n", dst_sig, dst_type);
 	    return;
       }
 
@@ -1405,6 +1519,10 @@ void draw_eval_vec4(ivl_expr_t expr)
 
 	  case IVL_EX_PROPERTY:
 	    draw_property_vec4(expr);
+	    return;
+
+	  case IVL_EX_VIFPROP:
+	    draw_vifprop_vec4(expr);
 	    return;
 
 	  case IVL_EX_NULL:

@@ -22,6 +22,7 @@
 # include  "vvp_object.h"
 # include  "vvp_net.h"
 # include  <deque>
+# include  <map>
 # include  <string>
 # include  <vector>
 
@@ -175,6 +176,11 @@ class vvp_queue : public vvp_darray {
       virtual void push_back(const std::string&value, unsigned max_size);
       virtual void push_front(const std::string&value, unsigned max_size);
 
+      virtual void set_word_max(unsigned adr, const vvp_object_t&value, unsigned max_size);
+      virtual void insert(unsigned idx, const vvp_object_t&value, unsigned max_size);
+      virtual void push_back(const vvp_object_t&value, unsigned max_size);
+      virtual void push_front(const vvp_object_t&value, unsigned max_size);
+
       virtual void pop_back(void) =0;
       virtual void pop_front(void)=0;
       virtual void erase(unsigned idx)=0;
@@ -241,6 +247,96 @@ class vvp_queue_vec4 : public vvp_queue {
       std::deque<vvp_vector4_t> queue;
 };
 
+class vvp_queue_object : public vvp_queue {
+
+    public:
+      size_t get_size(void) const override { return queue.size(); };
+      void copy_elems(vvp_object_t src, unsigned max_size) override;
+      void set_word_max(unsigned adr, const vvp_object_t&value, unsigned max_size) override;
+      void set_word(unsigned adr, const vvp_object_t&value) override;
+      void get_word(unsigned adr, vvp_object_t&value) override;
+      void insert(unsigned idx, const vvp_object_t&value, unsigned max_size) override;
+      void push_back(const vvp_object_t&value, unsigned max_size) override;
+      void push_front(const vvp_object_t&value, unsigned max_size) override;
+      void pop_back(void) override { queue.pop_back(); };
+      void pop_front(void) override { queue.pop_front(); };
+      void erase(unsigned idx) override;
+      void erase_tail(unsigned idx) override;
+
+    private:
+      std::deque<vvp_object_t> queue;
+};
+
 extern std::string get_fileline();
+
+/*
+ * Associative arrays - key is always a string, value varies by type.
+ */
+class vvp_assoc : public vvp_object {
+
+    public:
+      inline vvp_assoc() { }
+      virtual ~vvp_assoc() override;
+
+      virtual size_t get_size(void) const =0;
+
+      virtual void set_word(const std::string&key, const vvp_vector4_t&value);
+      virtual void get_word(const std::string&key, vvp_vector4_t&value);
+
+      virtual void set_word(const std::string&key, double value);
+      virtual void get_word(const std::string&key, double&value);
+
+      virtual void set_word(const std::string&key, const std::string&value);
+      virtual void get_word(const std::string&key, std::string&value);
+};
+
+class vvp_assoc_vec4 : public vvp_assoc {
+
+    public:
+      vvp_assoc_vec4(unsigned word_wid) : word_wid_(word_wid) { }
+      ~vvp_assoc_vec4() override;
+
+      size_t get_size(void) const override { return map_.size(); }
+      void set_word(const std::string&key, const vvp_vector4_t&value) override;
+      void get_word(const std::string&key, vvp_vector4_t&value) override;
+      void shallow_copy(const vvp_object*obj) override;
+      vvp_object* duplicate(void) const override;
+
+    private:
+      std::map<std::string, vvp_vector4_t> map_;
+      unsigned word_wid_;
+};
+
+class vvp_assoc_real : public vvp_assoc {
+
+    public:
+      vvp_assoc_real() { }
+      ~vvp_assoc_real() override;
+
+      size_t get_size(void) const override { return map_.size(); }
+      void set_word(const std::string&key, double value) override;
+      void get_word(const std::string&key, double&value) override;
+      void shallow_copy(const vvp_object*obj) override;
+      vvp_object* duplicate(void) const override;
+
+    private:
+      std::map<std::string, double> map_;
+};
+
+class vvp_assoc_string : public vvp_assoc {
+
+    public:
+      vvp_assoc_string() { }
+      ~vvp_assoc_string() override;
+
+      size_t get_size(void) const override { return map_.size(); }
+      void set_word(const std::string&key, const std::string&value) override;
+      void get_word(const std::string&key, std::string&value) override;
+      void shallow_copy(const vvp_object*obj) override;
+      vvp_object* duplicate(void) const override;
+
+    private:
+      std::map<std::string, std::string> map_;
+};
 
 #endif /* IVL_vvp_darray_H */

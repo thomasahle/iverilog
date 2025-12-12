@@ -201,6 +201,7 @@ static int ma_parenthesis_level = 0;
 %x IFCCOMMENT
 %x PCOMENT
 %x CSTRING
+%x MA_STRING
 %x ERROR_LINE
 
 %x IFDEF_NAME
@@ -283,6 +284,11 @@ keywords (line|include|define|undef|ifdef|ifndef|else|elsif|endif)
 <CSTRING>\\\\ |
 <CSTRING>\\\" |
 <CSTRING>\\`  { ECHO; }
+ /* SystemVerilog line continuation - backslash followed by newline is consumed */
+<CSTRING>\\\r\n |
+<CSTRING>\\\n\r |
+<CSTRING>\\\n   |
+<CSTRING>\\\r   { istack->lineno += 1; /* consume backslash-newline continuation */ }
 <CSTRING>\r\n |
 <CSTRING>\n\r |
 <CSTRING>\n   |
@@ -657,16 +663,32 @@ keywords (line|include|define|undef|ifdef|ifndef|else|elsif|endif)
     yyless(0);
 }
 
-<MA_ADD>\"[^\"\n\r]*\" { macro_add_to_arg(0); }
+ /* Strings in macro arguments - enter MA_STRING state for line continuation support */
+<MA_ADD>\" { macro_add_to_arg(0); BEGIN(MA_STRING); }
 
-<MA_ADD>\"[^\"\n\r]* {
+ /* MA_STRING state handles strings with potential line continuation */
+<MA_STRING>\\\\ |
+<MA_STRING>\\\" |
+<MA_STRING>\\n  |
+<MA_STRING>\\t  |
+<MA_STRING>\\`  { macro_add_to_arg(0); }
+ /* Line continuation - backslash followed by newline is consumed */
+<MA_STRING>\\\r\n |
+<MA_STRING>\\\n\r |
+<MA_STRING>\\\n   |
+<MA_STRING>\\\r   { istack->lineno += 1; /* consume backslash-newline continuation */ }
+ /* Bare newline in string is an error */
+<MA_STRING>\r\n |
+<MA_STRING>\n\r |
+<MA_STRING>\n   |
+<MA_STRING>\r   {
     emit_pathline(istack);
-
     fprintf(stderr, "error: unterminated string.\n");
     error_count += 1;
-
     BEGIN(ERROR_LINE);
 }
+<MA_STRING>\" { macro_add_to_arg(0); BEGIN(MA_ADD); }
+<MA_STRING>. { macro_add_to_arg(0); }
 
 <MA_ADD>'[^\n\r]' { macro_add_to_arg(0); }
 

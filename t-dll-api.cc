@@ -437,6 +437,13 @@ extern "C" ivl_scope_t ivl_expr_def(ivl_expr_t net)
       return 0;
 }
 
+extern "C" int ivl_expr_ufunc_is_virtual(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_UFUNC);
+      return net->u_.ufunc_.is_virtual;
+}
+
 extern "C" uint64_t ivl_expr_delay_val(ivl_expr_t net)
 {
       assert(net);
@@ -675,6 +682,34 @@ extern "C" int ivl_expr_property_idx(ivl_expr_t net)
       return net->u_.property_.prop_idx;
 }
 
+extern "C" ivl_expr_t ivl_expr_property_base(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_PROPERTY);
+      return net->u_.property_.base;
+}
+
+extern "C" ivl_expr_t ivl_expr_vifprop_base(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_VIFPROP);
+      return net->u_.vifprop_.vif_expr;
+}
+
+extern "C" const char* ivl_expr_vifprop_member(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_VIFPROP);
+      return net->u_.vifprop_.member_name;
+}
+
+extern "C" ivl_signal_t ivl_expr_vifprop_sig(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_VIFPROP);
+      return net->u_.vifprop_.member_sig;
+}
+
 extern "C" ivl_scope_t ivl_expr_scope(ivl_expr_t net)
 {
       assert(net);
@@ -700,6 +735,9 @@ extern "C" ivl_signal_t ivl_expr_signal(ivl_expr_t net)
 
 	  case IVL_EX_PROPERTY:
 	    return net->u_.property_.sig;
+
+	  case IVL_EX_VIFPROP:
+	    return net->u_.vifprop_.member_sig;
 
 	  default:
 	    assert(0);
@@ -1744,6 +1782,25 @@ extern "C" ivl_signal_t ivl_lval_sig(ivl_lval_t net)
       }
 }
 
+/*
+ * For VIF, the union n can hold either sig or nest depending on how
+ * the VIF was accessed. We need a way to distinguish which was used.
+ * Looking at construction: if asn->sig() exists, n.sig is set (and type
+ * starts as REG), otherwise n.nest is set (and type starts as LVAL).
+ * Then type is changed to VIF in both cases.
+ *
+ * We add a separate function to get the VIF's base signal when accessed
+ * through this.vif.member pattern.
+ */
+extern "C" ivl_signal_t ivl_lval_vif_base_sig(ivl_lval_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_LVAL_VIF);
+      // Return n.sig - if nest path was used, this will be interpreted
+      // as a pointer but may not be valid. Caller should check validity.
+      return net->n.sig;
+}
+
 extern "C" ivl_lval_t ivl_lval_nest(ivl_lval_t net)
 {
       assert(net);
@@ -1751,6 +1808,35 @@ extern "C" ivl_lval_t ivl_lval_nest(ivl_lval_t net)
 	    return net->n.nest;
 
       return 0;
+}
+
+/* For VIF, return the nested lval if the VIF was accessed through nesting */
+extern "C" ivl_lval_t ivl_lval_vif_nest(ivl_lval_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_LVAL_VIF);
+      // Return n.nest - if sig path was used, this may not be valid
+      return net->n.nest;
+}
+
+extern "C" int ivl_lval_is_vif(ivl_lval_t net)
+{
+      assert(net);
+      return net->type_ == IVL_LVAL_VIF;
+}
+
+extern "C" const char* ivl_lval_vif_member(ivl_lval_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_LVAL_VIF);
+      return net->vif_member_name;
+}
+
+extern "C" ivl_signal_t ivl_lval_vif_sig(ivl_lval_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_LVAL_VIF);
+      return net->vif_member_sig;
 }
 
 extern "C" const char* ivl_nature_name(ivl_nature_t net)
@@ -3024,6 +3110,7 @@ extern "C" unsigned ivl_stmt_lwidth(ivl_statement_t net)
 		case IVL_LVAL_REG:
 		case IVL_LVAL_ARR:
 		case IVL_LVAL_LVAL:
+		case IVL_LVAL_VIF:
 		  sum += ivl_lval_width(cur);
 		  break;
 		default:
@@ -3306,6 +3393,15 @@ extern "C" ivl_type_t ivl_type_prop_type(ivl_type_t net, int idx)
       assert(class_type);
 
       return class_type->get_prop_type(idx);
+}
+
+extern "C" ivl_type_t ivl_type_super(ivl_type_t net)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+
+      return class_type->get_super();
 }
 
 extern "C" int ivl_type_signed(ivl_type_t net)

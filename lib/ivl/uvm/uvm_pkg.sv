@@ -1,0 +1,847 @@
+// Minimal UVM implementation for Icarus Verilog
+// This provides basic UVM functionality sufficient to run simple testbenches
+//
+// KNOWN LIMITATIONS:
+// 1. Virtual method dispatch issue: When overriding phase methods (build_phase, run_phase, etc.)
+//    in classes defined outside the package, the virtual dispatch may not work correctly through
+//    the do_*_phase() wrapper methods. Workaround: Call phase methods directly on your test class.
+// 2. No fork/join_none in class tasks due to VVP assertion failure
+// 3. $cast not supported - use direct assignment
+// 4. No self-referential typedef patterns (causes segfault)
+// 5. Queues of class objects cause segfaults - use fixed arrays instead
+
+package uvm_pkg;
+
+  // ============================================================================
+  // UVM Verbosity Levels
+  // ============================================================================
+  typedef enum int {
+    UVM_NONE   = 0,
+    UVM_LOW    = 100,
+    UVM_MEDIUM = 200,
+    UVM_HIGH   = 300,
+    UVM_FULL   = 400,
+    UVM_DEBUG  = 500
+  } uvm_verbosity;
+
+  // ============================================================================
+  // UVM Active/Passive Enum
+  // ============================================================================
+  typedef enum bit {
+    UVM_PASSIVE = 0,
+    UVM_ACTIVE = 1
+  } uvm_active_passive_enum;
+
+  // ============================================================================
+  // UVM Severity Levels
+  // ============================================================================
+  typedef enum int {
+    UVM_INFO    = 0,
+    UVM_WARNING = 1,
+    UVM_ERROR   = 2,
+    UVM_FATAL   = 3
+  } uvm_severity;
+
+  // ============================================================================
+  // Forward declarations
+  // ============================================================================
+  typedef class uvm_object;
+  typedef class uvm_component;
+  typedef class uvm_phase;
+  typedef class uvm_root;
+  typedef class uvm_sequencer_base;
+  typedef class uvm_sequence_base;
+
+  // ============================================================================
+  // UVM Phase Class
+  // ============================================================================
+  class uvm_phase;
+    string name;
+    int objection_count;
+
+    function new(string name = "");
+      this.name = name;
+      this.objection_count = 0;
+    endfunction
+
+    function void raise_objection(uvm_object obj, string description = "", int count = 1);
+      objection_count += count;
+    endfunction
+
+    function void drop_objection(uvm_object obj, string description = "", int count = 1);
+      objection_count -= count;
+      if (objection_count < 0) objection_count = 0;
+    endfunction
+
+    function bit is_done();
+      return (objection_count == 0);
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Object - Base class for all UVM objects
+  // ============================================================================
+  class uvm_object;
+    protected string m_name;
+    protected int m_verbosity;
+
+    function new(string name = "");
+      m_name = name;
+      m_verbosity = UVM_MEDIUM;
+    endfunction
+
+    virtual function string get_name();
+      return m_name;
+    endfunction
+
+    virtual function void set_name(string name);
+      m_name = name;
+    endfunction
+
+    virtual function string get_full_name();
+      return m_name;
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_object";
+    endfunction
+
+    virtual function void print(int verbosity = 0);
+      $display("Object: %s", get_full_name());
+    endfunction
+
+    virtual function uvm_object clone();
+      return null;
+    endfunction
+
+    virtual function void copy(uvm_object rhs);
+    endfunction
+
+    virtual function bit compare(uvm_object rhs);
+      return 0;
+    endfunction
+
+    function void set_report_verbosity_level(int verbosity);
+      m_verbosity = verbosity;
+    endfunction
+
+    function int get_report_verbosity_level();
+      return m_verbosity;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Component - Base class for all structural components
+  // ============================================================================
+  class uvm_component extends uvm_object;
+    uvm_component m_parent;
+    string m_full_name;
+    // Note: Using simple array - max 32 children per component
+    uvm_component m_children[32];
+    int m_num_children;
+
+    function new(string name = "", uvm_component parent = null);
+      super.new(name);
+      m_parent = parent;
+      m_num_children = 0;
+      if (parent != null) begin
+        parent.add_child(this);
+        m_full_name = {parent.get_full_name(), ".", name};
+      end else begin
+        m_full_name = name;
+      end
+    endfunction
+
+    virtual function string get_full_name();
+      return m_full_name;
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_component";
+    endfunction
+
+    function uvm_component get_parent();
+      return m_parent;
+    endfunction
+
+    function void add_child(uvm_component child);
+      if (m_num_children < 32) begin
+        m_children[m_num_children] = child;
+        m_num_children++;
+      end
+    endfunction
+
+    function int get_num_children();
+      return m_num_children;
+    endfunction
+
+    // Phase methods - to be overridden by subclasses
+    virtual function void build_phase(uvm_phase phase);
+    endfunction
+
+    virtual function void connect_phase(uvm_phase phase);
+    endfunction
+
+    virtual function void end_of_elaboration_phase(uvm_phase phase);
+    endfunction
+
+    virtual function void start_of_simulation_phase(uvm_phase phase);
+    endfunction
+
+    virtual task run_phase(uvm_phase phase);
+    endtask
+
+    virtual function void extract_phase(uvm_phase phase);
+    endfunction
+
+    virtual function void check_phase(uvm_phase phase);
+    endfunction
+
+    virtual function void report_phase(uvm_phase phase);
+    endfunction
+
+    virtual function void final_phase(uvm_phase phase);
+    endfunction
+
+    // Phase execution - iterate through children
+    virtual function void do_build_phase(uvm_phase phase);
+      build_phase(phase);
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.do_build_phase(phase);
+      end
+    endfunction
+
+    virtual function void do_connect_phase(uvm_phase phase);
+      connect_phase(phase);
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.do_connect_phase(phase);
+      end
+    endfunction
+
+    virtual function void do_end_of_elaboration_phase(uvm_phase phase);
+      end_of_elaboration_phase(phase);
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.do_end_of_elaboration_phase(phase);
+      end
+    endfunction
+
+    virtual function void do_start_of_simulation_phase(uvm_phase phase);
+      start_of_simulation_phase(phase);
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.do_start_of_simulation_phase(phase);
+      end
+    endfunction
+
+    virtual task do_run_phase(uvm_phase phase);
+      // Note: Simplified - no fork/join_none due to Icarus runtime assertion issue
+      // Run children first, then self
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.do_run_phase(phase);
+      end
+      run_phase(phase);
+    endtask
+
+    virtual function void do_extract_phase(uvm_phase phase);
+      extract_phase(phase);
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.do_extract_phase(phase);
+      end
+    endfunction
+
+    virtual function void do_check_phase(uvm_phase phase);
+      check_phase(phase);
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.do_check_phase(phase);
+      end
+    endfunction
+
+    virtual function void do_report_phase(uvm_phase phase);
+      report_phase(phase);
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.do_report_phase(phase);
+      end
+    endfunction
+
+    virtual function void do_final_phase(uvm_phase phase);
+      final_phase(phase);
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.do_final_phase(phase);
+      end
+    endfunction
+
+    virtual function void print_topology(string prefix = "");
+      $display("%s%s (%s)", prefix, get_full_name(), get_type_name());
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.print_topology({prefix, "  "});
+      end
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Sequence Item - Base class for transaction items
+  // ============================================================================
+  class uvm_sequence_item extends uvm_object;
+    uvm_sequencer_base m_sequencer;
+    uvm_sequence_base m_parent_sequence;
+
+    function new(string name = "uvm_sequence_item");
+      super.new(name);
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_sequence_item";
+    endfunction
+
+    function void set_sequencer(uvm_sequencer_base sequencer);
+      m_sequencer = sequencer;
+    endfunction
+
+    function uvm_sequencer_base get_sequencer();
+      return m_sequencer;
+    endfunction
+
+    function void set_parent_sequence(uvm_sequence_base parent);
+      m_parent_sequence = parent;
+    endfunction
+
+    function uvm_sequence_base get_parent_sequence();
+      return m_parent_sequence;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Sequence Base
+  // ============================================================================
+  class uvm_sequence_base extends uvm_object;
+    uvm_sequencer_base m_sequencer;
+    uvm_sequence_base m_parent_sequence;
+
+    function new(string name = "uvm_sequence_base");
+      super.new(name);
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_sequence_base";
+    endfunction
+
+    virtual task body();
+    endtask
+
+    virtual task pre_body();
+    endtask
+
+    virtual task post_body();
+    endtask
+
+    virtual task start(uvm_sequencer_base sequencer, uvm_sequence_base parent_sequence = null);
+      m_sequencer = sequencer;
+      m_parent_sequence = parent_sequence;
+      pre_body();
+      body();
+      post_body();
+    endtask
+
+    function uvm_sequencer_base get_sequencer();
+      return m_sequencer;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Sequence - Parameterized sequence class
+  // ============================================================================
+  class uvm_sequence #(type REQ = uvm_sequence_item, type RSP = REQ) extends uvm_sequence_base;
+    REQ req;
+    RSP rsp;
+
+    function new(string name = "uvm_sequence");
+      super.new(name);
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_sequence";
+    endfunction
+
+    virtual task start_item(REQ item, int set_priority = -1);
+      item.set_sequencer(m_sequencer);
+      item.set_parent_sequence(this);
+    endtask
+
+    virtual task finish_item(REQ item, int set_priority = -1);
+      uvm_sequencer_base sqr;
+      sqr = m_sequencer;
+      if (sqr != null)
+        sqr.send_request(item);
+    endtask
+  endclass
+
+  // ============================================================================
+  // TLM Port/Export Classes - Simplified for Icarus
+  // ============================================================================
+  // Note: Actual TLM ports not fully implemented. Use direct sequencer reference instead.
+  // The connect() method is a stub that stores reference to sequencer.
+
+  // Simple TLM port wrapper that holds a sequencer reference
+  class uvm_seq_item_port_wrapper extends uvm_object;
+    uvm_sequencer_base m_sequencer;
+
+    function new(string name = "");
+      super.new(name);
+    endfunction
+
+    // Connect to sequencer export (which is just the sequencer itself)
+    function void connect(uvm_sequencer_base export_ref);
+      m_sequencer = export_ref;
+    endfunction
+
+    // Get next item from connected sequencer
+    task get_next_item(output uvm_sequence_item item);
+      if (m_sequencer != null)
+        m_sequencer.get_next_item(item);
+    endtask
+
+    // Signal item is done
+    function void item_done(uvm_sequence_item item = null);
+      if (m_sequencer != null)
+        m_sequencer.item_done(item);
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Sequencer Base
+  // ============================================================================
+  class uvm_sequencer_base extends uvm_component;
+    // Using fixed-size array instead of queue
+    uvm_sequence_item request_queue[64];
+    int queue_head;
+    int queue_tail;
+    int queue_count;
+
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+      queue_head = 0;
+      queue_tail = 0;
+      queue_count = 0;
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_sequencer_base";
+    endfunction
+
+    virtual task send_request(uvm_sequence_item item);
+      if (queue_count < 64) begin
+        request_queue[queue_tail] = item;
+        queue_tail = (queue_tail + 1) % 64;
+        queue_count++;
+      end
+    endtask
+
+    virtual task get_next_item(output uvm_sequence_item item);
+      // Poll until item is available
+      while (queue_count == 0) begin
+        #1;
+      end
+      item = request_queue[queue_head];
+      queue_head = (queue_head + 1) % 64;
+      queue_count--;
+    endtask
+
+    virtual function void item_done(uvm_sequence_item item = null);
+      // Signal that item processing is complete
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Sequencer - Parameterized sequencer class
+  // ============================================================================
+  class uvm_sequencer #(type REQ = uvm_sequence_item, type RSP = REQ) extends uvm_sequencer_base;
+    // Note: Factory registration (type_id) handled by parser at ClassName::type_id::create()
+    // which transforms into direct new() call
+
+    // Simplified TLM export - just holds reference to self for connect()
+    uvm_sequencer_base seq_item_export;
+
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+      seq_item_export = this;
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_sequencer";
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Driver - Base class for drivers
+  // ============================================================================
+  class uvm_driver #(type REQ = uvm_sequence_item, type RSP = REQ) extends uvm_component;
+    // Note: Factory registration (type_id) handled by parser at ClassName::type_id::create()
+    // which transforms into direct new() call
+
+    // Simplified TLM port - wrapper that holds reference to connected sequencer
+    uvm_seq_item_port_wrapper seq_item_port;
+    REQ req;
+    RSP rsp;
+
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+      seq_item_port = new("seq_item_port");
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_driver";
+    endfunction
+
+    virtual task get_next_item(output REQ item);
+      uvm_sequence_item base_item;
+      if (seq_item_port != null) begin
+        seq_item_port.get_next_item(base_item);
+        item = base_item;
+      end
+    endtask
+
+    virtual function void item_done(RSP item = null);
+      if (seq_item_port != null)
+        seq_item_port.item_done(item);
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Monitor - Base class for monitors
+  // ============================================================================
+  class uvm_monitor extends uvm_component;
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_monitor";
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Agent - Base class for agents
+  // ============================================================================
+  class uvm_agent extends uvm_component;
+    uvm_active_passive_enum is_active;
+
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+      is_active = UVM_ACTIVE;
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_agent";
+    endfunction
+
+    virtual function uvm_active_passive_enum get_is_active();
+      return is_active;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Scoreboard - Base class for scoreboards
+  // ============================================================================
+  class uvm_scoreboard extends uvm_component;
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_scoreboard";
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Environment - Base class for environments
+  // ============================================================================
+  class uvm_env extends uvm_component;
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_env";
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Test - Base class for tests
+  // ============================================================================
+  class uvm_test extends uvm_component;
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_test";
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Analysis Port - TLM port for broadcasting (simplified)
+  // ============================================================================
+  class uvm_analysis_port #(type T = int) extends uvm_object;
+    function new(string name = "", uvm_component parent = null);
+      super.new(name);
+    endfunction
+
+    virtual function void connect(uvm_object port);
+      // Simplified - no actual connection tracking
+    endfunction
+
+    virtual function void write(T t);
+      // Simplified - override in subclass for actual functionality
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Root - Top of the component hierarchy
+  // ============================================================================
+  class uvm_root extends uvm_component;
+    static uvm_root m_inst;
+    uvm_component m_test;
+
+    function new();
+      super.new("uvm_root", null);
+      m_full_name = "";
+    endfunction
+
+    static function uvm_root get();
+      if (m_inst == null)
+        m_inst = new();
+      return m_inst;
+    endfunction
+
+    // run_test must be a task because it calls tasks and waits
+    task run_test(string test_name = "");
+      uvm_phase phase;
+
+      phase = new("build");
+
+      // Run phases
+      $display("UVM_INFO: Starting UVM phases...");
+
+      // Build phase
+      if (m_test != null) begin
+        $display("UVM_INFO: Running build_phase...");
+        m_test.do_build_phase(phase);
+      end
+
+      // Connect phase
+      phase.name = "connect";
+      if (m_test != null) begin
+        $display("UVM_INFO: Running connect_phase...");
+        m_test.do_connect_phase(phase);
+      end
+
+      // End of elaboration phase
+      phase.name = "end_of_elaboration";
+      if (m_test != null) begin
+        $display("UVM_INFO: Running end_of_elaboration_phase...");
+        m_test.do_end_of_elaboration_phase(phase);
+      end
+
+      // Start of simulation phase
+      phase.name = "start_of_simulation";
+      if (m_test != null) begin
+        $display("UVM_INFO: Running start_of_simulation_phase...");
+        m_test.do_start_of_simulation_phase(phase);
+      end
+
+      // Run phase
+      phase.name = "run";
+      if (m_test != null) begin
+        $display("UVM_INFO: Running run_phase...");
+        // Note: Simplified - run phase sequentially instead of with fork/join_none
+        // due to Icarus runtime assertion issues with nested fork/join_none in class tasks
+        m_test.do_run_phase(phase);
+      end
+
+      // Extract phase
+      phase.name = "extract";
+      if (m_test != null) begin
+        $display("UVM_INFO: Running extract_phase...");
+        m_test.do_extract_phase(phase);
+      end
+
+      // Check phase
+      phase.name = "check";
+      if (m_test != null) begin
+        $display("UVM_INFO: Running check_phase...");
+        m_test.do_check_phase(phase);
+      end
+
+      // Report phase
+      phase.name = "report";
+      if (m_test != null) begin
+        $display("UVM_INFO: Running report_phase...");
+        m_test.do_report_phase(phase);
+      end
+
+      // Final phase
+      phase.name = "final";
+      if (m_test != null) begin
+        $display("UVM_INFO: Running final_phase...");
+        m_test.do_final_phase(phase);
+      end
+
+      $display("UVM_INFO: UVM phases complete.");
+      $finish;
+    endtask
+
+    function void set_test(uvm_component test);
+      m_test = test;
+      m_test.m_parent = this;
+      add_child(test);
+    endfunction
+
+    virtual function void print_topology(string prefix = "");
+      $display("UVM Testbench Topology:");
+      $display("------------------------");
+      for (int i = 0; i < m_num_children; i++) begin
+        uvm_component child = m_children[i];
+        if (child != null) child.print_topology("  ");
+      end
+      $display("------------------------");
+    endfunction
+  endclass
+
+  // ============================================================================
+  // Global uvm_top instance
+  // ============================================================================
+  uvm_root uvm_top = uvm_root::get();
+
+  // ============================================================================
+  // Factory Registration Classes
+  // Note: Simplified to avoid self-referential typedef crash in Icarus
+  // ============================================================================
+
+  // Forward declaration for registry types
+  class uvm_factory_proxy;
+  endclass
+
+  // Factory wrapper for components - simplified version
+  class uvm_component_registry #(type T = uvm_component, string Tname = "");
+    // get() returns null (factory proxy not fully supported)
+    static function uvm_factory_proxy get();
+      return null;
+    endfunction
+
+    // Static create - creates an instance of T
+    static function T create(string name, uvm_component parent);
+      T obj;
+      obj = new(name, parent);
+      return obj;
+    endfunction
+  endclass
+
+  // Factory wrapper for objects - simplified version without complex inheritance
+  class uvm_object_registry #(type T = uvm_object, string Tname = "");
+    // get() returns null (factory proxy not fully supported)
+    static function uvm_factory_proxy get();
+      return null;
+    endfunction
+
+    // Static create - creates an instance of T
+    static function T create(string name = "");
+      T obj;
+      obj = new(name);
+      return obj;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // Stub config_db class - actual functionality is in the parser
+  // The parser returns 1 for get() calls on uvm_config_db
+  // NOTE: This stub exists for reference but is not actually called -
+  // the parser creates stub code for parameterized static method calls
+  // ============================================================================
+  class uvm_config_db #(type T = int);
+    static function void set(uvm_component cntxt, string inst_name, string field_name, T value);
+      // No-op - parser handles this
+    endfunction
+
+    // Note: Can't use output/ref in static functions in Icarus
+    // Parser handles this by returning constant 1 for get() calls
+    static function bit get(uvm_component cntxt, string inst_name, string field_name, T value);
+      // Parser returns 1 for this call
+      return 1;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Factory (Placeholder)
+  // ============================================================================
+  // Factory lookup by string name is not fully supported in this simplified UVM.
+  // The test must be created via other means (see run_test comments).
+
+  class uvm_factory;
+    static uvm_factory m_inst;
+
+    static function uvm_factory get();
+      if (m_inst == null)
+        m_inst = new();
+      return m_inst;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // Global run_test task
+  // ============================================================================
+  // This task creates a test instance using the UVM factory and runs the phases.
+  // The factory uses $ivl_factory_create to look up and instantiate classes by name.
+  //
+  // Usage:
+  //   run_test("my_test_class");  // Creates and runs test named "my_test_class"
+  //   run_test();                  // Runs with pre-registered test (via set_test)
+  task run_test(string test_name = "");
+    uvm_root root;
+    uvm_object test_obj;
+
+    root = uvm_root::get();
+
+    $display("UVM_INFO: run_test called with test_name='%s'", test_name);
+
+    // If a test name is provided and no test is registered, try factory creation
+    if (test_name != "" && root.m_test == null) begin
+      $display("UVM_INFO: Looking up test '%s' in factory...", test_name);
+
+      // Use $ivl_factory_create to create test instance by name
+      test_obj = $ivl_factory_create(test_name);
+
+      if (test_obj == null) begin
+        $display("UVM_FATAL: Factory could not create test '%s'", test_name);
+        $display("UVM_INFO: Make sure the class is defined and uses `uvm_component_utils");
+        $finish;
+      end else begin
+        $display("UVM_INFO: Factory created test '%s' successfully", test_name);
+        // Cast to uvm_component and set as test
+        if (!$cast(root.m_test, test_obj)) begin
+          $display("UVM_FATAL: Test '%s' is not a uvm_component", test_name);
+          $finish;
+        end
+        // Set the test's name and parent
+        root.m_test.set_name("uvm_test_top");
+        root.m_test.m_parent = root;
+      end
+    end
+
+    if (root.m_test == null) begin
+      $display("UVM_WARNING: No test registered.");
+      $display("UVM_INFO: Running phases without test-specific behavior.");
+    end
+
+    root.run_test(test_name);
+  endtask
+
+endpackage

@@ -502,6 +502,7 @@ extern void compile_variable(char*label, char*name,
 
 extern void compile_var_real(char*label, char*name);
 extern void compile_var_string(char*label, char*name);
+extern void compile_var_assoc(char*label, char*name, unsigned size);
 extern void compile_var_darray(char*label, char*name, unsigned size);
 extern void compile_var_cobject(char*label, char*name);
 extern void compile_var_queue(char*label, char*name, unsigned size);
@@ -560,8 +561,12 @@ extern void compile_island_tranvp(char*island, char*ba, char*bb,
 
 extern void delete_udp_symbols(void);
 
-extern void compile_class_start(char*lab, char*nam, unsigned nprop);
+extern void compile_class_start(char*lab, char*nam, unsigned nprop, char*parent_lab);
 extern void compile_class_property(unsigned idx, char*nam, char*typ, uint64_t array_size);
 extern void compile_class_done(void);
+extern void compile_class_resolve_parents(void);
+
+/* Factory registration */
+extern void compile_factory(char*type_name, char*class_label);
 
 #endif /* IVL_compile_H */

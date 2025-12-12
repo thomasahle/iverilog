@@ -46,6 +46,9 @@ class vvp_cobject : public vvp_object {
 
       void shallow_copy(const vvp_object*that) override;
 
+      // Get the class type definition for virtual dispatch
+      const class_type* get_class_type() const { return defn_; }
+
     private:
       const class_type* defn_;
 	// For now, only support 32bit bool signed properties.

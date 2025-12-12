@@ -179,11 +179,20 @@ extern void pform_class_property(const struct vlltype&loc,
 				 property_qualifier_t pq,
 				 data_type_t*data_type,
 				 std::list<decl_assignment_t*>*decls);
+extern void pform_class_property_virtual_interface(const struct vlltype&loc,
+				 property_qualifier_t pq,
+				 perm_string interface_name,
+				 perm_string var_name,
+				 PExpr*init_expr);
 extern void pform_set_this_class(const struct vlltype&loc, PTaskFunc*net);
 extern void pform_set_constructor_return(PFunction*net);
 
 extern void pform_end_class_declaration(const struct vlltype&loc);
 extern bool pform_in_class();
+extern void pform_set_method_static(bool is_static);
+extern void pform_reset_method_static();
+extern void pform_set_method_virtual(bool is_virtual);
+extern void pform_reset_method_virtual();
 
 extern void pform_make_udp(const struct vlltype&loc, perm_string name,
 			   std::list<pform_ident_t>*parms,

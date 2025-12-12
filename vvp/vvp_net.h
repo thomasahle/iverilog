@@ -116,6 +116,8 @@ struct automatic_hooks_s {
 
       virtual void alloc_instance(vvp_context_t context) = 0;
       virtual void reset_instance(vvp_context_t context) = 0;
+	// Copy instance data from src context to dst context (for fork/join_none)
+      virtual void copy_instance(vvp_context_t dst, vvp_context_t src) { (void)dst; (void)src; }
 #ifdef CHECK_WITH_VALGRIND
       virtual void free_instance(vvp_context_t context) = 0;
 #endif

@@ -261,6 +261,29 @@ bool symbol_search(const LineInfo*li, Design*des, NetScope*scope,
 		  }
 	    }
 
+	    // Search class inheritance hierarchy for methods/functions.
+	    // If we're in a class scope and didn't find the method, search parent classes.
+	    if (scope->type() == NetScope::CLASS) {
+		  const netclass_t *cls = scope->class_def();
+		  const netclass_t *super = cls ? cls->get_super() : 0;
+		  while (super) {
+			NetScope *super_scope = const_cast<NetScope*>(super->class_scope());
+			if (super_scope && super_scope->child_byname(path_tail.name)) {
+			      bool flag = false;
+			      hname_t path_item = eval_path_component(des, start_scope, path_tail, flag);
+			      if (!flag) {
+				    if (NetScope *chld = super_scope->child(path_item)) {
+					  path.push_back(path_tail);
+					  res->scope = chld;
+					  res->path_head = path;
+					  return true;
+				    }
+			      }
+			}
+			super = super->get_super();
+		  }
+	    }
+
 	    // Don't scan up if we are searching within a prefixed scope.
 	    if (prefix_scope)
 		  break;

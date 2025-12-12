@@ -129,29 +129,50 @@ static void draw_ufunc_preamble(ivl_expr_t expr)
 	    draw_send_function_argument(port);
       }
 
-	/* Call the function */
+	/* Call the function. Use virtual dispatch if method is virtual. */
+      int is_virtual = ivl_expr_ufunc_is_virtual(expr);
       switch (ivl_expr_value(expr)) {
 	  case IVL_VT_VOID:
-	    fprintf(vvp_out, "    %%callf/void TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    if (is_virtual) {
+		fprintf(vvp_out, "    %%callf/virt/void TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    } else {
+		fprintf(vvp_out, "    %%callf/void TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    }
 	    fprintf(vvp_out, ", S_%p;\n", def);
 	    break;
 	  case IVL_VT_REAL:
-	    fprintf(vvp_out, "    %%callf/real TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    if (is_virtual) {
+		fprintf(vvp_out, "    %%callf/virt/real TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    } else {
+		fprintf(vvp_out, "    %%callf/real TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    }
 	    fprintf(vvp_out, ", S_%p;\n", def);
 	    break;
 	  case IVL_VT_BOOL:
 	  case IVL_VT_LOGIC:
-	    fprintf(vvp_out, "    %%callf/vec4 TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    if (is_virtual) {
+		fprintf(vvp_out, "    %%callf/virt/vec4 TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    } else {
+		fprintf(vvp_out, "    %%callf/vec4 TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    }
 	    fprintf(vvp_out, ", S_%p;\n", def);
 	    break;
 	  case IVL_VT_STRING:
-	    fprintf(vvp_out, "    %%callf/str TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    if (is_virtual) {
+		fprintf(vvp_out, "    %%callf/virt/str TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    } else {
+		fprintf(vvp_out, "    %%callf/str TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    }
 	    fprintf(vvp_out, ", S_%p;\n", def);
 	    break;
 	  case IVL_VT_CLASS:
 	  case IVL_VT_DARRAY:
 	  case IVL_VT_QUEUE:
-	    fprintf(vvp_out, "    %%callf/obj TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    if (is_virtual) {
+		fprintf(vvp_out, "    %%callf/virt/obj TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    } else {
+		fprintf(vvp_out, "    %%callf/obj TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    }
 	    fprintf(vvp_out, ", S_%p;\n", def);
 	    break;
 	  default:

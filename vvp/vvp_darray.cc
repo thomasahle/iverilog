@@ -509,6 +509,26 @@ void vvp_queue::push_front(const string&, unsigned)
       cerr << "XXXX push_front(string) not implemented for " << typeid(*this).name() << endl;
 }
 
+void vvp_queue::set_word_max(unsigned, const vvp_object_t&, unsigned)
+{
+      cerr << "XXXX set_word_max(object) not implemented for " << typeid(*this).name() << endl;
+}
+
+void vvp_queue::insert(unsigned, const vvp_object_t&, unsigned)
+{
+      cerr << "XXXX insert(object) not implemented for " << typeid(*this).name() << endl;
+}
+
+void vvp_queue::push_back(const vvp_object_t&, unsigned)
+{
+      cerr << "XXXX push_back(object) not implemented for " << typeid(*this).name() << endl;
+}
+
+void vvp_queue::push_front(const vvp_object_t&, unsigned)
+{
+      cerr << "XXXX push_front(object) not implemented for " << typeid(*this).name() << endl;
+}
+
 /*
  * Helper functions used while copying multiple elements into a queue.
  */
@@ -532,6 +552,11 @@ static void print_copy_is_too_big(string&, size_t src_size, unsigned max_size)
 static void print_copy_is_too_big(vvp_vector4_t&, size_t src_size, unsigned max_size)
 {
       print_copy_is_too_big(src_size, max_size, "vector");
+}
+
+static void print_copy_is_too_big(vvp_object_t&, size_t src_size, unsigned max_size)
+{
+      print_copy_is_too_big(src_size, max_size, "object");
 }
 
 template <typename ELEM, class QTYPE, class SRC_TYPE>
@@ -875,4 +900,262 @@ void vvp_queue_vec4::erase_tail(unsigned idx)
       assert(queue.size() >= idx);
       if (queue.size() > idx)
 	    queue.resize(idx);
+}
+
+/*
+ * vvp_queue_object - Queue of class/object references
+ */
+void vvp_queue_object::copy_elems(vvp_object_t src, unsigned max_size)
+{
+      if (vvp_queue*src_queue = src.peek<vvp_queue>())
+	    copy_elements<vvp_object_t, vvp_queue_object, vvp_queue>(this, src_queue, max_size);
+      else if (vvp_darray*src_darray = src.peek<vvp_darray>())
+	    copy_elements<vvp_object_t, vvp_queue_object, vvp_darray>(this, src_darray, max_size);
+      else
+	    cerr << get_fileline() << "Sorry: cannot copy object to object queue." << endl;
+}
+
+void vvp_queue_object::set_word_max(unsigned adr, const vvp_object_t&value, unsigned max_size)
+{
+      if (adr == queue.size())
+	    if (!max_size || (queue.size() < max_size))
+		  queue.push_back(value);
+	    else
+		  cerr << get_fileline()
+		       << "Warning: assigning to queue<object>[" << adr << "] is"
+		          " outside bound (" << max_size << ")."
+		       << " Object was not added." << endl;
+      else
+	    set_word(adr, value);
+}
+
+void vvp_queue_object::set_word(unsigned adr, const vvp_object_t&value)
+{
+      if (adr < queue.size())
+	    queue[adr] = value;
+      else
+	    cerr << get_fileline()
+	         << "Warning: assigning to queue<object>[" << adr << "] is outside "
+	            "of size (" << queue.size() << ")."
+	         << " Object was not added." << endl;
+}
+
+void vvp_queue_object::get_word(unsigned adr, vvp_object_t&value)
+{
+      if (adr >= queue.size())
+	    value = vvp_object_t();  // Return null object
+      else
+	    value = queue[adr];
+}
+
+void vvp_queue_object::insert(unsigned idx, const vvp_object_t&value, unsigned max_size)
+{
+	// Inserting past the end of the queue
+      if (idx > queue.size())
+	    cerr << get_fileline()
+	         << "Warning: inserting to queue<object>[" << idx
+	         << "] is outside of size (" << queue.size()
+	         << "). Object was not added." << endl;
+	// Inserting at the end
+      else if (idx == queue.size())
+	    if (!max_size || (queue.size() < max_size))
+		  queue.push_back(value);
+	    else
+		  cerr << get_fileline()
+		       << "Warning: inserting to queue<object>[" << idx
+		       << "] is outside bound (" << max_size
+		       << "). Object was not added." << endl;
+      else  {
+	    if (max_size && (queue.size() == max_size)) {
+		  cerr << get_fileline()
+		       << "Warning: insert("<< idx << ", object) removed "
+		       << "object from already full bounded queue<object>"
+		       << " [" << max_size << "]." << endl;
+		  queue.pop_back();
+	    }
+	    queue.insert(queue.begin()+idx, value);
+      }
+}
+
+void vvp_queue_object::push_back(const vvp_object_t&value, unsigned max_size)
+{
+      if (!max_size || (queue.size() < max_size))
+	    queue.push_back(value);
+      else
+	    cerr << get_fileline()
+	         << "Warning: push_back(object)"
+	         << " skipped for already full bounded queue<object>"
+	         << " [" << max_size << "]." << endl;
+}
+
+void vvp_queue_object::push_front(const vvp_object_t&value, unsigned max_size)
+{
+      if (max_size && (queue.size() == max_size)) {
+	    cerr << get_fileline()
+	         << "Warning: push_front(object) removed "
+	         << "object from already full bounded queue<object>"
+	         << " [" << max_size << "]." << endl;
+	    queue.pop_back();
+      }
+      queue.push_front(value);
+}
+
+void vvp_queue_object::erase(unsigned idx)
+{
+      assert(queue.size() > idx);
+      queue.erase(queue.begin()+idx);
+}
+
+void vvp_queue_object::erase_tail(unsigned idx)
+{
+      assert(queue.size() >= idx);
+      if (queue.size() > idx)
+	    queue.resize(idx);
+}
+
+/*
+ * Associative array implementations
+ */
+
+vvp_assoc::~vvp_assoc()
+{
+}
+
+void vvp_assoc::set_word(const string&, const vvp_vector4_t&)
+{
+      assert(0);
+}
+
+void vvp_assoc::get_word(const string&, vvp_vector4_t&)
+{
+      assert(0);
+}
+
+void vvp_assoc::set_word(const string&, double)
+{
+      assert(0);
+}
+
+void vvp_assoc::get_word(const string&, double&)
+{
+      assert(0);
+}
+
+void vvp_assoc::set_word(const string&, const string&)
+{
+      assert(0);
+}
+
+void vvp_assoc::get_word(const string&, string&)
+{
+      assert(0);
+}
+
+/* vvp_assoc_vec4 */
+
+vvp_assoc_vec4::~vvp_assoc_vec4()
+{
+}
+
+void vvp_assoc_vec4::set_word(const string&key, const vvp_vector4_t&value)
+{
+      map_[key] = value;
+}
+
+void vvp_assoc_vec4::get_word(const string&key, vvp_vector4_t&value)
+{
+      auto it = map_.find(key);
+      if (it != map_.end()) {
+	    value = it->second;
+      } else {
+	    // Return default value (0) for non-existent key
+	    value = vvp_vector4_t(word_wid_, BIT4_0);
+      }
+}
+
+void vvp_assoc_vec4::shallow_copy(const vvp_object*obj)
+{
+      const vvp_assoc_vec4*that = dynamic_cast<const vvp_assoc_vec4*>(obj);
+      assert(that);
+      map_ = that->map_;
+      word_wid_ = that->word_wid_;
+}
+
+vvp_object* vvp_assoc_vec4::duplicate(void) const
+{
+      vvp_assoc_vec4*res = new vvp_assoc_vec4(word_wid_);
+      res->map_ = map_;
+      return res;
+}
+
+/* vvp_assoc_real */
+
+vvp_assoc_real::~vvp_assoc_real()
+{
+}
+
+void vvp_assoc_real::set_word(const string&key, double value)
+{
+      map_[key] = value;
+}
+
+void vvp_assoc_real::get_word(const string&key, double&value)
+{
+      auto it = map_.find(key);
+      if (it != map_.end()) {
+	    value = it->second;
+      } else {
+	    // Return default value (0.0) for non-existent key
+	    value = 0.0;
+      }
+}
+
+void vvp_assoc_real::shallow_copy(const vvp_object*obj)
+{
+      const vvp_assoc_real*that = dynamic_cast<const vvp_assoc_real*>(obj);
+      assert(that);
+      map_ = that->map_;
+}
+
+vvp_object* vvp_assoc_real::duplicate(void) const
+{
+      vvp_assoc_real*res = new vvp_assoc_real();
+      res->map_ = map_;
+      return res;
+}
+
+/* vvp_assoc_string */
+
+vvp_assoc_string::~vvp_assoc_string()
+{
+}
+
+void vvp_assoc_string::set_word(const string&key, const string&value)
+{
+      map_[key] = value;
+}
+
+void vvp_assoc_string::get_word(const string&key, string&value)
+{
+      auto it = map_.find(key);
+      if (it != map_.end()) {
+	    value = it->second;
+      } else {
+	    // Return empty string for non-existent key
+	    value = "";
+      }
+}
+
+void vvp_assoc_string::shallow_copy(const vvp_object*obj)
+{
+      const vvp_assoc_string*that = dynamic_cast<const vvp_assoc_string*>(obj);
+      assert(that);
+      map_ = that->map_;
+}
+
+vvp_object* vvp_assoc_string::duplicate(void) const
+{
+      vvp_assoc_string*res = new vvp_assoc_string();
+      res->map_ = map_;
+      return res;
 }

@@ -33,6 +33,17 @@ __vpiCobjectVar::__vpiCobjectVar(__vpiScope*sc, const char*na, vvp_net_t*ne)
 int __vpiCobjectVar::get_type_code(void) const
 { return vpiClassVar; }
 
+char* __vpiCobjectVar::vpi_get_str(int code)
+{
+      if (code == vpiName) {
+            return simple_set_rbuf_str(name_);
+      }
+      if (code == vpiFullName) {
+            return generic_get_str(code, scope_, name_, NULL);
+      }
+      return NULL;
+}
+
 int __vpiCobjectVar::vpi_get(int code)
 {
       switch (code) {

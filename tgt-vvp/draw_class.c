@@ -38,11 +38,13 @@ static void show_prop_type_vector(ivl_type_t ptype)
 
       } else {
 	    assert(packed_dimensions == 1);
-	    assert(ivl_type_packed_lsb(ptype,0) == 0);
-	    assert(ivl_type_packed_msb(ptype,0) >= 0);
+	    /* LSB may be non-zero for vectors like bit [7:4] */
+	    int msb = ivl_type_packed_msb(ptype,0);
+	    int lsb = ivl_type_packed_lsb(ptype,0);
+	    int width = msb >= lsb ? msb - lsb + 1 : lsb - msb + 1;
+	    assert(width > 0);
 
-	    fprintf(vvp_out, "\"%s%c%d\"", signed_flag, code,
-		    ivl_type_packed_msb(ptype,0)+1);
+	    fprintf(vvp_out, "\"%s%c%d\"", signed_flag, code, width);
       }
 }
 
@@ -63,6 +65,7 @@ static void show_prop_type(ivl_type_t ptype)
 	    show_prop_type_vector(ptype);
 	    break;
 	  case IVL_VT_DARRAY:
+	  case IVL_VT_QUEUE:
 	  case IVL_VT_CLASS:
 	    fprintf(vvp_out, "\"o\"");
 	    if (packed_dimensions > 0) {
@@ -75,6 +78,10 @@ static void show_prop_type(ivl_type_t ptype)
 		  }
 	    }
 	    break;
+	  case IVL_VT_NO_TYPE:
+	    // Struct types return IVL_VT_NO_TYPE - treat as object
+	    fprintf(vvp_out, "\"o\"");
+	    break;
 	  default:
 	    fprintf(vvp_out, "\"<ERROR-no-type>\"");
 	    assert(0);
@@ -85,8 +92,16 @@ static void show_prop_type(ivl_type_t ptype)
 void draw_class_in_scope(ivl_type_t classtype)
 {
       int idx;
-      fprintf(vvp_out, "C%p  .class \"%s\" [%d]\n",
+      ivl_type_t super = ivl_type_super(classtype);
+
+      fprintf(vvp_out, "C%p  .class \"%s\" [%d]",
 	      classtype, ivl_type_name(classtype), ivl_type_properties(classtype));
+
+      /* If there is a parent class, emit reference to it */
+      if (super) {
+	    fprintf(vvp_out, " <C%p", super);
+      }
+      fprintf(vvp_out, "\n");
 
       for (idx = 0 ; idx < ivl_type_properties(classtype) ; idx += 1) {
 	    fprintf(vvp_out, " %3d: \"%s\", ", idx, ivl_type_prop_name(classtype,idx));
@@ -95,4 +110,8 @@ void draw_class_in_scope(ivl_type_t classtype)
       }
 
       fprintf(vvp_out, " ;\n");
+
+      /* Register class with factory for UVM-style creation by name.
+       * This allows run_test("classname") and type_id::create() to work. */
+      fprintf(vvp_out, ".factory \"%s\", C%p ;\n", ivl_type_name(classtype), classtype);
 }

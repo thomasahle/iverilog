@@ -25,18 +25,67 @@
 # include  "netlist.h"
 # include  "netmisc.h"
 # include  "netstruct.h"
+# include  "netassoc.h"
 # include  "netclass.h"
 # include  "netdarray.h"
 # include  "netparray.h"
 # include  "netvector.h"
 # include  "netenum.h"
+# include  "netscalar.h"
 # include  "compiler.h"
+# include  "Module.h"
 # include  <cstdlib>
 # include  <iostream>
 # include  <climits>
 # include  "ivl_assert.h"
 
 using namespace std;
+
+/*
+ * Helper function to find an interface instance scope by searching
+ * recursively through all scopes. This is used when the interface_def
+ * in the type is null (happens when type elaboration occurs before
+ * interface instantiation).
+ */
+static const NetScope* find_interface_scope_recursive(const NetScope* scope, perm_string iface_name)
+{
+      if (!scope) return nullptr;
+
+      // Check if this scope is the interface we're looking for
+      if (scope->is_interface() && scope->module_name() == iface_name) {
+            return scope;
+      }
+
+      // Search children recursively using child_by_module_name to find interface
+      // instances by their type name (module_name), not instance name
+      const NetScope* found = scope->child_by_module_name(iface_name);
+      if (found && found->is_interface()) {
+            return found;
+      }
+
+      return nullptr;
+}
+
+/*
+ * Helper to find interface definition using Module from pform_modules
+ * Returns a PWire for the given member name if found.
+ */
+static PWire* find_interface_wire_from_module(perm_string iface_name, perm_string member_name)
+{
+      extern std::map<perm_string,Module*> pform_modules;
+      auto it = pform_modules.find(iface_name);
+      if (it == pform_modules.end() || !it->second->is_interface) {
+            return nullptr;
+      }
+      Module* iface_mod = it->second;
+
+      // Look for the wire in the module
+      auto wit = iface_mod->wires.find(member_name);
+      if (wit != iface_mod->wires.end()) {
+            return wit->second;
+      }
+      return nullptr;
+}
 
 /*
  * These methods generate a NetAssign_ object for the l-value of the
@@ -329,7 +378,7 @@ NetAssign_*PEIdent::elaborate_lval_var_(Design *des, NetScope *scope,
 
 
       if (use_sel == index_component_t::SEL_BIT) {
-	    if (reg->darray_type()) {
+	    if (reg->darray_type() || reg->assoc_type()) {
 		  NetAssign_*lv = new NetAssign_(reg);
 		  elaborate_lval_darray_bit_(des, scope, lv, is_force);
 		  return lv;
@@ -1170,6 +1219,10 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 			canon_index = make_canonical_index(des, scope, this,
 							   member_cur.index, stype, false);
 
+		  } else if (const netvector_t *vtype = dynamic_cast<const netvector_t*>(ptype)) {
+			// For packed vectors, bit-select is allowed but not yet fully supported
+			cerr << get_fileline() << ": warning: "
+			     << "Bit-select on class vector property not yet fully supported." << endl;
 		  } else {
 			cerr << get_fileline() << ": error: "
 			     << "Index expressions don't apply to this type of property." << endl;
@@ -1207,6 +1260,83 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 	      // type. We may wind up iterating, and need the proper
 	      // class type.
 	    class_type = dynamic_cast<const netclass_t*>(ptype);
+
+	      // Check if this is a virtual interface property with more path components
+	    if (!class_type && !member_path.empty()) {
+		  const netvirtual_interface_t*vif_type =
+			dynamic_cast<const netvirtual_interface_t*>(ptype);
+		  if (vif_type) {
+			// Virtual interface member access (vif.member)
+			perm_string iface_name = vif_type->interface_name();
+
+			// Get the member name from the path
+			name_component_t vif_member_comp = member_path.front();
+			member_path.pop_front();
+
+			// Try to get the interface definition from the type
+			const NetScope* iface_def = vif_type->interface_def();
+
+			// If not available from type, try to find it by searching scopes
+			if (!iface_def) {
+			      // Search through all root scopes and their children
+			      for (NetScope* root : des->find_root_scopes()) {
+				    iface_def = find_interface_scope_recursive(root, iface_name);
+				    if (iface_def) break;
+			      }
+			}
+
+			// If still not found, try using Module definition to verify member exists
+			NetNet* member_sig = nullptr;
+			if (iface_def) {
+			      // Look up the member signal in the interface scope
+			      member_sig = const_cast<NetScope*>(iface_def)->find_signal(vif_member_comp.name);
+			}
+
+			if (!member_sig) {
+			      // Try to find the member in the Module definition
+			      PWire* pwire = find_interface_wire_from_module(iface_name, vif_member_comp.name);
+			      if (!pwire) {
+				    cerr << get_fileline() << ": error: "
+					 << "Interface " << iface_name
+					 << " has no member " << vif_member_comp.name << "." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+
+			      // Member exists in interface definition, but we need an elaborated
+			      // NetNet for the l-value. If no interface instance is found, error.
+			      if (!iface_def) {
+				    cerr << get_fileline() << ": sorry: "
+					 << "Virtual interface member access (."
+					 << vif_member_comp.name << ") "
+					 << "requires an elaborated interface instance." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+			}
+
+			if (!member_sig) {
+			      cerr << get_fileline() << ": error: "
+				   << "Interface " << iface_name
+				   << " has no member " << vif_member_comp.name << "." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			// Set the virtual interface member on the l-value
+			lv->set_vif_member(vif_member_comp.name, member_sig);
+
+			// If there are still more path components, error - nested vif member access not supported
+			if (!member_path.empty()) {
+			      cerr << get_fileline() << ": sorry: "
+				   << "Nested virtual interface member access is not yet supported." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			return lv;
+		  }
+	    }
 
       } while (!member_path.empty());
 

@@ -68,6 +68,21 @@ ivl_variable_type_t netclass_t::base_type() const
       return IVL_VT_CLASS;
 }
 
+/*
+ * Two classes are considered equivalent if they have the same name.
+ * This is important for parameterized class specializations, where
+ * multiple instances of the same specialization may be created but
+ * should be considered equivalent types.
+ */
+bool netclass_t::test_equivalence(ivl_type_t that) const
+{
+      const netclass_t*that_class = dynamic_cast<const netclass_t*>(that);
+      if (that_class == nullptr)
+	    return false;
+
+      return name_ == that_class->name_;
+}
+
 size_t netclass_t::get_properties(void) const
 {
       size_t res = properties_.size();
@@ -222,7 +237,9 @@ bool netclass_t::test_compatibility(ivl_type_t that) const
 {
       for (const netclass_t *class_type = dynamic_cast<const netclass_t *>(that);
 	    class_type; class_type = class_type->get_super()) {
-	    if (class_type == this)
+	    // Use test_equivalence instead of pointer comparison to handle
+	    // different instances of the same parameterized class specialization
+	    if (test_equivalence(class_type))
 		  return true;
       }
 

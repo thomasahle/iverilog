@@ -151,6 +151,7 @@ struct dll_target  : public target_t, public expr_scan_t {
       void expr_null(const NetENull*) override;
       void expr_param(const NetEConstParam*) override;
       void expr_property(const NetEProperty*) override;
+      void expr_virtual_property(const NetEVirtualProperty*) override;
       void expr_rparam(const NetECRealParam*) override;
       void expr_event(const NetEEvent*) override;
       void expr_scope(const NetEScope*) override;
@@ -324,6 +325,7 @@ struct ivl_expr_s {
 		  ivl_scope_t def;
 		  ivl_expr_t  *parm;
 		  unsigned    parms;
+		  unsigned    is_virtual;
 	    } ufunc_;
 
 	    struct {
@@ -350,10 +352,17 @@ struct ivl_expr_s {
 	    } new_;
 
 	    struct {
-		  ivl_signal_t sig;
+		  ivl_signal_t sig;        // Base signal (null if nested)
+		  ivl_expr_t base;         // Base expression for nested access (null if direct)
 		  unsigned prop_idx;
 		  ivl_expr_t index;
 	    } property_;
+
+	    struct {
+		  ivl_expr_t vif_expr;     // Virtual interface expression
+		  const char* member_name; // Interface member name
+		  ivl_signal_t member_sig; // Interface member signal (for type info)
+	    } vifprop_;
       } u_;
 };
 
@@ -481,7 +490,8 @@ struct ivl_lpm_s {
 enum ivl_lval_type_t {
       IVL_LVAL_REG = 0,
       IVL_LVAL_ARR = 4,
-      IVL_LVAL_LVAL= 5  // Nested l-value
+      IVL_LVAL_LVAL= 5,  // Nested l-value
+      IVL_LVAL_VIF = 6   // Virtual interface member
 };
 
 struct ivl_lval_s {
@@ -495,6 +505,9 @@ struct ivl_lval_s {
 	    ivl_signal_t sig;
 	    ivl_lval_t  nest; // type_ == IVL_LVAL_LVAL
       } n;
+      // For IVL_LVAL_VIF: virtual interface member access
+      const char* vif_member_name;
+      ivl_signal_t vif_member_sig;
 };
 
 /*

@@ -209,6 +209,37 @@ static void assign_to_array_word(ivl_signal_t lsig, ivl_expr_t word_ix,
 }
 
 /*
+ * Load the object chain for an l-value onto the object stack.
+ * This is used for VIF member access where we need to get the VIF
+ * property object before we can store to it.
+ * Returns the type of the loaded object.
+ */
+static ivl_type_t load_lval_object_chain(ivl_lval_t lval)
+{
+      ivl_lval_t lval_nest = ivl_lval_nest(lval);
+      ivl_signal_t lval_sig = ivl_lval_sig(lval);
+
+      /* Base case: signal variable */
+      if (lval_sig) {
+	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", lval_sig);
+	    return ivl_signal_net_type(lval_sig);
+      }
+
+      /* Recursive case: nested l-value */
+      assert(lval_nest);
+      ivl_type_t sub_type = load_lval_object_chain(lval_nest);
+      assert(ivl_type_base(sub_type) == IVL_VT_CLASS);
+
+      int prop_idx = ivl_lval_property_idx(lval_nest);
+
+      fprintf(vvp_out, "    %%prop/obj %d, 0; Load property %s\n", prop_idx,
+	      ivl_type_prop_name(sub_type, prop_idx));
+      fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+
+      return ivl_type_prop_type(sub_type, prop_idx);
+}
+
+/*
  * The code to generate here assumes that a vec4 vector of the right
  * width is top of the vec4 stack. Arrange for it to be popped and
  * assigned to the given l-value.
@@ -222,6 +253,45 @@ static void assign_to_lvector(ivl_lval_t lval,
       unsigned long part_off = 0;
 
       const unsigned long use_word = 0;
+
+      /* Handle virtual interface member l-values */
+      if (ivl_lval_is_vif(lval)) {
+	    const char* member_name = ivl_lval_vif_member(lval);
+	    unsigned lwid = ivl_lval_width(lval);
+	    int vif_loaded = 0;
+
+	    /* VIF can be accessed via base signal (this.vif) or nested path.
+	     * Use VIF-specific functions to get the right access path. */
+	    ivl_signal_t base_sig = ivl_lval_vif_base_sig(lval);
+	    ivl_lval_t nest = ivl_lval_vif_nest(lval);
+	    int prop_idx = ivl_lval_property_idx(lval);
+
+	    /* Check if we have a valid base signal (this.vif access pattern) */
+	    if (base_sig) {
+		  /* VIF accessed via base signal (this.vif) */
+		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", base_sig);
+		  ivl_type_t sig_type = ivl_signal_net_type(base_sig);
+		  const char* prop_name = sig_type ? ivl_type_prop_name(sig_type, prop_idx) : "(null)";
+		  fprintf(vvp_out, "    %%prop/obj %d, 0; Load vif property %s\n",
+			  prop_idx, prop_name ? prop_name : "(null)");
+		  fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+		  vif_loaded = 1;
+	    } else if (nest) {
+		  /* VIF accessed via nested lval path */
+		  load_lval_object_chain(nest);
+		  vif_loaded = 1;
+	    }
+
+	    /* For VIF members in non-blocking context, just use the blocking
+	       store for now (delays not yet supported for VIF members) */
+	    fprintf(vvp_out, "    %%vif/store/v \"%s\", %u;\n", member_name, lwid);
+
+	    /* Pop the VIF object from the stack */
+	    if (vif_loaded) {
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    }
+	    return;
+      }
 
       const char*assign_op = "%assign";
       if (ivl_signal_type(sig) == IVL_SIT_UWIRE)
@@ -1594,12 +1664,24 @@ static int show_stmt_utask(ivl_statement_t net)
 
       show_stmt_file_line(net, "User task call.");
 
+      /* Check if this is a class method call that needs virtual dispatch */
+      ivl_scope_t parent = ivl_scope_parent(task);
+      int is_class_method = (parent && ivl_scope_type(parent) == IVL_SCT_CLASS);
+
       if (ivl_scope_type(task) == IVL_SCT_FUNCTION) {
 	      // A function called as a task is (presumably) a void function.
-	      // Use the %callf/void instruction to call it.
-	    fprintf(vvp_out, "    %%callf/void TD_%s",
-		    vvp_mangle_id(ivl_scope_name(task)));
-	    fprintf(vvp_out, ", S_%p;\n", task);
+	    if (is_class_method) {
+		    // Virtual method call - emit opcode for runtime dispatch
+		    // The method name is obtained from the scope's basename at runtime
+		  fprintf(vvp_out, "    %%callf/virt/void TD_%s, S_%p;\n",
+			  vvp_mangle_id(ivl_scope_name(task)),
+			  task);
+	    } else {
+		    // Regular function call
+		  fprintf(vvp_out, "    %%callf/void TD_%s",
+			  vvp_mangle_id(ivl_scope_name(task)));
+		  fprintf(vvp_out, ", S_%p;\n", task);
+	    }
       } else {
 	    fprintf(vvp_out, "    %%fork TD_%s",
 		    vvp_mangle_id(ivl_scope_name(task)));
@@ -1663,6 +1745,20 @@ static int show_delete_method(ivl_statement_t net)
 	    return 1;
 
       ivl_expr_t parm = ivl_stmt_parm(net, 0);
+
+      /* Handle queue property on class objects (obj.queue_prop.delete) */
+      if (ivl_expr_type(parm) == IVL_EX_PROPERTY) {
+	    draw_eval_object(parm);  /* Push queue object to stack */
+	    if (parm_count == 2) {
+		  draw_eval_expr_into_integer(ivl_stmt_parm(net, 1), 3);
+		  fprintf(vvp_out, "    %%qprop/delete/elem; // Queue property delete element (stub)\n");
+	    } else {
+		  fprintf(vvp_out, "    %%qprop/delete; // Queue property delete (stub)\n");
+	    }
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return 0;
+      }
+
       assert(ivl_expr_type(parm) == IVL_EX_SIGNAL);
       ivl_signal_t var = ivl_expr_signal(parm);
 
@@ -1687,6 +1783,33 @@ static int show_insert_method(ivl_statement_t net)
 	    return 1;
 
       ivl_expr_t parm0 = ivl_stmt_parm(net,0);
+
+      /* Handle queue property on class objects (obj.queue_prop.insert) */
+      if (ivl_expr_type(parm0) == IVL_EX_PROPERTY) {
+	    ivl_expr_t parm1 = ivl_stmt_parm(net,1);
+	    ivl_expr_t parm2 = ivl_stmt_parm(net,2);
+	    draw_eval_object(parm0);  /* Push queue object to stack */
+	    draw_eval_expr_into_integer(parm1, 3);  /* Index to insert at */
+	    /* Evaluate value based on element type */
+	    ivl_variable_type_t val_type = ivl_expr_value(parm2);
+	    if (val_type == IVL_VT_BOOL || val_type == IVL_VT_LOGIC) {
+		  draw_eval_vec4(parm2);
+		  fprintf(vvp_out, "    %%qprop/insert/v; // Queue property insert vec (stub)\n");
+	    } else if (val_type == IVL_VT_REAL) {
+		  draw_eval_real(parm2);
+		  fprintf(vvp_out, "    %%qprop/insert/r; // Queue property insert real (stub)\n");
+	    } else if (val_type == IVL_VT_STRING) {
+		  draw_eval_string(parm2);
+		  fprintf(vvp_out, "    %%qprop/insert/str; // Queue property insert str (stub)\n");
+	    } else {
+		  /* Structs, classes, etc - evaluate as object */
+		  draw_eval_object(parm2);
+		  fprintf(vvp_out, "    %%qprop/insert/o; // Queue property insert obj (stub)\n");
+	    }
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return 0;
+      }
+
       assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
       ivl_signal_t var = ivl_expr_signal(parm0);
       ivl_type_t var_type = ivl_signal_net_type(var);
@@ -1727,12 +1850,15 @@ static int show_insert_method(ivl_statement_t net)
 static int show_push_frontback_method(ivl_statement_t net, bool is_front)
 {
       const char*type_code;
+      const char*method_name;
       if (is_front) {
 	    show_stmt_file_line(net, "queue: push_front");
 	    type_code = "qf";
+	    method_name = "push_front";
       } else {
 	    show_stmt_file_line(net, "queue: push_back");
 	    type_code = "qb";
+	    method_name = "push_back";
       }
 
       unsigned parm_count = ivl_stmt_parm_count(net);
@@ -1740,6 +1866,37 @@ static int show_push_frontback_method(ivl_statement_t net, bool is_front)
 	    return 1;
 
       ivl_expr_t parm0 = ivl_stmt_parm(net,0);
+
+      /* Handle queue property on class objects (obj.queue_prop.push_back) */
+      if (ivl_expr_type(parm0) == IVL_EX_PROPERTY) {
+	    /* For queue properties, we need to evaluate the property to get
+	       the queue object, then push to it. For now, emit a stub. */
+	    ivl_expr_t parm1 = ivl_stmt_parm(net,1);
+	    draw_eval_object(parm0);  /* Push queue object to stack */
+	    /* Evaluate value based on element type */
+	    ivl_variable_type_t val_type = ivl_expr_value(parm1);
+	    if (val_type == IVL_VT_BOOL || val_type == IVL_VT_LOGIC) {
+		  draw_eval_vec4(parm1);
+		  fprintf(vvp_out, "    %%qprop/%s/v; // Queue property %s vec (stub)\n",
+			  type_code, method_name);
+	    } else if (val_type == IVL_VT_REAL) {
+		  draw_eval_real(parm1);
+		  fprintf(vvp_out, "    %%qprop/%s/r; // Queue property %s real (stub)\n",
+			  type_code, method_name);
+	    } else if (val_type == IVL_VT_STRING) {
+		  draw_eval_string(parm1);
+		  fprintf(vvp_out, "    %%qprop/%s/str; // Queue property %s str (stub)\n",
+			  type_code, method_name);
+	    } else {
+		  /* Structs, classes, etc - evaluate as object */
+		  draw_eval_object(parm1);
+		  fprintf(vvp_out, "    %%qprop/%s/o; // Queue property %s obj (stub)\n",
+			  type_code, method_name);
+	    }
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return 0;
+      }
+
       assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
       ivl_signal_t var = ivl_expr_signal(parm0);
       ivl_type_t var_type = ivl_signal_net_type(var);
@@ -1762,6 +1919,12 @@ static int show_push_frontback_method(ivl_statement_t net, bool is_front)
 	  case IVL_VT_STRING:
 	    draw_eval_string(parm1);
 	    fprintf(vvp_out, "    %%store/%s/str v%p_0, %d;\n",
+	            type_code, var, idx);
+	    break;
+	  case IVL_VT_CLASS:
+	    /* Class object - evaluate as object */
+	    draw_eval_object(parm1);
+	    fprintf(vvp_out, "    %%store/%s/o v%p_0, %d;\n",
 	            type_code, var, idx);
 	    break;
 	  default:

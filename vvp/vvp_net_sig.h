@@ -165,6 +165,7 @@ class vvp_fun_signal4_aa : public vvp_fun_signal_vec, public automatic_signal_ba
 
       void alloc_instance(vvp_context_t context) override;
       void reset_instance(vvp_context_t context) override;
+      void copy_instance(vvp_context_t dst, vvp_context_t src) override;
 #ifdef CHECK_WITH_VALGRIND
       void free_instance(vvp_context_t context) override;
 #endif
@@ -231,6 +232,7 @@ class vvp_fun_signal_real_aa : public vvp_fun_signal_real, public automatic_sign
 
       void alloc_instance(vvp_context_t context) override;
       void reset_instance(vvp_context_t context) override;
+      void copy_instance(vvp_context_t dst, vvp_context_t src) override;
 #ifdef CHECK_WITH_VALGRIND
       void free_instance(vvp_context_t context) override;
 #endif
@@ -297,6 +299,7 @@ class vvp_fun_signal_string_aa : public vvp_fun_signal_string, public automatic_
 
       void alloc_instance(vvp_context_t context) override;
       void reset_instance(vvp_context_t context) override;
+      void copy_instance(vvp_context_t dst, vvp_context_t src) override;
 #ifdef CHECK_WITH_VALGRIND
       void free_instance(vvp_context_t context) override;
 #endif
@@ -359,6 +362,7 @@ class vvp_fun_signal_object_aa : public vvp_fun_signal_object, public automatic_
 
       void alloc_instance(vvp_context_t context) override;
       void reset_instance(vvp_context_t context) override;
+      void copy_instance(vvp_context_t dst, vvp_context_t src) override;
 #ifdef CHECK_WITH_VALGRIND
       void free_instance(vvp_context_t context) override;
 #endif
@@ -375,6 +379,7 @@ class vvp_fun_signal_object_aa : public vvp_fun_signal_object, public automatic_
 	//void get_signal_value(struct t_vpi_value*vp);
 
       vvp_object_t get_object() const override;
+      vvp_object_t get_object_from_context(vvp_context_t context) const;
 
     public: // These objects are only permallocated.
       static void* operator new(std::size_t size);

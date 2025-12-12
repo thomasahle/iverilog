@@ -95,6 +95,30 @@ void compile_var_string(char*label, char*name)
       delete[] name;
 }
 
+void compile_var_assoc(char*label, char*name, unsigned size)
+{
+      vvp_net_t*net = new vvp_net_t;
+
+      if (vpip_peek_current_scope()->is_automatic()) {
+	    vvp_fun_signal_object_aa*tmp = new vvp_fun_signal_object_aa(size);
+	    net->fil = tmp;
+	    net->fun = tmp;
+      } else {
+	    net->fil = 0;
+	    net->fun = new vvp_fun_signal_object_sa(size);
+      }
+
+      define_functor_symbol(label, net);
+
+      // Reuse darray VPI object for now - associative arrays have similar structure
+      vpiHandle obj = vpip_make_darray_var(name, net);
+      compile_vpi_symbol(label, obj);
+
+      vpip_attach_to_current_scope(obj);
+      free(label);
+      delete[] name;
+}
+
 void compile_var_darray(char*label, char*name, unsigned size)
 {
       vvp_net_t*net = new vvp_net_t;

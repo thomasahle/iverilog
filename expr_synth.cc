@@ -1641,3 +1641,31 @@ NetNet* NetEUFunc::synthesize(Design*des, NetScope*scope, NetExpr*root)
 
       return osig;
 }
+
+/*
+ * Synthesize a virtual interface property expression.
+ *
+ * For edge expressions like @(posedge vif.clk), we need to return a NetNet*
+ * that represents the signal. For virtual interfaces, this is tricky because
+ * the actual interface instance is determined at runtime.
+ *
+ * As a simplification, we return the member_sig_ which is the signal from
+ * the interface definition. This works when there's only one interface
+ * instance or when all instances are connected to the same physical signal.
+ *
+ * TODO: For proper support of multiple interface instances with different
+ * signals, we would need runtime-bound event waiting (a new VVP opcode).
+ */
+NetNet* NetEVirtualProperty::synthesize(Design*des, NetScope*scope, NetExpr*)
+{
+      // If we have a member signal reference, return it (cast away const
+      // since synthesize returns non-const NetNet*)
+      if (member_sig_) {
+	    return const_cast<NetNet*>(member_sig_);
+      }
+
+      cerr << get_fileline() << ": error: Cannot synthesize virtual interface "
+           << "member access: no member signal available." << endl;
+      des->errors += 1;
+      return 0;
+}

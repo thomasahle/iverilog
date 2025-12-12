@@ -177,6 +177,10 @@ bool dll_target::make_single_lval_(const LineInfo*li, struct ivl_lval_s*cur, con
 
       cur->width_ = asn->lwidth();
 
+      // Initialize vif member fields
+      cur->vif_member_name = 0;
+      cur->vif_member_sig = 0;
+
       if (asn->sig()) {
 	    cur->type_ = IVL_LVAL_REG;
 	    cur->n.sig = find_signal(des_, asn->sig());
@@ -205,6 +209,15 @@ bool dll_target::make_single_lval_(const LineInfo*li, struct ivl_lval_s*cur, con
       }
 
       cur->property_idx = asn->get_property_idx();
+
+      // Check for virtual interface member access
+      if (asn->is_vif_member()) {
+	    cur->type_ = IVL_LVAL_VIF;
+	    cur->vif_member_name = asn->get_vif_member_name();
+	    // Note: vif member signal is in interface scope, not DLL hierarchy.
+	    // Runtime will look up signal by name from virtual interface's scope.
+	    cur->vif_member_sig = 0;
+      }
 
       return flag;
 }

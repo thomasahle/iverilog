@@ -190,6 +190,7 @@ static int eval_object_null(ivl_expr_t ex)
 static int eval_object_property(ivl_expr_t expr)
 {
       ivl_signal_t sig = ivl_expr_signal(expr);
+      ivl_expr_t base = ivl_expr_property_base(expr);
       unsigned pidx = ivl_expr_property_idx(expr);
 
       int idx = 0;
@@ -203,7 +204,13 @@ static int eval_object_property(ivl_expr_t expr)
 	    draw_eval_expr_into_integer(idx_expr, idx);
       }
 
-      fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+      if (base) {
+	    // Nested property access - evaluate base expression first
+	    draw_eval_object(base);
+      } else {
+	    // Direct property access - load signal
+	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+      }
       fprintf(vvp_out, "    %%prop/obj %u, %d; eval_object_property\n", pidx, idx);
       fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
 
@@ -232,6 +239,16 @@ static int eval_object_shallowcopy(ivl_expr_t ex)
 static int eval_object_signal(ivl_expr_t expr)
 {
       ivl_signal_t sig = ivl_expr_signal(expr);
+      ivl_expr_t word_ex = ivl_expr_oper1(expr);
+
+	/* Check if this is a queue/darray with an index expression */
+      ivl_variable_type_t sig_type = ivl_signal_data_type(sig);
+      if ((sig_type == IVL_VT_QUEUE || sig_type == IVL_VT_DARRAY) && word_ex) {
+	    /* Load element from queue/darray at index */
+	    draw_eval_expr_into_integer(word_ex, 3);
+	    fprintf(vvp_out, "    %%load/dar/o v%p_0;\n", sig);
+	    return 0;
+      }
 
 	/* Simple case: This is a simple variable. Generate a load
 	   statement to load the string into the stack. */
@@ -242,7 +259,6 @@ static int eval_object_signal(ivl_expr_t expr)
 
 	/* There is a word select expression, so load the index into a
 	   register and load from the array. */
-      ivl_expr_t word_ex = ivl_expr_oper1(expr);
       int word_ix = allocate_word();
       draw_eval_expr_into_integer(word_ex, word_ix);
       fprintf(vvp_out, "    %%load/obja v%p, %d;\n", sig, word_ix);
@@ -257,9 +273,48 @@ static int eval_object_ufunc(ivl_expr_t ex)
       return 0;
 }
 
+/*
+ * Handle scope expressions - used for virtual interface assignment
+ * where an interface instance (scope) is assigned to a VIF property.
+ * Emit a %load/scope opcode to push the scope reference onto the object stack.
+ */
+static int eval_object_scope(ivl_expr_t ex)
+{
+      ivl_scope_t scope = ivl_expr_scope(ex);
+      fprintf(vvp_out, "    %%load/scope S_%p; virtual interface scope\n", scope);
+      return 0;
+}
+
+/*
+ * Handle $ivl_factory_create system function.
+ * This creates a class object by looking up the class type name in the
+ * UVM factory registry at runtime.
+ */
+static int eval_object_sfunc(ivl_expr_t ex)
+{
+      const char*name = ivl_expr_name(ex);
+
+      if (strcmp(name, "$ivl_factory_create") == 0) {
+	    /* $ivl_factory_create(type_name)
+	     * - Evaluate the string argument (type name)
+	     * - Call %factory/create to look up and create the object
+	     */
+	    ivl_expr_t arg = ivl_expr_parm(ex, 0);
+	    draw_eval_string(arg);
+	    fprintf(vvp_out, "    %%factory/create;\n");
+	    return 0;
+      }
+
+      fprintf(vvp_out, "; ERROR: eval_object_sfunc: Unknown system function '%s'\n", name);
+      return 1;
+}
+
 int draw_eval_object(ivl_expr_t ex)
 {
       switch (ivl_expr_type(ex)) {
+
+	  case IVL_EX_SFUNC:
+	    return eval_object_sfunc(ex);
 
 	  case IVL_EX_NEW:
 	    switch (ivl_expr_value(ex)) {
@@ -287,6 +342,9 @@ int draw_eval_object(ivl_expr_t ex)
 
 	  case IVL_EX_UFUNC:
 	    return eval_object_ufunc(ex);
+
+	  case IVL_EX_SCOPE:
+	    return eval_object_scope(ex);
 
 	  default:
 	    fprintf(vvp_out, "; ERROR: draw_eval_object: Invalid expression type %d\n", ivl_expr_type(ex));

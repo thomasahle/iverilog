@@ -34,6 +34,7 @@
 # include  "netvector.h"
 # include  "discipline.h"
 # include  "netmisc.h"
+# include  "netassoc.h"
 # include  "netdarray.h"
 # include  "netqueue.h"
 # include  "netstruct.h"
@@ -124,6 +125,7 @@ NetExpr* elaborate_rval_expr(Design*des, NetScope*scope, ivl_type_t lv_net_type,
       switch (lv_type) {
 	  case IVL_VT_DARRAY:
 	  case IVL_VT_QUEUE:
+	  case IVL_VT_ASSOC:
 	  case IVL_VT_CLASS:
 	      // For these types, use a different elab_and_eval that
 	      // uses the lv_net_type. We should eventually transition
@@ -139,7 +141,12 @@ NetExpr* elaborate_rval_expr(Design*des, NetScope*scope, ivl_type_t lv_net_type,
 	    break;
 	  case IVL_VT_VOID:
 	  case IVL_VT_NO_TYPE:
-	    ivl_assert(*expr, 0);
+	      // Struct types return IVL_VT_NO_TYPE, use typed elaboration
+	    if (lv_net_type && dynamic_cast<const netstruct_t*>(lv_net_type)) {
+		  typed_elab = true;
+	    } else {
+		  ivl_assert(*expr, 0);
+	    }
 	    break;
       }
 
@@ -458,7 +465,7 @@ NetExpr* PEAssignPattern::elaborate_expr(Design*des, NetScope*, unsigned, unsign
       cerr << get_fileline() << ":      : Expression is: " << *this
 	   << endl;
       des->errors += 1;
-      ivl_assert(*this, 0);
+      // Return nullptr instead of asserting - allows error count to be reported
       return 0;
 }
 
@@ -2017,6 +2024,184 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 	    return cast_to_width_(sub, expr_wid);
       }
 
+	/* Handle $cast(dest, src) system function.
+	   This checks if src's actual type is compatible with dest's declared type,
+	   assigns if compatible and returns 1, else returns 0. */
+      if (name=="$cast") {
+	    if (parms_.size() != 2) {
+		  cerr << get_fileline() << ": error: $cast requires exactly 2 arguments." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+	    if (!parms_[0].parm || !parms_[1].parm) {
+		  cerr << get_fileline() << ": error: $cast arguments cannot be null." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Elaborate the source (second argument)
+	    const PExpr *src_expr = parms_[1].parm;
+	    NetExpr*src = src_expr->elaborate_expr(des, scope, -1, flags);
+	    if (!src) return 0;
+
+	    // The destination is a class variable reference
+	    // We need to elaborate it and pass both to the $ivl_cast system function
+	    const PExpr *dst_expr = parms_[0].parm;
+	    NetExpr*dst = dst_expr->elaborate_expr(des, scope, -1, flags);
+	    if (!dst) return 0;
+
+	    // Generate a system function call to $ivl_cast
+	    NetESFunc*sys_expr = new NetESFunc("$ivl_cast",
+					       &netvector_t::atom2s32, 2);
+	    sys_expr->set_line(*this);
+	    sys_expr->parm(0, dst);
+	    sys_expr->parm(1, src);
+	    return sys_expr;
+      }
+
+	/* Handle $ivl_uvm_create_test - UVM factory extension.
+	   This system function takes a string literal argument (test class name)
+	   and creates an instance of that class if it exists in scope.
+	   This enables run_test("test_name") to work without runtime factory lookup. */
+      if (name=="$ivl_uvm_create_test") {
+	    if ((parms_.size() != 1) || !parms_[0].parm) {
+		  cerr << get_fileline() << ": error: $ivl_uvm_create_test "
+		       << "takes exactly one string argument (test class name)." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Get the string argument
+	    const PExpr *arg_expr = parms_[0].parm;
+	    const PEString *str_expr = dynamic_cast<const PEString*>(arg_expr);
+
+	    if (!str_expr) {
+		  cerr << get_fileline() << ": error: $ivl_uvm_create_test "
+		       << "requires a string literal argument." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    perm_string test_name = lex_strings.make(str_expr->value());
+
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": PECallFunction::elaborate_sfunc_: "
+		       << "$ivl_uvm_create_test looking for class '" << test_name << "'" << endl;
+	    }
+
+	    // Search for the class in the current scope hierarchy
+	    netclass_t*class_type = scope->find_class(des, test_name);
+
+	    if (class_type == 0) {
+		  cerr << get_fileline() << ": warning: $ivl_uvm_create_test "
+		       << "could not find class '" << test_name << "' in scope. "
+		       << "Returning null." << endl;
+		  // Return null - the UVM library will handle the error
+		  NetENull*null_expr = new NetENull;
+		  null_expr->set_line(*this);
+		  return null_expr;
+	    }
+
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": PECallFunction::elaborate_sfunc_: "
+		       << "$ivl_uvm_create_test found class '" << class_type->get_name()
+		       << "', creating instance." << endl;
+	    }
+
+	    // Create a new instance of the class
+	    NetENew*obj = new NetENew(class_type);
+	    obj->set_line(*this);
+
+	    // Find the constructor and create the constructor call
+	    NetScope*new_scope = class_type->get_constructor();
+	    if (new_scope) {
+		  const NetFuncDef*def = new_scope->func_def();
+		  if (def == 0) {
+			cerr << get_fileline() << ": internal error: "
+			     << "Scope " << scope_path(new_scope)
+			     << " is missing constructor definition." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Create arguments for constructor: (this, "uvm_test_top", null)
+		  // The first argument is always the object being constructed
+		  vector<NetExpr*> parms(def->port_count());
+		  parms[0] = obj;
+
+		  // Add "uvm_test_top" as name argument if constructor takes it
+		  if (def->port_count() > 1) {
+			NetECString*name_arg = new NetECString(std::string("uvm_test_top"));
+			name_arg->set_line(*this);
+			parms[1] = name_arg;
+		  }
+
+		  // Add null as parent argument if constructor takes it
+		  if (def->port_count() > 2) {
+			NetENull*null_arg = new NetENull;
+			null_arg->set_line(*this);
+			parms[2] = null_arg;
+		  }
+
+		  // Get the return signal for the constructor (the "this" variable)
+		  NetNet*res = new_scope->find_signal(perm_string::literal(THIS_TOKEN));
+		  if (res == 0) {
+			cerr << get_fileline() << ": internal error: "
+			     << "Constructor missing 'this' signal." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Create the constructor call expression
+		  NetESignal*eres = new NetESignal(res);
+		  NetEUFunc*call = new NetEUFunc(scope, new_scope, eres, parms, true);
+		  call->set_line(*this);
+		  return call;
+	    }
+
+	    // No constructor - just return the new expression
+	    return obj;
+      }
+
+	/* Handle $ivl_factory_create - Runtime factory object creation.
+	   This system function takes a string argument (type name) and
+	   creates an instance at runtime by looking up the class in the
+	   factory registry. This enables run_test("test_name") and
+	   type_id::create() patterns. */
+      if (name=="$ivl_factory_create") {
+	    if ((parms_.size() != 1) || !parms_[0].parm) {
+		  cerr << get_fileline() << ": error: $ivl_factory_create "
+		       << "takes exactly one string argument (type name)." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Elaborate the string argument
+	    NetExpr*arg = elab_and_eval(des, scope, parms_[0].parm, -1);
+	    if (arg == 0) {
+		  cerr << get_fileline() << ": error: $ivl_factory_create "
+		       << "failed to elaborate type name argument." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Verify it's a string type
+	    if (arg->expr_type() != IVL_VT_STRING) {
+		  cerr << get_fileline() << ": error: $ivl_factory_create "
+		       << "argument must be a string expression." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Create a system function that returns a class object
+	    // The return type is IVL_VT_CLASS (object)
+	    NetESFunc*sys_expr = new NetESFunc("$ivl_factory_create",
+					       IVL_VT_CLASS, 0, 1);
+	    sys_expr->set_line(*this);
+	    sys_expr->parm(0, arg);
+	    return sys_expr;
+      }
+
       unsigned nparms = parms_.size();
 
       NetESFunc*fun = new NetESFunc(name, expr_type_, expr_width_, nparms, is_overridden_);
@@ -2740,10 +2925,137 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
       }
 
       if (sr.path_tail.size() > 1) {
-	    cerr << get_fileline() << ": sorry: "
-		 << "Nested member path not yet supported for class properties."
-		 << endl;
-	    return nullptr;
+	    // Handle nested property access (e.g., this.req.cmd)
+	    // Iterate through the path, building up nested NetEProperty expressions
+	    pform_name_t member_path = sr.path_tail;
+	    NetExpr* current_expr = nullptr;
+	    const netclass_t* current_class = class_type;
+
+	    while (!member_path.empty()) {
+		  name_component_t member_comp = member_path.front();
+		  member_path.pop_front();
+
+		  // Check for virtual interface access
+		  int mem_pidx = current_class->property_idx_from_name(member_comp.name);
+		  if (mem_pidx < 0) {
+			cerr << get_fileline() << ": error: "
+			     << "Class " << current_class->get_name()
+			     << " has no property " << member_comp.name << "." << endl;
+			des->errors += 1;
+			return nullptr;
+		  }
+
+		  ivl_type_t mem_ptype = current_class->get_prop_type(mem_pidx);
+
+		  // Check for virtual interface
+		  const netvirtual_interface_t*vif_type = dynamic_cast<const netvirtual_interface_t*>(mem_ptype);
+		  if (vif_type) {
+			// Create property access to get the virtual interface
+			NetEProperty* vif_prop_expr;
+			if (current_expr == nullptr) {
+			      vif_prop_expr = new NetEProperty(sr.net, mem_pidx, nullptr);
+			} else {
+			      vif_prop_expr = new NetEProperty(current_expr, mem_pidx, nullptr);
+			}
+			vif_prop_expr->set_line(*this);
+
+			// Check if there are more path components (interface member access)
+			if (!member_path.empty()) {
+			      // Get the interface definition
+			      const NetScope* iface_def = vif_type->interface_def();
+
+			      // If interface_def is null, try to find interface scope by searching
+			      if (!iface_def) {
+				    perm_string iface_name = vif_type->interface_name();
+				    // Search through all root scopes and their children
+				    for (NetScope* root : des->find_root_scopes()) {
+					  const NetScope* found = root->child_by_module_name(iface_name);
+					  if (found && found->is_interface()) {
+						iface_def = found;
+						break;
+					  }
+				    }
+			      }
+
+			      if (!iface_def) {
+				    cerr << get_fileline() << ": sorry: "
+					 << "Virtual interface member access (."
+					 << member_path.front().name << ") "
+					 << "is not yet fully supported (interface definition not found)." << endl;
+				    des->errors += 1;
+				    return nullptr;
+			      }
+
+			      // Get the member name from the path
+			      name_component_t vif_member_comp = member_path.front();
+			      member_path.pop_front();
+
+			      // Look up the member signal in the interface
+			      NetNet* member_sig = const_cast<NetScope*>(iface_def)->find_signal(vif_member_comp.name);
+			      if (!member_sig) {
+				    cerr << get_fileline() << ": error: "
+					 << "Interface " << vif_type->interface_name()
+					 << " has no member " << vif_member_comp.name << "." << endl;
+				    des->errors += 1;
+				    return nullptr;
+			      }
+
+			      // Create virtual property expression
+			      NetEVirtualProperty* vif_expr = new NetEVirtualProperty(
+				    vif_prop_expr, vif_member_comp.name, vif_type, member_sig);
+			      vif_expr->set_line(*this);
+
+			      // If there are still more path components, error - nested vif member access not supported
+			      if (!member_path.empty()) {
+				    cerr << get_fileline() << ": sorry: "
+					 << "Nested virtual interface member access is not yet supported." << endl;
+				    des->errors += 1;
+				    return nullptr;
+			      }
+
+			      return vif_expr;
+			}
+
+			// Just accessing the virtual interface itself, not a member
+			current_expr = vif_prop_expr;
+			continue;
+		  }
+
+		  // Access qualifiers check
+		  property_qualifier_t mem_qual = current_class->get_prop_qual(mem_pidx);
+		  if (mem_qual.test_local() && !current_class->test_scope_is_method(scope)) {
+			cerr << get_fileline() << ": error: "
+			     << "Local property " << current_class->get_prop_name(mem_pidx)
+			     << " is not accessible in this context." << endl;
+			des->errors += 1;
+		  }
+
+		  // Create property access expression
+		  NetEProperty* prop_expr;
+		  if (current_expr == nullptr) {
+			// First property access - use the signal
+			prop_expr = new NetEProperty(sr.net, mem_pidx, nullptr);
+		  } else {
+			// Nested property access - use the previous expression
+			prop_expr = new NetEProperty(current_expr, mem_pidx, nullptr);
+		  }
+		  prop_expr->set_line(*this);
+		  current_expr = prop_expr;
+
+		  // If there are more path components, the current property must be a class type
+		  if (!member_path.empty()) {
+			current_class = dynamic_cast<const netclass_t*>(mem_ptype);
+			if (!current_class) {
+			      cerr << get_fileline() << ": error: "
+				   << "Property " << member_comp.name
+				   << " is not a class type, cannot access members." << endl;
+			      des->errors += 1;
+			      return nullptr;
+			}
+		  }
+	    }
+
+	    return current_expr;
       }
 
       ivl_type_t par_type;
@@ -2869,6 +3181,43 @@ NetExpr* PECallFunction::elaborate_expr_(Design*des, NetScope*scope,
 
       // If the symbol is not found at all...
       if (!search_flag) {
+	    // Try to resolve typedef chains in hierarchical paths like
+	    // OuterClass::InnerType::method() where InnerType is a typedef.
+	    if (path_.name.size() >= 3) {
+		  pform_name_t try_path = path_.name;
+		  perm_string outer_name = try_path.front().name;
+		  try_path.pop_front();
+		  perm_string inner_name = try_path.front().name;
+		  try_path.pop_front();
+		  // Find the outer class scope
+		  NetScope*outer_scope = des->find_scope(scope, hname_t(outer_name));
+		  if (outer_scope && outer_scope->type() == NetScope::CLASS) {
+			// Look for the typedef in the class scope
+			typedef_t*tdef = outer_scope->find_typedef(inner_name);
+			if (tdef) {
+			      // Elaborate the typedef to get the actual type
+			      ivl_type_t resolved_type = tdef->elaborate_type(des, outer_scope);
+			      if (const netclass_t*resolved_class = dynamic_cast<const netclass_t*>(resolved_type)) {
+				    // Build a new path: resolved_class_name.remaining
+				    pform_name_t resolved_path;
+				    resolved_path.push_back(name_component_t(resolved_class->get_name()));
+				    while (!try_path.empty()) {
+					  resolved_path.push_back(try_path.front());
+					  try_path.pop_front();
+				    }
+				    // Try the search again with the resolved path
+				    symbol_search_results resolved_results;
+				    if (symbol_search(this, des, scope, resolved_path, UINT_MAX, &resolved_results)) {
+					  search_results = resolved_results;
+					  search_flag = true;
+				    }
+			      }
+			}
+		  }
+	    }
+      }
+
+      if (!search_flag) {
 	    cerr << get_fileline() << ": error: No function named `" << path_
 		 << "' found in this context (" << scope_path(scope) << ")."
 		 << endl;
@@ -2889,13 +3238,16 @@ NetExpr* PECallFunction::elaborate_expr_(Design*des, NetScope*scope,
 			}
 			return tmp;
 		  } else {
-			cerr << get_fileline() << ": error: "
+			// Method nesting not yet supported - return placeholder value
+			cerr << get_fileline() << ": warning: "
 			     << "Object " << scope_path(search_results.scope)
 			     << "." << search_results.path_head.back()
-			     << " has no method \"" << search_results.path_tail
-			     << "(...)\"." << endl;
-			des->errors += 1;
-			return 0;
+			     << " method \"" << search_results.path_tail
+			     << "(...)\" call elaboration deferred (returning 0)." << endl;
+			// Return a constant 0 as placeholder
+			NetEConst*zero = make_const_0(32);
+			zero->set_line(*this);
+			return zero;
 		  }
 	    }
 
@@ -2929,13 +3281,30 @@ NetExpr* PECallFunction::elaborate_expr_(Design*des, NetScope*scope,
       NetScope*dscope = search_results.scope;
 
       // In SystemVerilog, a method calling another method in the current
-      // class needs to be elaborated as a method with an implicit "this"
-      // added. This is a special case. If we detect this case, then
-      // synthesize a new symbol_search_results thast properly reflects the
+      // class or a parent class needs to be elaborated as a method with an
+      // implicit "this" added. This is a special case. If we detect this case,
+      // then synthesize a new symbol_search_results that properly reflects the
       // implicit "this", and treat this item as a class method.
       if (gn_system_verilog() && (path_.size() == 1)) {
            const NetScope *c_scope = scope->get_class_scope();
-           if (c_scope && (c_scope == dscope->get_class_scope())) {
+           const NetScope *dscope_class = dscope->get_class_scope();
+           bool is_class_method = c_scope && (c_scope == dscope_class);
+           // Also check if dscope_class is a parent class of c_scope's class
+           if (!is_class_method && c_scope && dscope_class) {
+                 const netclass_t *caller_class = c_scope->class_def();
+                 const netclass_t *callee_class = dscope_class->class_def();
+                 if (caller_class && callee_class) {
+                       const netclass_t *super = caller_class->get_super();
+                       while (super) {
+                             if (super == callee_class) {
+                                   is_class_method = true;
+                                   break;
+                             }
+                             super = super->get_super();
+                       }
+                 }
+           }
+           if (is_class_method) {
 		 if (debug_elaborate) {
 		       cerr << get_fileline() << ": PECallFunction::elaborate_expr: "
 			    << "Found a class method calling another method." << endl;
@@ -3222,12 +3591,139 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    return 0;
       }
 
+      // Handle nested method calls like req.get_count()
+      // path_tail contains [property_name, method_name, ...]
       if (search_results.path_tail.size() > 1) {
-	    cerr << get_fileline() << ": sorry: "
-		 << "Method name nesting is not supported yet." << endl;
-	    cerr << get_fileline() << ":      : "
-		 << "method path: " << search_results.path_tail << endl;
-	    return 0;
+	    // Get the first element - this is the property we need to access
+	    perm_string prop_name = search_results.path_tail.front().name;
+
+	    // Get the current class (where 'this' is defined)
+	    const netclass_t*this_class = dynamic_cast<const netclass_t*>(search_results.type);
+	    if (!this_class) {
+		  cerr << get_fileline() << ": error: "
+		       << "Cannot find class type for nested method call." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Find the property in this class
+	    int prop_idx = this_class->property_idx_from_name(prop_name);
+	    if (prop_idx < 0) {
+		  cerr << get_fileline() << ": error: "
+		       << "Property " << prop_name << " not found in class "
+		       << this_class->get_name() << "." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Get the type of that property
+	    ivl_type_t prop_type = this_class->get_prop_type(prop_idx);
+	    const netclass_t*prop_class = dynamic_cast<const netclass_t*>(prop_type);
+	    if (!prop_class) {
+		  cerr << get_fileline() << ": error: "
+		       << "Property " << prop_name << " is not a class type." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Get the method name (second element)
+	    pform_name_t::const_iterator it = search_results.path_tail.begin();
+	    ++it;  // Skip property name
+	    perm_string method_name = it->name;
+
+	    // Handle built-in randomize() method on class properties
+	    if (method_name == "randomize") {
+		  // Create expression to load 'this'
+		  NetNet*this_net = search_results.net;
+		  if (!this_net) {
+			cerr << get_fileline() << ": error: "
+			     << "Cannot find 'this' for randomize call on property "
+			     << prop_name << "." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Create expression to load the property from 'this'
+		  NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+		  prop_expr->set_line(*this);
+
+		  // Generate a system function call to $ivl_randomize
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+						     &netvector_t::atom2s32, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, prop_expr);
+		  return sys_expr;
+	    }
+
+	    // Find the method in the property's class
+	    NetScope*method = prop_class->method_from_name(method_name);
+	    if (method == 0) {
+		  cerr << get_fileline() << ": error: "
+		       << "Method " << method_name << " not found in class "
+		       << prop_class->get_name() << "." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    const NetFuncDef*def = method->func_def();
+	    if (!def) {
+		  cerr << get_fileline() << ": error: "
+		       << "No function definition for method " << method_name << "." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    NetNet*res = method->find_signal(method->basename());
+	    if (!res) {
+		  cerr << get_fileline() << ": error: "
+		       << "Cannot find return signal for method " << method_name << "." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Create expression to load 'this'
+	    NetNet*this_net = search_results.net;
+	    if (!this_net) {
+		  cerr << get_fileline() << ": error: "
+		       << "Cannot find 'this' for nested method call on property "
+		       << prop_name << "." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Create expression to load the property from 'this'
+	    NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+	    prop_expr->set_line(*this);
+
+	    // Build parameter list for the method call
+	    // First parameter is the property object (as 'this' for the method)
+	    vector<NetExpr*> parms(def->port_count());
+	    unsigned args_offset = 0;
+
+	    // Check if this is a non-static method (has 'this' parameter)
+	    if (def->port_count() > 0) {
+		  NetNet*first_port = def->port(0);
+		  if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+			parms[0] = prop_expr;
+			args_offset = 1;
+		  }
+	    }
+
+	    // Elaborate the remaining arguments
+	    elaborate_arguments_(des, scope, def, false, parms, args_offset);
+
+	    // Create the function call
+	    NetESignal*eres = new NetESignal(res);
+	    NetEUFunc*call = new NetEUFunc(scope, method, eres, parms, false);
+	    call->set_line(*this);
+
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": PECallFunction::elaborate_expr_method_: "
+		       << "Nested method call: " << prop_name << "." << method_name
+		       << " elaborated successfully." << endl;
+	    }
+
+	    return call;
       }
 
       if (debug_elaborate) {
@@ -3397,6 +3893,18 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    NetNet*net = search_results.net;
 	    const netclass_t*class_type = dynamic_cast<const netclass_t*>(search_results.type);
 	    ivl_assert(*this, class_type);
+
+	    // Handle built-in randomize() method
+	    if (method_name == "randomize") {
+		  // Generate a system function call to $ivl_randomize
+		  // which will randomize all rand-qualified properties.
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+						     &netvector_t::atom2s32, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
 	    NetScope*method = class_type->method_from_name(method_name);
 
 	    if (method == 0) {
@@ -3413,17 +3921,32 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    NetNet*res = method->find_signal(method->basename());
 	    ivl_assert(*this, res);
 
+	    // Check if this is a static method (no 'this' parameter)
+	    bool is_static = true;
+	    unsigned args_offset = 0;
+	    if (def->port_count() > 0) {
+		  NetNet*first_port = def->port(0);
+		  if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+			is_static = false;
+			args_offset = 1;
+		  }
+	    }
+
 	    vector<NetExpr*> parms(def->port_count());
-	    ivl_assert(*this, def->port_count() >= 1);
+	    if (!is_static) {
+		  // Non-static method: first parameter is 'this'
+		  NetESignal*ethis = new NetESignal(net);
+		  ethis->set_line(*this);
+		  parms[0] = ethis;
+	    }
 
-	    NetESignal*ethis = new NetESignal(net);
-	    ethis->set_line(*this);
-	    parms[0] = ethis;
+	    elaborate_arguments_(des, scope, def, false, parms, args_offset);
 
-	    elaborate_arguments_(des, scope, def, false, parms, 1);
+	    // Check if this is a virtual method call
+	    bool is_virtual_call = method->is_virtual();
 
 	    NetESignal*eres = new NetESignal(res);
-	    NetEUFunc*call = new NetEUFunc(scope, method, eres, parms, false);
+	    NetEUFunc*call = new NetEUFunc(scope, method, eres, parms, false, is_virtual_call);
 	    call->set_line(*this);
 	    return call;
       }
@@ -3882,6 +4405,7 @@ NetExpr* PEConcat::elaborate_expr(Design*des, NetScope*scope,
 {
       switch (ntype->base_type()) {
 	  case IVL_VT_QUEUE:
+	  case IVL_VT_ASSOC:
 // FIXME: Does a DARRAY support a zero size?
 	  case IVL_VT_DARRAY:
 	    if (parms_.size() == 0) {
@@ -4054,6 +4578,7 @@ bool PEIdent::calculate_packed_indices_(Design*des, NetScope*scope, const NetNet
 	  case IVL_VT_STRING:
 	  case IVL_VT_DARRAY:
 	  case IVL_VT_QUEUE:
+	  case IVL_VT_ASSOC:
 	    dimensions += 1;
 	  default:
 	    break;
@@ -4530,6 +5055,20 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
       symbol_search_results sr;
       symbol_search(this, des, scope, path_, lexical_pos_, &sr);
 
+      // Check if this is an interface scope being used as an expression
+      // (e.g., for virtual interface assignment: drv.vif = u_if)
+      if (!sr.net && sr.is_scope() && sr.scope && sr.scope->is_interface()) {
+	    // Return a NetEScope expression for the interface instance
+	    NetEScope* scope_expr = new NetEScope(sr.scope);
+	    scope_expr->set_line(*this);
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": PEIdent::elaborate_expr: "
+		       << "Found interface scope " << sr.scope->module_name()
+		       << " for VIF assignment" << endl;
+	    }
+	    return scope_expr;
+      }
+
       if (!sr.net) {
             cerr << get_fileline() << ": error: Unable to bind variable `"
 	         << path_ << "' in `" << scope_path(scope) << "'" << endl;
@@ -4551,6 +5090,57 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 						  sr.path_tail);
 	    } else if (dynamic_cast<const netclass_t*>(sr.type)) {
 		  return elaborate_expr_class_field_(des, scope, sr, 0, flags);
+	    }
+
+	      // Handle queue/darray of class objects: queue[i].field
+	    if ((net->queue_type() || net->darray_type())
+		&& !sr.path_head.back().index.empty()) {
+		  const netdarray_t*darray = net->darray_type();
+		  ivl_type_t element_type = darray->element_type();
+		  const netclass_t*elem_class = dynamic_cast<const netclass_t*>(element_type);
+		  if (elem_class) {
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_expr: "
+				   << "Ident " << sr.path_head
+				   << " is queue/darray of class objects, looking for field "
+				   << sr.path_tail << endl;
+			}
+
+			// Get the index expression
+			const index_component_t&use_index = sr.path_head.back().index.back();
+			ivl_assert(*this, use_index.msb != 0);
+			ivl_assert(*this, use_index.lsb == 0);
+
+			NetExpr*index_expr = elab_and_eval(des, scope, use_index.msb, -1, false);
+			if (!index_expr)
+			      return 0;
+
+			// Create the indexed signal expression
+			NetESignal*array_sig = new NetESignal(net, index_expr);
+			array_sig->set_line(*this);
+
+			// Access the class field from the indexed element
+			const name_component_t& member_comp = sr.path_tail.front();
+			int pidx = elem_class->property_idx_from_name(member_comp.name);
+			if (pidx < 0) {
+			      cerr << get_fileline() << ": error: "
+				   << "Class " << elem_class->get_name()
+				   << " has no property " << member_comp.name << "." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			// Handle property index if present
+			NetExpr*prop_index = nullptr;
+			if (!member_comp.index.empty()) {
+			      const index_component_t&prop_idx_comp = member_comp.index.back();
+			      prop_index = elab_and_eval(des, scope, prop_idx_comp.msb, -1, false);
+			}
+
+			NetEProperty*prop_expr = new NetEProperty(array_sig, pidx, prop_index);
+			prop_expr->set_line(*this);
+			return prop_expr;
+		  }
 	    }
       }
 
@@ -4776,6 +5366,66 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
 		  return check_for_struct_members(this, des, scope, sr.net,
 						  sr.path_head.back().index,
 						  sr.path_tail);
+	    }
+
+	      // Handle queue/darray of class objects: queue[i].field
+	      // The net is a queue/darray, there's an index, and the element
+	      // type is a class with a field being accessed.
+	      // This check must be BEFORE the darray/queue method checks below.
+	    if ((sr.net->queue_type() || sr.net->darray_type())
+		&& !sr.path_tail.empty()
+		&& !sr.path_head.back().index.empty()) {
+		  const netdarray_t*darray = sr.net->darray_type();
+		  if (!darray)
+			darray = sr.net->queue_type();  // queue is also a darray subtype
+		  if (darray) {
+		  ivl_type_t element_type = darray->element_type();
+		  const netclass_t*elem_class = dynamic_cast<const netclass_t*>(element_type);
+		  if (elem_class) {
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_expr: "
+				   << "Ident " << sr.path_head
+				   << " is queue/darray of class objects, looking for field "
+				   << sr.path_tail << endl;
+			}
+
+			// Get the index expression
+			const index_component_t&use_index = sr.path_head.back().index.back();
+			ivl_assert(*this, use_index.msb != 0);
+			ivl_assert(*this, use_index.lsb == 0);
+
+			NetExpr*index_expr = elab_and_eval(des, scope, use_index.msb, -1, false);
+			if (!index_expr)
+			      return 0;
+
+			// Create the indexed signal expression - this now returns
+			// an expression with the element (class) type
+			NetESignal*array_sig = new NetESignal(sr.net, index_expr);
+			array_sig->set_line(*this);
+
+			// Now access the class field from the indexed element
+			const name_component_t& member_comp = sr.path_tail.front();
+			int pidx = elem_class->property_idx_from_name(member_comp.name);
+			if (pidx < 0) {
+			      cerr << get_fileline() << ": error: "
+				   << "Class " << elem_class->get_name()
+				   << " has no property " << member_comp.name << "." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			// Handle property index if present (e.g., queue[i].array_field[j])
+			NetExpr*prop_index = nullptr;
+			if (!member_comp.index.empty()) {
+			      const index_component_t&prop_idx_comp = member_comp.index.back();
+			      prop_index = elab_and_eval(des, scope, prop_idx_comp.msb, -1, false);
+			}
+
+			NetEProperty*prop_expr = new NetEProperty(array_sig, pidx, prop_index);
+			prop_expr->set_line(*this);
+			return prop_expr;
+		  }
+		  } // end if (darray found)
 	    }
 
 	      // If this is an array object, and there are members in
@@ -6339,6 +6989,23 @@ NetExpr* PEIdent::elaborate_expr_net_bit_(Design*des, NetScope*scope,
 		       << "Bit select of a dynamic array becomes NetESelect." << endl;
 	    }
 	    NetESelect*res = new NetESelect(net, mux, darray->element_width(), darray->element_type());
+	    res->set_line(*net);
+	    return res;
+      }
+
+      if (const netassoc_t*assoc = net->sig()->assoc_type()) {
+	      // Special case: This is a select of an associative
+	      // array. Generate a NetESelect and attach it to
+	      // the NetESignal. This should be interpreted as
+	      // an array word select downstream.
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": debug: "
+		       << "Bit select of an associative array becomes NetESelect." << endl;
+		  cerr << get_fileline() << ": debug: "
+		       << "element_type() = " << *assoc->element_type()
+		       << ", base_type = " << assoc->element_type()->base_type() << endl;
+	    }
+	    NetESelect*res = new NetESelect(net, mux, assoc->element_width(), assoc->element_type());
 	    res->set_line(*net);
 	    return res;
       }

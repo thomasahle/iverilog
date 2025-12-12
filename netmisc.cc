@@ -984,6 +984,13 @@ NetExpr* elab_and_eval(Design*des, NetScope*scope, PExpr*pe,
 		case IVL_VT_CLASS:
 		  if (dynamic_cast<PENull*>(pe))
 			return tmp;
+		  // Allow interface scope expressions for virtual interface assignment
+		  if (NetEScope* scope_expr = dynamic_cast<NetEScope*>(tmp)) {
+			if (scope_expr->scope() && scope_expr->scope()->is_interface()) {
+			      // This is an interface instance being assigned to a VIF property
+			      return tmp;
+			}
+		  }
 		  break;
 		default:
 		  break;
@@ -1062,6 +1069,11 @@ bool evaluate_range(Design*des, NetScope*scope, const LineInfo*li,
       } else if (dynamic_cast<PENull*>(range.first)) {
             cerr << li->get_fileline() << ": error: "
                     "A queue dimension is not allowed here." << endl;
+            dimension_ok = false;
+            des->errors += 1;
+      } else if (dynamic_cast<PETypename*>(range.first)) {
+            cerr << li->get_fileline() << ": error: "
+                    "An associative array dimension is not allowed here." << endl;
             dimension_ok = false;
             des->errors += 1;
       } else {

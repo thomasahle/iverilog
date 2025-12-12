@@ -42,3 +42,28 @@ ivl_variable_type_t netstring_t::base_type() const
 {
       return IVL_VT_STRING;
 }
+
+netvirtual_interface_t::~netvirtual_interface_t()
+{
+}
+
+ivl_variable_type_t netvirtual_interface_t::base_type() const
+{
+      // Use IVL_VT_CLASS since virtual interfaces are references to interface instances
+      return IVL_VT_CLASS;
+}
+
+bool netvirtual_interface_t::test_equivalence(ivl_type_t that) const
+{
+      const netvirtual_interface_t*that_vif = dynamic_cast<const netvirtual_interface_t*>(that);
+      if (that_vif == nullptr)
+            return false;
+      // Two virtual interface types are equivalent if they have the same interface name
+      return interface_name_ == that_vif->interface_name_;
+}
+
+ostream& netvirtual_interface_t::debug_dump(ostream&out) const
+{
+      out << "virtual interface " << interface_name_;
+      return out;
+}

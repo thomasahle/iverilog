@@ -29,6 +29,7 @@
 # include  "codes.h"
 # include  "schedule.h"
 # include  "vpi_priv.h"
+# include  "class_type.h"
 # include  "parse_misc.h"
 # include  "statistics.h"
 # include  "schedule.h"
@@ -112,11 +113,18 @@ static const struct opcode_table_s opcode_table[] = {
       { "%callf/real",      of_CALLF_REAL,      2,{OA_CODE_PTR2,OA_VPI_PTR, OA_NONE} },
       { "%callf/str",       of_CALLF_STR,       2,{OA_CODE_PTR2,OA_VPI_PTR, OA_NONE} },
       { "%callf/vec4",      of_CALLF_VEC4,      2,{OA_CODE_PTR2,OA_VPI_PTR, OA_NONE} },
+      { "%callf/virt/obj",  of_CALLF_VIRT_OBJ,  2,{OA_CODE_PTR2,OA_VPI_PTR, OA_NONE} },
+      { "%callf/virt/real", of_CALLF_VIRT_REAL, 2,{OA_CODE_PTR2,OA_VPI_PTR, OA_NONE} },
+      { "%callf/virt/str",  of_CALLF_VIRT_STR,  2,{OA_CODE_PTR2,OA_VPI_PTR, OA_NONE} },
+      { "%callf/virt/vec4", of_CALLF_VIRT_VEC4, 2,{OA_CODE_PTR2,OA_VPI_PTR, OA_NONE} },
+      { "%callf/virt/void", of_CALLF_VIRT_VOID, 2,{OA_CODE_PTR2,OA_VPI_PTR, OA_NONE} },
       { "%callf/void",      of_CALLF_VOID,      2,{OA_CODE_PTR2,OA_VPI_PTR, OA_NONE} },
       { "%cassign/link",    of_CASSIGN_LINK,    2,{OA_FUNC_PTR,OA_FUNC_PTR2,OA_NONE} },
       { "%cassign/vec4",    of_CASSIGN_VEC4,    1,{OA_FUNC_PTR,OA_NONE,     OA_NONE} },
       { "%cassign/vec4/off",of_CASSIGN_VEC4_OFF,2,{OA_FUNC_PTR,OA_BIT1,     OA_NONE} },
       { "%cassign/wr",  of_CASSIGN_WR,  1,{OA_FUNC_PTR,OA_NONE,     OA_NONE} },
+      { "%cast",          of_CAST,          2,  {OA_FUNC_PTR2, OA_VPI_PTR,  OA_NONE} },
+      { "%cast/prop",     of_CAST_PROP,     2,  {OA_BIT1,     OA_VPI_PTR,  OA_NONE} },
       { "%cast/vec2/dar", of_CAST_VEC2_DAR, 1,  {OA_NUMBER,   OA_NONE,     OA_NONE} },
       { "%cast/vec4/dar", of_CAST_VEC4_DAR, 1,  {OA_NUMBER,   OA_NONE,     OA_NONE} },
       { "%cast/vec4/str", of_CAST_VEC4_STR, 1,  {OA_NUMBER,   OA_NONE,     OA_NONE} },
@@ -168,6 +176,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%evctl/s",of_EVCTLS, 2,  {OA_FUNC_PTR, OA_BIT1,     OA_NONE} },
       { "%event",    of_EVENT,    1, {OA_FUNC_PTR, OA_NONE, OA_NONE} },
       { "%event/nb", of_EVENT_NB, 2, {OA_FUNC_PTR, OA_BIT1, OA_NONE} },
+      { "%factory/create", of_FACTORY_CREATE, 0, {OA_NONE, OA_NONE, OA_NONE} },
       { "%flag_get/vec4", of_FLAG_GET_VEC4, 1, {OA_NUMBER, OA_NONE, OA_NONE} },
       { "%flag_inv",      of_FLAG_INV,      1, {OA_BIT1,   OA_NONE, OA_NONE} },
       { "%flag_mov",      of_FLAG_MOV,      2, {OA_BIT1,   OA_BIT2, OA_NONE} },
@@ -199,12 +208,15 @@ static const struct opcode_table_s opcode_table[] = {
       { "%join",   of_JOIN,   0,  {OA_NONE,     OA_NONE,     OA_NONE} },
       { "%join/detach",of_JOIN_DETACH,1,{OA_NUMBER,OA_NONE,  OA_NONE} },
       { "%load/ar",of_LOAD_AR,2,  {OA_ARR_PTR,  OA_BIT1,     OA_NONE} },
+      { "%load/assoc/vec4",of_LOAD_ASSOC_VEC4,1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },
+      { "%load/dar/o",  of_LOAD_DAR_O,    1, {OA_FUNC_PTR, OA_NONE, OA_NONE}},
       { "%load/dar/r",  of_LOAD_DAR_R,    1, {OA_FUNC_PTR, OA_NONE, OA_NONE}},
       { "%load/dar/str",of_LOAD_DAR_STR,  1, {OA_FUNC_PTR, OA_NONE, OA_NONE} },
       { "%load/dar/vec4",of_LOAD_DAR_VEC4,1, {OA_FUNC_PTR, OA_NONE, OA_NONE} },
       { "%load/obj",   of_LOAD_OBJ,  1,{OA_FUNC_PTR,OA_NONE, OA_NONE} },
       { "%load/obja",  of_LOAD_OBJA, 2,{OA_ARR_PTR, OA_BIT1, OA_NONE} },
       { "%load/real",  of_LOAD_REAL, 1,{OA_VPI_PTR, OA_NONE, OA_NONE} },
+      { "%load/scope", of_LOAD_SCOPE,1,{OA_VPI_PTR, OA_NONE, OA_NONE} },
       { "%load/str",   of_LOAD_STR,  1,{OA_FUNC_PTR,OA_NONE, OA_NONE} },
       { "%load/stra",  of_LOAD_STRA, 2,{OA_ARR_PTR, OA_BIT1, OA_NONE} },
       { "%load/vec4",  of_LOAD_VEC4, 1,{OA_FUNC_PTR,OA_NONE,  OA_NONE} },
@@ -258,6 +270,16 @@ static const struct opcode_table_s opcode_table[] = {
       { "%qpop/f/real",of_QPOP_F_REAL,1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },
       { "%qpop/f/str", of_QPOP_F_STR, 1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },
       { "%qpop/f/v",   of_QPOP_F_V,   2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
+	/* Queue property method stubs (data from stacks) */
+      { "%qprop/delete",     of_QPROP_DELETE,      0,{OA_NONE,OA_NONE,OA_NONE} },
+      { "%qprop/delete/elem",of_QPROP_DELETE_ELEM, 0,{OA_NONE,OA_NONE,OA_NONE} },
+      { "%qprop/insert/o",   of_QPROP_INSERT_O,    0,{OA_NONE,OA_NONE,OA_NONE} },
+      { "%qprop/insert/v",   of_QPROP_INSERT_V,    0,{OA_NONE,OA_NONE,OA_NONE} },
+      { "%qprop/qb/o",       of_QPROP_QB_O,        0,{OA_NONE,OA_NONE,OA_NONE} },
+      { "%qprop/qb/v",       of_QPROP_QB_V,        0,{OA_NONE,OA_NONE,OA_NONE} },
+      { "%qprop/qf/o",       of_QPROP_QF_O,        0,{OA_NONE,OA_NONE,OA_NONE} },
+      { "%qprop/qf/v",       of_QPROP_QF_V,        0,{OA_NONE,OA_NONE,OA_NONE} },
+      { "%randomize",  of_RANDOMIZE,   0, {OA_NONE,    OA_NONE,OA_NONE} },
       { "%release/net",of_RELEASE_NET,3,{OA_FUNC_PTR,OA_BIT1,OA_BIT2} },
       { "%release/reg",of_RELEASE_REG,3,{OA_FUNC_PTR,OA_BIT1,OA_BIT2} },
       { "%release/wr", of_RELEASE_WR, 2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
@@ -276,6 +298,9 @@ static const struct opcode_table_s opcode_table[] = {
       { "%shiftr",   of_SHIFTR,   1, {OA_NUMBER, OA_NONE,   OA_NONE} },
       { "%shiftr/s", of_SHIFTR_S, 1, {OA_NUMBER, OA_NONE,   OA_NONE} },
       { "%split/vec4",    of_SPLIT_VEC4,    1,{OA_NUMBER,   OA_NONE, OA_NONE} },
+      { "%store/assoc/r",of_STORE_ASSOC_R,1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },
+      { "%store/assoc/str",of_STORE_ASSOC_STR,1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },
+      { "%store/assoc/vec4",of_STORE_ASSOC_VEC4,1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },
       { "%store/dar/r",   of_STORE_DAR_R,   1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },
       { "%store/dar/str", of_STORE_DAR_STR, 1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },
       { "%store/dar/vec4",of_STORE_DAR_VEC4,1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },
@@ -285,12 +310,14 @@ static const struct opcode_table_s opcode_table[] = {
       { "%store/prop/r",  of_STORE_PROP_R,  1, {OA_NUMBER,  OA_NONE, OA_NONE} },
       { "%store/prop/str",of_STORE_PROP_STR,1, {OA_NUMBER,  OA_NONE, OA_NONE} },
       { "%store/prop/v",  of_STORE_PROP_V,  2, {OA_NUMBER,  OA_BIT1, OA_NONE} },
+      { "%store/qb/o",   of_STORE_QB_O,    2, {OA_FUNC_PTR, OA_BIT1, OA_NONE} },
       { "%store/qb/r",   of_STORE_QB_R,    2, {OA_FUNC_PTR, OA_BIT1, OA_NONE} },
       { "%store/qb/str", of_STORE_QB_STR,  2, {OA_FUNC_PTR, OA_BIT1, OA_NONE} },
       { "%store/qb/v",   of_STORE_QB_V,    3, {OA_FUNC_PTR, OA_BIT1, OA_BIT2} },
       { "%store/qdar/r",  of_STORE_QDAR_R,  2,{OA_FUNC_PTR, OA_BIT1, OA_NONE} },
       { "%store/qdar/str",of_STORE_QDAR_STR,2,{OA_FUNC_PTR, OA_BIT1, OA_NONE} },
       { "%store/qdar/v",  of_STORE_QDAR_V,  3,{OA_FUNC_PTR, OA_BIT1, OA_BIT2} },
+      { "%store/qf/o",   of_STORE_QF_O,    2, {OA_FUNC_PTR, OA_BIT1, OA_NONE} },
       { "%store/qf/r",   of_STORE_QF_R,    2, {OA_FUNC_PTR, OA_BIT1, OA_NONE} },
       { "%store/qf/str", of_STORE_QF_STR,  2, {OA_FUNC_PTR, OA_BIT1, OA_NONE} },
       { "%store/qf/v",   of_STORE_QF_V,    3, {OA_FUNC_PTR, OA_BIT1, OA_BIT2} },
@@ -312,6 +339,8 @@ static const struct opcode_table_s opcode_table[] = {
       { "%test_nul/a",   of_TEST_NUL_A,   2,{OA_ARR_PTR, OA_BIT1,    OA_NONE} },
       { "%test_nul/obj", of_TEST_NUL_OBJ, 0,{OA_NONE,    OA_NONE,    OA_NONE} },
       { "%test_nul/prop",of_TEST_NUL_PROP,2,{OA_NUMBER,  OA_BIT1,    OA_NONE} },
+      { "%vif/load/v",  of_VIF_LOAD_V,  2, {OA_STRING,  OA_BIT1,    OA_NONE} },
+      { "%vif/store/v", of_VIF_STORE_V, 2, {OA_STRING,  OA_BIT1,    OA_NONE} },
       { "%wait",   of_WAIT,   1,  {OA_FUNC_PTR, OA_NONE,     OA_NONE} },
       { "%wait/fork",of_WAIT_FORK,0,{OA_NONE,   OA_NONE,     OA_NONE} },
       { "%xnor",   of_XNOR,   0,  {OA_NONE,     OA_NONE,     OA_NONE} },
@@ -771,6 +800,9 @@ void compile_cleanup(void)
       int lnerrs = -1;
       int nerrs = 0;
       int last;
+
+      // Resolve any deferred class parent links (for forward references)
+      compile_class_resolve_parents();
 
       if (verbose_flag) {
 	    fprintf(stderr, " ... Linking\n");
@@ -1921,6 +1953,30 @@ void compile_codelabel(char*label)
 
       val.ptr = ptr;
       sym_set_value(sym_codespace, label, val);
+
+      // If this is a TD_xxx label (thread definition) and we're inside a class method,
+      // update the method's entry point for virtual dispatch
+      if (strncmp(label, "TD_", 3) == 0) {
+            __vpiScope*func_scope = vpip_peek_current_scope();
+            if (func_scope && (func_scope->get_type_code() == vpiFunction ||
+                               func_scope->get_type_code() == vpiTask)) {
+                  // Check if parent is a class scope
+                  __vpiScope*class_scope = func_scope->scope;
+                  if (class_scope && class_scope->get_type_code() == vpiClassTypespec) {
+                        // Find the class_type in the module/package scope
+                        std::string class_name = class_scope->vpi_get_str(vpiName);
+                        __vpiScope*pkg_scope = class_scope->scope;
+                        if (pkg_scope) {
+                              auto it = pkg_scope->classes.find(class_name);
+                              if (it != pkg_scope->classes.end()) {
+                                    class_type*ct = it->second;
+                                    std::string method_name = func_scope->vpi_get_str(vpiName);
+                                    ct->set_method_entry(method_name, ptr);
+                              }
+                        }
+                  }
+            }
+      }
 
       free(label);
 }

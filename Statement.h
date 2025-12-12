@@ -40,6 +40,7 @@ class NetCAssign;
 class NetDeassign;
 class NetForce;
 class NetScope;
+class netclass_t;
 
 /*
  * The PProcess is the root of a behavioral process. Each process gets
@@ -257,6 +258,13 @@ class PCallTask  : public Statement {
 				         const std::vector<perm_string> &parm_names = {}) const;
       NetProc*elaborate_queue_method_(Design*des, NetScope*scope,
 				      NetNet*net,
+				      perm_string method_name,
+				      const char *sys_task_name,
+				      const std::vector<perm_string> &parm_names) const;
+      NetProc*elaborate_queue_prop_method_(Design*des, NetScope*scope,
+				      NetNet*net,
+				      const netclass_t*class_type,
+				      int pidx,
 				      perm_string method_name,
 				      const char *sys_task_name,
 				      const std::vector<perm_string> &parm_names) const;

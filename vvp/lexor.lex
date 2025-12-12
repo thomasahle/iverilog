@@ -81,6 +81,8 @@ inline uint64_t strtouint64(const char*str, char**endptr, int base)
 ^":vpi_time_precision" { return K_vpi_time_precision; }
 ^":file_names" { return K_file_names; }
 
+  /* Factory registration directive at beginning of line */
+^".factory"     { return K_FACTORY; }
 
   /* A label is any non-blank text that appears left justified. */
 ^[.$_a-zA-Z\\][.$_a-zA-Z\\0-9<>/]* {
@@ -190,6 +192,7 @@ inline uint64_t strtouint64(const char*str, char**endptr, int base)
 ".event"        { return K_EVENT; }
 ".event/or"     { return K_EVENT_OR; }
 ".export"       { return K_EXPORT; }
+".factory"      { return K_FACTORY; }
 ".extend/s"     { return K_EXTEND_S; }
 ".functor"      { return K_FUNCTOR; }
 ".import"       { return K_IMPORT; }
@@ -242,6 +245,7 @@ inline uint64_t strtouint64(const char*str, char**endptr, int base)
 ".ufunc/vec4"   { return K_UFUNC_VEC4; }
 ".ufunc/e"      { return K_UFUNC_E; }
 ".var"          { return K_VAR; }
+".var/assoc"    { return K_VAR_ASSOC; }
 ".var/cobj"     { return K_VAR_COBJECT; }
 ".var/darray"   { return K_VAR_DARRAY; }
 ".var/queue"    { return K_VAR_QUEUE; }

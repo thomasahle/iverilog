@@ -63,6 +63,10 @@ class netclass_t : public ivl_type_s {
 	// ivl_VT_CLASS object.
       ivl_variable_type_t base_type() const override;
 
+	// Test if this class is equivalent to another type.
+	// Classes are equivalent if they have the same name.
+      bool test_equivalence(ivl_type_t that) const override;
+
 	// This is the name of the class type
       inline perm_string get_name() const { return name_; }
 

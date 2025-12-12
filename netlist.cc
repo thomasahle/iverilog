@@ -28,6 +28,7 @@
 # include  "compiler.h"
 # include  "netlist.h"
 # include  "netmisc.h"
+# include  "netassoc.h"
 # include  "netclass.h"
 # include  "netdarray.h"
 # include  "netenum.h"
@@ -717,7 +718,16 @@ const netarray_t* NetNet::array_type() const
       if (array_type_)
 	    return array_type_;
 
+      // Also check for assoc type since netassoc_t inherits from netarray_t
+      if (const netassoc_t*assoc = assoc_type())
+	    return assoc;
+
       return darray_type();
+}
+
+const netassoc_t* NetNet::assoc_type(void) const
+{
+      return dynamic_cast<const netassoc_t*> (net_type_);
 }
 
 /*
@@ -2161,8 +2171,8 @@ const NetExpr* NetSTask::parm(unsigned idx) const
 }
 
 NetEUFunc::NetEUFunc(NetScope*scope, NetScope*def, NetESignal*res,
-                     vector<NetExpr*>&p, bool nc)
-: NetExpr(res->net_type()), scope_(scope), func_(def), result_sig_(res), parms_(p), need_const_(nc)
+                     vector<NetExpr*>&p, bool nc, bool is_virt)
+: NetExpr(res->net_type()), scope_(scope), func_(def), result_sig_(res), parms_(p), need_const_(nc), is_virtual_(is_virt)
 {
 }
 
@@ -2428,10 +2438,20 @@ NetESignal::NetESignal(NetNet*n, NetExpr*w)
       net_->incr_eref();
       set_line(*n);
 
-      if (word_)
-	    set_net_type(net_->net_type());
-      else
+      if (word_) {
+	      // When indexing into a dynamic array, queue, or associative array,
+	      // the result type should be the element type, not the array type.
+	    const netdarray_t*darray = net_->darray_type();
+	    const netassoc_t*assoc = net_->assoc_type();
+	    if (darray)
+		  set_net_type(darray->element_type());
+	    else if (assoc)
+		  set_net_type(assoc->element_type());
+	    else
+		  set_net_type(net_->net_type());
+      } else {
 	    set_net_type(net_->array_type());
+      }
 }
 
 NetESignal::~NetESignal()
@@ -2485,6 +2505,11 @@ long NetESignal::msi() const
 
 ivl_variable_type_t NetESignal::expr_type() const
 {
+	// If net_type() is set (e.g., from indexing a darray/queue),
+	// return the base type of that type (the element type).
+      if (net_type())
+	    return net_type()->base_type();
+
       if (net_->darray_type())
 	    return IVL_VT_DARRAY;
       else

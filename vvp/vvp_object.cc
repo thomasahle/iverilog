@@ -47,3 +47,11 @@ vvp_object* vvp_object::duplicate(void) const
       assert(0);
       return 0;
 }
+
+/*
+ * vvp_scope_ref destructor - we don't own the scope pointer,
+ * so just let the ref-counted base class handle cleanup.
+ */
+vvp_scope_ref::~vvp_scope_ref()
+{
+}

@@ -31,6 +31,7 @@
 # include  <cstring>
 # include  <cstdlib>
 # include  <sstream>
+# include  <set>
 # include  "ivl_assert.h"
 
 using namespace std;
@@ -115,6 +116,7 @@ NetScope::NetScope(NetScope*up, const hname_t&n, NetScope::TYPE t, NetScope*in_u
       events_ = 0;
       lcounter_ = 0;
       is_auto_ = false;
+      is_virtual_ = false;
       is_cell_ = false;
       calls_stask_ = false;
       in_final_ = false;
@@ -244,15 +246,26 @@ NetScope*NetScope::find_typedef_scope(const Design*des, const typedef_t*type)
       ivl_assert(*this, type);
 
       NetScope *cur_scope = this;
+      std::set<NetScope*> visited;
+
       while (cur_scope) {
+	      // Prevent infinite loops by tracking visited scopes
+	    if (visited.count(cur_scope)) {
+		  return 0;
+	    }
+	    visited.insert(cur_scope);
+
 	    auto it = cur_scope->typedefs_.find(type->name);
-	    if (it != cur_scope->typedefs_.end() && it->second == type)
+	    if (it != cur_scope->typedefs_.end() && it->second == type) {
 		  return cur_scope;
+	    }
+
 	    NetScope*import_scope = cur_scope->find_import(des, type->name);
 	    if (import_scope)
 		  cur_scope = import_scope;
-	    else if (cur_scope == unit_)
+	    else if (cur_scope == unit_) {
 		  return 0;
+	    }
 	    else
 		  cur_scope = cur_scope->parent();
 
@@ -260,6 +273,14 @@ NetScope*NetScope::find_typedef_scope(const Design*des, const typedef_t*type)
 		  cur_scope = unit_;
       }
 
+      return 0;
+}
+
+typedef_t*NetScope::find_typedef(perm_string name) const
+{
+      auto it = typedefs_.find(name);
+      if (it != typedefs_.end())
+	    return it->second;
       return 0;
 }
 
@@ -306,6 +327,22 @@ void NetScope::set_parameter(perm_string key, NetExpr*val,
       ivl_assert(file_line, ref.ivl_type);
       ref.val = val;
       ref.set_line(file_line);
+}
+
+/*
+ * This is a simplified version of set_parameter, for type parameters.
+ * The type value is stored directly in ivl_type.
+ */
+void NetScope::set_type_parameter(perm_string key, ivl_type_t type)
+{
+      param_expr_t&ref = parameters[key];
+      ref.is_annotatable = false;
+      ref.val_expr = 0;
+      ref.val_type = 0;
+      ref.val_scope = this;
+      ref.type_flag = true;
+      ref.ivl_type = type;
+      ref.val = 0;
 }
 
 bool NetScope::auto_name(const char*prefix, char pad, const char* suffix)
@@ -761,11 +798,10 @@ netclass_t*NetScope::find_class(const Design*des, perm_string name)
         // Try the imports.
       NetScope*import_scope = find_import(des, name);
       if (import_scope)
-            return import_scope->find_class(des, name);
+	    return import_scope->find_class(des, name);
 
       if (up_==0 && type_==CLASS) {
 	    ivl_assert(*this, class_def_);
-
 	    NetScope*def_parent = class_def_->definition_scope();
 	    return def_parent->find_class(des, name);
       }
@@ -841,6 +877,26 @@ const NetScope* NetScope::child_byname(perm_string name) const
       if (cur->first.peek_name() == name)
 	    return cur->second;
 
+      return 0;
+}
+
+/*
+ * Search through all children to find one whose module_name() matches
+ * the given type_name. This is used to find interface instances when
+ * we only know the interface type name, not the instance name.
+ */
+const NetScope* NetScope::child_by_module_name(perm_string type_name) const
+{
+      for (map<hname_t,NetScope*>::const_iterator cur = children_.begin()
+		 ; cur != children_.end() ; ++ cur ) {
+	    // Only MODULE scopes have module_name() - skip other types
+	    if (cur->second->type() == MODULE && cur->second->module_name() == type_name) {
+		  return cur->second;
+	    }
+	    // Also search recursively in children
+	    const NetScope* found = cur->second->child_by_module_name(type_name);
+	    if (found) return found;
+      }
       return 0;
 }
 

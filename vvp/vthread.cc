@@ -28,6 +28,7 @@
 # include  "vvp_cobject.h"
 # include  "vvp_darray.h"
 # include  "class_type.h"
+# include  "factory_registry.h"
 #ifdef CHECK_WITH_VALGRIND
 # include  "vvp_cleanup.h"
 #endif
@@ -524,6 +525,11 @@ inline static void pop_value(vthread_t thr, vvp_vector4_t&value, unsigned wid)
       assert(value.size() == wid);
 }
 
+inline static void pop_value(vthread_t thr, vvp_object_t&value, unsigned)
+{
+      thr->pop_object(value);
+}
+
 /*
  * The following are used to allow the queue templates to print correctly.
  */
@@ -558,6 +564,16 @@ inline static void print_queue_value(const string&value)
 inline static void print_queue_value(const vvp_vector4_t&value)
 {
       cerr << value;
+}
+
+inline static string get_queue_type(const vvp_object_t&)
+{
+      return "queue<object>";
+}
+
+inline static void print_queue_value(const vvp_object_t&)
+{
+      cerr << "<object>";
 }
 
 /*
@@ -642,6 +658,36 @@ static vvp_context_t vthread_alloc_context(__vpiScope*scope)
       scope->live_contexts = context;
 
       return context;
+}
+
+/*
+ * Allocate a new context and copy values from an existing context.
+ * This is used for fork/join_none where the forked thread needs its
+ * own copy of the automatic variables.
+ */
+static vvp_context_t vthread_copy_context(__vpiScope*scope, vvp_context_t src)
+{
+      assert(scope->is_automatic());
+      assert(src);
+
+      // Allocate new context
+      vvp_context_t dst = vvp_allocate_context(scope->nitem);
+
+      // First allocate instances for all items in the new context
+      for (unsigned idx = 0 ; idx < scope->nitem ; idx += 1) {
+            scope->item[idx]->alloc_instance(dst);
+      }
+
+      // Then copy values from source to destination
+      for (unsigned idx = 0 ; idx < scope->nitem ; idx += 1) {
+            scope->item[idx]->copy_instance(dst, src);
+      }
+
+      // Add to live contexts list
+      vvp_set_next_context(dst, scope->live_contexts);
+      scope->live_contexts = dst;
+
+      return dst;
 }
 
 /*
@@ -1538,6 +1584,237 @@ bool of_CALLF_VOID(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %callf/virt/void <method_name>, <base_code>, <base_scope>
+ * Virtual method call: look up the method in the object's actual class type
+ * and call that method. The object is retrieved from the '@' (this) variable
+ * in the base_scope that was allocated for the call.
+ */
+bool of_CALLF_VIRT_VOID(vthread_t thr, vvp_code_t cp)
+{
+      __vpiScope*base_scope = cp->scope;
+      // Get the method name from the scope's basename
+      const char*method_name = base_scope->scope_name();
+
+      // Find the '@' (this) variable in the base scope and get the object from it
+      vvp_object_t obj;
+      bool found_this = false;
+
+      // Get the write context - this is where the '@' parameter was stored
+      vvp_context_t wt_ctx = vthread_get_wt_context();
+
+      for (unsigned idx = 0; idx < base_scope->intern.size(); ++idx) {
+	    vpiHandle item = base_scope->intern[idx];
+	    if (item->get_type_code() == vpiClassVar) {
+		  // Check if this is the '@' variable (implicit 'this' parameter)
+		  const char* name = item->vpi_get_str(vpiName);
+		  if (name && strcmp(name, "@") == 0) {
+			// Found the 'this' variable - get its value from write context
+			__vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
+			if (var) {
+			      vvp_net_t*net = var->get_net();
+			      if (net && net->fun) {
+				    // Try to get from automatic variable (uses write context)
+				    vvp_fun_signal_object_aa*fun_aa =
+					  dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
+				    if (fun_aa && wt_ctx) {
+					  obj = fun_aa->get_object_from_context(wt_ctx);
+					  found_this = true;
+				    } else {
+					  // Fall back to static variable (uses internal storage)
+					  vvp_fun_signal_object*fun =
+						dynamic_cast<vvp_fun_signal_object*>(net->fun);
+					  if (fun) {
+						obj = fun->get_object();
+						found_this = true;
+					  }
+				    }
+			      }
+			}
+			break;
+		  }
+	    }
+      }
+
+      // If we couldn't find 'this', fall back to base class call
+      if (!found_this || obj.test_nil()) {
+	    vthread_t child = vthread_new(cp->cptr2, base_scope);
+	    return do_callf_void(thr, child);
+      }
+
+      // Get the cobject to access the class type
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (cobj == 0) {
+	    // Not a class object - use base class method
+	    vthread_t child = vthread_new(cp->cptr2, base_scope);
+	    return do_callf_void(thr, child);
+      }
+
+      // Get the actual class type from the object
+      const class_type*actual_class = cobj->get_class_type();
+      if (actual_class == 0) {
+	    // No class type - use base class method
+	    vthread_t child = vthread_new(cp->cptr2, base_scope);
+	    return do_callf_void(thr, child);
+      }
+
+      // Look up the method in the actual class type's method table
+      const class_type::method_info*method = actual_class->get_method(method_name);
+      if (method == 0 || method->entry == 0) {
+	    // Method not found in derived class - use base class
+	    vthread_t child = vthread_new(cp->cptr2, base_scope);
+	    return do_callf_void(thr, child);
+      }
+
+      // Call the method found in the actual class
+      vthread_t child = vthread_new(method->entry, method->scope);
+      return do_callf_void(thr, child);
+}
+
+/*
+ * Helper function for virtual method dispatch. Finds the '@' (this) variable,
+ * gets the actual class type, and looks up the method. Returns the method info
+ * or nullptr if virtual dispatch should fall back to base class call.
+ */
+static const class_type::method_info* resolve_virtual_method(vvp_code_t cp)
+{
+      __vpiScope*base_scope = cp->scope;
+      const char*method_name = base_scope->scope_name();
+
+      vvp_object_t obj;
+      bool found_this = false;
+      vvp_context_t wt_ctx = vthread_get_wt_context();
+
+      for (unsigned idx = 0; idx < base_scope->intern.size(); ++idx) {
+	    vpiHandle item = base_scope->intern[idx];
+	    if (item->get_type_code() == vpiClassVar) {
+		  const char* name = item->vpi_get_str(vpiName);
+		  if (name && strcmp(name, "@") == 0) {
+			__vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
+			if (var) {
+			      vvp_net_t*net = var->get_net();
+			      if (net && net->fun) {
+				    vvp_fun_signal_object_aa*fun_aa =
+					  dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
+				    if (fun_aa && wt_ctx) {
+					  obj = fun_aa->get_object_from_context(wt_ctx);
+					  found_this = true;
+				    } else {
+					  vvp_fun_signal_object*fun =
+						dynamic_cast<vvp_fun_signal_object*>(net->fun);
+					  if (fun) {
+						obj = fun->get_object();
+						found_this = true;
+					  }
+				    }
+			      }
+			}
+			break;
+		  }
+	    }
+      }
+
+      if (!found_this || obj.test_nil())
+	    return nullptr;
+
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (cobj == 0)
+	    return nullptr;
+
+      const class_type*actual_class = cobj->get_class_type();
+      if (actual_class == 0)
+	    return nullptr;
+
+      const class_type::method_info*method = actual_class->get_method(method_name);
+      if (method == 0 || method->entry == 0)
+	    return nullptr;
+
+      return method;
+}
+
+bool of_CALLF_VIRT_VEC4(vthread_t thr, vvp_code_t cp)
+{
+      const class_type::method_info*method = resolve_virtual_method(cp);
+      vvp_code_t entry;
+      __vpiScope*scope;
+      if (method) {
+	    entry = method->entry;
+	    scope = method->scope;
+      } else {
+	    entry = cp->cptr2;
+	    scope = cp->scope;
+      }
+
+      vthread_t child = vthread_new(entry, scope);
+
+      vpiScopeFunction*scope_func = dynamic_cast<vpiScopeFunction*>(scope);
+      assert(scope_func);
+
+      thr->push_vec4(vvp_vector4_t(scope_func->get_func_width(), scope_func->get_func_init_val()));
+      child->args_vec4.push_back(0);
+
+      return do_callf_void(thr, child);
+}
+
+bool of_CALLF_VIRT_REAL(vthread_t thr, vvp_code_t cp)
+{
+      const class_type::method_info*method = resolve_virtual_method(cp);
+      vvp_code_t entry;
+      __vpiScope*scope;
+      if (method) {
+	    entry = method->entry;
+	    scope = method->scope;
+      } else {
+	    entry = cp->cptr2;
+	    scope = cp->scope;
+      }
+
+      vthread_t child = vthread_new(entry, scope);
+
+      thr->push_real(0.0);
+      child->args_real.push_back(0);
+
+      return do_callf_void(thr, child);
+}
+
+bool of_CALLF_VIRT_STR(vthread_t thr, vvp_code_t cp)
+{
+      const class_type::method_info*method = resolve_virtual_method(cp);
+      vvp_code_t entry;
+      __vpiScope*scope;
+      if (method) {
+	    entry = method->entry;
+	    scope = method->scope;
+      } else {
+	    entry = cp->cptr2;
+	    scope = cp->scope;
+      }
+
+      vthread_t child = vthread_new(entry, scope);
+
+      thr->push_str("");
+      child->args_str.push_back(0);
+
+      return do_callf_void(thr, child);
+}
+
+bool of_CALLF_VIRT_OBJ(vthread_t thr, vvp_code_t cp)
+{
+      const class_type::method_info*method = resolve_virtual_method(cp);
+      vvp_code_t entry;
+      __vpiScope*scope;
+      if (method) {
+	    entry = method->entry;
+	    scope = method->scope;
+      } else {
+	    entry = cp->cptr2;
+	    scope = cp->scope;
+      }
+
+      vthread_t child = vthread_new(entry, scope);
+      return do_callf_void(thr, child);
+}
+
+/*
  * The %cassign/link instruction connects a source node to a
  * destination node. The destination node must be a signal, as it is
  * marked with the source of the cassign so that it may later be
@@ -1666,6 +1943,110 @@ bool of_CASSIGN_WR(vthread_t thr, vvp_code_t cp)
 	/* Set the value into port 1 of the destination. */
       vvp_net_ptr_t ptr (net, 1);
       vvp_send_real(ptr, value, 0);
+
+      return true;
+}
+
+/*
+ * %cast <dst_signal>, <target_class_type>
+ *
+ * Pop the source object from the object stack.
+ * Check if its actual class is compatible with target_class_type.
+ * If compatible: store to dst_signal and push 1 to vec4 stack.
+ * If not compatible: push 0 to vec4 stack.
+ */
+bool of_CAST(vthread_t thr, vvp_code_t cp)
+{
+      // Get target class type from handle (in first union)
+      class_type*target_class = dynamic_cast<class_type*>(cp->handle);
+      if (!target_class) {
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      // Pop source object from object stack
+      vvp_object_t src;
+      thr->pop_object(src);
+
+      // Check if source is null
+      vvp_cobject*cobj = src.peek<vvp_cobject>();
+      if (cobj == 0) {
+	    // Null object - cast fails
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      // Get the actual class type of the source object
+      const class_type*actual_class = cobj->get_class_type();
+
+      // Check if actual_class is same as or derived from target_class
+      if (actual_class->is_derived_from(target_class)) {
+	    // Cast succeeds - store to destination (net2 is in second union) and return 1
+	    vvp_net_ptr_t ptr (cp->net2, 0);
+	    vvp_send_object(ptr, src, thr->wt_context);
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+      } else {
+	    // Cast fails - return 0
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+      }
+
+      return true;
+}
+
+/*
+ * %cast/prop <prop_idx>, <target_class>
+ * Cast and store to a property of an object.
+ * Object stack: [dest_obj, src_obj]
+ * Pop src_obj, check if compatible with target_class.
+ * If compatible: store to dest_obj.prop[prop_idx], push 1 to vec4 stack.
+ * If not compatible: push 0 to vec4 stack.
+ * Pop both objects from stack.
+ */
+bool of_CAST_PROP(vthread_t thr, vvp_code_t cp)
+{
+      // Get property index and target class type
+      // Note: OA_BIT1 is stored in cp->bit_idx[0], OA_VPI_PTR in cp->handle
+      unsigned prop_idx = cp->bit_idx[0];
+      class_type*target_class = dynamic_cast<class_type*>(cp->handle);
+
+      if (!target_class) {
+	    thr->pop_object(2);  // pop src and dest
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      // Pop source object
+      vvp_object_t src;
+      thr->pop_object(src);
+
+      // Pop destination object (the object containing the property)
+      vvp_object_t dest;
+      thr->pop_object(dest);
+
+      vvp_cobject*dest_cobj = dest.peek<vvp_cobject>();
+
+      // Check if source is null
+      vvp_cobject*src_cobj = src.peek<vvp_cobject>();
+      if (src_cobj == 0) {
+	    // Null source - cast fails
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      // Get the actual class type of the source object
+      const class_type*actual_class = src_cobj->get_class_type();
+
+      // Check if actual_class is same as or derived from target_class
+      if (actual_class->is_derived_from(target_class)) {
+	    // Cast succeeds - store src to dest's property
+	    if (dest_cobj) {
+		  dest_cobj->set_object(prop_idx, src, 0);
+	    }
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+      } else {
+	    // Cast fails
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+      }
 
       return true;
 }
@@ -3789,11 +4170,19 @@ bool of_JOIN_DETACH(vthread_t thr, vvp_code_t cp)
 	    vthread_t child = *thr->children.begin();
 	    assert(child->parent == thr);
 
-	      // We cannot detach automatic tasks/functions within an
-	      // automatic scope. If we try to do that, we might make
-	      // a mess of the allocation of the context. Note that it
-	      // is OK if the child context is distinct (See %exec_ufunc.)
-	    assert(child->wt_context==0 || thr->wt_context!=child->wt_context);
+	      // If the child shares the parent's automatic context, we need
+	      // to allocate a separate context for the child. Otherwise,
+	      // when the parent task completes and frees its context, the
+	      // detached child would crash trying to access freed memory.
+	    if (child->wt_context != 0 && thr->wt_context == child->wt_context) {
+		  __vpiScope*child_scope = child->parent_scope;
+		  if (child_scope && child_scope->is_automatic()) {
+			// Allocate and copy context for the detached child
+			vvp_context_t new_context = vthread_copy_context(child_scope, child->wt_context);
+			child->wt_context = new_context;
+			child->rd_context = new_context;
+		  }
+	    }
 	    if (child->i_have_ended) {
 		    // If the child has already ended, then reap it.
 		  vthread_reap(child);
@@ -3877,6 +4266,31 @@ bool of_LOAD_DAR_VEC4(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %load/dar/o <array-label>;
+ * Load an object from a darray/queue at the index in word register 3.
+ */
+bool of_LOAD_DAR_O(vthread_t thr, vvp_code_t cp)
+{
+      int64_t adr = thr->words[3].w_int;
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+
+      vvp_object_t word;
+      if (darray &&
+          (adr >= 0) && (thr->flags[4] == BIT4_0)) // A defined address >= 0
+	    darray->get_word(adr, word);
+      // else word remains nil
+
+      thr->push_object(word);
+      return true;
+}
+
+/*
  * %load/obj <var-label>
  */
 bool of_LOAD_OBJ(vthread_t thr, vvp_code_t cp)
@@ -3911,6 +4325,20 @@ bool of_LOAD_OBJA(vthread_t thr, vvp_code_t cp)
       }
 
       thr->push_object(word);
+      return true;
+}
+
+/*
+ * %load/scope <scope-label>
+ *    Load a scope reference (for virtual interface assignment).
+ *    The scope pointer is wrapped in a vvp_scope_ref object and
+ *    pushed onto the object stack.
+ */
+bool of_LOAD_SCOPE(vthread_t thr, vvp_code_t cp)
+{
+      __vpiScope*scope = cp->scope;
+      vvp_object_t val(new vvp_scope_ref(scope));
+      thr->push_object(val);
       return true;
 }
 
@@ -4518,6 +4946,129 @@ bool of_NEW_COBJ(vthread_t thr, vvp_code_t cp)
 
       vvp_object_t tmp (new vvp_cobject(defn));
       thr->push_object(tmp);
+      return true;
+}
+
+/*
+ * %factory/create
+ *
+ * This opcode creates a class object by looking up the class type name
+ * in the UVM factory registry. The type name is popped from the string
+ * stack, and the resulting object is pushed to the object stack.
+ *
+ * If the class is not found in the factory, a null object is pushed
+ * and an error message is displayed.
+ */
+bool of_FACTORY_CREATE(vthread_t thr, vvp_code_t)
+{
+      // Pop the type name from the string stack
+      string type_name = thr->pop_str();
+
+      // Look up the class in the factory registry
+      class_type* defn = vvp_factory_registry::instance().find_class(type_name);
+      if (defn == nullptr) {
+	    vpi_printf("UVM_FATAL: Factory cannot find class '%s'\n",
+		       type_name.c_str());
+	    // Push null object
+	    vvp_object_t null_obj;
+	    thr->push_object(null_obj);
+	    return true;
+      }
+
+      // Create the new object
+      vvp_object_t tmp(new vvp_cobject(defn));
+
+      // Look up the "new" method (constructor) for this class
+      const class_type::method_info* ctor = defn->get_method("new");
+      if (ctor == nullptr || ctor->entry == nullptr || ctor->scope == nullptr) {
+	    // No constructor - just return the uninitialized object
+	    thr->push_object(tmp);
+	    return true;
+      }
+
+      // Allocate context for the constructor scope (automatic function)
+      __vpiScope* ctor_scope = ctor->scope;
+      vvp_context_t child_context = vthread_alloc_context(ctor_scope);
+
+      // Push context onto write context stack
+      vvp_set_stacked_context(child_context, thr->wt_context);
+      thr->wt_context = child_context;
+
+      // Find the '@' (this) variable in the constructor scope and store the object
+      for (unsigned idx = 0; idx < ctor_scope->intern.size(); ++idx) {
+	    vpiHandle item = ctor_scope->intern[idx];
+	    if (item->get_type_code() == vpiClassVar) {
+		  const char* name = item->vpi_get_str(vpiName);
+		  if (name && strcmp(name, "@") == 0) {
+			__vpiBaseVar* var = dynamic_cast<__vpiBaseVar*>(item);
+			if (var) {
+			      vvp_net_t* net = var->get_net();
+			      if (net) {
+				    vvp_net_ptr_t ptr(net, 0);
+				    vvp_send_object(ptr, tmp, child_context);
+			      }
+			}
+			break;
+		  }
+	    }
+      }
+
+      // Create child thread to run the constructor
+      vthread_t child = vthread_new(ctor->entry, ctor_scope);
+      child->wt_context = child_context;
+      child->rd_context = child_context;
+
+      // Mark child as direct child of current thread
+      child->parent = thr;
+      thr->children.insert(child);
+
+      // Execute the constructor
+      assert(ctor_scope->get_type_code() == vpiFunction);
+      child->is_scheduled = 1;
+      child->i_am_in_function = 1;
+      vthread_run(child);
+      running_thread = thr;
+
+      // Get the resulting object from the '@' variable
+      vvp_object_t result;
+      for (unsigned idx = 0; idx < ctor_scope->intern.size(); ++idx) {
+	    vpiHandle item = ctor_scope->intern[idx];
+	    if (item->get_type_code() == vpiClassVar) {
+		  const char* name = item->vpi_get_str(vpiName);
+		  if (name && strcmp(name, "@") == 0) {
+			__vpiBaseVar* var = dynamic_cast<__vpiBaseVar*>(item);
+			if (var) {
+			      vvp_net_t* net = var->get_net();
+			      if (net && net->fun) {
+				    vvp_fun_signal_object_aa* fun_aa =
+					  dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
+				    if (fun_aa) {
+					  result = fun_aa->get_object_from_context(child_context);
+				    }
+			      }
+			}
+			break;
+		  }
+	    }
+      }
+
+      // Pop the context
+      thr->wt_context = vvp_get_stacked_context(child_context);
+
+      // Free the context
+      vthread_free_context(child_context, ctor_scope);
+
+      // Join with child thread (vthread_reap will handle cleanup)
+      if (child->i_have_ended) {
+	    vthread_reap(child);
+      }
+
+      // Push the result
+      if (result.test_nil()) {
+	    thr->push_object(tmp);  // Fall back to original object
+      } else {
+	    thr->push_object(result);
+      }
       return true;
 }
 
@@ -5329,6 +5880,63 @@ static bool do_release_vec(vvp_code_t cp, bool net_flag)
       return true;
 }
 
+/*
+ * %randomize
+ *
+ * Pop a class object from the object stack, randomize all its vec4 properties,
+ * and push 1 (success) to the vec4 stack.
+ *
+ * NOTE: This is a simplified implementation that randomizes ALL vec4 properties.
+ * A full implementation would only randomize properties marked with the 'rand'
+ * qualifier and would respect constraints.
+ */
+bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
+{
+      vvp_object_t obj;
+      thr->pop_object(obj);
+      vvp_cobject* cobj = obj.peek<vvp_cobject>();
+
+      if (cobj == nullptr) {
+	    // Object is null, randomize fails
+	    vvp_vector4_t res (32, BIT4_0);
+	    thr->push_vec4(res);
+	    return true;
+      }
+
+      const class_type* defn = cobj->get_class_type();
+      size_t nprop = defn->property_count();
+
+      // Randomize each property
+      // TODO: Only randomize properties marked with 'rand' qualifier
+      // TODO: Respect constraints
+      for (size_t i = 0; i < nprop; i++) {
+	    // Only randomize vec4-compatible properties (skip strings, objects, etc.)
+	    if (!defn->property_supports_vec4(i))
+		  continue;
+
+	    // Try to get the property as vec4 and randomize it
+	    vvp_vector4_t val;
+	    cobj->get_vec4(i, val);
+
+	    // Generate random bits for each bit of the vector
+	    unsigned wid = val.size();
+	    if (wid > 0) {
+		  vvp_vector4_t new_val (wid);
+		  for (unsigned b = 0; b < wid; b++) {
+			new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+		  }
+		  cobj->set_vec4(i, new_val);
+	    }
+      }
+
+      // Push success (1) to vec4 stack
+      vvp_vector4_t res (32, BIT4_0);
+      res.set_bit(0, BIT4_1);
+      thr->push_vec4(res);
+
+      return true;
+}
+
 bool of_RELEASE_NET(vthread_t, vvp_code_t cp)
 {
       return do_release_vec(cp, true);
@@ -5842,6 +6450,124 @@ bool of_STORE_DAR_VEC4(vthread_t thr, vvp_code_t cp)
       return store_dar<vvp_vector4_t>(thr, cp);
 }
 
+/*
+ * %load/assoc/vec4 <array-label>
+ * Load a vec4 value from an associative array.
+ * The string key is popped from the string stack.
+ */
+bool of_LOAD_ASSOC_VEC4(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+
+      vvp_vector4_t value;
+      if (assoc)
+	    assoc->get_word(key, value);
+      else
+	    value = vvp_vector4_t(32, BIT4_0); // Default 32-bit zero
+
+      thr->push_vec4(value);
+      return true;
+}
+
+/*
+ * %store/assoc/vec4 <array-label>
+ * Store a vec4 value to an associative array.
+ * The string key is popped from the string stack.
+ * The vec4 value is popped from the vec4 stack.
+ */
+bool of_STORE_ASSOC_VEC4(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();
+      vvp_vector4_t value = thr->pop_vec4();
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+      if (assoc == 0) {
+	      // Create a new associative array if it doesn't exist
+	    assoc = new vvp_assoc_vec4(value.size());
+	    vvp_object_t tmp(assoc);
+	    vvp_net_ptr_t ptr(net, 0);
+	    vvp_send_object(ptr, tmp, thr->wt_context);
+	    assoc = obj->get_object().peek<vvp_assoc>();
+      }
+
+      if (assoc)
+	    assoc->set_word(key, value);
+
+      return true;
+}
+
+/*
+ * %store/assoc/r <array-label>
+ */
+bool of_STORE_ASSOC_R(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();
+      double value = thr->pop_real();
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+      if (assoc == 0) {
+	    assoc = new vvp_assoc_real();
+	    vvp_object_t tmp(assoc);
+	    vvp_net_ptr_t ptr(net, 0);
+	    vvp_send_object(ptr, tmp, thr->wt_context);
+	    assoc = obj->get_object().peek<vvp_assoc>();
+      }
+
+      if (assoc)
+	    assoc->set_word(key, value);
+
+      return true;
+}
+
+/*
+ * %store/assoc/str <array-label>
+ */
+bool of_STORE_ASSOC_STR(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();
+      string value = thr->pop_str();
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+      if (assoc == 0) {
+	    assoc = new vvp_assoc_string();
+	    vvp_object_t tmp(assoc);
+	    vvp_net_ptr_t ptr(net, 0);
+	    vvp_send_object(ptr, tmp, thr->wt_context);
+	    assoc = obj->get_object().peek<vvp_assoc>();
+      }
+
+      if (assoc)
+	    assoc->set_word(key, value);
+
+      return true;
+}
+
 bool of_STORE_OBJ(vthread_t thr, vvp_code_t cp)
 {
 	/* set the value into port 0 of the destination. */
@@ -5984,6 +6710,143 @@ bool of_STORE_PROP_V(vthread_t thr, vvp_code_t cp)
       return store_prop<vvp_vector4_t>(thr, cp, cp->bit_idx[0]);
 }
 
+/*
+ * Helper function to find a signal by name in a scope.
+ * Returns the vvp_net_t* for the signal, or nullptr if not found.
+ */
+static vvp_net_t* find_signal_in_scope(__vpiScope* scope, const char* name)
+{
+      if (!scope) return nullptr;
+
+      // Iterate through the scope's internal items looking for signals
+      for (size_t i = 0; i < scope->intern.size(); ++i) {
+            __vpiHandle* handle = scope->intern[i];
+            if (!handle) continue;
+
+            // Check if this is a signal type using get_type_code()
+            int type = handle->get_type_code();
+            if (type == vpiNet || type == vpiReg || type == vpiIntegerVar ||
+                type == vpiByteVar || type == vpiBitVar || type == vpiShortIntVar ||
+                type == vpiIntVar || type == vpiLongIntVar) {
+                  __vpiSignal* sig = static_cast<__vpiSignal*>(handle);
+                  // Check if the name matches
+                  if (sig->id.name && strcmp(sig->id.name, name) == 0) {
+                        return sig->node;
+                  }
+            }
+      }
+      return nullptr;
+}
+
+/*
+ * %vif/load/v "member_name", <wid>
+ *
+ * Load a vector value from a virtual interface member signal.
+ * The virtual interface (scope pointer) is on the top of the object stack.
+ */
+bool of_VIF_LOAD_V(vthread_t thr, vvp_code_t cp)
+{
+      const char*member_name = cp->text;
+      unsigned wid = cp->bit_idx[0];
+
+      // Peek at the VIF scope reference from the object stack
+      vvp_object_t& vif_obj = thr->peek_object();
+      vvp_scope_ref* scope_ref = vif_obj.peek<vvp_scope_ref>();
+
+      if (!scope_ref) {
+            // Push undefined value if VIF is null
+            vvp_vector4_t val(wid, BIT4_X);
+            thr->push_vec4(val);
+            fprintf(stderr, "RUNTIME ERROR: Virtual interface is null when reading '%s'\n", member_name);
+            return true;
+      }
+
+      __vpiScope* vif_scope = scope_ref->get_scope();
+      if (!vif_scope) {
+            vvp_vector4_t val(wid, BIT4_X);
+            thr->push_vec4(val);
+            fprintf(stderr, "RUNTIME ERROR: Virtual interface scope is null when reading '%s'\n", member_name);
+            return true;
+      }
+
+      // Find the signal by name in the VIF scope
+      vvp_net_t* net = find_signal_in_scope(vif_scope, member_name);
+      if (!net) {
+            vvp_vector4_t val(wid, BIT4_X);
+            thr->push_vec4(val);
+            fprintf(stderr, "RUNTIME ERROR: Signal '%s' not found in virtual interface scope\n", member_name);
+            return true;
+      }
+
+      // Read the value from the signal
+      vvp_signal_value* sig = dynamic_cast<vvp_signal_value*>(net->fil);
+      if (!sig) {
+            vvp_vector4_t val(wid, BIT4_X);
+            thr->push_vec4(val);
+            fprintf(stderr, "RUNTIME ERROR: Signal '%s' has no value filter\n", member_name);
+            return true;
+      }
+
+      // Get the vec4 value and push onto stack
+      vvp_vector4_t val;
+      sig->vec4_value(val);
+
+      // Resize if necessary to match requested width
+      if (val.size() != wid) {
+            val.resize(wid);
+      }
+
+      thr->push_vec4(val);
+      return true;
+}
+
+/*
+ * %vif/store/v "member_name", <wid>
+ *
+ * Store a vector value to a virtual interface member signal.
+ * The virtual interface (scope pointer) is on the top of the object stack.
+ */
+bool of_VIF_STORE_V(vthread_t thr, vvp_code_t cp)
+{
+      const char*member_name = cp->text;
+      unsigned wid = cp->bit_idx[0];
+
+      // Pop the value from the vec4 stack
+      vvp_vector4_t val = thr->pop_vec4();
+
+      // Peek at the VIF scope reference from the object stack
+      vvp_object_t& vif_obj = thr->peek_object();
+      vvp_scope_ref* scope_ref = vif_obj.peek<vvp_scope_ref>();
+
+      if (!scope_ref) {
+            fprintf(stderr, "RUNTIME ERROR: Virtual interface is null\n");
+            return true;
+      }
+
+      __vpiScope* vif_scope = scope_ref->get_scope();
+      if (!vif_scope) {
+            fprintf(stderr, "RUNTIME ERROR: Virtual interface scope is null\n");
+            return true;
+      }
+
+      // Find the signal by name in the VIF scope
+      vvp_net_t* net = find_signal_in_scope(vif_scope, member_name);
+      if (!net) {
+            fprintf(stderr, "RUNTIME ERROR: Signal '%s' not found in virtual interface scope\n", member_name);
+            return true;
+      }
+
+      // Resize value if necessary to match the signal width
+      if (val.size() != wid) {
+            val.resize(wid);
+      }
+
+      // Store the value to the signal
+      vvp_send_vec4(vvp_net_ptr_t(net, 0), val, thr->wt_context);
+
+      return true;
+}
+
 template <typename ELEM, class QTYPE>
 static bool store_qb(vthread_t thr, vvp_code_t cp, unsigned wid=0)
 {
@@ -6020,6 +6883,14 @@ bool of_STORE_QB_STR(vthread_t thr, vvp_code_t cp)
 bool of_STORE_QB_V(vthread_t thr, vvp_code_t cp)
 {
       return store_qb<vvp_vector4_t, vvp_queue_vec4>(thr, cp, cp->bit_idx[1]);
+}
+
+/*
+ * %store/qb/o <var-label>, <max-idx>
+ */
+bool of_STORE_QB_O(vthread_t thr, vvp_code_t cp)
+{
+      return store_qb<vvp_object_t, vvp_queue_object>(thr, cp);
 }
 
 template <typename ELEM, class QTYPE>
@@ -6111,6 +6982,14 @@ bool of_STORE_QF_STR(vthread_t thr, vvp_code_t cp)
 bool of_STORE_QF_V(vthread_t thr, vvp_code_t cp)
 {
       return store_qf<vvp_vector4_t, vvp_queue_vec4>(thr, cp, cp->bit_idx[1]);
+}
+
+/*
+ * %store/qf/o <var-label>, <max-idx>
+ */
+bool of_STORE_QF_O(vthread_t thr, vvp_code_t cp)
+{
+      return store_qf<vvp_object_t, vvp_queue_object>(thr, cp);
 }
 
 template <typename ELEM, class QTYPE>
@@ -6718,5 +7597,184 @@ bool of_REAP_UFUNC(vthread_t thr, vvp_code_t cp)
             thr->rd_context = 0;
       }
 
+      return true;
+}
+
+/*
+ * Queue property method operations.
+ * These opcodes operate on queue properties of class objects.
+ * The queue object is on the object stack (will be cleaned up by subsequent %pop/obj).
+ * Values are on vec4/object stack.
+ */
+
+/*
+ * Helper to get a queue from object stack, creating if needed.
+ * Returns the queue pointer, or NULL if the object is not a queue.
+ */
+template <class QTYPE>
+static vvp_queue* get_qprop_queue(vthread_t thr)
+{
+      vvp_object_t&obj = thr->peek_object();
+      vvp_queue*queue = obj.peek<vvp_queue>();
+
+      // If queue is nil, allocate it
+      if (queue == 0) {
+	    if (obj.test_nil()) {
+		  queue = new QTYPE;
+		  obj.reset(queue);
+	    }
+      }
+      return queue;
+}
+
+/*
+ * %qprop/qb/v - push_back vec4 value to queue property
+ */
+bool of_QPROP_QB_V(vthread_t thr, vvp_code_t)
+{
+      // Pop the value to push
+      vvp_vector4_t value = thr->pop_vec4();
+
+      // Get queue from object stack (don't pop - %pop/obj will handle it)
+      vvp_queue*queue = get_qprop_queue<vvp_queue_vec4>(thr);
+      if (queue) {
+	    queue->push_back(value, 0); // 0 = unlimited size
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Error: queue property push_back on non-queue object." << endl;
+      }
+      return true;
+}
+
+/*
+ * %qprop/qb/o - push_back object value to queue property
+ * Note: Object queues (queues of structs/classes) are complex and not yet
+ * fully implemented. This is a stub that cleans up the stack.
+ */
+bool of_QPROP_QB_O(vthread_t thr, vvp_code_t)
+{
+      // Pop the value object (top of stack)
+      thr->pop_object(1);
+      // Queue object remains on stack for subsequent %pop/obj
+
+      cerr << thr->get_fileline()
+           << "Warning: queue of objects push_back not yet fully implemented." << endl;
+      return true;
+}
+
+/*
+ * %qprop/qf/v - push_front vec4 value to queue property
+ */
+bool of_QPROP_QF_V(vthread_t thr, vvp_code_t)
+{
+      // Pop the value to push
+      vvp_vector4_t value = thr->pop_vec4();
+
+      // Get queue from object stack
+      vvp_queue*queue = get_qprop_queue<vvp_queue_vec4>(thr);
+      if (queue) {
+	    queue->push_front(value, 0); // 0 = unlimited size
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Error: queue property push_front on non-queue object." << endl;
+      }
+      return true;
+}
+
+/*
+ * %qprop/qf/o - push_front object value to queue property
+ * Note: Object queues not yet fully implemented.
+ */
+bool of_QPROP_QF_O(vthread_t thr, vvp_code_t)
+{
+      // Pop the value object (top of stack)
+      thr->pop_object(1);
+      // Queue object remains on stack for subsequent %pop/obj
+
+      cerr << thr->get_fileline()
+           << "Warning: queue of objects push_front not yet fully implemented." << endl;
+      return true;
+}
+
+/*
+ * %qprop/insert/v - insert vec4 value into queue property at index
+ * Index is in word register 3.
+ */
+bool of_QPROP_INSERT_V(vthread_t thr, vvp_code_t)
+{
+      // Pop the value to insert
+      vvp_vector4_t value = thr->pop_vec4();
+
+      // Get index from word register 3
+      int64_t idx = thr->words[3].w_int;
+
+      // Get queue from object stack
+      vvp_queue*queue = get_qprop_queue<vvp_queue_vec4>(thr);
+      if (queue) {
+	    if (idx < 0) {
+		  cerr << thr->get_fileline()
+		       << "Warning: cannot insert at negative index (" << idx << ")." << endl;
+	    } else {
+		  queue->insert(idx, value, 0);
+	    }
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Error: queue property insert on non-queue object." << endl;
+      }
+      return true;
+}
+
+/*
+ * %qprop/insert/o - insert object value into queue property at index
+ * Note: Object queues not yet fully implemented.
+ */
+bool of_QPROP_INSERT_O(vthread_t thr, vvp_code_t)
+{
+      // Pop the value object (top of stack)
+      thr->pop_object(1);
+      // Queue object remains on stack for subsequent %pop/obj
+
+      cerr << thr->get_fileline()
+           << "Warning: queue of objects insert not yet fully implemented." << endl;
+      return true;
+}
+
+/*
+ * %qprop/delete - clear queue property (delete all elements)
+ */
+bool of_QPROP_DELETE(vthread_t thr, vvp_code_t)
+{
+      // Get queue from object stack
+      vvp_object_t&queue_obj = thr->peek_object();
+
+      // Clear by replacing with nil
+      queue_obj.reset(0);
+      return true;
+}
+
+/*
+ * %qprop/delete/elem - delete element from queue property at index
+ * Index is in word register 3.
+ */
+bool of_QPROP_DELETE_ELEM(vthread_t thr, vvp_code_t)
+{
+      // Get index from word register 3
+      int64_t idx = thr->words[3].w_int;
+
+      // Get queue from object stack
+      vvp_object_t&queue_obj = thr->peek_object();
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+
+      if (queue) {
+	    if (idx < 0 || (size_t)idx >= queue->get_size()) {
+		  cerr << thr->get_fileline()
+		       << "Warning: queue delete index (" << idx << ") out of range." << endl;
+	    } else {
+		  queue->erase(idx);
+	    }
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Error: queue property delete element on non-queue object." << endl;
+      }
       return true;
 }

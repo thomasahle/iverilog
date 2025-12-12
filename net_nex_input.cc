@@ -133,6 +133,11 @@ NexusSet* NetEProperty::nex_input(bool, bool, bool) const
       return new NexusSet;
 }
 
+NexusSet* NetEVirtualProperty::nex_input(bool, bool, bool) const
+{
+      return new NexusSet;
+}
+
 NexusSet* NetEScope::nex_input(bool, bool, bool) const
 {
       return new NexusSet;

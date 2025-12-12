@@ -398,9 +398,27 @@ NetENull::~NetENull()
 }
 
 NetEProperty::NetEProperty(NetNet*net, size_t pidx, NetExpr*idx)
-: net_(net), pidx_(pidx), index_(idx)
+: net_(net), base_expr_(nullptr), pidx_(pidx), index_(idx)
 {
       const netclass_t*use_type = dynamic_cast<const netclass_t*>(net->net_type());
+      ivl_assert(*this, use_type);
+
+      ivl_type_t prop_type = use_type->get_prop_type(pidx_);
+      if (idx) {
+	    auto array_type = dynamic_cast<const netarray_t*>(prop_type);
+	    ivl_assert(*this, array_type);
+	    set_net_type(array_type->element_type());
+      } else {
+	    set_net_type(prop_type);
+      }
+}
+
+NetEProperty::NetEProperty(NetExpr*base, size_t pidx, NetExpr*idx)
+: net_(nullptr), base_expr_(base), pidx_(pidx), index_(idx)
+{
+      // For nested access, the base expression must have a class type
+      ivl_type_t base_type = base->net_type();
+      const netclass_t*use_type = dynamic_cast<const netclass_t*>(base_type);
       ivl_assert(*this, use_type);
 
       ivl_type_t prop_type = use_type->get_prop_type(pidx_);
@@ -553,4 +571,30 @@ NetEAccess::~NetEAccess()
 ivl_variable_type_t NetEAccess::expr_type() const
 {
       return IVL_VT_REAL;
+}
+
+/*
+ * NetEVirtualProperty - access to a member of a virtual interface
+ */
+NetEVirtualProperty::NetEVirtualProperty(NetExpr*vif_expr, perm_string member_name,
+                                         const netvirtual_interface_t*vif_type,
+                                         const NetNet*member_sig)
+: vif_expr_(vif_expr), member_name_(member_name), vif_type_(vif_type), member_sig_(member_sig)
+{
+      // Set the expression type from the member signal
+      if (member_sig) {
+	    set_net_type(member_sig->net_type());
+	    expr_width(member_sig->vector_width());
+	    // Increment the expression reference count so the signal is not
+	    // pruned by nodangle even if only accessed through virtual interface
+	    const_cast<NetNet*>(member_sig)->incr_eref();
+      }
+}
+
+NetEVirtualProperty::~NetEVirtualProperty()
+{
+      // Decrement the reference count we incremented in the constructor
+      if (member_sig_)
+	    const_cast<NetNet*>(member_sig_)->decr_eref();
+      delete vif_expr_;
 }

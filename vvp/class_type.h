@@ -21,7 +21,10 @@
 
 # include  <string>
 # include  <vector>
+# include  <map>
 # include  "vpi_priv.h"
+
+class __vpiScope;
 
 class class_property_t;
 class vvp_vector4_t;
@@ -40,6 +43,13 @@ class class_type : public __vpiHandle {
     public:
       explicit class_type(const std::string&nam, size_t nprop);
       ~class_type() override;
+
+	// Set/get the parent class for inheritance hierarchy
+      void set_parent(class_type*parent) { parent_ = parent; }
+      class_type* get_parent() const { return parent_; }
+
+	// Check if this class is the same as or derived from target_class
+      bool is_derived_from(const class_type*target_class) const;
 
 	// This is the name of the class type.
       inline const std::string&class_name(void) const { return class_name_; }
@@ -71,11 +81,27 @@ class class_type : public __vpiHandle {
 
       void copy_property(inst_t dst, size_t idx, inst_t src) const;
 
+	// Check if property supports vec4 operations (for randomize())
+      bool property_supports_vec4(size_t pid) const;
+
+    public: // Virtual method dispatch
+      struct method_info {
+	    __vpiScope* scope;
+	    struct vvp_code_s* entry;  // Code entry point (TD_ label)
+      };
+      // Register a method scope for virtual dispatch
+      void register_method(const std::string& name, __vpiScope* scope, struct vvp_code_s* entry = 0);
+      // Set the code entry point for a method (called after TD_ is parsed)
+      void set_method_entry(const std::string& name, struct vvp_code_s* entry);
+      // Look up a method by name (for virtual dispatch)
+      const method_info* get_method(const std::string& name) const;
+
     public: // VPI related methods
       int get_type_code(void) const override;
 
     private:
       std::string class_name_;
+      class_type*parent_;  // Parent class for inheritance hierarchy (nullptr if no parent)
 
       struct prop_t {
 	    std::string name;
@@ -83,6 +109,9 @@ class class_type : public __vpiHandle {
       };
       std::vector<prop_t> properties_;
       size_t instance_size_;
+
+      // Virtual method dispatch table: method name -> method_info
+      std::map<std::string, method_info> methods_;
 };
 
 #endif /* IVL_class_type_H */

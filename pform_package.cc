@@ -19,6 +19,7 @@
  */
 
 # include  <cstdarg>
+# include  <cstring>
 # include  "pform.h"
 # include  "PPackage.h"
 # include  "parse_misc.h"
@@ -254,8 +255,25 @@ typedef_t* pform_test_type_identifier(PPackage*pkg, const char*txt)
  * package. It will call this a PACKAGE_IDENTIFIER token in that case,
  * instead of a generic IDENTIFIER.
  */
+
+// Built-in 'std' package (IEEE 1800-2017 section 18.13)
+static PPackage* std_package = 0;
+
+static PPackage* get_std_package()
+{
+      if (std_package == 0) {
+	    std_package = new PPackage(lex_strings.make("std"), nullptr);
+      }
+      return std_package;
+}
+
 PPackage* pform_test_package_identifier(const char*pkg_name)
 {
+      // Check for built-in 'std' package
+      if (strcmp(pkg_name, "std") == 0) {
+	    return get_std_package();
+      }
+
       perm_string use_name = lex_strings.make(pkg_name);
       map<perm_string,PPackage*>::const_iterator pcur = packages_by_name.find(use_name);
       if (pcur == packages_by_name.end())

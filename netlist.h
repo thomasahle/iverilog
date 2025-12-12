@@ -84,6 +84,7 @@ class PTaskFunc;
 class PWire;
 class data_type_t;
 struct enum_type_t;
+class netassoc_t;
 class netclass_t;
 class netdarray_t;
 class netparray_t;
@@ -722,6 +723,7 @@ class NetNet  : public NetObj, public PortType {
       const netqueue_t*queue_type(void) const;
       const netclass_t*class_type(void) const;
       const netarray_t*array_type(void) const;
+      const netassoc_t*assoc_type(void) const;
 
 	/* Attach a discipline to the net. */
       ivl_discipline_t get_discipline() const;
@@ -972,6 +974,9 @@ class NetScope : public Definitions, public Attrib {
         /* Search the scope hierarchy for the scope where 'type' was defined. */
       NetScope*find_typedef_scope(const Design*des, const typedef_t*type);
 
+        /* Find a typedef by name in this scope (not searching parent scopes) */
+      typedef_t*find_typedef(perm_string name) const;
+
 	/* Parameters exist within a scope, and these methods allow
 	   one to manipulate the set. In these cases, the name is the
 	   *simple* name of the parameter, the hierarchy is implicit in
@@ -983,6 +988,7 @@ class NetScope : public Definitions, public Attrib {
 			 NetScope::range_t *range_list);
       void set_parameter(perm_string name, NetExpr*val,
 			 const LineInfo&file_line);
+      void set_type_parameter(perm_string name, ivl_type_t type);
 
       const NetExpr*get_parameter(Design*des, const char* name,
 				  ivl_type_t&ivl_type);
@@ -1052,6 +1058,11 @@ class NetScope : public Definitions, public Attrib {
 	// useful for some elaboration error checking.
       const NetScope* child_byname(perm_string name) const;
 
+	// Look for a child scope by module type name. This searches
+	// through children to find one whose module_name() matches.
+	// Used for finding interface instances by interface type name.
+      const NetScope* child_by_module_name(perm_string type_name) const;
+
 	// Nested modules have slightly different scope search rules.
       inline bool nested_module() const { return nested_module_; }
 	// Program blocks and interfaces have elaboration constraints.
@@ -1120,6 +1131,10 @@ class NetScope : public Definitions, public Attrib {
 	/* Is the task or function automatic. */
       void is_auto(bool is_auto__) { is_auto_ = is_auto__; };
       bool is_auto() const { return is_auto_; };
+
+	/* Is this method virtual (uses dynamic dispatch). */
+      void is_virtual(bool is_virtual__) { is_virtual_ = is_virtual__; };
+      bool is_virtual() const { return is_virtual_; };
 
 	/* Is the module a cell (is in a `celldefine) */
       void is_cell(bool is_cell__) { is_cell_ = is_cell__; };
@@ -1348,7 +1363,7 @@ class NetScope : public Definitions, public Attrib {
       std::map<hname_t,NetScope*> children_;
 
       unsigned lcounter_;
-      bool need_const_func_, is_const_func_, is_auto_, is_cell_, calls_stask_;
+      bool need_const_func_, is_const_func_, is_auto_, is_virtual_, is_cell_, calls_stask_;
 
       /* Final procedures sets this to notify statements that
 	 they are part of a final procedure. */
@@ -2892,6 +2907,12 @@ class NetAssign_ {
       void set_property(const perm_string&name, unsigned int idx);
       inline int get_property_idx(void) const { return member_idx_; }
 
+	// Set virtual interface member access (vif.member)
+      void set_vif_member(const perm_string&member_name, const NetNet*member_sig);
+      inline bool is_vif_member() const { return vif_member_sig_ != nullptr; }
+      inline perm_string get_vif_member_name() const { return vif_member_name_; }
+      inline const NetNet* get_vif_member_sig() const { return vif_member_sig_; }
+
 	// Determine if the assigned object is signed or unsigned.
 	// This is used when determining the expression type for
 	// a compressed assignment statement.
@@ -2945,6 +2966,10 @@ class NetAssign_ {
 	// member/property if signal is a class.
       perm_string member_;
       int member_idx_ = -1;
+
+	// Virtual interface member access (vif.member)
+      perm_string vif_member_name_;
+      const NetNet* vif_member_sig_ = nullptr;
 
       bool signed_;
       bool turn_sig_to_wire_on_release_;
@@ -3969,7 +3994,7 @@ class NetELast : public NetExpr {
 class NetEUFunc  : public NetExpr {
 
     public:
-      NetEUFunc(NetScope*, NetScope*, NetESignal*, std::vector<NetExpr*>&, bool);
+      NetEUFunc(NetScope*, NetScope*, NetESignal*, std::vector<NetExpr*>&, bool need_const, bool is_virtual = false);
       ~NetEUFunc() override;
 
       const NetESignal*result_sig() const;
@@ -3978,6 +4003,9 @@ class NetEUFunc  : public NetExpr {
       const NetExpr* parm(unsigned idx) const;
 
       const NetScope* func() const;
+
+	// Is this a virtual method call (requires dynamic dispatch)?
+      bool is_virtual() const { return is_virtual_; }
 
       virtual void dump(std::ostream&) const override;
 
@@ -3997,6 +4025,7 @@ class NetEUFunc  : public NetExpr {
       NetESignal*result_sig_;
       std::vector<NetExpr*> parms_;
       bool need_const_;
+      bool is_virtual_;
 
     private: // not implemented
       NetEUFunc(const NetEUFunc&);
@@ -4642,13 +4671,22 @@ class NetENull : public NetExpr {
  *
  * The canon_index is an optional expression to address an element for
  * parameters that are arrays.
+ *
+ * For nested property access (a.b.c), base_expr_ can point to another
+ * NetEProperty representing the intermediate access. If base_expr_ is
+ * non-null, net_ is null and the base comes from base_expr_.
  */
 class NetEProperty : public NetExpr {
     public:
+      // Constructor for direct property access (obj.prop)
       NetEProperty(NetNet*n, size_t pidx_, NetExpr*canon_index =0);
+      // Constructor for nested property access (base_expr.prop)
+      NetEProperty(NetExpr*base, size_t pidx_, NetExpr*canon_index =0);
       ~NetEProperty() override;
 
       inline const NetNet* get_sig() const { return net_; }
+      inline const NetExpr* get_base_expr() const { return base_expr_; }
+      inline bool is_nested() const { return base_expr_ != nullptr; }
       inline size_t property_idx() const { return pidx_; }
       inline const NetExpr*get_index() const { return index_; }
 
@@ -4661,9 +4699,53 @@ class NetEProperty : public NetExpr {
       virtual void dump(std::ostream&os) const override;
 
     private:
-      NetNet*net_;
+      NetNet*net_;           // Base signal (null if nested)
+      NetExpr*base_expr_;    // Base expression for nested access (null if direct)
       size_t pidx_;
       NetExpr*index_;
+};
+
+class netvirtual_interface_t;  // Forward declaration
+
+/*
+ * The NetEVirtualProperty represents access to a member of a virtual interface.
+ * For example, in "vif.rst_n" where vif is a virtual interface property of a class,
+ * and rst_n is a signal in the interface.
+ *
+ * Virtual interface member access requires runtime binding - the vif property
+ * holds a reference to an interface instance that is bound at runtime.
+ *
+ * vif_expr: The expression for the virtual interface (typically NetEProperty for vif)
+ * member_name: The name of the member signal in the interface
+ * iface_def: The interface definition (for type checking)
+ * member_sig: The signal in the interface definition (for type info)
+ */
+class NetEVirtualProperty : public NetExpr {
+    public:
+      NetEVirtualProperty(NetExpr*vif_expr, perm_string member_name,
+                          const netvirtual_interface_t*vif_type,
+                          const NetNet*member_sig);
+      ~NetEVirtualProperty() override;
+
+      inline const NetExpr* get_vif_expr() const { return vif_expr_; }
+      inline perm_string member_name() const { return member_name_; }
+      inline const netvirtual_interface_t* vif_type() const { return vif_type_; }
+      inline const NetNet* member_sig() const { return member_sig_; }
+
+    public: // Overridden methods
+      virtual void expr_scan(struct expr_scan_t*) const override;
+      virtual NetEVirtualProperty* dup_expr() const override;
+      virtual NexusSet* nex_input(bool rem_out = true, bool always_sens = false,
+                                  bool nested_func = false) const override;
+      virtual NetNet* synthesize(Design*des, NetScope*scope, NetExpr*root) override;
+
+      virtual void dump(std::ostream&os) const override;
+
+    private:
+      NetExpr*vif_expr_;           // Expression for the virtual interface property
+      perm_string member_name_;    // Member name in the interface
+      const netvirtual_interface_t*vif_type_;  // Virtual interface type info
+      const NetNet*member_sig_;    // Signal definition from interface scope
 };
 
 /*

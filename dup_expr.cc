@@ -206,14 +206,32 @@ NetENew* NetENew::dup_expr() const
 
 NetENull* NetENull::dup_expr() const
 {
-      ivl_assert(*this, 0);
-      return 0;
+      NetENull*tmp = new NetENull;
+      tmp->set_line(*this);
+      return tmp;
 }
 
 NetEProperty* NetEProperty::dup_expr() const
 {
-      ivl_assert(*this, 0);
-      return 0;
+      NetExpr*idx = index_ ? index_->dup_expr() : 0;
+      NetEProperty*tmp;
+      if (base_expr_) {
+	    // Nested property access
+	    tmp = new NetEProperty(base_expr_->dup_expr(), pidx_, idx);
+      } else {
+	    // Direct property access
+	    tmp = new NetEProperty(net_, pidx_, idx);
+      }
+      tmp->set_line(*this);
+      return tmp;
+}
+
+NetEVirtualProperty* NetEVirtualProperty::dup_expr() const
+{
+      NetEVirtualProperty*tmp = new NetEVirtualProperty(
+            vif_expr_->dup_expr(), member_name_, vif_type_, member_sig_);
+      tmp->set_line(*this);
+      return tmp;
 }
 
 NetEScope* NetEScope::dup_expr() const

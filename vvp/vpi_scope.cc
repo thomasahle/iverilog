@@ -19,6 +19,7 @@
 
 # include  "compile.h"
 # include  "vpi_priv.h"
+# include  "class_type.h"
 # include  "symbols.h"
 # include  "statistics.h"
 # include  "config.h"
@@ -594,6 +595,26 @@ compile_scope_decl(char*label, char*type, char*name, char*tname,
 	      /* Inherit time units and precision from the parent scope. */
 	    scope->time_units = sp->time_units;
 	    scope->time_precision = sp->time_precision;
+
+	      /* If this is a method scope under a class scope, register
+	         the method with the class_type for virtual dispatch. */
+	    if (scope->get_type_code() == vpiFunction ||
+	        scope->get_type_code() == vpiTask) {
+		  // Check for class scope (vpiClassTypespec=630)
+		  if (sp->get_type_code() == vpiClassTypespec) {
+			// Find the class_type in the module/package scope's classes map
+			std::string class_name = sp->vpi_get_str(vpiName);
+			__vpiScope*pkg_scope = sp->scope;
+			if (pkg_scope) {
+			      auto it = pkg_scope->classes.find(class_name);
+			      if (it != pkg_scope->classes.end()) {
+				    class_type*ct = it->second;
+				    std::string method_name = scope->vpi_get_str(vpiName);
+				    ct->register_method(method_name, scope);
+			      }
+			}
+		  }
+	    }
 
       } else {
 	    scope->scope = 0x0;

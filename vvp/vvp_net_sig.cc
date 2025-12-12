@@ -356,6 +356,15 @@ void vvp_fun_signal4_aa::reset_instance(vvp_context_t context)
       bits->fill_bits(init_);
 }
 
+void vvp_fun_signal4_aa::copy_instance(vvp_context_t dst, vvp_context_t src)
+{
+      vvp_vector4_t*dst_bits = static_cast<vvp_vector4_t*>
+            (vvp_get_context_item(dst, context_idx_));
+      vvp_vector4_t*src_bits = static_cast<vvp_vector4_t*>
+            (vvp_get_context_item(src, context_idx_));
+      *dst_bits = *src_bits;
+}
+
 #ifdef CHECK_WITH_VALGRIND
 void vvp_fun_signal4_aa::free_instance(vvp_context_t context)
 {
@@ -517,6 +526,15 @@ void vvp_fun_signal_real_aa::reset_instance(vvp_context_t context)
       *bits = 0.0;
 }
 
+void vvp_fun_signal_real_aa::copy_instance(vvp_context_t dst, vvp_context_t src)
+{
+      double*dst_bits = static_cast<double*>
+            (vvp_get_context_item(dst, context_idx_));
+      double*src_bits = static_cast<double*>
+            (vvp_get_context_item(src, context_idx_));
+      *dst_bits = *src_bits;
+}
+
 #ifdef CHECK_WITH_VALGRIND
 void vvp_fun_signal_real_aa::free_instance(vvp_context_t context)
 {
@@ -632,6 +650,15 @@ void vvp_fun_signal_string_aa::reset_instance(vvp_context_t context)
       string*bits = static_cast<std::string*>
 	    (vvp_get_context_item(context, context_idx_));
       *bits = "";
+}
+
+void vvp_fun_signal_string_aa::copy_instance(vvp_context_t dst, vvp_context_t src)
+{
+      string*dst_bits = static_cast<std::string*>
+            (vvp_get_context_item(dst, context_idx_));
+      string*src_bits = static_cast<std::string*>
+            (vvp_get_context_item(src, context_idx_));
+      *dst_bits = *src_bits;
 }
 
 #ifdef CHECK_WITH_VALGRIND
@@ -763,10 +790,27 @@ void vvp_fun_signal_object_aa::reset_instance(vvp_context_t context)
       bits->reset();
 }
 
+void vvp_fun_signal_object_aa::copy_instance(vvp_context_t dst, vvp_context_t src)
+{
+      vvp_object_t*dst_bits = static_cast<vvp_object_t*>
+            (vvp_get_context_item(dst, context_idx_));
+      vvp_object_t*src_bits = static_cast<vvp_object_t*>
+            (vvp_get_context_item(src, context_idx_));
+      *dst_bits = *src_bits;
+}
+
 vvp_object_t vvp_fun_signal_object_aa::get_object() const
 {
       const vvp_object_t*bits = static_cast<vvp_object_t*>
 	    (vthread_get_rd_context_item(context_idx_));
+      return *bits;
+}
+
+vvp_object_t vvp_fun_signal_object_aa::get_object_from_context(vvp_context_t context) const
+{
+      if (!context) return vvp_object_t();
+      const vvp_object_t*bits = static_cast<vvp_object_t*>
+	    (vvp_get_context_item(context, context_idx_));
       return *bits;
 }
 

@@ -557,6 +557,15 @@ static void draw_reg_in_scope(ivl_signal_t sig)
 		    vvp_mangle_name(ivl_signal_basename(sig)),
 		    ivl_signal_local(sig)? " Local signal" : "");
 
+      } else if (ivl_signal_data_type(sig) == IVL_VT_ASSOC) {
+	    ivl_type_t var_type = ivl_signal_net_type(sig);
+	    ivl_type_t element_type = ivl_type_element(var_type);
+
+	    fprintf(vvp_out, "v%p_0 .var/assoc \"%s\", %u;%s\n", sig,
+		    vvp_mangle_name(ivl_signal_basename(sig)),
+		    ivl_type_packed_width(element_type),
+		    ivl_signal_local(sig)? " Local signal" : "");
+
       } else {
 
 	    fprintf(vvp_out, "v%p_0 .var%s %s\"%s\", %d %d;%s\n",

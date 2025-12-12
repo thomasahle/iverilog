@@ -20,6 +20,7 @@
 # include "config.h"
 
 # include  "netlist.h"
+# include  "netassoc.h"
 # include  "netclass.h"
 # include  "netdarray.h"
 # include  "netparray.h"
@@ -68,6 +69,9 @@ NetAssign_::~NetAssign_()
 	    if (turn_sig_to_wire_on_release_ && sig_->peek_lref() == 0)
 		  sig_->type(NetNet::WIRE);
       }
+      // Decrement the reference count we incremented in set_vif_member
+      if (vif_member_sig_)
+	    const_cast<NetNet*>(vif_member_sig_)->decr_lref();
 
       ivl_assert(*this, more == 0 );
       delete word_;
@@ -161,11 +165,18 @@ ivl_type_t NetAssign_::net_type() const
 	    ntype = class_type->get_prop_type(member_idx_);
       }
 
+      // For virtual interface member access, use the member signal's type
+      if (vif_member_sig_) {
+	    ntype = vif_member_sig_->net_type();
+      }
+
       if (word_) {
 	    if (const netdarray_t *darray = dynamic_cast<const netdarray_t*>(ntype))
 		  ntype = darray->element_type();
 	    else if (const netuarray_t *uarray = dynamic_cast<const netuarray_t*>(ntype))
 		  ntype = uarray->element_type();
+	    else if (const netassoc_t *assoc = dynamic_cast<const netassoc_t*>(ntype))
+		  ntype = assoc->element_type();
       }
 
       return ntype;
@@ -204,6 +215,16 @@ void NetAssign_::set_property(const perm_string&mname, unsigned idx)
 {
       member_ = mname;
       member_idx_ = idx;
+}
+
+void NetAssign_::set_vif_member(const perm_string&member_name, const NetNet*member_sig)
+{
+      vif_member_name_ = member_name;
+      vif_member_sig_ = member_sig;
+      // Increment the l-value reference count so the signal is not
+      // pruned by nodangle even if only accessed through virtual interface
+      if (member_sig)
+	    const_cast<NetNet*>(member_sig)->incr_lref();
 }
 
 /*

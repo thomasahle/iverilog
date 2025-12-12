@@ -20,6 +20,7 @@
  */
 
 # include  "nettypes.h"
+# include  "StringHeap.h"
 
 class netreal_t : public ivl_type_s {
 
@@ -50,6 +51,38 @@ class netstring_t : public ivl_type_s {
 
     public:
       static netstring_t type_string;
+};
+
+class NetScope;  // Forward declaration
+
+/*
+ * The netvirtual_interface_t represents an elaborated virtual interface.
+ * Virtual interfaces are class properties that reference interface instances.
+ * The interface binding happens at runtime, but we store a pointer to the
+ * interface definition scope for member lookup during elaboration.
+ */
+class netvirtual_interface_t : public ivl_type_s {
+
+    public:
+      inline explicit netvirtual_interface_t(perm_string iname, const NetScope* iface_def = nullptr)
+            : interface_name_(iname), interface_def_(iface_def) { }
+      ~netvirtual_interface_t() override;
+
+      ivl_variable_type_t base_type() const override;
+
+      // Override type equivalence to compare interface names
+      bool test_equivalence(ivl_type_t that) const override;
+
+      std::ostream& debug_dump(std::ostream&) const override;
+
+      inline perm_string interface_name() const { return interface_name_; }
+
+      // Get the interface definition scope (may be null if not resolved)
+      inline const NetScope* interface_def() const { return interface_def_; }
+
+    private:
+      perm_string interface_name_;
+      const NetScope* interface_def_;  // Pointer to interface scope definition
 };
 
 #endif /* IVL_netscalar_H */

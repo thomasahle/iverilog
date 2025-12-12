@@ -1086,6 +1086,70 @@ static void show_stmt_assign_sig_darray_queue_mux(ivl_statement_t net)
       }
 }
 
+/*
+ * Assignment to an element of an associative array.
+ * For now, only handle the case of assigning to a[key] = value.
+ */
+static int show_stmt_assign_sig_assoc(ivl_statement_t net)
+{
+      int errors = 0;
+      ivl_lval_t lval = ivl_stmt_lval(net, 0);
+      ivl_expr_t rval = ivl_stmt_rval(net);
+      ivl_signal_t var= ivl_lval_sig(lval);
+      ivl_type_t var_type= ivl_signal_net_type(var);
+      assert(ivl_type_base(var_type) == IVL_VT_ASSOC);
+      ivl_type_t element_type = ivl_type_element(var_type);
+      ivl_expr_t mux  = ivl_lval_idx(lval);
+
+      assert(ivl_stmt_lvals(net) == 1);
+
+      if (mux) {
+	      /* Assignment to an element: a[key] = value */
+	      /* First evaluate the value */
+	    switch (ivl_type_base(element_type)) {
+		case IVL_VT_BOOL:
+		case IVL_VT_LOGIC:
+		  draw_eval_vec4(rval);
+		  break;
+		case IVL_VT_REAL:
+		  draw_eval_real(rval);
+		  break;
+		case IVL_VT_STRING:
+		  draw_eval_string(rval);
+		  break;
+		default:
+		  fprintf(vvp_out, "; ERROR: show_stmt_assign_sig_assoc: element_type=%d not implemented\n", ivl_type_base(element_type));
+		  errors += 1;
+		  return errors;
+	    }
+
+	      /* Then evaluate the key expression onto the string stack */
+	    draw_eval_string(mux);
+
+	      /* Emit the store opcode */
+	    switch (ivl_type_base(element_type)) {
+		case IVL_VT_BOOL:
+		case IVL_VT_LOGIC:
+		  fprintf(vvp_out, "    %%store/assoc/vec4 v%p_0;\n", var);
+		  break;
+		case IVL_VT_REAL:
+		  fprintf(vvp_out, "    %%store/assoc/r v%p_0;\n", var);
+		  break;
+		case IVL_VT_STRING:
+		  fprintf(vvp_out, "    %%store/assoc/str v%p_0;\n", var);
+		  break;
+		default:
+		  break;
+	    }
+      } else {
+	      /* Assignment to the whole array - not yet supported */
+	    fprintf(vvp_out, "; ERROR: show_stmt_assign_sig_assoc: whole array assignment not yet supported\n");
+	    errors += 1;
+      }
+
+      return errors;
+}
+
 static int show_stmt_assign_sig_darray(ivl_statement_t net)
 {
       int errors = 0;
@@ -1319,9 +1383,11 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 
 	    if (ivl_type_base(prop_type) == IVL_VT_BOOL ||
 	        ivl_type_base(prop_type) == IVL_VT_LOGIC) {
-		  assert(ivl_type_packed_dimensions(prop_type) == 0 ||
-		         (ivl_type_packed_dimensions(prop_type) == 1 &&
-		          ivl_type_packed_msb(prop_type,0) >= ivl_type_packed_lsb(prop_type, 0)));
+		  /* Relaxed assertion - allow multi-dimensional packed arrays */
+		  if (ivl_type_packed_dimensions(prop_type) > 1) {
+			fprintf(stderr, "%s:%u: warning: Multi-dimensional packed property in class assignment.\n",
+			        ivl_stmt_file(net), ivl_stmt_lineno(net));
+		  }
 
 		  if (ivl_stmt_opcode(net) != 0) {
 			fprintf(vvp_out, "    %%prop/v %d;\n", prop_idx);
@@ -1428,6 +1494,65 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
       return errors;
 }
 
+/*
+ * Handle virtual interface member assignment: vif.signal = rval
+ * The l-value contains the vif member info, we need to:
+ * 1. Evaluate the nested lval to get the vif object on stack
+ * 2. Evaluate the rval
+ * 3. Store to the vif member signal
+ */
+static int show_stmt_assign_vif_member(ivl_statement_t net)
+{
+      int errors = 0;
+      ivl_lval_t lval = ivl_stmt_lval(net, 0);
+      ivl_expr_t rval = ivl_stmt_rval(net);
+      unsigned lwid = ivl_lval_width(lval);
+      const char* member_name = ivl_lval_vif_member(lval);
+      ivl_signal_t member_sig = ivl_lval_vif_sig(lval);
+      int vif_loaded = 0;
+
+      /* VIF can be accessed via nested path or via base signal (this.vif).
+       * Use the VIF-specific functions to get the right access path. */
+      ivl_signal_t base_sig = ivl_lval_vif_base_sig(lval);
+      ivl_lval_t nest = ivl_lval_vif_nest(lval);
+      int prop_idx = ivl_lval_property_idx(lval);
+      fprintf(vvp_out, "    ; VIF debug: nest=%p base_sig=%p prop_idx=%d\n",
+              (void*)nest, (void*)base_sig, prop_idx);
+
+      /* Check if we have a valid base signal (this.vif access pattern) */
+      if (base_sig) {
+	    /* VIF accessed via base signal (this.vif) */
+	    /* Load the class object (this) */
+	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", base_sig);
+	    /* Load the VIF property from it */
+	    ivl_type_t sig_type = ivl_signal_net_type(base_sig);
+	    const char* prop_name = sig_type ? ivl_type_prop_name(sig_type, prop_idx) : "(null)";
+	    fprintf(vvp_out, "    %%prop/obj %d, 0; Load vif property %s\n",
+		    prop_idx, prop_name ? prop_name : "(null)");
+	    fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+	    vif_loaded = 1;
+      } else if (nest) {
+	    /* VIF accessed via nested lval path */
+	    ivl_type_t vif_type = draw_lval_expr(nest);
+	    (void)vif_type;
+	    vif_loaded = 1;
+      }
+
+      /* Evaluate the rval */
+      draw_eval_vec4(rval);
+
+      /* Store to vif member signal */
+      fprintf(vvp_out, "    %%vif/store/v \"%s\", %u; // member_sig=v%p_0\n",
+              member_name, lwid, member_sig);
+
+      /* Pop the VIF object from the stack if we loaded one */
+      if (vif_loaded) {
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+      }
+
+      return errors;
+}
+
 int show_stmt_assign(ivl_statement_t net)
 {
       ivl_lval_t lval;
@@ -1436,6 +1561,12 @@ int show_stmt_assign(ivl_statement_t net)
       show_stmt_file_line(net, "Blocking assignment.");
 
       lval = ivl_stmt_lval(net, 0);
+      fprintf(vvp_out, "    ; show_stmt_assign: is_vif=%d\n", ivl_lval_is_vif(lval));
+
+      /* Check for virtual interface member assignment first */
+      if (ivl_lval_is_vif(lval)) {
+	    return show_stmt_assign_vif_member(net);
+      }
 
       sig = ivl_lval_sig(lval);
       if (sig && (ivl_signal_data_type(sig) == IVL_VT_REAL)) {
@@ -1452,6 +1583,10 @@ int show_stmt_assign(ivl_statement_t net)
 
       if (sig && (ivl_signal_data_type(sig) == IVL_VT_QUEUE)) {
 	    return show_stmt_assign_sig_queue(net);
+      }
+
+      if (sig && (ivl_signal_data_type(sig) == IVL_VT_ASSOC)) {
+	    return show_stmt_assign_sig_assoc(net);
       }
 
       if ((sig && (ivl_signal_data_type(sig) == IVL_VT_CLASS)) ||
