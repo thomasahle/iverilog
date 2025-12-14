@@ -29,6 +29,7 @@
 # include  "vvp_darray.h"
 # include  "class_type.h"
 # include  "factory_registry.h"
+# include  "config_db.h"
 #ifdef CHECK_WITH_VALGRIND
 # include  "vvp_cleanup.h"
 #endif
@@ -2047,6 +2048,107 @@ bool of_CAST_PROP(vthread_t thr, vvp_code_t cp)
 	    // Cast fails
 	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
       }
+
+      return true;
+}
+
+/*
+ * %config_db/get/v <dest_signal>
+ * Pop field_name and inst_name from string stack.
+ * Look up vec4 value in config_db, store to dest_signal.
+ * Push 1 to vec4 stack if found, 0 if not found.
+ */
+bool of_CONFIG_DB_GET_V(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      // Pop field_name and inst_name from string stack
+      std::string field_name = thr->pop_str();
+      std::string inst_name = thr->pop_str();
+
+      // Look up in config_db
+      vvp_vector4_t value;
+      bool found = vvp_config_db::instance().get_vec4("", inst_name, field_name, value);
+
+      if (found) {
+            // Store value to destination signal
+            vvp_net_ptr_t ptr(net, 0);
+            vvp_send_vec4(ptr, value, thr->wt_context);
+            thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+      } else {
+            thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+      }
+
+      return true;
+}
+
+/*
+ * %config_db/get/o <dest_signal>
+ * Pop field_name and inst_name from string stack.
+ * Look up object value in config_db, store to dest_signal.
+ * Push 1 to vec4 stack if found, 0 if not found.
+ */
+bool of_CONFIG_DB_GET_O(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      // Pop field_name and inst_name from string stack
+      std::string field_name = thr->pop_str();
+      std::string inst_name = thr->pop_str();
+
+      // Look up in config_db
+      vvp_object_t value;
+      bool found = vvp_config_db::instance().get_object("", inst_name, field_name, value);
+
+      if (found) {
+            // Store value to destination signal
+            vvp_net_ptr_t ptr(net, 0);
+            vvp_send_object(ptr, value, thr->wt_context);
+            thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+      } else {
+            thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+      }
+
+      return true;
+}
+
+/*
+ * %config_db/set/v <width>
+ * Pop field_name and inst_name from string stack, pop vec4 from vec4 stack.
+ * Store in config_db.
+ */
+bool of_CONFIG_DB_SET_V(vthread_t thr, vvp_code_t)
+{
+      // Pop field_name and inst_name from string stack
+      std::string field_name = thr->pop_str();
+      std::string inst_name = thr->pop_str();
+
+      // Pop vec4 from vec4 stack
+      vvp_vector4_t value = thr->pop_vec4();
+
+      // Store in config_db
+      vvp_config_db::instance().set_vec4("", inst_name, field_name, value);
+
+      return true;
+}
+
+/*
+ * %config_db/set/o
+ * Pop field_name and inst_name from string stack, pop object from object stack.
+ * Store in config_db.
+ */
+bool of_CONFIG_DB_SET_O(vthread_t thr, vvp_code_t)
+{
+      // Pop field_name and inst_name from string stack
+      std::string field_name = thr->pop_str();
+      std::string inst_name = thr->pop_str();
+
+      // Pop object from object stack
+      vvp_object_t value;
+      thr->pop_object(value);
+
+      // Store in config_db
+      vvp_config_db::instance().set_object("", inst_name, field_name, value);
 
       return true;
 }

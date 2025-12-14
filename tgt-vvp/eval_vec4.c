@@ -1163,6 +1163,46 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    return;
       }
 
+      if (strcmp(ivl_expr_name(expr),"$ivl_config_db_get")==0) {
+	    /* $ivl_config_db_get(inst_name, field_name, dest)
+	     * - Push inst_name string to string stack
+	     * - Push field_name string to string stack
+	     * - Get destination signal
+	     * - Call %config_db/get/v or %config_db/get/o depending on type
+	     *   which pops strings, looks up value, stores to dest and
+	     *   pushes 1/0 to vec4 stack */
+	    ivl_expr_t inst_name_expr = ivl_expr_parm(expr, 0);
+	    ivl_expr_t field_name_expr = ivl_expr_parm(expr, 1);
+	    ivl_expr_t dest_expr = ivl_expr_parm(expr, 2);
+
+	    /* Get the destination signal */
+	    ivl_signal_t dst_sig = NULL;
+	    if (ivl_expr_type(dest_expr) == IVL_EX_SIGNAL) {
+		  dst_sig = ivl_expr_signal(dest_expr);
+	    } else {
+		  fprintf(vvp_out, "; ERROR: $ivl_config_db_get dest must be signal (got type %d)\n",
+			  ivl_expr_type(dest_expr));
+		  fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
+		  return;
+	    }
+
+	    /* Push inst_name string */
+	    draw_eval_string(inst_name_expr);
+	    /* Push field_name string */
+	    draw_eval_string(field_name_expr);
+
+	    /* Check destination type and use appropriate opcode */
+	    ivl_type_t dst_type = ivl_signal_net_type(dst_sig);
+	    if (dst_type && ivl_type_base(dst_type) == IVL_VT_CLASS) {
+		  /* Object type - use %config_db/get/o */
+		  fprintf(vvp_out, "    %%config_db/get/o v%p_0;\n", dst_sig);
+	    } else {
+		  /* Vec4 type - use %config_db/get/v */
+		  fprintf(vvp_out, "    %%config_db/get/v v%p_0;\n", dst_sig);
+	    }
+	    return;
+      }
+
       draw_vpi_func_call(expr);
 }
 

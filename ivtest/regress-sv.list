@@ -994,3 +994,23 @@ real_edges		CE,-g2012		ivltests gold=real_edges.gold
 sv_vif_basic		normal,-g2012		ivltests
 sv_vif_read		normal,-g2012		ivltests
 sv_vif_shared		normal,-g2012		ivltests
+
+# UVM config_db tests
+uvm_config_db_int	normal,-g2012		ivltests
+uvm_config_db_vif	normal,-g2012		ivltests
+uvm_config_db_block	normal,-g2012		ivltests
+
+# UVM factory pattern test
+uvm_factory_create	normal,-g2012		ivltests
+
+# SystemVerilog inside operator
+sv_inside_operator	normal,-g2012		ivltests
+
+# SystemVerilog $cast
+sv_cast_class		normal,-g2012		ivltests
+
+# fork/join_none in class
+sv_fork_join_none_class	normal,-g2012		ivltests
+
+# Virtual method dispatch through wrapper
+sv_virtual_method_wrapper	normal,-g2012		ivltests

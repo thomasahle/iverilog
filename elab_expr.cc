@@ -2202,6 +2202,56 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 	    return sys_expr;
       }
 
+	/* Handle $ivl_config_db_get - Runtime config database lookup.
+	   This system function takes 3 arguments: inst_name, field_name, dest
+	   It looks up the value in the config database and assigns it to dest,
+	   returning 1 if found, 0 if not found. */
+      if (name=="$ivl_config_db_get") {
+	    if ((parms_.size() != 3)) {
+		  cerr << get_fileline() << ": error: $ivl_config_db_get "
+		       << "takes exactly 3 arguments (inst_name, field_name, dest)." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Elaborate first two arguments (strings) normally
+	    NetExpr*inst_name_arg = parms_[0].parm ? elab_and_eval(des, scope, parms_[0].parm, -1) : 0;
+	    NetExpr*field_name_arg = parms_[1].parm ? elab_and_eval(des, scope, parms_[1].parm, -1) : 0;
+
+	    // For destination, check if it's a class type (like virtual interface)
+	    // If so, use elaborate_expr which handles class types, otherwise use elab_and_eval
+	    NetExpr*dest_arg = 0;
+	    if (parms_[2].parm) {
+		  PExpr*dest_pexpr = parms_[2].parm;
+		  PExpr::width_mode_t mode = PExpr::SIZED;
+		  dest_pexpr->test_width(des, scope, mode);
+		  if (dest_pexpr->expr_type() == IVL_VT_CLASS) {
+			// For class/object types, use elaborate_expr directly
+			// This bypasses the check in elab_and_eval that rejects class types
+			dest_arg = dest_pexpr->elaborate_expr(des, scope, (ivl_type_t)0, NO_FLAGS);
+		  } else {
+			dest_arg = elab_and_eval(des, scope, dest_pexpr, -1);
+		  }
+	    }
+
+	    if (!inst_name_arg || !field_name_arg || !dest_arg) {
+		  cerr << get_fileline() << ": error: $ivl_config_db_get "
+		       << "failed to elaborate argument(s)." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Create a system function that returns int and has side effects
+	    // The return type is 32-bit signed integer (success/failure)
+	    NetESFunc*sys_expr = new NetESFunc("$ivl_config_db_get",
+					       &netvector_t::atom2s32, 3);
+	    sys_expr->set_line(*this);
+	    sys_expr->parm(0, inst_name_arg);
+	    sys_expr->parm(1, field_name_arg);
+	    sys_expr->parm(2, dest_arg);
+	    return sys_expr;
+      }
+
       unsigned nparms = parms_.size();
 
       NetESFunc*fun = new NetESFunc(name, expr_type_, expr_width_, nparms, is_overridden_);

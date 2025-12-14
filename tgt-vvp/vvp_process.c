@@ -1955,6 +1955,39 @@ static int show_system_task_call(ivl_statement_t net)
       if (strcmp(stmt_name,"$ivl_queue_method$push_back") == 0)
 	    return show_push_frontback_method(net, false);
 
+      if (strcmp(stmt_name,"$ivl_config_db_set") == 0) {
+	    /* $ivl_config_db_set(inst_name, field_name, value)
+	     * - Push inst_name string to string stack
+	     * - Push field_name string to string stack
+	     * - For vec4 types: push value to vec4 stack, call %config_db/set/v
+	     * - For object types: push value to object stack, call %config_db/set/o */
+	    ivl_expr_t inst_name_expr = ivl_stmt_parm(net, 0);
+	    ivl_expr_t field_name_expr = ivl_stmt_parm(net, 1);
+	    ivl_expr_t value_expr = ivl_stmt_parm(net, 2);
+
+	    show_stmt_file_line(net, "config_db set.");
+
+	    /* Push inst_name string */
+	    draw_eval_string(inst_name_expr);
+	    /* Push field_name string */
+	    draw_eval_string(field_name_expr);
+
+	    /* Check value type and use appropriate opcode.
+	     * Object types (CLASS, DARRAY, virtual interface) go on object stack.
+	     * Vec4 types (BOOL, VECTOR) go on vec4 stack. */
+	    ivl_variable_type_t val_type = ivl_expr_value(value_expr);
+	    if (val_type == IVL_VT_BOOL || val_type == IVL_VT_LOGIC) {
+		  /* Vec4 type (int, logic, etc.) - use vec4 stack */
+		  draw_eval_vec4(value_expr);
+		  fprintf(vvp_out, "    %%config_db/set/v %u;\n", ivl_expr_width(value_expr));
+	    } else {
+		  /* Object type (CLASS, DARRAY, virtual interface, etc.) - use object stack */
+		  draw_eval_object(value_expr);
+		  fprintf(vvp_out, "    %%config_db/set/o;\n");
+	    }
+	    return 0;
+      }
+
       show_stmt_file_line(net, "System task call.");
 
       draw_vpi_task_call(net);

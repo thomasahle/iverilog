@@ -3269,8 +3269,49 @@ block_item_decl
           subroutine_call via statement_item (which doesn't have this ambiguity)
        Adding IDENTIFIER here would break simple assignments like "x = 42;" */
   | TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES IDENTIFIER argument_list_parens ';'
-      { yywarn(@1, "warning: Parameterized class static method call parsed but not yet functional.");
-	/* For now, create a no-op. */
+      {
+	std::string class_name = $1.text;
+	std::string method_name = $7;
+
+	if (class_name == "uvm_config_db") {
+	    /* Transform uvm_config_db#(T)::set/get() into $ivl_config_db_set/get().
+	       This happens when parser routes to block_item_decl due to ambiguity.
+	       We create a statement and append it to the current block. */
+	    if (method_name == "set" || method_name == "get") {
+		/* Build the argument list for $ivl_config_db_set/get */
+		std::list<named_pexpr_t>*parms = $8;
+		std::list<named_pexpr_t>*new_args = new std::list<named_pexpr_t>;
+
+		/* Skip first arg (context), get args 2-4 (inst_name, field_name, value/dest) */
+		auto it = parms->begin();
+		if (it != parms->end()) ++it; /* skip context */
+		while (it != parms->end()) {
+		    new_args->push_back(*it);
+		    ++it;
+		}
+
+		/* Create appropriate system task call */
+		perm_string fn = (method_name == "set")
+		    ? lex_strings.make("$ivl_config_db_set")
+		    : lex_strings.make("$ivl_config_db_get");
+		PCallTask*tmp = new PCallTask(fn, *new_args);
+		FILE_NAME(tmp, @1);
+
+		/* Add to current block's statement list.
+		   Since we're in block_item_decl, we're inside a begin/end block
+		   and the block is on current_block_stack. */
+		if (!current_block_stack.empty()) {
+		    current_block_stack.top()->push_statement_front(tmp);
+		} else {
+		    yywarn(@1, "uvm_config_db call outside block context - call ignored.");
+		}
+		delete new_args;
+	    } else {
+		yywarn(@1, "uvm_config_db method not supported.");
+	    }
+	} else {
+	    yywarn(@1, "warning: [block_item_decl] Parameterized class static method call parsed but not yet functional.");
+	}
 	delete[]$1.text;
 	delete[]$7;
 	delete $8;
@@ -4594,22 +4635,45 @@ expr_primary
       }
 
     /* Static method call on parameterized class: MyClass#(T)::method(args)
-       For known classes like uvm_config_db, return success constant. */
+       For uvm_config_db, generate $ivl_config_db_get system function call. */
   | TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES IDENTIFIER argument_list_parens
-      { yywarn(@1, "warning: Parameterized class static method call parsed but not yet functional.");
-
-        /* Check if this is uvm_config_db - return constant 1 (always succeeds)
-           Actual config should be done through direct assignment. */
+      {
         std::string class_name = $1.text;
         std::string method_name = $7;
         PExpr*tmp;
 
-        if (class_name == "uvm_config_db") {
-            /* Return constant 1 (success) - actual config done through direct assignment
-               e.g., agent.vif = interface_handle; */
+        if (class_name == "uvm_config_db" && method_name == "get") {
+            /* Transform uvm_config_db#(T)::get(ctx, inst_name, field_name, dest)
+               into $ivl_config_db_get(inst_name, field_name, dest) which:
+               - Looks up value by path/field
+               - Assigns to dest
+               - Returns 1 if found, 0 if not */
+            std::list<named_pexpr_t>*args = $8;
+            if (args && args->size() >= 4) {
+                /* Skip first arg (context), use inst_name, field_name, dest */
+                std::list<named_pexpr_t>::iterator it = args->begin();
+                ++it;  /* skip context, point to inst_name */
+                named_pexpr_t inst_name = *it++;
+                named_pexpr_t field_name = *it++;
+                named_pexpr_t dest = *it;
+                std::vector<named_pexpr_t> new_args;
+                new_args.push_back(inst_name);
+                new_args.push_back(field_name);
+                new_args.push_back(dest);
+                perm_string fn = lex_strings.make("$ivl_config_db_get");
+                tmp = new PECallFunction(fn, new_args);
+                FILE_NAME(tmp, @1);
+            } else {
+                yyerror(@1, "uvm_config_db::get requires 4 arguments");
+                tmp = new PENumber(new verinum(verinum::V0, 1));
+                FILE_NAME(tmp, @1);
+            }
+        } else if (class_name == "uvm_config_db" && method_name == "set") {
+            /* For set() in expression context (unusual), just return 1 */
             tmp = new PENumber(new verinum(verinum::V1, 1));
             FILE_NAME(tmp, @1);
         } else {
+            yywarn(@1, "warning: [LOC4635] Parameterized class static method call parsed but not yet functional.");
             /* For other classes, create hierarchical name function call */
             pform_name_t*tmp_name = new pform_name_t;
             name_component_t class_comp(lex_strings.make($1.text));
@@ -4630,17 +4694,39 @@ expr_primary
     /* Static method call on parameterized class with plain IDENTIFIER (when class not declared):
        uvm_config_db#(T)::method(args) where uvm_config_db is not yet declared as a type */
   | IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES IDENTIFIER argument_list_parens
-      { yywarn(@1, "warning: Parameterized class static method call parsed but not yet functional.");
-
+      {
         std::string class_name = $1;
         std::string method_name = $7;
         PExpr*tmp;
 
-        if (class_name == "uvm_config_db") {
-            /* Return constant 1 (success) for uvm_config_db calls */
+        if (class_name == "uvm_config_db" && method_name == "get") {
+            /* Transform uvm_config_db#(T)::get(ctx, inst_name, field_name, dest)
+               into $ivl_config_db_get(inst_name, field_name, dest) */
+            std::list<named_pexpr_t>*args = $8;
+            if (args && args->size() >= 4) {
+                std::list<named_pexpr_t>::iterator it = args->begin();
+                ++it;  /* skip context, point to inst_name */
+                named_pexpr_t inst_name = *it++;
+                named_pexpr_t field_name = *it++;
+                named_pexpr_t dest = *it;
+                std::vector<named_pexpr_t> new_args;
+                new_args.push_back(inst_name);
+                new_args.push_back(field_name);
+                new_args.push_back(dest);
+                perm_string fn = lex_strings.make("$ivl_config_db_get");
+                tmp = new PECallFunction(fn, new_args);
+                FILE_NAME(tmp, @1);
+            } else {
+                yyerror(@1, "uvm_config_db::get requires 4 arguments");
+                tmp = new PENumber(new verinum(verinum::V0, 1));
+                FILE_NAME(tmp, @1);
+            }
+        } else if (class_name == "uvm_config_db" && method_name == "set") {
+            /* For set() in expression context (unusual), just return 1 */
             tmp = new PENumber(new verinum(verinum::V1, 1));
             FILE_NAME(tmp, @1);
         } else {
+            yywarn(@1, "warning: [LOC4635] Parameterized class static method call parsed but not yet functional.");
             /* For other classes, create hierarchical name function call */
             pform_name_t*tmp_name = new pform_name_t;
             name_component_t class_comp(lex_strings.make($1));
@@ -7469,18 +7555,43 @@ subroutine_call
        For known classes like uvm_config_db, create a no-op.
        For unknown classes, create a hierarchical call (will likely fail). */
   | TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES IDENTIFIER argument_list_parens
-      { yywarn(@1, "warning: Parameterized class static method call parsed but not yet functional.");
-
+      {
         std::string class_name = $1.text;
         std::string method_name = $7;
         PCallTask*tmp;
 
-        if (class_name == "uvm_config_db") {
-            /* Create a no-op for uvm_config_db calls using empty $display */
+        if (class_name == "uvm_config_db" && method_name == "set") {
+            /* Transform uvm_config_db#(T)::set(ctx, inst_name, field_name, value)
+               into $ivl_config_db_set(inst_name, field_name, value) which:
+               - Stores value at path/field */
+            std::list<named_pexpr_t>*args = $8;
+            if (args && args->size() >= 4) {
+                /* Skip first arg (context), use inst_name, field_name, value */
+                std::list<named_pexpr_t>::iterator it = args->begin();
+                ++it;  /* skip context, point to inst_name */
+                named_pexpr_t inst_name = *it++;
+                named_pexpr_t field_name = *it++;
+                named_pexpr_t value = *it;
+                std::list<named_pexpr_t> new_args;
+                new_args.push_back(inst_name);
+                new_args.push_back(field_name);
+                new_args.push_back(value);
+                tmp = new PCallTask(lex_strings.make("$ivl_config_db_set"), new_args);
+                FILE_NAME(tmp, @1);
+            } else {
+                yyerror(@1, "uvm_config_db::set requires 4 arguments");
+                std::list<named_pexpr_t> empty_args;
+                tmp = new PCallTask(lex_strings.make("$display"), empty_args);
+                FILE_NAME(tmp, @1);
+            }
+        } else if (class_name == "uvm_config_db") {
+            /* Other uvm_config_db methods - no-op for now */
+            yywarn(@1, "warning: uvm_config_db method not yet supported.");
             std::list<named_pexpr_t> empty_args;
             tmp = new PCallTask(lex_strings.make("$display"), empty_args);
             FILE_NAME(tmp, @1);
         } else {
+            yywarn(@1, "warning: [LOC4635] Parameterized class static method call parsed but not yet functional.");
             /* For other classes, create hierarchical name as before */
             pform_name_t*tmp_name = new pform_name_t;
             name_component_t class_comp(lex_strings.make($1.text));
@@ -7498,18 +7609,40 @@ subroutine_call
       }
     /* Static method call on parameterized class with IDENTIFIER (when class not declared) */
   | IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES IDENTIFIER argument_list_parens
-      { yywarn(@1, "warning: Parameterized class static method call parsed but not yet functional.");
-
+      {
         std::string class_name = $1;
         std::string method_name = $7;
         PCallTask*tmp;
 
-        if (class_name == "uvm_config_db") {
-            /* Create a no-op for uvm_config_db calls using empty $display */
+        if (class_name == "uvm_config_db" && method_name == "set") {
+            /* Transform uvm_config_db#(T)::set(ctx, inst_name, field_name, value)
+               into $ivl_config_db_set(inst_name, field_name, value) */
+            std::list<named_pexpr_t>*args = $8;
+            if (args && args->size() >= 4) {
+                std::list<named_pexpr_t>::iterator it = args->begin();
+                ++it;  /* skip context, point to inst_name */
+                named_pexpr_t inst_name = *it++;
+                named_pexpr_t field_name = *it++;
+                named_pexpr_t value = *it;
+                std::list<named_pexpr_t> new_args;
+                new_args.push_back(inst_name);
+                new_args.push_back(field_name);
+                new_args.push_back(value);
+                tmp = new PCallTask(lex_strings.make("$ivl_config_db_set"), new_args);
+                FILE_NAME(tmp, @1);
+            } else {
+                yyerror(@1, "uvm_config_db::set requires 4 arguments");
+                std::list<named_pexpr_t> empty_args;
+                tmp = new PCallTask(lex_strings.make("$display"), empty_args);
+                FILE_NAME(tmp, @1);
+            }
+        } else if (class_name == "uvm_config_db") {
+            yywarn(@1, "warning: uvm_config_db method not yet supported.");
             std::list<named_pexpr_t> empty_args;
             tmp = new PCallTask(lex_strings.make("$display"), empty_args);
             FILE_NAME(tmp, @1);
         } else {
+            yywarn(@1, "warning: [LOC4635] Parameterized class static method call parsed but not yet functional.");
             /* For other classes, create hierarchical name as before */
             pform_name_t*tmp_name = new pform_name_t;
             name_component_t class_comp(lex_strings.make($1));
