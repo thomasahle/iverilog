@@ -7307,6 +7307,9 @@ NetExpr* PEIdent::elaborate_expr_net_bit_last_(Design*, NetScope*,
       if (const netdarray_t*darray = net->sig()->darray_type()) {
 	    use_width = darray->element_width();
 	    use_type = darray->element_type();
+      } else if (const netqueue_t*queue = net->sig()->queue_type()) {
+	    use_width = queue->element_width();
+	    use_type = queue->element_type();
       }
 
       NetELast*mux = new NetELast(net->sig());

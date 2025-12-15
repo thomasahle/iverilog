@@ -1184,6 +1184,60 @@ package uvm_pkg;
 
   endclass
 
+  // ============================================================================
+  // SystemVerilog process class stub (IEEE 1800-2017 Section 9.7)
+  // ============================================================================
+  // Note: This is a stub implementation. The process class is normally a
+  // SystemVerilog built-in, but Icarus doesn't implement it yet.
+  typedef enum { FINISHED, RUNNING, WAITING, SUSPENDED, KILLED } process_state;
+
+  class process;
+    static process current_process;
+    process_state m_state;
+    int m_id;
+    static int next_id = 0;
+
+    function new();
+      m_id = next_id++;
+      m_state = RUNNING;
+    endfunction
+
+    // Get current process handle
+    static function process self();
+      if (current_process == null) begin
+        current_process = new();
+      end
+      return current_process;
+    endfunction
+
+    // Get process status
+    function process_state status();
+      return m_state;
+    endfunction
+
+    // Terminate the process (stub - actual kill requires runtime support)
+    function void kill();
+      m_state = KILLED;
+    endfunction
+
+    // Wait for process to finish (stub - just returns immediately)
+    task await();
+      // In real implementation, this would block until process finishes
+      // For now, it's a no-op since we can't actually track process state
+    endtask
+
+    // Suspend the process (stub)
+    function void suspend();
+      m_state = SUSPENDED;
+    endfunction
+
+    // Resume a suspended process (stub)
+    function void resume();
+      if (m_state == SUSPENDED)
+        m_state = RUNNING;
+    endfunction
+  endclass
+
   // Global run_test task
   // ============================================================================
   // This task creates a test instance using the UVM factory and runs the phases.

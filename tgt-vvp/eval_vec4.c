@@ -984,7 +984,8 @@ static void draw_select_vec4(ivl_expr_t expr)
 	    return;
       }
 
-      if (ivl_expr_value(subexpr)==IVL_VT_DARRAY) {
+      if (ivl_expr_value(subexpr)==IVL_VT_DARRAY ||
+          ivl_expr_value(subexpr)==IVL_VT_QUEUE) {
 	    ivl_signal_t sig = ivl_expr_signal(subexpr);
 	    assert(sig);
 	    assert( (ivl_signal_data_type(sig)==IVL_VT_DARRAY)
