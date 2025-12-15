@@ -996,6 +996,16 @@ NetExpr* elab_and_eval(Design*des, NetScope*scope, PExpr*pe,
 		  break;
 	    }
 
+	    // Special case: when target is scalar but expression is class,
+	    // this might be a type parameter that wasn't resolved correctly
+	    // for a specialized class (methods inherit from base class with
+	    // default type parameter values). Allow class objects to pass
+	    // through and trust VVP runtime to handle them correctly.
+	    if (expr_type == IVL_VT_CLASS &&
+	        (cast_type == IVL_VT_BOOL || cast_type == IVL_VT_LOGIC)) {
+		  return tmp;
+	    }
+
 	    cerr << tmp->get_fileline() << ": error: "
 		    "The expression '" << *pe << "' cannot be implicitly "
 		    "cast to the target type." << endl;

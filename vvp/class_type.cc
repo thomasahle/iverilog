@@ -48,8 +48,8 @@ class class_property_t {
       virtual void construct(char*buf) const;
       virtual void destruct(char*buf) const;
 
-      virtual void set_vec4(char*buf, const vvp_vector4_t&val);
-      virtual void get_vec4(char*buf, vvp_vector4_t&val);
+      virtual void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx);
+      virtual void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx);
       virtual bool supports_vec4() const { return false; }
 
       virtual void set_real(char*buf, double val);
@@ -80,12 +80,12 @@ void class_property_t::destruct(char*) const
 {
 }
 
-void class_property_t::set_vec4(char*, const vvp_vector4_t&)
+void class_property_t::set_vec4(char*, const vvp_vector4_t&, uint64_t)
 {
       assert(0);
 }
 
-void class_property_t::get_vec4(char*, vvp_vector4_t&)
+void class_property_t::get_vec4(char*, vvp_vector4_t&, uint64_t)
 {
       assert(0);
 }
@@ -126,74 +126,88 @@ void class_property_t::get_object(char*, vvp_object_t&, uint64_t)
  */
 template <class T> class property_atom : public class_property_t {
     public:
-      inline explicit property_atom(void) { }
+      inline explicit property_atom(uint64_t as = 0) : array_size_(as == 0 ? 1 : as) { }
       ~property_atom() override { }
 
-      size_t instance_size() const override { return sizeof(T); }
+      size_t instance_size() const override { return array_size_ * sizeof(T); }
 
     public:
       void construct(char*buf) const override
       { T*tmp = reinterpret_cast<T*> (buf+offset_);
-	*tmp = 0;
+	for (uint64_t i = 0; i < array_size_; ++i)
+	    tmp[i] = 0;
       }
 
-      void set_vec4(char*buf, const vvp_vector4_t&val) override;
-      void get_vec4(char*buf, vvp_vector4_t&val) override;
+      void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx) override;
+      void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
       bool supports_vec4() const override { return true; }
 
       void copy(char*dst, char*src) override;
+
+    private:
+      uint64_t array_size_;
 };
 
 class property_bit : public class_property_t {
     public:
-      explicit inline property_bit(size_t wid): wid_(wid) { }
+      explicit inline property_bit(size_t wid, uint64_t as = 0)
+	  : wid_(wid), array_size_(as == 0 ? 1 : as) { }
       ~property_bit() override { }
 
-      size_t instance_size() const override { return sizeof(vvp_vector2_t); }
+      size_t instance_size() const override { return array_size_ * sizeof(vvp_vector2_t); }
 
     public:
       void construct(char*buf) const override
-      { new (buf+offset_) vvp_vector2_t (0, wid_); }
+      { for (uint64_t i = 0; i < array_size_; ++i)
+	    new (buf+offset_ + i*sizeof(vvp_vector2_t)) vvp_vector2_t (0, wid_);
+      }
 
       void destruct(char*buf) const override
       { vvp_vector2_t*tmp = reinterpret_cast<vvp_vector2_t*>(buf+offset_);
-	tmp->~vvp_vector2_t();
+	for (uint64_t i = 0; i < array_size_; ++i)
+	    (tmp+i)->~vvp_vector2_t();
       }
 
-      void set_vec4(char*buf, const vvp_vector4_t&val) override;
-      void get_vec4(char*buf, vvp_vector4_t&val) override;
+      void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx) override;
+      void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
       bool supports_vec4() const override { return true; }
 
       void copy(char*dst, char*src) override;
 
     private:
       size_t wid_;
+      uint64_t array_size_;
 };
 
 class property_logic : public class_property_t {
     public:
-      explicit inline property_logic(size_t wid): wid_(wid) { }
+      explicit inline property_logic(size_t wid, uint64_t as = 0)
+	  : wid_(wid), array_size_(as == 0 ? 1 : as) { }
       ~property_logic() override { }
 
-      size_t instance_size() const override { return sizeof(vvp_vector4_t); }
+      size_t instance_size() const override { return array_size_ * sizeof(vvp_vector4_t); }
 
     public:
       void construct(char*buf) const override
-      { new (buf+offset_) vvp_vector4_t (wid_); }
+      { for (uint64_t i = 0; i < array_size_; ++i)
+	    new (buf+offset_ + i*sizeof(vvp_vector4_t)) vvp_vector4_t (wid_);
+      }
 
       void destruct(char*buf) const override
       { vvp_vector4_t*tmp = reinterpret_cast<vvp_vector4_t*>(buf+offset_);
-	tmp->~vvp_vector4_t();
+	for (uint64_t i = 0; i < array_size_; ++i)
+	    (tmp+i)->~vvp_vector4_t();
       }
 
-      void set_vec4(char*buf, const vvp_vector4_t&val) override;
-      void get_vec4(char*buf, vvp_vector4_t&val) override;
+      void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx) override;
+      void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
       bool supports_vec4() const override { return true; }
 
       void copy(char*dst, char*src) override;
 
     private:
       size_t wid_;
+      uint64_t array_size_;
 };
 
 template <class T> class property_real : public class_property_t {
@@ -258,24 +272,26 @@ class property_object : public class_property_t {
       size_t array_size_;
 };
 
-template <class T> void property_atom<T>::set_vec4(char*buf, const vvp_vector4_t&val)
+template <class T> void property_atom<T>::set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx)
 {
+      assert(idx < array_size_);
       T*tmp = reinterpret_cast<T*> (buf+offset_);
-      bool flag = vector4_to_value(val, *tmp, true, false);
+      bool flag = vector4_to_value(val, tmp[idx], true, false);
       assert(flag);
 }
 
-template <class T> void property_atom<T>::get_vec4(char*buf, vvp_vector4_t&val)
+template <class T> void property_atom<T>::get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx)
 {
+      assert(idx < array_size_);
       T*src = reinterpret_cast<T*> (buf+offset_);
       const size_t tmp_cnt = sizeof(T)<sizeof(unsigned long)
 				       ? 1
 				       : sizeof(T) / sizeof(unsigned long);
       unsigned long tmp[tmp_cnt];
-      tmp[0] = src[0];
+      tmp[0] = src[idx];
 
-      for (size_t idx = 1 ; idx < tmp_cnt ; idx += 1)
-	    tmp[idx] = src[0] >> idx * 8 * sizeof(tmp[0]);
+      for (size_t i = 1 ; i < tmp_cnt ; i += 1)
+	    tmp[i] = src[idx] >> i * 8 * sizeof(tmp[0]);
 
       val.resize(8*sizeof(T));
       val.setarray(0, val.size(), tmp);
@@ -285,45 +301,52 @@ template <class T> void property_atom<T>::copy(char*dst, char*src)
 {
       T*dst_obj = reinterpret_cast<T*> (dst+offset_);
       T*src_obj = reinterpret_cast<T*> (src+offset_);
-      *dst_obj = *src_obj;
+      for (uint64_t i = 0; i < array_size_; ++i)
+	    dst_obj[i] = src_obj[i];
 }
 
-void property_bit::set_vec4(char*buf, const vvp_vector4_t&val)
+void property_bit::set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx)
 {
+      assert(idx < array_size_);
       vvp_vector2_t*obj = reinterpret_cast<vvp_vector2_t*> (buf+offset_);
-      *obj = val;
+      obj[idx] = val;
 }
 
-void property_bit::get_vec4(char*buf, vvp_vector4_t&val)
+void property_bit::get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx)
 {
+      assert(idx < array_size_);
       const vvp_vector2_t*obj = reinterpret_cast<vvp_vector2_t*> (buf+offset_);
-      val = vector2_to_vector4(*obj, obj->size());
+      val = vector2_to_vector4(obj[idx], obj[idx].size());
 }
 
 void property_bit::copy(char*dst, char*src)
 {
       vvp_vector2_t*dst_obj = reinterpret_cast<vvp_vector2_t*> (dst+offset_);
       const vvp_vector2_t*src_obj = reinterpret_cast<vvp_vector2_t*> (src+offset_);
-      *dst_obj = *src_obj;
+      for (uint64_t i = 0; i < array_size_; ++i)
+	    dst_obj[i] = src_obj[i];
 }
 
-void property_logic::set_vec4(char*buf, const vvp_vector4_t&val)
+void property_logic::set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx)
 {
+      assert(idx < array_size_);
       vvp_vector4_t*obj = reinterpret_cast<vvp_vector4_t*> (buf+offset_);
-      *obj = val;
+      obj[idx] = val;
 }
 
-void property_logic::get_vec4(char*buf, vvp_vector4_t&val)
+void property_logic::get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx)
 {
+      assert(idx < array_size_);
       const vvp_vector4_t*obj = reinterpret_cast<vvp_vector4_t*> (buf+offset_);
-      val = *obj;
+      val = obj[idx];
 }
 
 void property_logic::copy(char*dst, char*src)
 {
       vvp_vector4_t*dst_obj = reinterpret_cast<vvp_vector4_t*> (dst+offset_);
       const vvp_vector4_t*src_obj = reinterpret_cast<vvp_vector4_t*> (src+offset_);
-      *dst_obj = *src_obj;
+      for (uint64_t i = 0; i < array_size_; ++i)
+	    dst_obj[i] = src_obj[i];
 }
 
 template <class T> void property_real<T>::set_real(char*buf, double val)
@@ -431,21 +454,21 @@ void class_type::set_property(size_t idx, const string&name, const string&type, 
       properties_[idx].name = name;
 
       if (type == "b8")
-	    properties_[idx].type = new property_atom<uint8_t>;
+	    properties_[idx].type = new property_atom<uint8_t>(array_size);
       else if (type == "b16")
-	    properties_[idx].type = new property_atom<uint16_t>;
+	    properties_[idx].type = new property_atom<uint16_t>(array_size);
       else if (type == "b32")
-	    properties_[idx].type = new property_atom<uint32_t>;
+	    properties_[idx].type = new property_atom<uint32_t>(array_size);
       else if (type == "b64")
-	    properties_[idx].type = new property_atom<uint64_t>;
+	    properties_[idx].type = new property_atom<uint64_t>(array_size);
       else if (type == "sb8")
-	    properties_[idx].type = new property_atom<int8_t>;
+	    properties_[idx].type = new property_atom<int8_t>(array_size);
       else if (type == "sb16")
-	    properties_[idx].type = new property_atom<int16_t>;
+	    properties_[idx].type = new property_atom<int16_t>(array_size);
       else if (type == "sb32")
-	    properties_[idx].type = new property_atom<int32_t>;
+	    properties_[idx].type = new property_atom<int32_t>(array_size);
       else if (type == "sb64")
-	    properties_[idx].type = new property_atom<int64_t>;
+	    properties_[idx].type = new property_atom<int64_t>(array_size);
       else if (type == "r")
 	    properties_[idx].type = new property_real<double>;
       else if (type == "S")
@@ -454,13 +477,13 @@ void class_type::set_property(size_t idx, const string&name, const string&type, 
 	    properties_[idx].type = new property_object(array_size);
       else if (type[0] == 'b') {
 	    size_t wid = strtoul(type.c_str()+1, 0, 0);
-	    properties_[idx].type = new property_bit(wid);
+	    properties_[idx].type = new property_bit(wid, array_size);
       } else if (type[0] == 'L') {
 	    size_t wid = strtoul(type.c_str()+1,0,0);
-	    properties_[idx].type = new property_logic(wid);
+	    properties_[idx].type = new property_logic(wid, array_size);
       } else if (type[0] == 's' && type[1] == 'L') {
 	    size_t wid = strtoul(type.c_str()+2,0,0);
-	    properties_[idx].type = new property_logic(wid);
+	    properties_[idx].type = new property_logic(wid, array_size);
       } else {
 	    properties_[idx].type = 0;
       }
@@ -518,19 +541,19 @@ void class_type::instance_delete(class_type::inst_t obj) const
 }
 
 void class_type::set_vec4(class_type::inst_t obj, size_t pid,
-			  const vvp_vector4_t&val) const
+			  const vvp_vector4_t&val, uint64_t idx) const
 {
       char*buf = reinterpret_cast<char*> (obj);
       assert(pid < properties_.size());
-      properties_[pid].type->set_vec4(buf, val);
+      properties_[pid].type->set_vec4(buf, val, idx);
 }
 
 void class_type::get_vec4(class_type::inst_t obj, size_t pid,
-			  vvp_vector4_t&val) const
+			  vvp_vector4_t&val, uint64_t idx) const
 {
       char*buf = reinterpret_cast<char*> (obj);
       assert(pid < properties_.size());
-      properties_[pid].type->get_vec4(buf, val);
+      properties_[pid].type->get_vec4(buf, val, idx);
 }
 
 bool class_type::property_supports_vec4(size_t pid) const

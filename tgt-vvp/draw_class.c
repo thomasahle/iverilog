@@ -48,10 +48,34 @@ static void show_prop_type_vector(ivl_type_t ptype)
       }
 }
 
+/*
+ * Helper to emit unpacked array dimensions like [3:0][7:0]
+ */
+static void show_unpacked_dims(ivl_type_t ptype)
+{
+      unsigned ndims = ivl_type_uarray_dimensions(ptype);
+      unsigned idx;
+      for (idx = 0; idx < ndims; idx++) {
+	    fprintf(vvp_out, " [%d:%d]",
+		    ivl_type_uarray_msb(ptype, idx),
+		    ivl_type_uarray_lsb(ptype, idx));
+      }
+}
+
 static void show_prop_type(ivl_type_t ptype)
 {
       ivl_variable_type_t data_type = ivl_type_base(ptype);
       unsigned packed_dimensions = ivl_type_packed_dimensions(ptype);
+
+      /* Handle unpacked arrays by unwrapping to get element type */
+      if (ivl_type_is_uarray(ptype)) {
+	    ivl_type_t element = ivl_type_uarray_element(ptype);
+	    /* Emit element type first */
+	    show_prop_type(element);
+	    /* Then emit unpacked dimensions */
+	    show_unpacked_dims(ptype);
+	    return;
+      }
 
       switch (data_type) {
 	  case IVL_VT_REAL:

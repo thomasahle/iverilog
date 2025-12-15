@@ -49,6 +49,18 @@ static void function_argument_real(ivl_signal_t port, ivl_expr_t expr)
 static void draw_eval_function_argument(ivl_signal_t port, ivl_expr_t expr)
 {
       ivl_variable_type_t dtype = ivl_signal_data_type(port);
+      ivl_variable_type_t etype = ivl_expr_value(expr);
+
+      /* Special case: if port expects scalar but expression is class,
+       * this is likely a type parameter mismatch from specialized class
+       * (method inherited from base class with default type param).
+       * Use the expression's actual type instead. */
+      if ((dtype == IVL_VT_BOOL || dtype == IVL_VT_LOGIC) &&
+          etype == IVL_VT_CLASS) {
+	    vvp_errors += draw_eval_object(expr);
+	    return;
+      }
+
       switch (dtype) {
 	  case IVL_VT_BOOL:
 	      /* For now, treat bit2 variables as bit4 variables. */
@@ -74,9 +86,21 @@ static void draw_eval_function_argument(ivl_signal_t port, ivl_expr_t expr)
       }
 }
 
-static void draw_send_function_argument(ivl_signal_t port)
+static void draw_send_function_argument(ivl_signal_t port, ivl_expr_t expr)
 {
       ivl_variable_type_t dtype = ivl_signal_data_type(port);
+      ivl_variable_type_t etype = expr ? ivl_expr_value(expr) : IVL_VT_NO_TYPE;
+
+      /* Special case: if port expects scalar but expression is class,
+       * this is likely a type parameter mismatch from specialized class
+       * (method inherited from base class with default type param).
+       * Use object store instead of vec4 store. */
+      if ((dtype == IVL_VT_BOOL || dtype == IVL_VT_LOGIC) &&
+          etype == IVL_VT_CLASS) {
+	    fprintf(vvp_out, "    %%store/obj v%p_0;\n", port);
+	    return;
+      }
+
       switch (dtype) {
 	  case IVL_VT_BOOL:
 	      /* For now, treat bit2 variables as bit4 variables. */
@@ -126,7 +150,8 @@ static void draw_ufunc_preamble(ivl_expr_t expr)
       }
       for (idx = ivl_expr_parms(expr) ;  idx > 0 ;  idx -= 1) {
 	    ivl_signal_t port = ivl_scope_port(def, idx);
-	    draw_send_function_argument(port);
+	    ivl_expr_t parm_expr = ivl_expr_parm(expr, idx-1);
+	    draw_send_function_argument(port, parm_expr);
       }
 
 	/* Call the function. Use virtual dispatch if method is virtual. */

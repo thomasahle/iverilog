@@ -253,6 +253,31 @@ ivl_type_t virtual_interface_type_t::elaborate_type_raw(Design*des, NetScope*) c
       return new netvirtual_interface_t(interface_name, interface_def);
 }
 
+/*
+ * Covergroup type elaboration.
+ * Since covergroups are parsed but not fully functional, we try to look up
+ * the __ivl_covergroup stub class from the UVM library. If not found, we
+ * return a simple type that allows the code to compile.
+ */
+ivl_type_t covergroup_type_t::elaborate_type_raw(Design*des, NetScope*scope) const
+{
+      // Try to find the __ivl_covergroup stub class
+      perm_string stub_name = perm_string::literal("__ivl_covergroup");
+      netclass_t* stub_class = scope->find_class(des, stub_name);
+      if (stub_class) {
+            return stub_class;
+      }
+
+      // If not found, emit a warning and return a simple integer type
+      // This allows the code to at least compile
+      cerr << get_fileline() << ": warning: "
+           << "Covergroup '" << covergroup_name << "' elaborated as stub. "
+           << "Covergroups are parsed but not yet functional." << endl;
+
+      // Return a simple vector type as placeholder
+      return new netvector_t(IVL_VT_LOGIC, 31, 0);
+}
+
 ivl_type_t parray_type_t::elaborate_type_raw(Design*des, NetScope*scope) const
 {
       netranges_t packed;
@@ -655,6 +680,9 @@ ivl_type_t typedef_t::elaborate_type(Design *des, NetScope *scope)
 	    return netvector_t::integer_type();
       }
 
+      // Save the original scope - we need it for type parameter lookup
+      NetScope *original_scope = scope;
+
         // Search upwards from where the type was referenced
       scope = scope->find_typedef_scope(des, this);
       if (!scope) {
@@ -665,6 +693,13 @@ ivl_type_t typedef_t::elaborate_type(Design *des, NetScope *scope)
 
 	    // Try to recover
 	    return netvector_t::integer_type();
+      }
+
+      // For type parameters, use the original scope for lookup
+      // This allows specialized classes to find overridden type parameters
+      type_parameter_t* type_param = dynamic_cast<type_parameter_t*>(data_type.get());
+      if (type_param) {
+	    scope = original_scope;
       }
 
       ivl_type_t elab_type = data_type->elaborate_type(des, scope);

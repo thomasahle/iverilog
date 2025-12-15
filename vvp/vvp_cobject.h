@@ -32,8 +32,8 @@ class vvp_cobject : public vvp_object {
       explicit vvp_cobject(const class_type*defn);
       ~vvp_cobject() override;
 
-      void set_vec4(size_t pid, const vvp_vector4_t&val);
-      void get_vec4(size_t pid, vvp_vector4_t&val);
+      void set_vec4(size_t pid, const vvp_vector4_t&val, uint64_t idx = 0);
+      void get_vec4(size_t pid, vvp_vector4_t&val, uint64_t idx = 0);
 
       void set_real(size_t pid, double val);
       double get_real(size_t pid);

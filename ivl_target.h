@@ -975,6 +975,8 @@ extern ivl_event_t ivl_expr_event(ivl_expr_t net);
 extern int ivl_expr_property_idx(ivl_expr_t net);
   /* IVL_EX_PROPERTY - base expression for nested property access (returns 0 if direct) */
 extern ivl_expr_t ivl_expr_property_base(ivl_expr_t net);
+  /* IVL_EX_PROPERTY - array index expression (returns 0 if no index) */
+extern ivl_expr_t ivl_expr_property_array_idx(ivl_expr_t net);
   /* IVL_EX_VIFPROP - virtual interface property access */
 extern ivl_expr_t ivl_expr_vifprop_base(ivl_expr_t net);  /* vif expression */
 extern const char* ivl_expr_vifprop_member(ivl_expr_t net);  /* member name */
@@ -2281,6 +2283,8 @@ extern ivl_scope_t ivl_stmt_block_scope(ivl_statement_t net);
 extern ivl_statement_t ivl_stmt_block_stmt(ivl_statement_t net, unsigned i);
   /* IVL_ST_UTASK IVL_ST_DISABLE */
 extern ivl_scope_t ivl_stmt_call(ivl_statement_t net);
+  /* IVL_ST_UTASK - returns true if this is a super.method() call (no virtual dispatch) */
+extern int ivl_stmt_call_is_super(ivl_statement_t net);
   /* IVL_ST_CASE,IVL_ST_CASER,IVL_ST_CASEX,IVL_ST_CASEZ */
 extern unsigned ivl_stmt_case_count(ivl_statement_t net);
   /* IVL_ST_CASE,IVL_ST_CASER,IVL_ST_CASEX,IVL_ST_CASEZ */
@@ -2414,6 +2418,14 @@ extern int ivl_type_packed_lsb(ivl_type_t net, unsigned dim);
 extern int ivl_type_packed_msb(ivl_type_t net, unsigned dim);
 extern unsigned ivl_type_packed_width(ivl_type_t net);
 extern int ivl_type_signed(ivl_type_t net);
+
+/* Unpacked array API functions */
+extern int ivl_type_is_uarray(ivl_type_t net);
+extern unsigned ivl_type_uarray_dimensions(ivl_type_t net);
+extern int ivl_type_uarray_msb(ivl_type_t net, unsigned dim);
+extern int ivl_type_uarray_lsb(ivl_type_t net, unsigned dim);
+extern ivl_type_t ivl_type_uarray_element(ivl_type_t net);
+
 extern const char* ivl_type_name(ivl_type_t net);
 extern int         ivl_type_properties(ivl_type_t net);
 extern const char* ivl_type_prop_name(ivl_type_t net, int idx);

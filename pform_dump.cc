@@ -269,6 +269,11 @@ void virtual_interface_type_t::pform_dump(ostream&out, unsigned indent) const
       out << setw(indent) << "" << "virtual interface " << interface_name << endl;
 }
 
+void covergroup_type_t::pform_dump(ostream&out, unsigned indent) const
+{
+      out << setw(indent) << "" << "covergroup " << covergroup_name << endl;
+}
+
 void parray_type_t::pform_dump(ostream&out, unsigned indent) const
 {
       out << setw(indent) << "" << "Packed array " << "[...]"

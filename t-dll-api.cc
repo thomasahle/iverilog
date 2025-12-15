@@ -26,6 +26,7 @@
 # include  "netclass.h"
 # include  "netdarray.h"
 # include  "netenum.h"
+# include  "netparray.h"
 # include  "netvector.h"
 # include  <cstdlib>
 # include  <cstdio>
@@ -687,6 +688,13 @@ extern "C" ivl_expr_t ivl_expr_property_base(ivl_expr_t net)
       assert(net);
       assert(net->type_ == IVL_EX_PROPERTY);
       return net->u_.property_.base;
+}
+
+extern "C" ivl_expr_t ivl_expr_property_array_idx(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_PROPERTY);
+      return net->u_.property_.index;
 }
 
 extern "C" ivl_expr_t ivl_expr_vifprop_base(ivl_expr_t net)
@@ -2815,6 +2823,13 @@ extern "C" ivl_scope_t ivl_stmt_call(ivl_statement_t net)
       }
 }
 
+extern "C" int ivl_stmt_call_is_super(ivl_statement_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_ST_UTASK);
+      return net->u_.utask_.is_super_call;
+}
+
 extern "C" bool ivl_stmt_flow_control(ivl_statement_t net)
 {
       return net->u_.disable_.flow_control;
@@ -3360,6 +3375,50 @@ extern "C" int ivl_type_packed_msb(ivl_type_t net, unsigned dim)
       netranges_t slice = net->slice_dimensions();
       assert(dim < slice.size());
       return slice[dim].get_msb();
+}
+
+/*
+ * Unpacked array API functions.
+ * These handle fixed-size unpacked arrays like: int data[4];
+ */
+extern "C" int ivl_type_is_uarray(ivl_type_t net)
+{
+      if (net == 0) return 0;
+      if (dynamic_cast<const netuarray_t*>(net))
+	    return 1;
+      return 0;
+}
+
+extern "C" unsigned ivl_type_uarray_dimensions(ivl_type_t net)
+{
+      const netuarray_t*ua = dynamic_cast<const netuarray_t*>(net);
+      if (ua == 0) return 0;
+      return ua->static_dimensions().size();
+}
+
+extern "C" int ivl_type_uarray_msb(ivl_type_t net, unsigned dim)
+{
+      const netuarray_t*ua = dynamic_cast<const netuarray_t*>(net);
+      assert(ua);
+      const netranges_t&dims = ua->static_dimensions();
+      assert(dim < dims.size());
+      return dims[dim].get_msb();
+}
+
+extern "C" int ivl_type_uarray_lsb(ivl_type_t net, unsigned dim)
+{
+      const netuarray_t*ua = dynamic_cast<const netuarray_t*>(net);
+      assert(ua);
+      const netranges_t&dims = ua->static_dimensions();
+      assert(dim < dims.size());
+      return dims[dim].get_lsb();
+}
+
+extern "C" ivl_type_t ivl_type_uarray_element(ivl_type_t net)
+{
+      const netuarray_t*ua = dynamic_cast<const netuarray_t*>(net);
+      if (ua == 0) return 0;
+      return ua->element_type();
 }
 
 extern "C" const char* ivl_type_name(ivl_type_t net)

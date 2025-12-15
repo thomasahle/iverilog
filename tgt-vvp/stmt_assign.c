@@ -23,6 +23,9 @@
 # include  <stdlib.h>
 # include  <limits.h>
 
+/* Forward declaration for use in show_stmt_assign_vector */
+static int show_stmt_assign_sig_cobject(ivl_statement_t net);
+
 /*
  * These functions handle the blocking assignment. Use the %set
  * instruction to perform the actual assignment, and calculate any
@@ -600,6 +603,13 @@ static void draw_stmt_assign_vector_opcode(unsigned char opcode, bool is_signed)
 static int show_stmt_assign_vector(ivl_statement_t net)
 {
       ivl_expr_t rval = ivl_stmt_rval(net);
+
+      /* Special case: if rvalue is a class type but lvalue expects scalar,
+       * this is likely a type parameter mismatch from specialized class.
+       * Redirect to the class object assignment handler. */
+      if (ivl_expr_value(rval) == IVL_VT_CLASS) {
+	    return show_stmt_assign_sig_cobject(net);
+      }
 
       if (ivl_expr_type(rval) == IVL_EX_ARRAY_PATTERN) {
 	    ivl_lval_t lval = ivl_stmt_lval(net, 0);
@@ -1389,8 +1399,18 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			        ivl_stmt_file(net), ivl_stmt_lineno(net));
 		  }
 
+		  /* Check for array index expression */
+		  ivl_expr_t idx_expr = ivl_lval_idx(lval);
+
 		  if (ivl_stmt_opcode(net) != 0) {
-			fprintf(vvp_out, "    %%prop/v %d;\n", prop_idx);
+			if (idx_expr) {
+			      /* For compound assignment (+=, etc) with array index,
+			         we need to load the current value first */
+			      draw_eval_vec4(idx_expr);
+			      fprintf(vvp_out, "    %%prop/va %d;\n", prop_idx);
+			} else {
+			      fprintf(vvp_out, "    %%prop/v %d;\n", prop_idx);
+			}
 		  }
 
 		  draw_eval_vec4(rval);
@@ -1401,8 +1421,15 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 		  draw_stmt_assign_vector_opcode(ivl_stmt_opcode(net),
 					         ivl_expr_signed(rval));
 
-		  fprintf(vvp_out, "    %%store/prop/v %d, %u; Store in logic property %s\n",
-			  prop_idx, lwid, ivl_type_prop_name(sig_type, prop_idx));
+		  if (idx_expr) {
+			/* Emit the array index onto the stack */
+			draw_eval_vec4(idx_expr);
+			fprintf(vvp_out, "    %%store/prop/va %d, %u; Store in logic property array %s\n",
+			        prop_idx, lwid, ivl_type_prop_name(sig_type, prop_idx));
+		  } else {
+			fprintf(vvp_out, "    %%store/prop/v %d, %u; Store in logic property %s\n",
+			        prop_idx, lwid, ivl_type_prop_name(sig_type, prop_idx));
+		  }
 		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 
 	    } else if (ivl_type_base(prop_type) == IVL_VT_REAL) {

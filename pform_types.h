@@ -413,6 +413,21 @@ struct virtual_interface_type_t : public data_type_t {
 };
 
 /*
+ * The covergroup_type_t represents a covergroup declaration.
+ * Covergroups are parsed but not fully elaborated - they become stub
+ * objects with no-op sample() and get_coverage() methods.
+ */
+struct covergroup_type_t : public data_type_t {
+      inline explicit covergroup_type_t(perm_string n) : covergroup_name(n) { }
+      ~covergroup_type_t() override;
+
+      ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
+      void pform_dump(std::ostream&out, unsigned indent) const override;
+
+      perm_string covergroup_name;
+};
+
+/*
  * The class_param_t represents a single parameter in a parameterized class.
  * For example: class foo #(type T = int, int WIDTH = 8);
  * Each T and WIDTH would have its own class_param_t.
@@ -467,6 +482,10 @@ struct class_type_t : public data_type_t {
 	// properties. These are run in a synthetic "initial" block
 	// without waiting for any constructor.
       std::vector<Statement*> initialize_static;
+
+	// Store method qualifiers from extern declarations (virtual, static, etc).
+	// These are applied when the out-of-body method definition is processed.
+      std::map<perm_string, property_qualifier_t> extern_method_quals;
 
       ivl_type_t elaborate_type_raw(Design*, NetScope*) const override;
 

@@ -2208,8 +2208,8 @@ const NetScope* NetEUFunc::func() const
       return func_;
 }
 
-NetUTask::NetUTask(NetScope*def)
-: task_(def)
+NetUTask::NetUTask(NetScope*def, bool is_super_call)
+: task_(def), is_super_call_(is_super_call)
 {
 }
 

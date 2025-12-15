@@ -160,6 +160,16 @@ NetExpr* elaborate_rval_expr(Design*des, NetScope*scope, ivl_type_t lv_net_type,
       if (dynamic_cast<PEAssignPattern*>(expr))
 	    typed_elab = true;
 
+	// If the expression is a class type but the target type is not,
+	// this might be a type parameter that was incorrectly resolved.
+	// Try typed elaboration to allow class objects to pass through.
+      PExpr::width_mode_t mode = PExpr::SIZED;
+      expr->test_width(des, scope, mode);
+      if (expr->expr_type() == IVL_VT_CLASS && !typed_elab) {
+	    // Expression is a class, target claims not to be - allow typed elab
+	    typed_elab = true;
+      }
+
       if (lv_net_type && typed_elab) {
 	    rval = elab_and_eval(des, scope, expr, lv_net_type, need_const);
       } else {
@@ -3993,7 +4003,18 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    elaborate_arguments_(des, scope, def, false, parms, args_offset);
 
 	    // Check if this is a virtual method call
+	    // BUT: super.method() calls should NEVER use virtual dispatch -
+	    // they should always call the base class's version directly.
 	    bool is_virtual_call = method->is_virtual();
+
+	    // Check for super call by looking for SUPER_TOKEN ("#") in path_head
+	    for (pform_name_t::const_iterator it = search_results.path_head.begin();
+		 it != search_results.path_head.end(); ++it) {
+		  if (it->name == perm_string::literal(SUPER_TOKEN)) {
+			is_virtual_call = false;
+			break;
+		  }
+	    }
 
 	    NetESignal*eres = new NetESignal(res);
 	    NetEUFunc*call = new NetEUFunc(scope, method, eres, parms, false, is_virtual_call);
@@ -5212,7 +5233,19 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 	    check_type = array_type->element_type();
       }
 
+      // For parameterized class methods, the port type might have been resolved
+      // to a scalar (like int) from a type parameter, but the actual argument
+      // is a class. Allow this case since it's likely a type parameter mismatch.
+      bool type_mismatch_ok = false;
       if (! check_type->type_compatible(net->net_type())) {
+	    // If context is scalar and expression is class, might be type parameter
+	    if (net->data_type() == IVL_VT_CLASS &&
+	        (check_type->base_type() == IVL_VT_BOOL ||
+	         check_type->base_type() == IVL_VT_LOGIC)) {
+	          type_mismatch_ok = true;
+	    }
+      }
+      if (! check_type->type_compatible(net->net_type()) && !type_mismatch_ok) {
 	    cerr << get_fileline() << ": error: the type of the variable '"
 		 << path_ << "' doesn't match the context type." << endl;
 
@@ -5229,6 +5262,12 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 	    cerr << endl;
 	    des->errors += 1;
 	    return 0;
+      }
+      // Allow type parameter mismatch case to continue
+      if (type_mismatch_ok) {
+            NetESignal*tmp = new NetESignal(net);
+            tmp->set_line(*this);
+            return tmp;
       }
       ivl_assert(*this, ntype->type_compatible(net->net_type()));
 

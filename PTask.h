@@ -55,6 +55,10 @@ class PTaskFunc : public PScope, public PNamedItem {
       void set_virtual(bool v) { is_virtual_ = v; }
       bool is_virtual() const { return is_virtual_; }
 
+	// Extern method support - body defined outside class
+      void set_extern(bool e) { is_extern_ = e; }
+      bool is_extern() const { return is_extern_; }
+
       virtual void elaborate_sig(Design*des, NetScope*scope) const =0;
       virtual void elaborate(Design*des, NetScope*scope) const =0;
 
@@ -75,6 +79,7 @@ class PTaskFunc : public PScope, public PNamedItem {
       class_type_t*this_type_;
       std::vector<pform_tf_port_t>*ports_;
       bool is_virtual_ = false;
+      bool is_extern_ = false;
 };
 
 /*

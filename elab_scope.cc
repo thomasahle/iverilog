@@ -68,6 +68,10 @@ void set_scope_timescale(Design*des, NetScope*scope, const PScope*pscope)
 
 typedef map<perm_string,LexicalScope::param_expr_t*>::const_iterator mparm_it_t;
 
+// Forward declaration for elaborate_scope_events_
+static void elaborate_scope_events_(Design*des, NetScope*scope,
+                                    const map<perm_string,PEvent*>&events);
+
 static void collect_parm_item(Design*des, NetScope*scope, perm_string name,
 			      const LexicalScope::param_expr_t&cur,
 			      bool is_annotatable)
@@ -527,6 +531,9 @@ static void elaborate_scope_class(Design*des, NetScope*scope, PClass*pclass)
 		 << endl;
       }
       elaborate_scope_enumerations(des, class_scope, pclass->enum_sets);
+
+	// Elaborate events declared in the class.
+      elaborate_scope_events_(des, class_scope, pclass->events);
 
       for (map<perm_string,PTask*>::iterator cur = pclass->tasks.begin()
 		 ; cur != pclass->tasks.end() ; ++cur) {

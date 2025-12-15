@@ -1664,20 +1664,23 @@ static int show_stmt_utask(ivl_statement_t net)
 
       show_stmt_file_line(net, "User task call.");
 
-      /* Check if this is a class method call that needs virtual dispatch */
+      /* Check if this is a class method call that needs virtual dispatch.
+       * IMPORTANT: super.method() calls should NOT use virtual dispatch -
+       * they must call the base class's version directly. */
       ivl_scope_t parent = ivl_scope_parent(task);
       int is_class_method = (parent && ivl_scope_type(parent) == IVL_SCT_CLASS);
+      int is_super_call = ivl_stmt_call_is_super(net);
 
       if (ivl_scope_type(task) == IVL_SCT_FUNCTION) {
 	      // A function called as a task is (presumably) a void function.
-	    if (is_class_method) {
+	    if (is_class_method && !is_super_call) {
 		    // Virtual method call - emit opcode for runtime dispatch
 		    // The method name is obtained from the scope's basename at runtime
 		  fprintf(vvp_out, "    %%callf/virt/void TD_%s, S_%p;\n",
 			  vvp_mangle_id(ivl_scope_name(task)),
 			  task);
 	    } else {
-		    // Regular function call
+		    // Regular function call (or super.method() - no virtual dispatch)
 		  fprintf(vvp_out, "    %%callf/void TD_%s",
 			  vvp_mangle_id(ivl_scope_name(task)));
 		  fprintf(vvp_out, ", S_%p;\n", task);

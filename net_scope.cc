@@ -481,10 +481,12 @@ LineInfo NetScope::get_parameter_line_info(perm_string key) const
       idx = parameters.find(key);
       if (idx != parameters.end()) return idx->second;
 
-	// To get here the parameter must already exist, so we should
-	// never get here.
-      assert(0);
-	// But return something to avoid a compiler warning.
+	// If not found locally, search parent scopes (for functions in packages, etc.)
+      if (up_) {
+	    return up_->get_parameter_line_info(key);
+      }
+
+	// If still not found, return empty LineInfo (for enumerations, etc.)
       return LineInfo();
 }
 

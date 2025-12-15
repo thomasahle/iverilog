@@ -888,6 +888,7 @@ struct ivl_statement_s {
 
 	    struct { /* IVL_ST_UTASK */
 		  ivl_scope_t def;
+		  unsigned is_super_call;
 	    } utask_;
 
 	    struct { /* IVL_ST_TRIGGER IVL_ST_NB_TRIGGER IVL_ST_WAIT */

@@ -4065,12 +4065,16 @@ class NetEAccess : public NetExpr {
 class NetUTask  : public NetProc {
 
     public:
-      explicit NetUTask(NetScope*);
+      explicit NetUTask(NetScope*, bool is_super_call = false);
       ~NetUTask() override;
 
       const std::string name() const;
 
       const NetScope* task() const;
+
+	// Returns true if this is a super.method() call.
+	// Super calls should NOT use virtual dispatch.
+      bool is_super_call() const { return is_super_call_; }
 
       virtual NexusSet* nex_input(bool rem_out = true, bool always_sens = false,
                                   bool nested_func = false) const override;
@@ -4082,6 +4086,7 @@ class NetUTask  : public NetProc {
 
     private:
       NetScope*task_;
+      bool is_super_call_;
 };
 
 /*
