@@ -6477,14 +6477,86 @@ module_item
 
   /* Interface instantiation when interface name is recognized as TYPE_IDENTIFIER.
      This handles cases like: InterfaceName iface_inst();
-     NOTE: We do NOT add an error recovery rule here because it would prevent
-     the parser from falling back to block_item_decl for class variable declarations
-     like: ClassName obj; */
+     We use explicit patterns to avoid shift/reduce conflicts with class variable
+     declarations. The key is to have patterns that distinguish interface
+     instantiation (with parentheses) from variable declarations (without). */
+
+  /* Interface inst with positional ports: InterfaceName inst(port1, port2); or InterfaceName inst(); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	lgate tmp_gate;
+	tmp_gate.name = $3;
+	tmp_gate.parms = $5;
+	FILE_NAME(&tmp_gate, @3);
+	delete[]$3;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, 0, tmp_gates, $1);
+      }
+
+  /* Interface inst with named ports: InterfaceName inst(.clk(clk)); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	lgate tmp_gate;
+	tmp_gate.name = $3;
+	tmp_gate.parms = 0;
+	tmp_gate.parms_by_name = $5;
+	FILE_NAME(&tmp_gate, @3);
+	delete[]$3;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, 0, tmp_gates, $1);
+      }
+
+  /* Interface inst with parameters: InterfaceName #(...) inst(); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER '#' '(' expression_list_with_nuls ')' gate_instance_list ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
+	tmp_parms->by_order = $5;
+	tmp_parms->by_name = 0;
+	pform_make_modgates(@2, tmp1, tmp_parms, $7, $1);
+      }
+
+  /* Interface inst with named parameters: InterfaceName #(.P(v)) inst(); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER '#' '(' parameter_value_byname_list ')' gate_instance_list ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
+	tmp_parms->by_order = 0;
+	tmp_parms->by_name = $5;
+	pform_make_modgates(@2, tmp1, tmp_parms, $7, $1);
+      }
+
+  /* Class variable declarations at module scope. This handles patterns like:
+     ClassName obj;
+     ClassName obj = new();
+     ClassName obj1, obj2;
+     The TYPE_IDENTIFIER is the class name recognized as a type.
+     We create a typeref_t to wrap the typedef_t*. */
 
   | attribute_list_opt
-      TYPE_IDENTIFIER parameter_value_opt gate_instance_list ';'
-      { perm_string tmp1 = lex_strings.make($2.text);
-	pform_make_modgates(@2, tmp1, $3, $4, $1);
+      TYPE_IDENTIFIER list_of_variable_decl_assignments ';'
+      { if ($2.type) {
+	    typeref_t*type = new typeref_t($2.type);
+	    FILE_NAME(type, @2);
+	    pform_set_type_referenced(@2, $2.text);
+	    pform_make_var(@2, $3, type, $1, false);
+	}
+	delete[]$2.text;
+      }
+
+  | attribute_list_opt
+      TYPE_IDENTIFIER dimensions list_of_variable_decl_assignments ';'
+      { if ($2.type) {
+	    typeref_t*base = new typeref_t($2.type);
+	    FILE_NAME(base, @2);
+	    parray_type_t*tmp = new parray_type_t(base, $3);
+	    FILE_NAME(tmp, @2);
+	    pform_set_type_referenced(@2, $2.text);
+	    pform_make_var(@2, $4, tmp, $1, false);
+	}
+	delete[]$2.text;
       }
 
   /* Continuous assignment can have an optional drive strength, then

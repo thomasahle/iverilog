@@ -1077,3 +1077,5 @@ sv_interface_port1	CE,-g2012		ivltests
 sv_interface_inst1	normal,-g2012		ivltests
 sv_interface_inst2	normal,-g2012		ivltests
 sv_endinterface_label1	normal,-g2012		ivltests
+sv_class_module_scope1	normal,-g2012		ivltests
+sv_class_interface_scope1	normal,-g2012		ivltests
