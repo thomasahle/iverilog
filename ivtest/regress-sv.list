@@ -1065,3 +1065,6 @@ sv_sample_identifier1		normal,-g2012		ivltests
 # Test sample/option coexisting with covergroups
 sv_sample_covergroup_coexist	normal,-g2012		ivltests
 sv_std_randomize_with1	normal,-g2012		ivltests
+sv_std_randomize_with2	normal,-g2012		ivltests
+sv_foreach_this3	normal,-g2012		ivltests
+sv_uvm_tlm_fifo3	normal,-g2012,-I./lib/ivl/uvm		ivltests
