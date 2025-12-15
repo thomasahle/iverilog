@@ -1008,15 +1008,15 @@ sv_vif_read		normal,-g2012		ivltests
 sv_vif_shared		normal,-g2012		ivltests
 
 # UVM config_db tests
-uvm_config_db_int	normal,-g2012		ivltests
-uvm_config_db_vif	normal,-g2012		ivltests
-uvm_config_db_block	normal,-g2012		ivltests
+uvm_config_db_int	normal,-g2012,-I./lib/ivl/uvm		ivltests
+uvm_config_db_vif	normal,-g2012,-I./lib/ivl/uvm		ivltests
+uvm_config_db_block	normal,-g2012,-I./lib/ivl/uvm		ivltests
 
 # UVM factory pattern test
-uvm_factory_create	normal,-g2012		ivltests
+uvm_factory_create	normal,-g2012,-I./lib/ivl/uvm		ivltests
 
 # UVM TLM FIFO (stub implementation)
-sv_uvm_tlm_fifo1	normal,-g2012,-Ilib/ivl/uvm		ivltests
+sv_uvm_tlm_fifo1	normal,-g2012,-I./lib/ivl/uvm		ivltests
 
 # SystemVerilog inside operator
 sv_inside_operator	normal,-g2012		ivltests
