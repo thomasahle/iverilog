@@ -1151,10 +1151,11 @@ package uvm_pkg;
     endtask
 
     // Try to get next item without blocking
-    virtual function bit try_next_item(output REQ t);
+    // Note: Changed from function with output to task per SV rules
+    virtual task try_next_item(output REQ t, output bit success);
       t = null;
-      return 0;  // No item available (stub)
-    endfunction
+      success = 0;  // No item available (stub)
+    endtask
 
     // Signal that processing of the current item is complete
     virtual function void item_done(RSP rsp = null);
