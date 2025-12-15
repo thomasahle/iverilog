@@ -1043,12 +1043,15 @@ void pform_set_type_referenced(const struct vlltype&loc, const char*name)
       check_potential_imports(loc, lex_name, false);
 }
 
+// Static cache for interface typedefs to avoid repeated allocation
+static std::map<perm_string, typedef_t*> interface_typedefs_cache;
+
 typedef_t* pform_test_type_identifier(const struct vlltype&loc, const char*txt)
 {
       perm_string name = lex_strings.make(txt);
 
       LexicalScope*cur_scope = lexical_scope;
-      do {
+      while (cur_scope) {
 	    LexicalScope::typedef_map_t::iterator cur;
 
 	      // First look to see if this identifier is imported from
@@ -1085,7 +1088,27 @@ typedef_t* pform_test_type_identifier(const struct vlltype&loc, const char*txt)
             }
 
 	    cur_scope = cur_scope->parent_scope();
-      } while (cur_scope);
+      }
+
+	// As a fallback, check if this is an interface name in pform_modules.
+	// This enables interface port syntax like: module M(InterfaceName port);
+      map<perm_string,Module*>::iterator it = pform_modules.find(name);
+      if (it != pform_modules.end() && it->second->is_interface) {
+	      // Check cache first to avoid creating duplicate typedef_t objects
+	    auto cache_it = interface_typedefs_cache.find(name);
+	    if (cache_it != interface_typedefs_cache.end()) {
+		  return cache_it->second;
+	    }
+	      // Create a typedef for the interface
+	    typedef_t*td = new typedef_t(name);
+	    td->set_line(*(it->second));
+	    td->set_basic_type(typedef_t::INTERFACE);
+	    virtual_interface_type_t*vif_type = new virtual_interface_type_t(name);
+	    vif_type->set_line(*(it->second));
+	    td->set_data_type(vif_type);
+	    interface_typedefs_cache[name] = td;
+	    return td;
+      }
 
       return 0;
 }
@@ -1635,6 +1658,26 @@ void pform_endmodule(const char*name, bool inside_celldefine,
 	    VLerror(msg.str().c_str());
       } else {
 	    use_module_map[mod_name] = cur_module;
+      }
+
+	// If this is an interface, also register it as a type so that
+	// interface port syntax (e.g., module M(InterfaceName port)) works.
+	// The interface name will be recognized as TYPE_IDENTIFIER by the lexer.
+      if (cur_module->is_interface) {
+	    LexicalScope*parent = lexical_scope->parent_scope();
+	    if (parent == nullptr) {
+		  // Root-level interface - handled via fallback in
+		  // pform_test_type_identifier which checks pform_modules.
+	    } else {
+		  // Nested interface - create typedef in parent scope
+		  typedef_t*td = new typedef_t(mod_name);
+		  td->set_line(*cur_module);
+		  td->set_basic_type(typedef_t::INTERFACE);
+		  virtual_interface_type_t*vif_type = new virtual_interface_type_t(mod_name);
+		  vif_type->set_line(*cur_module);
+		  td->set_data_type(vif_type);
+		  parent->typedefs[mod_name] = td;
+	    }
       }
 
 	// The current lexical scope should be this module by now.

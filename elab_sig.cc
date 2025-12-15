@@ -38,6 +38,7 @@
 # include  "netmisc.h"
 # include  "netclass.h"
 # include  "netenum.h"
+# include  "netscalar.h"
 # include  "netvector.h"
 # include  "netdarray.h"
 # include  "netparray.h"
@@ -97,6 +98,23 @@ static void sig_check_data_type(Design*des, const NetScope*scope,
 
       if (!type)
 	    return;
+
+      // Check for interface port (virtual interface type used as port)
+      // This is a special case - interface ports require special handling
+      // that isn't implemented yet.
+      if (const netvirtual_interface_t*vif_type =
+	        dynamic_cast<const netvirtual_interface_t*>(type)) {
+	    if (scope->type() == NetScope::MODULE &&
+	        sig->port_type() != NetNet::NOT_A_PORT) {
+		  cerr << wire->get_fileline() << ": sorry: Interface port `"
+		       << wire->basename() << "` of type `"
+		       << vif_type->interface_name()
+		       << "` is not yet supported. Use explicit signal ports instead."
+		       << endl;
+		  des->errors++;
+		  return;
+	    }
+      }
 
       if ((sig->type() == NetNet::WIRE) && (sig->data_type() != IVL_VT_LOGIC)) {
 	    if (gn_cadence_types_flag) {

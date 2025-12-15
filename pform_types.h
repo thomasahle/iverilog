@@ -201,7 +201,8 @@ struct typedef_t : public PNamedItem {
 	    ENUM,
 	    STRUCT,
 	    UNION,
-	    CLASS
+	    CLASS,
+	    INTERFACE  // Interface type (for interface ports)
       };
 
       bool set_data_type(data_type_t *t);
