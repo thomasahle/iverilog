@@ -917,6 +917,7 @@ static void draw_property_vec4(ivl_expr_t expr)
 {
       ivl_signal_t sig = ivl_expr_signal(expr);
       ivl_expr_t base = ivl_expr_property_base(expr);
+      ivl_expr_t array_idx = ivl_expr_property_array_idx(expr);
       unsigned pidx = ivl_expr_property_idx(expr);
 
       if (base) {
@@ -926,7 +927,14 @@ static void draw_property_vec4(ivl_expr_t expr)
 	    // Direct property access - load signal
 	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
       }
-      fprintf(vvp_out, "    %%prop/v %u;\n", pidx);
+
+      if (array_idx) {
+	    // Property array access - push index first, then use indexed opcode
+	    draw_eval_vec4(array_idx);
+	    fprintf(vvp_out, "    %%prop/va %u;\n", pidx);
+      } else {
+	    fprintf(vvp_out, "    %%prop/v %u;\n", pidx);
+      }
       fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 }
 
@@ -1105,6 +1113,29 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    return;
       }
 
+      if (strcmp(ivl_expr_name(expr),"$ivl_std_randomize")==0) {
+	      /* std::randomize(var) - randomize a standalone variable
+	         The argument is a signal expression. Generate random bits
+	         and store them, then push 1 (success) to vec4 stack. */
+	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+
+	    if (ivl_expr_type(arg) == IVL_EX_SIGNAL) {
+		  ivl_signal_t sig = ivl_expr_signal(arg);
+		  unsigned wid = ivl_signal_width(sig);
+
+		  /* Generate random value and store to signal */
+		  fprintf(vvp_out, "    %%std_randomize v%p_0, %u;\n", sig, wid);
+	    } else {
+		  fprintf(vvp_out, "; WARNING: $ivl_std_randomize argument is not a simple signal\n");
+		  /* Push 0 (failure) if we can't randomize */
+		  fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
+		  return;
+	    }
+	    /* Push 1 (success) */
+	    fprintf(vvp_out, "    %%pushi/vec4 1, 0, 32;\n");
+	    return;
+      }
+
       if (strcmp(ivl_expr_name(expr),"$ivl_cast")==0) {
 	      /* $cast(dest, src) - check if src's actual type is compatible
 	         with dest's declared type. If yes, assign and return 1.
@@ -1167,7 +1198,7 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    /* $ivl_config_db_get(inst_name, field_name, dest)
 	     * - Push inst_name string to string stack
 	     * - Push field_name string to string stack
-	     * - Get destination signal
+	     * - Get destination (signal or property)
 	     * - Call %config_db/get/v or %config_db/get/o depending on type
 	     *   which pops strings, looks up value, stores to dest and
 	     *   pushes 1/0 to vec4 stack */
@@ -1175,30 +1206,47 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    ivl_expr_t field_name_expr = ivl_expr_parm(expr, 1);
 	    ivl_expr_t dest_expr = ivl_expr_parm(expr, 2);
 
-	    /* Get the destination signal */
-	    ivl_signal_t dst_sig = NULL;
-	    if (ivl_expr_type(dest_expr) == IVL_EX_SIGNAL) {
-		  dst_sig = ivl_expr_signal(dest_expr);
-	    } else {
-		  fprintf(vvp_out, "; ERROR: $ivl_config_db_get dest must be signal (got type %d)\n",
-			  ivl_expr_type(dest_expr));
-		  fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
-		  return;
-	    }
-
 	    /* Push inst_name string */
 	    draw_eval_string(inst_name_expr);
 	    /* Push field_name string */
 	    draw_eval_string(field_name_expr);
 
-	    /* Check destination type and use appropriate opcode */
-	    ivl_type_t dst_type = ivl_signal_net_type(dst_sig);
-	    if (dst_type && ivl_type_base(dst_type) == IVL_VT_CLASS) {
-		  /* Object type - use %config_db/get/o */
-		  fprintf(vvp_out, "    %%config_db/get/o v%p_0;\n", dst_sig);
+	    /* Handle destination based on expression type */
+	    if (ivl_expr_type(dest_expr) == IVL_EX_SIGNAL) {
+		  /* Direct signal destination */
+		  ivl_signal_t dst_sig = ivl_expr_signal(dest_expr);
+		  ivl_type_t dst_type = ivl_signal_net_type(dst_sig);
+		  if (dst_type && ivl_type_base(dst_type) == IVL_VT_CLASS) {
+			/* Object type - use %config_db/get/o */
+			fprintf(vvp_out, "    %%config_db/get/o v%p_0;\n", dst_sig);
+		  } else {
+			/* Vec4 type - use %config_db/get/v */
+			fprintf(vvp_out, "    %%config_db/get/v v%p_0;\n", dst_sig);
+		  }
+	    } else if (ivl_expr_type(dest_expr) == IVL_EX_PROPERTY) {
+		  /* Property destination - need to load base object first, then store */
+		  ivl_signal_t sig = ivl_expr_signal(dest_expr);
+		  unsigned pidx = ivl_expr_property_idx(dest_expr);
+		  ivl_expr_t base = ivl_expr_property_base(dest_expr);
+
+		  /* Load the base object (the 'this' object containing the property) */
+		  if (base) {
+			draw_eval_object(base);
+		  } else {
+			fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+		  }
+
+		  /* Use %config_db/get/prop which:
+		   * - Pops inst_name, field_name strings
+		   * - Pops base object from object stack
+		   * - Looks up value in config_db
+		   * - Stores to property pidx of base object
+		   * - Pushes 1/0 to vec4 stack */
+		  fprintf(vvp_out, "    %%config_db/get/prop %u;\n", pidx);
 	    } else {
-		  /* Vec4 type - use %config_db/get/v */
-		  fprintf(vvp_out, "    %%config_db/get/v v%p_0;\n", dst_sig);
+		  fprintf(vvp_out, "; ERROR: $ivl_config_db_get dest must be signal or property (got type %d)\n",
+			  ivl_expr_type(dest_expr));
+		  fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
 	    }
 	    return;
       }

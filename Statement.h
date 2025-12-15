@@ -199,9 +199,15 @@ class PBlock  : public PScope, public Statement, public PNamedItem {
 
       void set_statement(const std::vector<Statement*>&st);
 
+	// Get reference to the statement list (for merging in parser)
+      std::vector<Statement*>& get_statements() { return list_; }
+
 	// Copy the statement from that block to the front of this
 	// block.
       void push_statement_front(Statement*that);
+
+	// Append statement to the end of this block
+      void push_statement_back(Statement*that) { list_.push_back(that); }
 
       virtual void dump(std::ostream&out, unsigned ind) const override;
       virtual NetProc* elaborate(Design*des, NetScope*scope) const override;
@@ -250,7 +256,8 @@ class PCallTask  : public Statement {
       NetProc *elaborate_non_void_function_(Design *des, NetScope *scope) const;
 
       NetProc*elaborate_build_call_(Design*des, NetScope*scope,
-				    NetScope*task, NetExpr*use_this) const;
+				    NetScope*task, NetExpr*use_this,
+				    bool is_super_call = false) const;
       NetProc*elaborate_sys_task_method_(Design*des, NetScope*scope,
 					 NetNet*net,
 					 perm_string method_name,
@@ -497,7 +504,7 @@ class PForce  : public Statement {
 
 class PForeach : public Statement {
     public:
-      explicit PForeach(perm_string var, const std::list<perm_string>&ix, Statement*stmt);
+      explicit PForeach(const pform_name_t&var, const std::list<perm_string>&ix, Statement*stmt);
       ~PForeach() override;
 
       virtual NetProc* elaborate(Design*des, NetScope*scope) const override;
@@ -510,7 +517,7 @@ class PForeach : public Statement {
 				       const netranges_t&dims) const;
 
     private:
-      perm_string array_var_;
+      pform_name_t array_var_;
       std::vector<perm_string> index_vars_;
       Statement*statement_;
 };

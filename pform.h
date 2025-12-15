@@ -184,15 +184,45 @@ extern void pform_class_property_virtual_interface(const struct vlltype&loc,
 				 perm_string interface_name,
 				 perm_string var_name,
 				 PExpr*init_expr);
+extern void pform_covergroup_declaration(const struct vlltype&loc,
+				 const char* covergroup_name,
+				 std::vector<pform_tf_port_t>* sample_ports);
 extern void pform_set_this_class(const struct vlltype&loc, PTaskFunc*net);
 extern void pform_set_constructor_return(PFunction*net);
 
 extern void pform_end_class_declaration(const struct vlltype&loc);
 extern bool pform_in_class();
+extern void pform_begin_extern_declaration();
+extern void pform_end_extern_declaration();
+extern bool pform_in_extern_declaration();
 extern void pform_set_method_static(bool is_static);
 extern void pform_reset_method_static();
 extern void pform_set_method_virtual(bool is_virtual);
 extern void pform_reset_method_virtual();
+
+// Extern method declarations and out-of-body definitions
+// (simplified: extern decls warn, out-of-body creates regular function/task)
+extern void pform_declare_extern_function(const struct vlltype&loc,
+					  property_qualifier_t quals,
+					  data_type_t* return_type,
+					  const char* name,
+					  std::vector<pform_tf_port_t>* ports);
+extern void pform_declare_extern_task(const struct vlltype&loc,
+				      property_qualifier_t quals,
+				      const char* name,
+				      std::vector<pform_tf_port_t>* ports);
+extern PFunction* pform_start_external_function(const struct vlltype&loc,
+						const char* class_name,
+						const char* func_name,
+						LexicalScope::lifetime_t lifetime);
+extern PTask* pform_start_external_task(const struct vlltype&loc,
+					const char* class_name,
+					const char* task_name,
+					LexicalScope::lifetime_t lifetime);
+extern void pform_set_cur_class(PClass*cls);
+extern void pform_end_external_method(void);
+extern void pform_start_extern_decl(void);
+extern void pform_end_extern_decl(void);
 
 extern void pform_make_udp(const struct vlltype&loc, perm_string name,
 			   std::list<pform_ident_t>*parms,
@@ -340,7 +370,7 @@ extern PCallTask* pform_make_call_task(const struct vlltype&loc,
 extern void pform_make_foreach_declarations(const struct vlltype&loc,
 					    std::list<perm_string>*loop_vars);
 extern PForeach* pform_make_foreach(const struct vlltype&loc,
-				    char*ident,
+				    pform_name_t*name,
 				    std::list<perm_string>*loop_vars,
 				    Statement*stmt);
 

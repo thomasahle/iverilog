@@ -2154,6 +2154,55 @@ bool of_CONFIG_DB_SET_O(vthread_t thr, vvp_code_t)
 }
 
 /*
+ * %config_db/get/prop <property_index>
+ * Pop field_name and inst_name from string stack.
+ * Pop base object from object stack.
+ * Look up object value in config_db, store to property of base object.
+ * Push 1 to vec4 stack if found, 0 if not found.
+ */
+bool of_CONFIG_DB_GET_PROP(vthread_t thr, vvp_code_t cp)
+{
+      unsigned prop_idx = cp->number;
+
+      // Pop field_name and inst_name from string stack
+      std::string field_name = thr->pop_str();
+      std::string inst_name = thr->pop_str();
+
+      // Pop base object from object stack
+      vvp_object_t base_obj;
+      thr->pop_object(base_obj);
+
+      // If inst_name is empty and we have a component, use its m_full_name
+      // This implements UVM's context-aware lookup
+      std::string context_path = "";
+      vvp_cobject*cobj = base_obj.peek<vvp_cobject>();
+      if (cobj && inst_name.empty()) {
+            // Look up m_full_name property (property index 3 in uvm_component)
+            // Property layout: 0=m_name, 1=m_type_name, 2=m_children, 3=m_full_name, ...
+            std::string full_name = cobj->get_string(3);
+            if (!full_name.empty()) {
+                  context_path = full_name;
+            }
+      }
+
+      // Look up in config_db
+      vvp_object_t value;
+      bool found = vvp_config_db::instance().get_object(context_path, inst_name, field_name, value);
+
+      if (found) {
+            // Store value to property of base object
+            if (cobj) {
+                  cobj->set_object(prop_idx, value, 0);
+            }
+            thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+      } else {
+            thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+      }
+
+      return true;
+}
+
+/*
  * %cast2
  */
 bool of_CAST2(vthread_t thr, vvp_code_t)
@@ -6036,6 +6085,33 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       return true;
 }
 
+/*
+ * %std_randomize <sig>, <wid>
+ * Randomize a standalone signal (for std::randomize function).
+ * Does NOT push any result - that's handled by the code generator.
+ */
+bool of_STD_RANDOMIZE(vthread_t, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned wid = cp->bit_idx[0];
+
+      if (net == 0) {
+	    return true;
+      }
+
+      // Generate random bits
+      vvp_vector4_t val(wid);
+      for (unsigned b = 0; b < wid; b++) {
+	    val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+      }
+
+      // Store the random value to the signal
+      vvp_net_ptr_t ptr(net, 0);
+      vvp_send_vec4(ptr, val, 0);
+
+      return true;
+}
+
 bool of_RELEASE_NET(vthread_t, vvp_code_t cp)
 {
       return do_release_vec(cp, true);
@@ -6807,6 +6883,76 @@ bool of_STORE_PROP_STR(vthread_t thr, vvp_code_t cp)
 bool of_STORE_PROP_V(vthread_t thr, vvp_code_t cp)
 {
       return store_prop<vvp_vector4_t>(thr, cp, cp->bit_idx[0]);
+}
+
+/*
+ * %store/prop/va <pid>, <wid>
+ *
+ * Store vector value into property array element. The array index is
+ * popped from the vec4 stack first, then the value to store.
+ * The cobject remains on top of the object stack.
+ */
+bool of_STORE_PROP_VA(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+      unsigned wid = cp->bit_idx[0];
+
+      // Stack order: value pushed first, then index pushed second
+      // Pop in reverse order (LIFO): index first, then value
+
+      // Pop the array index (pushed last)
+      vvp_vector4_t idx_vec = thr->pop_vec4();
+      int64_t idx_val;
+      bool ok = vector4_to_value(idx_vec, idx_val, true, false);
+      assert(ok);
+      uint64_t idx = idx_val;
+
+      // Pop the value to store (pushed first)
+      vvp_vector4_t val = thr->pop_vec4();
+      assert(val.size() >= wid);
+      val.resize(wid);
+
+      // Get the object and store the value at the indexed position
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      assert(cobj);
+
+      cobj->set_vec4(pid, val, idx);
+
+      return true;
+}
+
+/*
+ * %prop/va <pid>
+ *
+ * Load vector value from property array element. The array index is
+ * popped from the vec4 stack. The loaded value is pushed to vec4 stack.
+ * The cobject remains on the object stack.
+ */
+bool of_PROP_VA(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+
+      // Pop the array index
+      vvp_vector4_t idx_vec = thr->pop_vec4();
+      int64_t idx_val;
+      bool ok = vector4_to_value(idx_vec, idx_val, true, false);
+      assert(ok);
+      uint64_t idx = idx_val;
+
+      // Get the object (keep on stack)
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      assert(cobj);
+
+      // Load the value from the indexed position
+      vvp_vector4_t val;
+      cobj->get_vec4(pid, val, idx);
+
+      // Push the value
+      thr->push_vec4(val);
+
+      return true;
 }
 
 /*

@@ -649,6 +649,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %token K_assume K_before K_bind K_bins K_binsof K_bit K_break K_byte
 %token K_chandle K_class K_clocking K_const K_constraint K_context
 %token K_continue K_cover K_covergroup K_coverpoint K_cross K_dist K_do
+%token K_type_option
 %token K_endclass K_endclocking K_endgroup K_endinterface K_endpackage
 %token K_endprogram K_endproperty K_endsequence K_enum K_expect K_export
 %token K_extends K_extern K_final K_first_match K_foreach K_forkjoin
@@ -762,6 +763,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <let_port_itm> let_port_item
 
 %type <pform_name> hierarchy_identifier implicit_class_handle class_hierarchy_identifier
+%type <pform_name> simple_hierarchy_identifier simple_class_hierarchy_identifier
 %type <pform_name> spec_notifier_opt spec_notifier
 %type <timing_check_event> spec_reference_event
 %type <spec_optional_args> setuphold_opt_args recrem_opt_args setuphold_recrem_opt_notifier
@@ -1296,6 +1298,11 @@ class_item /* IEEE1800-2005: A.1.8 */
     /* TODO: Restrict the access based on the property qualifier. */
   | property_qualifier_opt type_declaration
 
+    /* Event declaration as class property */
+  | property_qualifier_opt K_event event_variable_list ';'
+      { if ($3) pform_make_events(@2, $3);
+      }
+
     /* IEEE1800-1017: A.1.9 Class items: Class methods... */
 
   | method_qualifier_opt task_declaration
@@ -1304,23 +1311,42 @@ class_item /* IEEE1800-2005: A.1.8 */
   | method_qualifier_opt function_declaration
       { pform_reset_method_static(); }
 
-    /* External class method definitions... */
+    /* External class method declarations (forward declarations) */
 
-  | K_extern method_qualifier_opt K_function K_new tf_port_list_parens_opt ';'
-      { yyerror(@1, "sorry: External constructors are not yet supported."); }
-  | K_extern method_qualifier_opt K_function data_type_or_implicit_or_void
-    IDENTIFIER tf_port_list_parens_opt ';'
-      { yyerror(@1, "sorry: External methods are not yet supported.");
-	delete[] $5;
+  | K_extern method_qualifier_opt K_function K_new
+      { pform_begin_extern_declaration(); }
+    tf_port_list_parens_opt ';'
+      { /* Extern constructor declaration */
+	pform_end_extern_declaration();
+	pform_declare_extern_function(@1, $2, nullptr, "new", $6);
+	delete $6;
       }
-  | K_extern method_qualifier_opt K_task IDENTIFIER tf_port_list_parens_opt ';'
-      { yyerror(@1, "sorry: External methods are not yet supported.");
+  | K_extern method_qualifier_opt K_function data_type_or_implicit_or_void IDENTIFIER
+      { pform_begin_extern_declaration(); }
+    tf_port_list_parens_opt ';'
+      { /* Extern function declaration */
+	pform_end_extern_declaration();
+	pform_declare_extern_function(@1, $2, $4, $5, $7);
+	delete[] $5;
+	delete $7;
+      }
+  | K_extern method_qualifier_opt K_task IDENTIFIER
+      { pform_begin_extern_declaration(); }
+    tf_port_list_parens_opt ';'
+      { /* Extern task declaration */
+	pform_end_extern_declaration();
+	pform_declare_extern_task(@1, $2, $4, $6);
 	delete[] $4;
+	delete $6;
       }
 
     /* Class constraints... */
 
   | class_constraint
+
+    /* Covergroup inside class */
+
+  | covergroup_declaration
 
     /* Here are some error matching rules to help recover from various
        syntax errors within a class declaration. */
@@ -1523,6 +1549,8 @@ constraint_declaration /* IEEE1800-2005: A.1.9 */
 
 constraint_expression /* IEEE1800-2005 A.1.9 */
   : expression ';'
+  | K_soft expression ';'
+      { /* Soft constraint - parsed but not enforced differently */ }
   | expression K_dist '{' '}' ';'
   | expression constraint_trigger
   | K_if '(' expression ')' constraint_set %prec less_than_K_else
@@ -1550,6 +1578,174 @@ constraint_set /* IEEE1800-2005 A.1.9 */
   : constraint_expression
   | '{' constraint_expression_list '}'
   ;
+
+/* ============ Covergroup Declarations (IEEE1800-2017: A.2.11) ============ */
+
+covergroup_declaration /* IEEE1800-2017: A.2.11 */
+  : K_covergroup IDENTIFIER covergroup_port_list_opt coverage_event_opt ';'
+    covergroup_body_item_list_opt
+    K_endgroup label_opt
+      { pform_covergroup_declaration(@1, $2, 0);
+        delete[]$2;
+      }
+  ;
+
+covergroup_port_list_opt
+  : '(' tf_port_list ')'
+      { delete $2; }
+  | '(' ')'
+  |
+  ;
+
+coverage_event_opt
+  : '@' '(' event_expression_list ')'
+  | K_with K_function IDENTIFIER '(' tf_port_list_opt ')'
+      { /* 'sample' is expected but not validated - context makes it clear */
+        delete[]$3;
+        delete $5;
+      }
+  |
+  ;
+
+covergroup_body_item_list_opt
+  : covergroup_body_item_list
+  |
+  ;
+
+covergroup_body_item_list
+  : covergroup_body_item_list covergroup_body_item
+  | covergroup_body_item
+  ;
+
+covergroup_body_item
+  : coverage_option ';'
+  | coverpoint_declaration
+  | cross_declaration
+  ;
+
+coverage_option
+  : IDENTIFIER '.' IDENTIFIER '=' expression
+      { /* 'option' is expected in $1 - context makes it clear */
+        delete[]$1;
+        delete[]$3;
+      }
+  | K_type_option '.' IDENTIFIER '=' expression
+      { delete[]$3; }
+  ;
+
+coverpoint_declaration
+  : IDENTIFIER ':' K_coverpoint expression coverpoint_iff_opt bins_or_empty
+      { delete[]$1; }
+  | IDENTIFIER ':' K_coverpoint expression coverpoint_iff_opt '{' bins_list_opt '}'
+      { delete[]$1; }
+  | K_coverpoint expression coverpoint_iff_opt bins_or_empty
+  | K_coverpoint expression coverpoint_iff_opt '{' bins_list_opt '}'
+  ;
+
+coverpoint_iff_opt
+  : K_iff '(' expression ')'
+  |
+  ;
+
+bins_or_empty
+  : ';'
+  ;
+
+bins_list_opt
+  : bins_list
+  |
+  ;
+
+bins_list
+  : bins_list bins_item
+  | bins_item
+  ;
+
+bins_item
+  : bins_keyword IDENTIFIER bins_array_opt '=' '{' bins_values '}' bins_iff_opt ';'
+      { delete[]$2; }
+  | bins_keyword IDENTIFIER bins_array_opt '=' K_default bins_iff_opt ';'
+      { delete[]$2; }
+  | bins_keyword IDENTIFIER bins_array_opt '=' K_default K_sequence bins_iff_opt ';'
+      { delete[]$2; }
+  | coverage_option ';'
+  | K_type_option '.' IDENTIFIER '=' expression ';'
+      { delete[]$3; }
+  ;
+
+bins_keyword
+  : K_bins
+  | K_illegal_bins
+  | K_ignore_bins
+  ;
+
+bins_array_opt
+  : '[' expression ']'
+  | '[' ']'
+  |
+  ;
+
+bins_values
+  : bins_values ',' bins_value
+  | bins_value
+  ;
+
+bins_value
+  : expression
+  | '[' expression ':' expression ']'
+  | '[' expression ':' '$' ']'   /* Unbounded upper limit */
+  | '[' '$' ':' expression ']'   /* Unbounded lower limit */
+  ;
+
+bins_iff_opt
+  : K_iff '(' expression ')'
+  |
+  ;
+
+cross_declaration
+  : IDENTIFIER ':' K_cross cross_item_list cross_iff_opt cross_body
+      { delete[]$1; }
+  | K_cross cross_item_list cross_iff_opt cross_body
+  ;
+
+cross_item_list
+  : cross_item_list ',' IDENTIFIER
+      { delete[]$3; }
+  | IDENTIFIER ',' IDENTIFIER
+      { delete[]$1; delete[]$3; }
+  ;
+
+cross_iff_opt
+  : K_iff '(' expression ')'
+  |
+  ;
+
+cross_body
+  : '{' cross_body_item_list_opt '}'
+  | ';'
+  ;
+
+cross_body_item_list_opt
+  : cross_body_item_list
+  |
+  ;
+
+cross_body_item_list
+  : cross_body_item_list cross_body_item
+  | cross_body_item
+  ;
+
+cross_body_item
+  : bins_keyword IDENTIFIER '=' select_expression ';'
+      { delete[]$2; }
+  | coverage_option ';'
+  ;
+
+select_expression
+  : expression
+  ;
+
+/* ============ End Covergroup Declarations ============ */
 
 data_declaration /* IEEE1800-2005: A.2.1.3 */
    : attribute_list_opt K_const_opt data_type list_of_variable_decl_assignments ';'
@@ -1738,6 +1934,7 @@ data_type_or_implicit_or_void
 	$$ = tmp;
       }
   ;
+
 
 deferred_immediate_assertion_item /* IEEE1800-2012: A.6.10 */
   : block_identifier_opt deferred_immediate_assertion_statement
@@ -1996,6 +2193,31 @@ class_hierarchy_identifier
       }
   ;
 
+/* Simple hierarchy identifier without trailing array indices.
+   Used in foreach loops where the [] contains loop variables, not array indices. */
+simple_hierarchy_identifier
+  : IDENTIFIER
+      { $$ = new pform_name_t;
+	$$->push_back(name_component_t(lex_strings.make($1)));
+	delete[]$1;
+      }
+  | simple_hierarchy_identifier '.' IDENTIFIER
+      { pform_name_t * tmp = $1;
+	tmp->push_back(name_component_t(lex_strings.make($3)));
+	delete[]$3;
+	$$ = tmp;
+      }
+  ;
+
+/* Simple class hierarchy identifier (this.x or super.x) without trailing indices */
+simple_class_hierarchy_identifier
+  : implicit_class_handle simple_hierarchy_identifier
+      { $1->splice($1->end(), *$2);
+	delete $2;
+	$$ = $1;
+      }
+  ;
+
   /* SystemVerilog adds support for the increment/decrement
      expressions, which look like a++, --a, etc. These are primaries
      but are in their own rules because they can also be
@@ -2234,7 +2456,32 @@ loop_statement /* IEEE1800-2005: A.6.8 */
 
       // When matching a foreach loop, implicitly create a named block
       // to hold the definitions for the index variables.
-  | K_foreach '(' IDENTIFIER '[' loop_variables ']' ')'
+      // Use simple_hierarchy_identifier to not consume trailing [] as array index.
+  | K_foreach '(' simple_hierarchy_identifier '[' loop_variables ']' ')'
+      { static unsigned foreach_counter = 0;
+	char for_block_name[64];
+	snprintf(for_block_name, sizeof for_block_name, "$ivl_foreach%u", foreach_counter);
+	foreach_counter += 1;
+
+	PBlock*tmp = pform_push_block_scope(@1, for_block_name, PBlock::BL_SEQ);
+	current_block_stack.push(tmp);
+
+	pform_make_foreach_declarations(@1, $5);
+      }
+    statement_or_null
+      { PForeach*tmp_for = pform_make_foreach(@1, $3, $5, $9);
+
+	pform_pop_scope();
+	vector<Statement*>tmp_for_list(1);
+	tmp_for_list[0] = tmp_for;
+	PBlock*tmp_blk = current_block_stack.top();
+	current_block_stack.pop();
+	tmp_blk->set_statement(tmp_for_list);
+	$$ = tmp_blk;
+      }
+
+      // foreach loop with this. or super. prefix (simple_class_hierarchy_identifier)
+  | K_foreach '(' simple_class_hierarchy_identifier '[' loop_variables ']' ')'
       { static unsigned foreach_counter = 0;
 	char for_block_name[64];
 	snprintf(for_block_name, sizeof for_block_name, "$ivl_foreach%u", foreach_counter);
@@ -2286,8 +2533,14 @@ loop_statement /* IEEE1800-2005: A.6.8 */
 	yyerror(@1, "error: Error in do/while loop condition.");
       }
 
-  | K_foreach '(' IDENTIFIER '[' error ']' ')' statement_or_null
+  | K_foreach '(' simple_hierarchy_identifier '[' error ']' ')' statement_or_null
       { $$ = 0;
+        delete $3;
+        yyerror(@4, "error: Errors in foreach loop variables list.");
+      }
+  | K_foreach '(' simple_class_hierarchy_identifier '[' error ']' ')' statement_or_null
+      { $$ = 0;
+        delete $3;
         yyerror(@4, "error: Errors in foreach loop variables list.");
       }
   ;
@@ -2588,9 +2841,190 @@ package_item /* IEEE1800-2005 A.1.10 */
   | type_declaration
   | function_declaration
   | task_declaration
+  | external_method_definition
   | data_declaration
   | class_declaration
   | package_export_declaration
+  ;
+
+  /* Out-of-body method definitions: function ClassName::methodName() ... */
+  /* NOTE: Only TYPE_IDENTIFIER is supported for the class name to avoid parser conflicts
+     with function_declaration. The class must be declared before out-of-body method definitions. */
+external_method_definition
+    /* Constructor with K_new - ANSI port list - class as TYPE_IDENTIFIER
+     * Example: function MyClass::new(string name);
+     */
+  : K_function lifetime_opt TYPE_IDENTIFIER K_SCOPE_RES K_new
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $3.text, "new", $2);
+	delete[] $3.text;
+      }
+    '(' tf_port_list_opt ')' ';'
+    block_item_decls_opt
+    statement_or_null_list_opt
+    K_endfunction endnew_opt
+      { current_function->set_ports($8);
+	current_function->set_return(0);  /* No return type for constructor */
+	current_function_set_statement($12? @12 : @5, $12);
+	pform_set_this_class(@5, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	current_function = 0;
+      }
+
+    /* Constructor with K_new - old-style port list - class as TYPE_IDENTIFIER */
+  | K_function lifetime_opt TYPE_IDENTIFIER K_SCOPE_RES K_new ';'
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $3.text, "new", $2);
+	delete[] $3.text;
+      }
+    tf_item_list_opt
+    statement_or_null_list_opt
+    K_endfunction endnew_opt
+      { current_function->set_ports($8);
+	current_function->set_return(0);  /* No return type */
+	current_function_set_statement($9? @9 : @5, $9);
+	pform_set_this_class(@5, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	current_function = 0;
+      }
+
+    /* Method (non-constructor) with no return type - ANSI port list - class as TYPE_IDENTIFIER */
+  | K_function lifetime_opt TYPE_IDENTIFIER K_SCOPE_RES IDENTIFIER
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $3.text, $5, $2);
+	delete[] $3.text;
+      }
+    '(' tf_port_list_opt ')' ';'
+    block_item_decls_opt
+    statement_or_null_list_opt
+    K_endfunction
+      { current_function->set_ports($8);
+	current_function->set_return(0);  /* No return type for constructor */
+	current_function_set_statement($12? @12 : @5, $12);
+	pform_set_this_class(@5, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	current_function = 0;
+      }
+    label_opt
+      { check_end_label(@15, "function", $5, $15);
+	delete[]$5;
+      }
+
+    /* Method with no return type - old-style port list - class as TYPE_IDENTIFIER */
+  | K_function lifetime_opt TYPE_IDENTIFIER K_SCOPE_RES IDENTIFIER ';'
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $3.text, $5, $2);
+	delete[] $3.text;
+      }
+    tf_item_list_opt
+    statement_or_null_list_opt
+    K_endfunction
+      { current_function->set_ports($8);
+	current_function->set_return(0);  /* No return type */
+	current_function_set_statement($9? @9 : @5, $9);
+	pform_set_this_class(@5, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	current_function = 0;
+      }
+    label_opt
+      { check_end_label(@12, "function", $5, $12);
+	delete[]$5;
+      }
+
+    /* Function with explicit return type - old-style port list (;) - class as TYPE_IDENTIFIER */
+  | K_function lifetime_opt data_type_or_implicit_or_void TYPE_IDENTIFIER K_SCOPE_RES IDENTIFIER ';'
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $4.text, $6, $2);
+	delete[] $4.text;
+      }
+    tf_item_list_opt
+    statement_or_null_list_opt
+    K_endfunction
+      { current_function->set_ports($9);
+	current_function->set_return($3);
+	current_function_set_statement($10? @10 : @6, $10);
+	pform_set_this_class(@6, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	current_function = 0;
+      }
+    label_opt
+      { check_end_label(@13, "function", $6, $13);
+	delete[]$6;
+      }
+
+    /* Function with ANSI port list - class as TYPE_IDENTIFIER */
+  | K_function lifetime_opt data_type_or_implicit_or_void TYPE_IDENTIFIER K_SCOPE_RES IDENTIFIER
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $4.text, $6, $2);
+	delete[] $4.text;
+      }
+    '(' tf_port_list_opt ')' ';'
+    block_item_decls_opt
+    statement_or_null_list_opt
+    K_endfunction
+      { current_function->set_ports($9);
+	current_function->set_return($3);
+	current_function_set_statement($13? @13 : @6, $13);
+	pform_set_this_class(@6, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	current_function = 0;
+      }
+    label_opt
+      { check_end_label(@16, "function", $6, $16);
+	delete[]$6;
+      }
+
+    /* Out-of-body task definitions: task ClassName::taskName() ... */
+    /* NOTE: Only TYPE_IDENTIFIER is supported for the class name to avoid parser conflicts. */
+
+    /* Task with old-style port list - class as TYPE_IDENTIFIER */
+  | K_task lifetime_opt TYPE_IDENTIFIER K_SCOPE_RES IDENTIFIER ';'
+      { assert(current_task == 0);
+	current_task = pform_start_external_task(@1, $3.text, $5, $2);
+	delete[] $3.text;
+      }
+    tf_item_list_opt
+    statement_or_null_list_opt
+    K_endtask
+      { current_task->set_ports($8);
+	current_task_set_statement(@9, $9);
+	pform_set_this_class(@5, current_task);
+	pform_pop_scope();
+	pform_end_external_method();
+	current_task = 0;
+      }
+    label_opt
+      { check_end_label(@12, "task", $5, $12);
+	delete[]$5;
+      }
+
+    /* Task with ANSI port list - class as TYPE_IDENTIFIER */
+  | K_task lifetime_opt TYPE_IDENTIFIER K_SCOPE_RES IDENTIFIER
+      { assert(current_task == 0);
+	current_task = pform_start_external_task(@1, $3.text, $5, $2);
+	delete[] $3.text;
+      }
+    '(' tf_port_list_opt ')' ';'
+    block_item_decls_opt
+    statement_or_null_list_opt
+    K_endtask
+      { current_task->set_ports($8);
+	current_task_set_statement(@12, $12);
+	pform_set_this_class(@5, current_task);
+	pform_pop_scope();
+	pform_end_external_method();
+	current_task = 0;
+      }
+    label_opt
+      { check_end_label(@15, "task", $5, $15);
+	delete[]$5;
+      }
   ;
 
 package_item_list
@@ -2954,8 +3388,11 @@ tf_port_item /* IEEE1800-2005: A.2.7 */
 	$$ = tmp;
 	if ($6) {
 	      pform_requires_sv(@6, "Task/function default argument");
-	      assert(tmp->size()==1);
-	      tmp->front().defe = $6;
+	      // In extern declaration mode, the port list is empty, so skip
+	      if (!pform_in_extern_declaration()) {
+		  assert(tmp->size()==1);
+		  tmp->front().defe = $6;
+	      }
 	}
       }
 
@@ -3315,6 +3752,33 @@ block_item_decl
 	delete[]$1.text;
 	delete[]$7;
 	delete $8;
+      }
+
+    /* Non-parameterized class static method call in block context.
+       e.g., helper::do_something(10); or MyClass::static_func();
+       This rule is needed because the parser shifts TYPE_IDENTIFIER into
+       block_item_decl context, and we need to handle the K_SCOPE_RES case. */
+  | TYPE_IDENTIFIER K_SCOPE_RES IDENTIFIER argument_list_parens ';'
+      { pform_name_t*tmp_name = new pform_name_t;
+        name_component_t class_comp(lex_strings.make($1.text));
+        tmp_name->push_back(class_comp);
+        name_component_t method_comp(lex_strings.make($3));
+        tmp_name->push_back(method_comp);
+        PCallTask*tmp = new PCallTask(*tmp_name, *$4);
+        FILE_NAME(tmp, @3);
+
+        /* Add to current block's statement list */
+        if (!current_block_stack.empty()) {
+            current_block_stack.top()->push_statement_front(tmp);
+        } else {
+            yywarn(@1, "static method call outside block context - call ignored.");
+            delete tmp;
+        }
+
+        delete[]$1.text;
+        delete[]$3;
+        delete tmp_name;
+        delete $4;
       }
   ;
 
@@ -4496,12 +4960,23 @@ expr_primary
 	$$ = tmp;
       }
   | package_scope hierarchy_identifier { lex_in_package_scope(0); } argument_list_parens
-      { PECallFunction*tmp = new PECallFunction($1, *$2, *$4);
+      { /* Check for std::randomize() special case */
+	perm_string pkg_name = $1->pscope_name();
+	bool is_std_randomize = (pkg_name == "std" && $2->size() == 1 &&
+	                         peek_head_name(*$2) == "randomize");
+	PECallFunction*tmp;
+	if (is_std_randomize) {
+	    perm_string fn = perm_string::literal("$ivl_std_randomize");
+	    tmp = new PECallFunction(fn, *$4);
+	} else {
+	    tmp = new PECallFunction($1, *$2, *$4);
+	}
 	FILE_NAME(tmp, @2);
 	delete $2;
 	delete $4;
 	$$ = tmp;
       }
+
 
     /* Static method call on a class: MyClass::method(args)
        IEEE1800-2012: class_scope ::= class_type ::
@@ -7731,7 +8206,12 @@ statement_item /* This is roughly statement_item in the LRM */
 	      tmp = new PBlock(PBlock::BL_SEQ);
 	      FILE_NAME(tmp, @1);
 	}
-	if ($6) tmp->set_statement(*$6);
+	if ($6) {
+	    // Merge: append statement_or_null_list_opt to any existing statements
+	    // (from block_item_decl, like config_db calls)
+	    std::vector<Statement*>& existing = tmp->get_statements();
+	    existing.insert(existing.end(), $6->begin(), $6->end());
+	}
 	delete $6;
 	check_end_label(@8, "block", $2, $8);
 	delete[]$2;
@@ -7775,7 +8255,12 @@ statement_item /* This is roughly statement_item in the LRM */
 	      tmp = new PBlock($7);
 	      FILE_NAME(tmp, @1);
 	}
-	if ($6) tmp->set_statement(*$6);
+	if ($6) {
+	    // Merge: append statement_or_null_list_opt to any existing statements
+	    // (from block_item_decl, like config_db calls)
+	    std::vector<Statement*>& existing = tmp->get_statements();
+	    existing.insert(existing.end(), $6->begin(), $6->end());
+	}
 	delete $6;
 	check_end_label(@8, "fork", $2, $8);
 	delete[]$2;

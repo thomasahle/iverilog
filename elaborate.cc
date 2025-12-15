@@ -3725,18 +3725,28 @@ NetProc* PCallTask::elaborate_usr(Design*des, NetScope*scope) const
 
       unsigned parm_count = def->port_count();
 
+      // Check if this is a super.method() call by looking for SUPER_TOKEN ("#") in path_.
+      // Super calls should NOT use virtual dispatch - they must call the base class method directly.
+      bool is_super_call = false;
+      for (pform_name_t::const_iterator it = path_.begin(); it != path_.end(); ++it) {
+	    if (it->name == perm_string::literal(SUPER_TOKEN)) {
+		  is_super_call = true;
+		  break;
+	    }
+      }
+
 	/* Handle non-automatic tasks with no parameters specially. There is
            no need to make a sequential block to hold the generated code. */
       if ((parm_count == 0) && !task->is_auto()) {
 	      // Check if a task call is allowed in this context.
 	    test_task_calls_ok_(des, scope);
 
-	    NetUTask*cur = new NetUTask(task);
+	    NetUTask*cur = new NetUTask(task, is_super_call);
 	    cur->set_line(*this);
 	    return cur;
       }
 
-      return elaborate_build_call_(des, scope, task, 0);
+      return elaborate_build_call_(des, scope, task, 0, is_super_call);
 }
 
 /*
@@ -4316,7 +4326,17 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  }
 	    }
 
-	    return elaborate_build_call_(des, scope, task, use_this);
+	    // Check if this is a super.method() call by looking for SUPER_TOKEN ("#") in use_path.
+	    // Super calls should NOT use virtual dispatch - they must call the base class method directly.
+	    bool is_super_call = false;
+	    for (pform_name_t::const_iterator it = use_path.begin(); it != use_path.end(); ++it) {
+		  if (it->name == perm_string::literal(SUPER_TOKEN)) {
+			is_super_call = true;
+			break;
+		  }
+	    }
+
+	    return elaborate_build_call_(des, scope, task, use_this, is_super_call);
       }
 
       return 0;
@@ -4411,7 +4431,8 @@ NetProc* PCallTask::elaborate_void_function_(Design*des, NetScope*scope,
 }
 
 NetProc* PCallTask::elaborate_build_call_(Design*des, NetScope*scope,
-					  NetScope*task, NetExpr*use_this) const
+					  NetScope*task, NetExpr*use_this,
+					  bool is_super_call) const
 {
       const NetBaseDef*def = 0;
       if (task->type() == NetScope::TASK) {
@@ -4461,10 +4482,12 @@ NetProc* PCallTask::elaborate_build_call_(Design*des, NetScope*scope,
 
 	/* Detect the case where the definition of the task is known
 	   empty. In this case, we need not bother with calls to the
-	   task, all the assignments, etc. Just return a no-op. */
+	   task, all the assignments, etc. Just return a no-op.
+	   IMPORTANT: Do NOT elide calls to virtual methods, since a
+	   derived class might override with a non-empty implementation. */
 
       if (const NetBlock*tp = dynamic_cast<const NetBlock*>(def->proc())) {
-	    if (tp->proc_first() == 0) {
+	    if (tp->proc_first() == 0 && !task->is_virtual()) {
 		  if (debug_elaborate) {
 			cerr << get_fileline() << ": PCallTask::elaborate_build_call_: "
 			     << "Eliding call to empty task " << task->basename() << endl;
@@ -4557,7 +4580,7 @@ NetProc* PCallTask::elaborate_build_call_(Design*des, NetScope*scope,
       }
 
 	/* Generate the task call proper... */
-      NetUTask*cur = new NetUTask(task);
+      NetUTask*cur = new NetUTask(task, is_super_call);
       cur->set_line(*this);
       block->append(cur);
 
@@ -5716,16 +5739,30 @@ static void find_property_in_class(const LineInfo&loc, const NetScope*scope, per
 NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 {
 	// Locate the signal for the array variable
-      pform_name_t array_name;
-      array_name.push_back(name_component_t(array_var_));
-      NetNet*array_sig = des->find_signal(scope, array_name);
+	// array_var_ is now a pform_name_t (hierarchical path)
+      NetNet*array_sig = des->find_signal(scope, array_var_);
 
 	// And if necessary, look for the class property that is
-	// referenced.
+	// referenced. For simple names on 'this', check the last component.
       const netclass_t*class_scope = 0;
       int class_property = -1;
-      if (array_sig == 0)
-	    find_property_in_class(*this, scope, array_var_, class_scope, class_property);
+      if (array_sig == 0 && array_var_.size() == 1) {
+	    // Simple name - might be a property of 'this'
+	    perm_string simple_name = array_var_.front().name;
+	    find_property_in_class(*this, scope, simple_name, class_scope, class_property);
+      }
+
+	// Handle explicit this.property syntax (array_var_.size() == 2)
+      if (array_sig == 0 && class_scope == 0 && array_var_.size() == 2) {
+	    perm_string first_name = array_var_.front().name;
+	    if (first_name == perm_string::literal(THIS_TOKEN)) {
+		  // this.property - look up property name
+		  pform_name_t::const_iterator it = array_var_.begin();
+		  ++it;  // Skip "this"
+		  perm_string prop_name = it->name;
+		  find_property_in_class(*this, scope, prop_name, class_scope, class_property);
+	    }
+      }
 
       if (debug_elaborate && array_sig) {
 	    cerr << get_fileline() << ": PForeach::elaborate: "
@@ -5765,7 +5802,7 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 
       if (array_sig == 0) {
 	    cerr << get_fileline() << ": error:"
-		 << " Unable to find foreach array " << array_name
+		 << " Unable to find foreach array " << array_var_
 		 << " in scope " << scope_path(scope)
 		 << "." << endl;
 	    des->errors += 1;

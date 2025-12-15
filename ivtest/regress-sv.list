@@ -621,6 +621,16 @@ sv_class_static_prop1	normal,-g2009		ivltests
 sv_class_static_prop2	normal,-g2009		ivltests
 sv_class_static_prop3	normal,-g2009		ivltests
 sv_class_static_prop4	normal,-g2009		ivltests
+sv_class_static_method_call1	normal,-g2012	ivltests
+sv_class_static_method_call2	normal,-g2012	ivltests
+sv_class_static_method_call3	normal,-g2012	ivltests
+sv_class_static_method_call4	normal,-g2012	ivltests
+sv_class_extern_func1		normal,-g2012	ivltests
+sv_class_extern_func2		normal,-g2012	ivltests
+sv_class_extern_task1		normal,-g2012	ivltests
+sv_class_extern_new1		normal,-g2012	ivltests
+sv_class_extern_inherit1	normal,-g2012	ivltests
+sv_class_extern_virtual1	normal,-g2012	ivltests
 sv_class_super1		normal,-g2009		ivltests
 sv_class_super2		normal,-g2009		ivltests
 sv_class_super3		normal,-g2009		ivltests
@@ -694,6 +704,8 @@ sv_foreach6		normal,-g2009		ivltests
 sv_foreach7		normal,-g2009		ivltests
 sv_foreach8		normal,-g2009		ivltests gold=sv_foreach8.gold
 sv_foreach_fail1	CE,-g2009		ivltests
+sv_foreach_hier1	normal,-g2012		ivltests
+sv_foreach_hier2	normal,-g2012		ivltests
 sv_immediate_assert	normal,-g2009		ivltests gold=sv_immediate_assert.gold
 sv_immediate_assume	normal,-g2009		ivltests gold=sv_immediate_assume.gold
 sv_import_hier_fail1	CE,-g2005-sv		ivltests
@@ -1003,6 +1015,9 @@ uvm_config_db_block	normal,-g2012		ivltests
 # UVM factory pattern test
 uvm_factory_create	normal,-g2012		ivltests
 
+# UVM TLM FIFO (stub implementation)
+sv_uvm_tlm_fifo1	normal,-g2012,-Ilib/ivl/uvm		ivltests
+
 # SystemVerilog inside operator
 sv_inside_operator	normal,-g2012		ivltests
 
@@ -1012,5 +1027,35 @@ sv_cast_class		normal,-g2012		ivltests
 # fork/join_none in class
 sv_fork_join_none_class	normal,-g2012		ivltests
 
+# foreach with this.array syntax
+sv_foreach_this1	normal,-g2012		ivltests
+
+# std::randomize() function
+sv_std_randomize1	normal,-g2012		ivltests
+
 # Virtual method dispatch through wrapper
 sv_virtual_method_wrapper	normal,-g2012		ivltests
+sv_class_prop_array1	normal,-g2012	ivltests
+
+# Function declarations in package scope (implicit return type)
+sv_func_pkg_implicit_return1	normal,-g2012		ivltests
+sv_func_pkg_implicit_return2	normal,-g2012		ivltests
+sv_func_pkg_oldstyle_ports1	normal,-g2012		ivltests
+sv_func_pkg_mixed_styles1	normal,-g2012		ivltests
+
+# Constraint parsing - soft keyword
+sv_constraint_soft1		normal,-g2012		ivltests
+
+# Covergroup parsing (syntax only, not functional)
+sv_covergroup1			normal,-g2012		ivltests
+sv_covergroup2			normal,-g2012		ivltests
+sv_covergroup3			normal,-g2012		ivltests
+sv_covergroup4			normal,-g2012		ivltests
+sv_covergroup5			normal,-g2012		ivltests
+sv_covergroup_elab1		normal,-g2012		ivltests
+# Test sample/option as method names (context-sensitive keywords)
+sv_sample_method1		normal,-g2012		ivltests
+# Test sample/option as variable names
+sv_sample_identifier1		normal,-g2012		ivltests
+# Test sample/option coexisting with covergroups
+sv_sample_covergroup_coexist	normal,-g2012		ivltests

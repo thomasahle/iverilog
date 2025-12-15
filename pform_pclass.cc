@@ -283,6 +283,60 @@ bool pform_in_class()
       return pform_cur_class != 0;
 }
 
+/*
+ * Handle covergroup declarations inside a class.
+ * This creates a property with the covergroup name that can be instantiated
+ * and have methods called on it (sample, get_coverage, etc.).
+ *
+ * The covergroup is treated as an instance of a generated class that provides
+ * stub implementations of the standard covergroup methods. This allows
+ * testbenches with covergroups to compile and run, though coverage data
+ * won't be collected.
+ */
+void pform_covergroup_declaration(const struct vlltype&loc,
+				  const char* covergroup_name,
+				  vector<pform_tf_port_t>* sample_ports)
+{
+      (void)sample_ports;  // TODO: Use sample ports to generate proper method signature
+
+      if (!pform_cur_class) {
+	    yywarn(loc, "warning: Covergroup declarations parsed but not yet functional.");
+	    return;
+      }
+
+      // Create a covergroup_type_t that will be elaborated to the __ivl_covergroup
+      // stub class from uvm_pkg or a placeholder type.
+      perm_string cg_name = lex_strings.make(covergroup_name);
+
+      // Create a covergroup type that will be resolved during elaboration.
+      covergroup_type_t* cg_type = new covergroup_type_t(cg_name);
+      FILE_NAME(cg_type, loc);
+
+      // Add the covergroup as a property of the enclosing class
+      pform_cur_class->type->properties[cg_name]
+	    = class_type_t::prop_info_t(property_qualifier_t::make_none(), cg_type);
+      FILE_NAME(&pform_cur_class->type->properties[cg_name], loc);
+
+      yywarn(loc, "warning: Covergroup declarations parsed but not yet functional.");
+}
+
+static bool pform_in_extern_decl = false;
+
+void pform_begin_extern_declaration()
+{
+      pform_in_extern_decl = true;
+}
+
+void pform_end_extern_declaration()
+{
+      pform_in_extern_decl = false;
+}
+
+bool pform_in_extern_declaration()
+{
+      return pform_in_extern_decl;
+}
+
 void pform_set_method_static(bool is_static)
 {
       pform_cur_method_is_static = is_static;
@@ -301,4 +355,66 @@ void pform_set_method_virtual(bool is_virtual)
 void pform_reset_method_virtual()
 {
       pform_cur_method_is_virtual = false;
+}
+
+/*
+ * Declare an extern function in a class. For now, just warn that external
+ * methods are parsed but the body must be provided inline or we issue an error.
+ * Full out-of-body support requires additional scope management.
+ */
+void pform_declare_extern_function(const struct vlltype&loc,
+				   property_qualifier_t quals,
+				   data_type_t* return_type,
+				   const char* name,
+				   vector<pform_tf_port_t>* ports)
+{
+      (void)return_type;
+      (void)ports;
+
+      // Store the method qualifiers for later use by out-of-body definition.
+      // This allows virtual, static, and other qualifiers to be preserved.
+      if (pform_cur_class && pform_cur_class->type) {
+	    perm_string pname = lex_strings.make(name);
+	    pform_cur_class->type->extern_method_quals[pname] = quals;
+      }
+
+      // Warn that out-of-body definition is expected.
+      yywarn(loc, "extern function declaration - out-of-body definition expected.");
+}
+
+/*
+ * Declare an extern task in a class.
+ */
+void pform_declare_extern_task(const struct vlltype&loc,
+			       property_qualifier_t quals,
+			       const char* name,
+			       vector<pform_tf_port_t>* ports)
+{
+      (void)ports;
+
+      // Store the method qualifiers for later use by out-of-body definition.
+      // This allows virtual, static, and other qualifiers to be preserved.
+      if (pform_cur_class && pform_cur_class->type) {
+	    perm_string pname = lex_strings.make(name);
+	    pform_cur_class->type->extern_method_quals[pname] = quals;
+      }
+
+      // Warn that out-of-body definition is expected.
+      yywarn(loc, "extern task declaration - out-of-body definition expected.");
+}
+
+/*
+ * Setter for pform_cur_class - used by out-of-body method support.
+ */
+void pform_set_cur_class(PClass*cls)
+{
+      pform_cur_class = cls;
+}
+
+/*
+ * End an out-of-body method definition.
+ */
+void pform_end_external_method(void)
+{
+      pform_cur_class = 0;
 }

@@ -400,6 +400,23 @@ static bool pform_in_parameter_port_list = false;
  */
 static LexicalScope* lexical_scope = 0;
 
+/*
+ * When parsing extern method declarations, we don't want to add the
+ * port names to the class scope. This flag prevents wire creation
+ * during extern declarations.
+ */
+static bool pform_in_extern_decl = false;
+
+void pform_start_extern_decl(void)
+{
+      pform_in_extern_decl = true;
+}
+
+void pform_end_extern_decl(void)
+{
+      pform_in_extern_decl = false;
+}
+
 LexicalScope* pform_peek_scope(void)
 {
       assert(lexical_scope);
@@ -677,6 +694,152 @@ PFunction* pform_push_function_scope(const struct vlltype&loc, const char*name,
       return func;
 }
 
+/*
+ * Start defining an out-of-body function.
+ * This implements: function void MyClass::my_method(...);
+ */
+PFunction* pform_start_external_function(const struct vlltype&loc,
+					 const char* class_name,
+					 const char* func_name,
+					 LexicalScope::lifetime_t lifetime)
+{
+      perm_string cname = lex_strings.make(class_name);
+      perm_string fname = lex_strings.make(func_name);
+
+      // Find the class in the current or enclosing scope
+      PScopeExtra*scopex = find_nearest_scopex(lexical_scope);
+
+      if (!scopex) {
+	    VLerror(loc, "error: Out-of-body method definition outside of valid scope.");
+	    return pform_push_function_scope(loc, func_name, lifetime);
+      }
+
+      // Look up the class
+      std::map<perm_string,PClass*>::iterator class_it = scopex->classes.find(cname);
+      if (class_it == scopex->classes.end()) {
+	    cerr << loc << ": error: Class '" << class_name
+	         << "' not found for out-of-body method '" << func_name << "'." << endl;
+	    error_count += 1;
+	    return pform_push_function_scope(loc, func_name, lifetime);
+      }
+
+      PClass*class_scope = class_it->second;
+
+      // Create the function with scopex as parent (where definition is written)
+      // but register it in the class's function map for method resolution.
+      LexicalScope::lifetime_t default_lifetime = LexicalScope::AUTOMATIC;
+      if (lifetime != LexicalScope::INHERITED)
+	    default_lifetime = lifetime;
+
+      bool is_auto = default_lifetime == LexicalScope::AUTOMATIC;
+
+      // Parent is scopex (e.g., $unit) so pform_pop_scope returns there
+      PFunction*func = new PFunction(fname, scopex, is_auto);
+      func->default_lifetime = default_lifetime;
+      FILE_NAME(func, loc);
+
+      pform_set_scope_timescale(func, scopex);
+
+      // Apply qualifiers from extern declaration if available.
+      // This propagates virtual, static, and other qualifiers from the
+      // class's extern declaration to the out-of-body method definition.
+      if (class_scope->type) {
+	    std::map<perm_string, property_qualifier_t>::iterator quals_it =
+	          class_scope->type->extern_method_quals.find(fname);
+	    if (quals_it != class_scope->type->extern_method_quals.end()) {
+		  property_qualifier_t quals = quals_it->second;
+		  if (quals.test_virtual())
+			func->set_virtual(true);
+		  // Note: static methods are handled via pform_set_this_class
+		  // protected/local are currently not stored in PTaskFunc
+	    }
+      }
+
+      // Add to class's function map
+      class_scope->funcs[fname] = func;
+
+      // Set lexical scope to the function
+      lexical_scope = func;
+
+      // Set pform_cur_class so pform_set_this_class works
+      pform_set_cur_class(class_scope);
+
+      return func;
+}
+
+/*
+ * Start defining an out-of-body task.
+ * This implements: task MyClass::my_task(...);
+ */
+PTask* pform_start_external_task(const struct vlltype&loc,
+				 const char* class_name,
+				 const char* task_name,
+				 LexicalScope::lifetime_t lifetime)
+{
+      perm_string cname = lex_strings.make(class_name);
+      perm_string tname = lex_strings.make(task_name);
+
+      // Find the class in the current or enclosing scope
+      PScopeExtra*scopex = find_nearest_scopex(lexical_scope);
+
+      if (!scopex) {
+	    VLerror(loc, "error: Out-of-body task definition outside of valid scope.");
+	    return pform_push_task_scope(loc, task_name, lifetime);
+      }
+
+      // Look up the class
+      std::map<perm_string,PClass*>::iterator class_it = scopex->classes.find(cname);
+      if (class_it == scopex->classes.end()) {
+	    cerr << loc << ": error: Class '" << class_name
+	         << "' not found for out-of-body task '" << task_name << "'." << endl;
+	    error_count += 1;
+	    return pform_push_task_scope(loc, task_name, lifetime);
+      }
+
+      PClass*class_scope = class_it->second;
+
+      // Create the task with scopex as parent (where definition is written)
+      // but register it in the class's task map for method resolution.
+      LexicalScope::lifetime_t default_lifetime = LexicalScope::AUTOMATIC;
+      if (lifetime != LexicalScope::INHERITED)
+	    default_lifetime = lifetime;
+
+      bool is_auto = default_lifetime == LexicalScope::AUTOMATIC;
+
+      // Parent is scopex (e.g., $unit) so pform_pop_scope returns there
+      PTask*task = new PTask(tname, scopex, is_auto);
+      task->default_lifetime = default_lifetime;
+      FILE_NAME(task, loc);
+
+      pform_set_scope_timescale(task, scopex);
+
+      // Apply qualifiers from extern declaration if available.
+      // This propagates virtual, static, and other qualifiers from the
+      // class's extern declaration to the out-of-body method definition.
+      if (class_scope->type) {
+	    std::map<perm_string, property_qualifier_t>::iterator quals_it =
+	          class_scope->type->extern_method_quals.find(tname);
+	    if (quals_it != class_scope->type->extern_method_quals.end()) {
+		  property_qualifier_t quals = quals_it->second;
+		  if (quals.test_virtual())
+			task->set_virtual(true);
+		  // Note: static methods are handled via pform_set_this_class
+		  // protected/local are currently not stored in PTaskFunc
+	    }
+      }
+
+      // Add to class's task map
+      class_scope->tasks[tname] = task;
+
+      // Set lexical scope to the task
+      lexical_scope = task;
+
+      // Set pform_cur_class so pform_set_this_class works
+      pform_set_cur_class(class_scope);
+
+      return task;
+}
+
 PBlock* pform_push_block_scope(const struct vlltype&loc, const char*name,
 			       PBlock::BL_TYPE bt)
 {
@@ -907,8 +1070,9 @@ typedef_t* pform_test_type_identifier(const struct vlltype&loc, const char*txt)
 	    }
 
 	    cur = cur_scope->typedefs.find(name);
-	    if (cur != cur_scope->typedefs.end())
+	    if (cur != cur_scope->typedefs.end()) {
 		  return cur->second;
+	    }
 
             PPackage*pkg = pform_find_potential_import(loc, cur_scope, name, false, false);
             if (pkg) {
@@ -978,13 +1142,10 @@ void pform_make_foreach_declarations(const struct vlltype&loc,
 }
 
 PForeach* pform_make_foreach(const struct vlltype&loc,
-			     char*name,
+			     pform_name_t*name,
 			     list<perm_string>*loop_vars,
 			     Statement*stmt)
 {
-      perm_string use_name = lex_strings.make(name);
-      delete[]name;
-
       if (loop_vars==0 || loop_vars->empty()) {
 	    cerr << loc.get_fileline() << ": error: "
 		 << "No loop variables at all in foreach index." << endl;
@@ -992,9 +1153,11 @@ PForeach* pform_make_foreach(const struct vlltype&loc,
       }
 
       ivl_assert(loc, loop_vars);
-      PForeach*fe = new PForeach(use_name, *loop_vars, stmt);
+      ivl_assert(loc, name);
+      PForeach*fe = new PForeach(*name, *loop_vars, stmt);
       FILE_NAME(fe, loc);
 
+      delete name;
       delete loop_vars;
 
       return fe;
@@ -2536,6 +2699,14 @@ static PWire* pform_get_or_make_wire(const struct vlltype&li,
 {
       PWire *cur = 0;
 
+      // When parsing extern declarations, create wire but don't add to scope.
+      // This prevents port name conflicts between multiple extern methods.
+      if (pform_in_extern_decl) {
+	    cur = new PWire(name.first, name.second, type, ptype, rt);
+	    FILE_NAME(cur, li);
+	    return cur;
+      }
+
 	// If this is not a full declaration check if there is already a signal
 	// with the same name that can be extended.
       if (rt != SR_BOTH)
@@ -2741,6 +2912,14 @@ vector<pform_tf_port_t>*pform_make_task_ports(const struct vlltype&loc,
       ivl_assert(loc, ports);
 
       vector<pform_tf_port_t>*res = new vector<pform_tf_port_t>(0);
+
+      // For extern declarations, we don't want to create actual wires -
+      // we're just declaring the signature. Return empty port list.
+      if (pform_in_extern_declaration()) {
+	    delete ports;
+	    return res;
+      }
+
       PWSRType rt = SR_BOTH;
 
       // If this is a non-ansi port declaration and the type is an implicit type

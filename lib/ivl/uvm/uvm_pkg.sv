@@ -51,6 +51,166 @@ package uvm_pkg;
   typedef class uvm_root;
   typedef class uvm_sequencer_base;
   typedef class uvm_sequence_base;
+  typedef class uvm_printer;
+  typedef class uvm_comparer;
+
+  // ============================================================================
+  // UVM Radix Enum (for printing)
+  // ============================================================================
+  typedef enum int {
+    UVM_BIN     = 0,
+    UVM_DEC     = 1,
+    UVM_UNSIGNED = 2,
+    UVM_OCT     = 3,
+    UVM_HEX     = 4,
+    UVM_STRING  = 5,
+    UVM_TIME    = 6,
+    UVM_ENUM    = 7,
+    UVM_REAL    = 8,
+    UVM_REAL_DEC = 9,
+    UVM_REAL_EXP = 10,
+    UVM_NORADIX = 11
+  } uvm_radix_enum;
+
+  // ============================================================================
+  // UVM Printer - For formatted printing of objects
+  // ============================================================================
+  class uvm_printer;
+    string m_string;
+    int    m_indent;
+
+    function new();
+      m_string = "";
+      m_indent = 0;
+    endfunction
+
+    // Get indent string (helper function)
+    function string get_indent();
+      string indent_str = "";
+      for (int i = 0; i < m_indent; i++) indent_str = {indent_str, " "};
+      return indent_str;
+    endfunction
+
+    // Print a field with given name, value, size and radix
+    virtual function void print_field(string name, logic [1023:0] value, int size, uvm_radix_enum radix = UVM_HEX);
+      string val_str;
+      case (radix)
+        UVM_BIN: $sformat(val_str, "%0b", value);
+        UVM_DEC: $sformat(val_str, "%0d", value);
+        UVM_HEX: $sformat(val_str, "%0h", value);
+        UVM_OCT: $sformat(val_str, "%0o", value);
+        default: $sformat(val_str, "%0h", value);
+      endcase
+      $display("%s%s: %s", get_indent(), name, val_str);
+    endfunction
+
+    // Print a string field
+    virtual function void print_string(string name, string value);
+      $display("%s%s: %s", get_indent(), name, value);
+    endfunction
+
+    // Print an object reference
+    virtual function void print_object(string name, uvm_object value);
+      if (value == null)
+        $display("%s%s: null", get_indent(), name);
+      else
+        $display("%s%s: %s", get_indent(), name, value.get_name());
+    endfunction
+
+    // Print a generic value
+    virtual function void print_generic(string name, string type_name, int size, string value);
+      $display("%s%s: (%s) %s", get_indent(), name, type_name, value);
+    endfunction
+
+    // Increase indent
+    function void push_indent();
+      m_indent += 2;
+    endfunction
+
+    // Decrease indent
+    function void pop_indent();
+      if (m_indent >= 2) m_indent -= 2;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Comparer - For comparing objects
+  // ============================================================================
+  class uvm_comparer;
+    int unsigned show_max;
+    int unsigned verbosity;
+    uvm_severity sev;
+    string miscompares;
+    int unsigned physical;
+    int unsigned abstract_;
+    int unsigned check_type;
+    int result;
+
+    function new();
+      show_max = 1;
+      verbosity = UVM_LOW;
+      sev = UVM_INFO;
+      miscompares = "";
+      physical = 1;
+      abstract_ = 1;
+      check_type = 1;
+      result = 0;
+    endfunction
+
+    // Compare two field values
+    virtual function bit compare_field(string name, logic [1023:0] lhs, logic [1023:0] rhs, int size, uvm_radix_enum radix = UVM_HEX);
+      if (lhs !== rhs) begin
+        result++;
+        return 0;
+      end
+      return 1;
+    endfunction
+
+    // Compare two integer values
+    virtual function bit compare_field_int(string name, logic [63:0] lhs, logic [63:0] rhs, int size, uvm_radix_enum radix = UVM_DEC);
+      if (lhs !== rhs) begin
+        result++;
+        return 0;
+      end
+      return 1;
+    endfunction
+
+    // Compare two string values
+    virtual function bit compare_string(string name, string lhs, string rhs);
+      if (lhs != rhs) begin
+        result++;
+        return 0;
+      end
+      return 1;
+    endfunction
+
+    // Compare two object references
+    virtual function bit compare_object(string name, uvm_object lhs, uvm_object rhs);
+      if (lhs == null && rhs == null)
+        return 1;
+      if (lhs == null || rhs == null) begin
+        result++;
+        return 0;
+      end
+      // Both non-null - compare using object's compare method
+      if (!lhs.compare(rhs)) begin
+        result++;
+        return 0;
+      end
+      return 1;
+    endfunction
+
+    // Get the comparison result (0 = match, >0 = number of miscompares)
+    function int get_result();
+      return result;
+    endfunction
+
+    // Reset the comparer for a new comparison
+    function void reset();
+      result = 0;
+      miscompares = "";
+    endfunction
+  endclass
 
   // ============================================================================
   // UVM Phase Class
@@ -107,7 +267,14 @@ package uvm_pkg;
     endfunction
 
     virtual function void print(int verbosity = 0);
+      uvm_printer printer = new();
       $display("Object: %s", get_full_name());
+      do_print(printer);
+    endfunction
+
+    // Override this method to print object fields
+    virtual function void do_print(uvm_printer printer);
+      // Base implementation does nothing - override in derived classes
     endfunction
 
     virtual function uvm_object clone();
@@ -118,7 +285,14 @@ package uvm_pkg;
     endfunction
 
     virtual function bit compare(uvm_object rhs);
-      return 0;
+      uvm_comparer comparer = new();
+      return do_compare(rhs, comparer);
+    endfunction
+
+    // Override this method to compare object fields
+    virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+      // Base implementation returns 1 (equal) - override in derived classes
+      return 1;
     endfunction
 
     function void set_report_verbosity_level(int verbosity);
@@ -371,12 +545,16 @@ package uvm_pkg;
       return "uvm_sequence";
     endfunction
 
-    virtual task start_item(REQ item, int set_priority = -1);
+    // Note: Using base class type since Icarus doesn't fully support
+    // type parameter coercion in method calls
+    virtual task start_item(uvm_sequence_item item, int set_priority = -1);
       item.set_sequencer(m_sequencer);
       item.set_parent_sequence(this);
     endtask
 
-    virtual task finish_item(REQ item, int set_priority = -1);
+    // Note: Using base class type since Icarus doesn't fully support
+    // type parameter coercion in method calls
+    virtual task finish_item(uvm_sequence_item item, int set_priority = -1);
       uvm_sequencer_base sqr;
       sqr = m_sequencer;
       if (sqr != null)
@@ -509,9 +687,10 @@ package uvm_pkg;
       end
     endtask
 
-    virtual function void item_done(RSP item = null);
+    // item_done without argument (for simple completion)
+    virtual function void item_done();
       if (seq_item_port != null)
-        seq_item_port.item_done(item);
+        seq_item_port.item_done(null);
     endfunction
   endclass
 
@@ -525,6 +704,24 @@ package uvm_pkg;
 
     virtual function string get_type_name();
       return "uvm_monitor";
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Subscriber - Analysis component that subscribes to transactions
+  // ============================================================================
+  class uvm_subscriber #(type T = uvm_sequence_item) extends uvm_component;
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_subscriber";
+    endfunction
+
+    // Override this function to process received transactions
+    virtual function void write(T t);
+      // Base implementation - override in derived classes
     endfunction
   endclass
 
@@ -737,11 +934,11 @@ package uvm_pkg;
       return null;
     endfunction
 
-    // Static create - creates an instance of T
+    // Static create - note: type_id::create() is not fully supported
+    // For now, users should use direct instantiation: obj = new(name, parent);
     static function T create(string name, uvm_component parent);
-      T obj;
-      obj = new(name, parent);
-      return obj;
+      $display("UVM_WARNING: type_id::create() not fully supported. Use direct 'new()' instead.");
+      return null;
     endfunction
   endclass
 
@@ -752,11 +949,10 @@ package uvm_pkg;
       return null;
     endfunction
 
-    // Static create - creates an instance of T
+    // Static create - note: type_id::create() is not fully supported
     static function T create(string name = "");
-      T obj;
-      obj = new(name);
-      return obj;
+      $display("UVM_WARNING: type_id::create() not fully supported. Use direct 'new()' instead.");
+      return null;
     endfunction
   endclass
 
@@ -796,6 +992,92 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
+  // ============================================================================
+  // Covergroup Stub Class
+  // ============================================================================
+  // This provides a stub implementation for covergroups. When Icarus parses a
+  // covergroup declaration, it creates an instance of this class. The sample()
+  // and get_coverage() methods are no-ops since functional coverage is not
+  // implemented in Icarus Verilog.
+  //
+  // This allows testbenches with covergroups to compile and run, though no
+  // actual coverage data will be collected.
+  // ============================================================================
+  class __ivl_covergroup;
+    // Sample method - called to sample coverage
+    // Accepts any number of arguments (in practice, covergroup sample methods
+    // are parameterized, but we use a generic signature here)
+    virtual function void sample();
+      // No-op: coverage sampling not implemented
+    endfunction
+
+    // Get coverage percentage - returns 0.0 as coverage is not tracked
+    virtual function real get_coverage();
+      return 0.0;
+    endfunction
+
+    // Get instance coverage - returns 0.0
+    virtual function real get_inst_coverage();
+      return 0.0;
+    endfunction
+
+    // Start - enable coverage collection (no-op)
+    virtual function void start();
+    endfunction
+
+    // Stop - disable coverage collection (no-op)
+    virtual function void stop();
+    endfunction
+
+    // Set instance name
+    virtual function void set_inst_name(string name);
+    endfunction
+  endclass
+
+  // ============================================================================
+  // TLM Analysis FIFO - Stub implementation for analysis ports
+  // ============================================================================
+  // Note: This is a stub implementation that accepts writes but discards data.
+  // Icarus has issues with arrays of parameterized class types, so we use
+  // a simplified version that at least allows compilation.
+  // TODO: Implement proper storage once class object arrays work correctly.
+  class uvm_tlm_analysis_fifo #(type T = uvm_object) extends uvm_component;
+
+    int m_count;
+
+    // Analysis export (implements write)
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+      m_count = 0;
+    endfunction
+
+    // Write method - receives data from analysis port (stub - just counts)
+    virtual function void write(T t);
+      m_count++;
+    endfunction
+
+    // Size - number of items written (stub)
+    virtual function int size();
+      return m_count;
+    endfunction
+
+    // Is empty check
+    virtual function bit is_empty();
+      return m_count == 0;
+    endfunction
+
+    // Flush - reset count
+    virtual function void flush();
+      m_count = 0;
+    endfunction
+
+    // Used returns count (compatible with real UVM API)
+    virtual function int used();
+      return m_count;
+    endfunction
+
+  endclass
+
   // Global run_test task
   // ============================================================================
   // This task creates a test instance using the UVM factory and runs the phases.
@@ -830,8 +1112,9 @@ package uvm_pkg;
           $display("UVM_FATAL: Test '%s' is not a uvm_component", test_name);
           $finish;
         end
-        // Set the test's name and parent
+        // Set the test's name, full_name and parent
         root.m_test.set_name("uvm_test_top");
+        root.m_test.m_full_name = "uvm_test_top";
         root.m_test.m_parent = root;
       end
     end
