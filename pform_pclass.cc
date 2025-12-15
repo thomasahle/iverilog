@@ -85,6 +85,88 @@ void pform_start_class_declaration(const struct vlltype&loc,
 	    delete base_type_params;
       }
 
+      // Inherit type parameters from base class (e.g., REQ, RSP from uvm_driver)
+      // This allows using base class type parameters like REQ in property declarations.
+      if (base_type) {
+	    // Get the base class's class_type_t to access its type parameters
+	    class_type_t *base_class_type = nullptr;
+
+	    // If base_type is a typeref_t, extract the underlying class_type_t
+	    // Also check if the typeref has spec_params attached (from ps_type_identifier rule)
+	    std::list<class_spec_param_t*>* typeref_spec_params = nullptr;
+	    if (typeref_t *tref = dynamic_cast<typeref_t*>(base_type)) {
+		  typedef_t *td = tref->get_typedef();
+		  if (td) {
+			// Try to cast the underlying data_type to class_type_t
+			// Note: basic_type may not be set to CLASS, so we use dynamic_cast
+			base_class_type = dynamic_cast<class_type_t*>(
+			    const_cast<data_type_t*>(td->get_data_type()));
+		  }
+		  // Check if typeref has spec_params
+		  typeref_spec_params = tref->get_spec_params();
+	    } else if (class_type_t *ct = dynamic_cast<class_type_t*>(base_type)) {
+		  base_class_type = ct;
+	    }
+
+	    // If we found the base class and it has type parameters, register them
+	    if (base_class_type && !base_class_type->parameters.empty()) {
+		  // Use typeref spec params if base_type_params is empty
+		  // (The ps_type_identifier rule can set spec_params on the typeref)
+		  std::list<class_spec_param_t*>* effective_spec_params = nullptr;
+		  if (!type->base_type_params.empty()) {
+			effective_spec_params = &type->base_type_params;
+		  } else if (typeref_spec_params && !typeref_spec_params->empty()) {
+			effective_spec_params = typeref_spec_params;
+		  }
+
+		  // Map base class type parameters to the specialization arguments
+		  std::list<class_spec_param_t*>::iterator spec_it;
+		  if (effective_spec_params) {
+			spec_it = effective_spec_params->begin();
+		  }
+		  for (class_param_t *base_param : base_class_type->parameters) {
+			if (!base_param->is_type) continue;  // Only handle type parameters
+
+			// Create a typedef for this inherited type parameter
+			// If we have specialization params, use the corresponding type
+			data_type_t *param_type = nullptr;
+			if (effective_spec_params && spec_it != effective_spec_params->end()) {
+			      class_spec_param_t *spec = *spec_it;
+			      if (spec->type_param) {
+				    param_type = spec->type_param;
+			      }
+			      ++spec_it;
+			} else if (base_param->default_type) {
+			      param_type = base_param->default_type;
+			      // If default_type is a type_parameter_t referencing another
+			      // type parameter (like RSP=REQ), look up what that param resolves to
+			      if (type_parameter_t *tp = dynamic_cast<type_parameter_t*>(param_type)) {
+				    // Look up the referenced type parameter in current class scope
+				    LexicalScope::typedef_map_t::iterator it =
+					  pform_cur_class->typedefs.find(tp->name);
+				    if (it != pform_cur_class->typedefs.end()) {
+					  typedef_t *ref_td = it->second;
+					  if (ref_td && ref_td->get_data_type()) {
+						param_type = const_cast<data_type_t*>(ref_td->get_data_type());
+					  }
+				    }
+			      }
+			}
+
+			// Register the type parameter in the current class scope
+			if (param_type) {
+			      pform_set_typedef(loc, base_param->name, param_type, nullptr);
+			} else {
+			      // Register as type_parameter_t if no concrete type is available
+			      type_parameter_t *tp = new type_parameter_t(base_param->name);
+			      tp->set_lineno(loc.first_line);
+			      tp->set_file(filename_strings.make(loc.text));
+			      pform_set_typedef(loc, base_param->name, tp, nullptr);
+			}
+		  }
+	    }
+      }
+
       // Register class type parameters as types within the class scope.
       // This allows using the type parameter names as types for properties.
       for (class_param_t*param : type->parameters) {

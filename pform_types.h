@@ -235,6 +235,9 @@ struct typeref_t : public data_type_t {
       void set_spec_params(std::list<class_spec_param_t*>* params) { spec_params = params; }
       std::list<class_spec_param_t*>* get_spec_params() const { return spec_params; }
 
+      // Get the underlying typedef
+      typedef_t* get_typedef() const { return type; }
+
       ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
       NetScope *find_scope(Design* des, NetScope *scope) const override;
 

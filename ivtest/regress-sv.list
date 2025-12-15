@@ -1090,3 +1090,4 @@ sv_interface_inst3		 normal,-g2012
 sv_interface_inst4		 normal,-g2012
 sv_interface_inst5		 normal,-g2012
 sv_class_type_param_inherit1 normal ivltests
+sv_class_type_param_inherit2 normal ivltests
