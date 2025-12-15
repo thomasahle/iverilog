@@ -1008,15 +1008,15 @@ sv_vif_read		normal,-g2012		ivltests
 sv_vif_shared		normal,-g2012		ivltests
 
 # UVM config_db tests
-uvm_config_db_int	normal,-g2012,-I./lib/ivl/uvm		ivltests
-uvm_config_db_vif	normal,-g2012,-I./lib/ivl/uvm		ivltests
-uvm_config_db_block	normal,-g2012,-I./lib/ivl/uvm		ivltests
+uvm_config_db_int	normal,-g2012,-I../lib/ivl/uvm		ivltests
+uvm_config_db_vif	normal,-g2012,-I../lib/ivl/uvm		ivltests
+uvm_config_db_block	normal,-g2012,-I../lib/ivl/uvm		ivltests
 
 # UVM factory pattern test
-uvm_factory_create	normal,-g2012,-I./lib/ivl/uvm		ivltests
+uvm_factory_create	normal,-g2012,-I../lib/ivl/uvm		ivltests
 
 # UVM TLM FIFO (stub implementation)
-sv_uvm_tlm_fifo1	normal,-g2012,-I./lib/ivl/uvm		ivltests
+sv_uvm_tlm_fifo1	normal,-g2012,-I../lib/ivl/uvm		ivltests
 
 # SystemVerilog inside operator
 sv_inside_operator	normal,-g2012		ivltests
@@ -1036,7 +1036,7 @@ sv_std_randomize1	normal,-g2012		ivltests
 sv_std_randomize2	normal,-g2012		ivltests
 
 # uvm_tlm_analysis_fifo tests
-sv_uvm_tlm_fifo2	normal,-g2012,-I./lib/ivl/uvm		ivltests
+sv_uvm_tlm_fifo2	normal,-g2012,-I../lib/ivl/uvm		ivltests
 
 # Virtual method dispatch through wrapper
 sv_virtual_method_wrapper	normal,-g2012		ivltests
@@ -1067,8 +1067,8 @@ sv_sample_covergroup_coexist	normal,-g2012		ivltests
 sv_std_randomize_with1	normal,-g2012		ivltests
 sv_std_randomize_with2	normal,-g2012		ivltests
 sv_foreach_this3	normal,-g2012		ivltests
-sv_uvm_tlm_fifo3	normal,-g2012,-I./lib/ivl/uvm		ivltests
+sv_uvm_tlm_fifo3	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_class_extern_virtual2	normal,-g2012		ivltests
 sv_class_prop_array2	normal,-g2012		ivltests
-sv_uvm_config_db1	normal,-g2012,-I./lib/ivl/uvm		ivltests
-sv_uvm_factory1	normal,-g2012,-I./lib/ivl/uvm		ivltests
+sv_uvm_config_db1	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_factory1	normal,-g2012,-I../lib/ivl/uvm		ivltests
