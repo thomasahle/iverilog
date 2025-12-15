@@ -600,6 +600,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
  /* K_CONTRIBUTE is <+, the contribution assign. */
 %token K_CONTRIBUTE
 %token K_PO_POS K_PO_NEG K_POW
+%token K_COLON_EQ K_COLON_DIV
 %token K_PSTAR K_STARP K_DOTSTAR
 %token K_LOR K_LAND K_NAND K_NOR K_NXOR K_TRIGGER K_NB_TRIGGER K_LEQUIV
 %token K_SCOPE_RES
@@ -1552,6 +1553,8 @@ constraint_expression /* IEEE1800-2005 A.1.9 */
   | K_soft expression ';'
       { /* Soft constraint - parsed but not enforced differently */ }
   | expression K_dist '{' '}' ';'
+  | expression K_dist '{' dist_list '}' ';'
+      { /* Dist constraint - parsed but not enforced at runtime */ }
   | expression constraint_trigger
   | K_if '(' expression ')' constraint_set %prec less_than_K_else
   | K_if '(' expression ')' constraint_set K_else constraint_set
@@ -1560,6 +1563,24 @@ constraint_expression /* IEEE1800-2005 A.1.9 */
 
 constraint_trigger
   : K_CONSTRAINT_IMPL '{' constraint_expression_list '}'
+  ;
+
+  /* Dist constraint list and items - parsed but not enforced */
+dist_list
+  : dist_item
+  | dist_list ',' dist_item
+  ;
+
+dist_item
+  : value_range dist_weight_opt
+  ;
+
+dist_weight_opt
+  : /* empty */
+  | K_COLON_EQ expression
+      { /* := equal weight per value - not enforced */ }
+  | K_COLON_DIV expression
+      { /* :/ divided weight - not enforced */ }
   ;
 
 constraint_expression_list /* */
@@ -1750,7 +1771,28 @@ cross_body_item
   ;
 
 select_expression
-  : expression
+  : select_condition
+  | '!' select_condition
+      { /* Negated binsof - parsed but not enforced */ }
+  | select_expression K_LAND select_condition
+      { /* AND of select conditions - parsed but not enforced */ }
+  | select_expression K_LOR select_condition
+      { /* OR of select conditions - parsed but not enforced */ }
+  | '(' select_expression ')'
+  | expression
+      { /* Fallback to general expression */ }
+  ;
+
+select_condition
+  : K_binsof '(' IDENTIFIER ')' intersect_opt
+      { delete[]$3; /* binsof(coverpoint) - parsed but not enforced */ }
+  | K_binsof '(' IDENTIFIER '[' expression ']' ')' intersect_opt
+      { delete[]$3; /* binsof(coverpoint[idx]) - parsed but not enforced */ }
+  ;
+
+intersect_opt
+  : K_intersect '{' open_range_list '}'
+  | /* empty */
   ;
 
 /* ============ End Covergroup Declarations ============ */
@@ -3483,6 +3525,10 @@ value_range /* IEEE1800-2005: A.8.3 */
       { }
   | '[' expression ':' expression ']'
       { }
+  | '[' expression ':' '$' ']'
+      { /* Unbounded upper range - for dist constraints */ }
+  | '[' '$' ':' expression ']'
+      { /* Unbounded lower range - for dist constraints */ }
   ;
 
 variable_dimension /* IEEE1800-2005: A.2.5 */

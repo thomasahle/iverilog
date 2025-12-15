@@ -1078,6 +1078,111 @@ package uvm_pkg;
 
   endclass
 
+  // ============================================================================
+  // semaphore - SystemVerilog built-in synchronization primitive
+  // ============================================================================
+  // Note: This is a stub implementation. Icarus doesn't have native semaphore
+  // support, so we provide a class-based stub that compiles but doesn't block.
+  // Real semaphore functionality requires VVP runtime support.
+  class semaphore;
+    int m_count;
+
+    function new(int keyCount = 0);
+      m_count = keyCount;
+    endfunction
+
+    // Get keys (blocking) - stub: decrements count
+    task get(int keyCount = 1);
+      // In real implementation, this would block if m_count < keyCount
+      // For stub, just decrement (may go negative)
+      m_count -= keyCount;
+    endtask
+
+    // Put keys back
+    function void put(int keyCount = 1);
+      m_count += keyCount;
+    endfunction
+
+    // Try to get keys without blocking
+    function int try_get(int keyCount = 1);
+      if (m_count >= keyCount) begin
+        m_count -= keyCount;
+        return 1;
+      end
+      return 0;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // uvm_seq_item_pull_port - TLM port for sequencer-driver communication
+  // ============================================================================
+  // This port is used by drivers to pull sequence items from the sequencer.
+  // The sequencer provides items via get_next_item() and driver signals completion
+  // via item_done().
+  //
+  // Note: This is a stub implementation that provides the interface needed for
+  // compilation. Full sequencer functionality requires additional infrastructure.
+  class uvm_seq_item_pull_port #(type REQ = uvm_sequence_item, type RSP = REQ) extends uvm_object;
+
+    // Connected sequencer (set during connect_phase)
+    uvm_sequencer_base m_sequencer;
+
+    function new(string name = "uvm_seq_item_pull_port");
+      super.new(name);
+      m_sequencer = null;
+    endfunction
+
+    // Connect to a sequencer
+    virtual function void connect(uvm_sequencer_base sequencer);
+      m_sequencer = sequencer;
+    endfunction
+
+    // Get the next item from the sequencer (blocking)
+    // Stub: Returns null - real implementation needs sequencer integration
+    virtual task get_next_item(output REQ t);
+      if (m_sequencer != null) begin
+        // Wait for item from sequencer's queue
+        // For now, just set to null - driver must handle this
+        t = null;
+      end else begin
+        $display("UVM_ERROR [SEQ_ITEM_PULL]: No sequencer connected to pull port");
+        t = null;
+      end
+    endtask
+
+    // Try to get next item without blocking
+    virtual function bit try_next_item(output REQ t);
+      t = null;
+      return 0;  // No item available (stub)
+    endfunction
+
+    // Signal that processing of the current item is complete
+    virtual function void item_done(RSP rsp = null);
+      // Stub: In real UVM, this signals the sequencer
+    endfunction
+
+    // Get a peeked item (doesn't remove from queue)
+    virtual task peek(output REQ t);
+      t = null;  // Stub
+    endtask
+
+    // Get and remove item (non-blocking version)
+    virtual task get(output REQ t);
+      get_next_item(t);
+    endtask
+
+    // Put response back to sequencer
+    virtual task put(RSP t);
+      // Stub: In real UVM, this returns response to sequence
+    endtask
+
+    // Check if port is connected
+    virtual function bit is_connected();
+      return m_sequencer != null;
+    endfunction
+
+  endclass
+
   // Global run_test task
   // ============================================================================
   // This task creates a test instance using the UVM factory and runs the phases.

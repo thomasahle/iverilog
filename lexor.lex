@@ -209,6 +209,8 @@ TU [munpf]
 ">>"  { return K_RS; }
 ">>>" { return K_RSS; }
 "**" { return K_POW; }
+":=" { return K_COLON_EQ; }
+":/" { return K_COLON_DIV; }
 "<=" { return K_LE; }
 ">=" { return K_GE; }
 "=>" { return K_EG; }
