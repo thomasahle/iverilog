@@ -1029,9 +1029,14 @@ sv_fork_join_none_class	normal,-g2012		ivltests
 
 # foreach with this.array syntax
 sv_foreach_this1	normal,-g2012		ivltests
+sv_foreach_this2	normal,-g2012		ivltests
 
 # std::randomize() function
 sv_std_randomize1	normal,-g2012		ivltests
+sv_std_randomize2	normal,-g2012		ivltests
+
+# uvm_tlm_analysis_fifo tests
+sv_uvm_tlm_fifo2	normal,-g2012,-I./lib/ivl/uvm		ivltests
 
 # Virtual method dispatch through wrapper
 sv_virtual_method_wrapper	normal,-g2012		ivltests
@@ -1059,3 +1064,4 @@ sv_sample_method1		normal,-g2012		ivltests
 sv_sample_identifier1		normal,-g2012		ivltests
 # Test sample/option coexisting with covergroups
 sv_sample_covergroup_coexist	normal,-g2012		ivltests
+sv_std_randomize_with1	normal,-g2012		ivltests
