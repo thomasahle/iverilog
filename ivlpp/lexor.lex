@@ -319,6 +319,9 @@ keywords (line|include|define|undef|ifdef|ifndef|else|elsif|endif)
 
 <PPINCLUDE>[ \t\b\f] { ; }
 
+  /* Tolerate trailing semicolon after include filename (non-standard but common) */
+<PPINCLUDE>";" { ; }
+
   /* Catch single-line comments that share the line with an include
    * directive. And while I'm at it, I might as well preserve the
    * comment in the output stream. This will be printed after the
