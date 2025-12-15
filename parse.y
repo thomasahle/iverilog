@@ -561,6 +561,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
       struct {
 	    data_type_t*type;
 	    std::list<named_pexpr_t> *args;
+	    std::list<class_spec_param_t*> *spec_params;  // Base class type parameters
       } class_declaration_extends;
 
       struct {
@@ -1070,7 +1071,7 @@ class_declaration /* IEEE1800-2005: A.1.2 */
 	class_type_t *class_type= new class_type_t(name);
 	FILE_NAME(class_type, @4);
 	pform_set_typedef(@4, name, class_type, nullptr);
-	pform_start_class_declaration(@2, class_type, $5.type, $5.args, $1);
+	pform_start_class_declaration(@2, class_type, $5.type, $5.args, $5.spec_params, $1);
       }
     class_items_opt K_endclass
       { // Process a class.
@@ -1098,7 +1099,7 @@ class_declaration /* IEEE1800-2005: A.1.2 */
 	      class_type->parameters = *$5;
 	      delete $5;
 	}
-	pform_start_class_declaration(@2, class_type, $6.type, $6.args, $1);
+	pform_start_class_declaration(@2, class_type, $6.type, $6.args, $6.spec_params, $1);
       }
     class_items_opt K_endclass
       { // Process a parameterized class.
@@ -1143,16 +1144,22 @@ class_declaration_extends_opt /* IEEE1800-2005: A.1.2 */
   : K_extends ps_type_identifier argument_list_parens_opt
       { $$.type = $2;
 	$$.args = $3;
+	$$.spec_params = nullptr;
       }
     /* Parameterized base class: extends uvm_sequence #(my_item) */
   | K_extends ps_type_identifier '#' '(' class_specialization_params_opt ')' argument_list_parens_opt
-      { $$.type = $2;
+      { // Set the specialization parameters on the type reference
+	// so elaborate_type can create the specialized class
+	typeref_t *tref = dynamic_cast<typeref_t*>($2);
+	if (tref && $5) {
+	      tref->set_spec_params($5);
+	}
+	$$.type = $2;
 	$$.args = $7;
-	/* TODO: Handle class type parameters - for now issue warning */
-	yywarn(@3, "warning: Parameterized base class parsed but type parameters not yet functional.");
+	$$.spec_params = $5;  // Also store separately for backwards compat
       }
   |
-      { $$ = {nullptr, nullptr};
+      { $$ = {nullptr, nullptr, nullptr};
       }
   ;
 

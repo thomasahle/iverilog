@@ -518,6 +518,45 @@ static void elaborate_scope_class(Design*des, NetScope*scope, PClass*pclass)
 
       collect_scope_parameters(des, class_scope, pclass->parameters);
 
+      // Propagate base class type parameters into derived class scope.
+      // For example, if "class Derived extends Base#(MyType)", then
+      // the type parameter names from Base (e.g., REQ, RSP) should be
+      // available in Derived with the actual types provided.
+      if (use_base_class && !use_type->base_type_params.empty()) {
+	    // Get the base class's type parameters
+	    const NetScope*base_scope = use_base_class->class_scope();
+	    if (base_scope) {
+		  // Extract type parameter names from base class in order
+		  std::vector<perm_string> type_param_names;
+		  for (auto it = base_scope->parameters.begin(); it != base_scope->parameters.end(); ++it) {
+			// Type parameters have type_flag set
+			if (it->second.type_flag)
+			      type_param_names.push_back(it->first);
+		  }
+
+		  // Match provided type params with base class parameter names
+		  auto param_it = use_type->base_type_params.begin();
+		  for (size_t i = 0; i < type_param_names.size() && param_it != use_type->base_type_params.end(); ++i, ++param_it) {
+			class_spec_param_t *spec = *param_it;
+			if (spec && spec->type_param) {
+			      // Elaborate the type parameter in parent scope
+			      ivl_type_t resolved_type = spec->type_param->elaborate_type(des, scope);
+			      if (resolved_type) {
+				    // Register the resolved type with the base class's parameter name
+				    class_scope->set_type_parameter(type_param_names[i], resolved_type);
+				    if (debug_scopes) {
+					  cerr << pclass->get_fileline()
+					       << ": elaborate_scope_class: "
+					       << "Inherited type param " << type_param_names[i]
+					       << " from base class."
+					       << endl;
+				    }
+			      }
+			}
+		  }
+	    }
+      }
+
       collect_scope_signals(class_scope, pclass->wires);
 
 	// Elaborate enum types declared in the class. We need these

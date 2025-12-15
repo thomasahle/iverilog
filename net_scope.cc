@@ -458,6 +458,7 @@ const NetExpr* NetScope::get_parameter(Design*des, const char* key,
 const NetExpr* NetScope::get_parameter(Design*des, perm_string key,
 				       ivl_type_t&ivl_type)
 {
+      // Search in this scope first
       map<perm_string,param_expr_t>::iterator idx;
 
       idx = parameters.find(key);
@@ -467,6 +468,26 @@ const NetExpr* NetScope::get_parameter(Design*des, perm_string key,
 
 	    ivl_type = idx->second.ivl_type;
 	    return idx->second.val;
+      }
+
+      // For type parameters (like class REQ/RSP), search parent scopes.
+      // This is needed for methods inside classes that use class type parameters.
+      if (up_) {
+	    NetScope* parent_scope = up_;
+	    while (parent_scope) {
+		  idx = parent_scope->parameters.find(key);
+		  if (idx != parent_scope->parameters.end()) {
+			// Only search parent for type parameters
+			if (idx->second.type_flag) {
+			      if (idx->second.val_expr)
+				    parent_scope->evaluate_parameter_(des, idx);
+			      ivl_type = idx->second.ivl_type;
+			      return idx->second.val;
+			}
+			break; // Found non-type param, stop searching
+		  }
+		  parent_scope = parent_scope->up_;
+	    }
       }
 
       ivl_type = 0;

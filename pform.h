@@ -174,6 +174,7 @@ extern void pform_start_class_declaration(const struct vlltype&loc,
 					  class_type_t*type,
 					  data_type_t*base_type,
 					  std::list<named_pexpr_t> *base_args,
+					  std::list<class_spec_param_t*> *base_type_params,
 					  bool virtual_class);
 extern void pform_class_property(const struct vlltype&loc,
 				 property_qualifier_t pq,

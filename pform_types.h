@@ -456,6 +456,8 @@ struct class_type_t : public data_type_t {
 	// put them in the base_args vector.
       std::unique_ptr<data_type_t> base_type;
       std::vector<named_pexpr_t> base_args;
+	// Type parameters for the base class (e.g., extends uvm_driver#(my_tx))
+      std::list<class_spec_param_t*> base_type_params;
 
       bool virtual_class;
 

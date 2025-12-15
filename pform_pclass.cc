@@ -57,6 +57,7 @@ void pform_start_class_declaration(const struct vlltype&loc,
 				   class_type_t*type,
 				   data_type_t*base_type,
 				   list<named_pexpr_t> *base_args,
+				   list<class_spec_param_t*> *base_type_params,
 				   bool virtual_class)
 {
       PClass*class_scope = pform_push_class_scope(loc, type->name);
@@ -74,6 +75,14 @@ void pform_start_class_declaration(const struct vlltype&loc,
 	    type->base_args.insert(type->base_args.begin(), base_args->begin(),
 			           base_args->end());
 	    delete base_args;
+      }
+
+      // Store base class type parameters (e.g., extends uvm_driver#(my_tx))
+      if (base_type_params) {
+	    type->base_type_params.insert(type->base_type_params.begin(),
+					  base_type_params->begin(),
+					  base_type_params->end());
+	    delete base_type_params;
       }
 
       // Register class type parameters as types within the class scope.

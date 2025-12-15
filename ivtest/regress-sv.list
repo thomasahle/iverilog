@@ -1052,6 +1052,7 @@ sv_func_pkg_mixed_styles1	normal,-g2012		ivltests
 sv_constraint_soft1		normal,-g2012		ivltests
 # Dist constraints with := and :/ weight operators
 sv_dist_constraint1		normal,-g2012		ivltests
+sv_dist_constraint2		normal,-g2012		ivltests
 
 # Covergroup parsing (syntax only, not functional)
 sv_covergroup1			normal,-g2012		ivltests
@@ -1062,6 +1063,8 @@ sv_covergroup5			normal,-g2012		ivltests
 sv_covergroup_elab1		normal,-g2012		ivltests
 # Test binsof() and !binsof() in cross coverage ignore_bins
 sv_covergroup_binsof1		normal,-g2012		ivltests
+# Test binsof() with && and || operators
+sv_covergroup_binsof2		normal,-g2012		ivltests
 # Test sample/option as method names (context-sensitive keywords)
 sv_sample_method1		normal,-g2012		ivltests
 # Test sample/option as variable names
@@ -1086,3 +1089,4 @@ sv_class_interface_scope1	normal,-g2012		ivltests
 sv_interface_inst3		 normal,-g2012
 sv_interface_inst4		 normal,-g2012
 sv_interface_inst5		 normal,-g2012
+sv_class_type_param_inherit1 normal ivltests
