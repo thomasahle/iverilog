@@ -6622,6 +6622,20 @@ module_item
 	pform_make_modgates(@2, tmp1, 0, tmp_gates, $1);
       }
 
+  /* Interface array with positional ports: InterfaceName inst[N](port1, port2); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER IDENTIFIER dimensions '(' port_conn_expression_list_with_nuls ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	lgate tmp_gate;
+	tmp_gate.name = $3;
+	tmp_gate.parms = $6;
+	tmp_gate.ranges = $4;
+	FILE_NAME(&tmp_gate, @3);
+	delete[]$3;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, 0, tmp_gates, $1);
+      }
+
   /* Interface inst with named ports: InterfaceName inst(.clk(clk)); */
   | attribute_list_opt
       TYPE_IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
@@ -6630,6 +6644,21 @@ module_item
 	tmp_gate.name = $3;
 	tmp_gate.parms = 0;
 	tmp_gate.parms_by_name = $5;
+	FILE_NAME(&tmp_gate, @3);
+	delete[]$3;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, 0, tmp_gates, $1);
+      }
+
+  /* Interface array with named ports: InterfaceName inst[N](.clk(clk)); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER IDENTIFIER dimensions '(' port_name_list ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	lgate tmp_gate;
+	tmp_gate.name = $3;
+	tmp_gate.parms = 0;
+	tmp_gate.parms_by_name = $6;
+	tmp_gate.ranges = $4;
 	FILE_NAME(&tmp_gate, @3);
 	delete[]$3;
 	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);

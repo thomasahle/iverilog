@@ -1112,3 +1112,4 @@ sv_const_ref1		normal,-g2012		ivltests
 sv_const_ref2		normal,-g2012		ivltests
 sv_const_ref3		normal,-g2012		ivltests
 sv_const_ref4		normal,-g2012		ivltests
+sv_interface_array1	normal,-g2012		ivltests
