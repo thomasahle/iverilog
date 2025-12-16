@@ -2907,6 +2907,12 @@ class NetAssign_ {
       void set_property(const perm_string&name, unsigned int idx);
       inline int get_property_idx(void) const { return member_idx_; }
 
+	// Set struct member for unpacked struct assignment
+      void set_struct_member(const perm_string&name, int idx);
+      inline int get_struct_member_idx() const { return struct_member_idx_; }
+      inline perm_string get_struct_member_name() const { return struct_member_; }
+      inline bool is_struct_member() const { return struct_member_idx_ >= 0; }
+
 	// Set virtual interface member access (vif.member)
       void set_vif_member(const perm_string&member_name, const NetNet*member_sig);
       inline bool is_vif_member() const { return vif_member_sig_ != nullptr; }
@@ -2966,6 +2972,10 @@ class NetAssign_ {
 	// member/property if signal is a class.
       perm_string member_;
       int member_idx_ = -1;
+
+	// struct member for unpacked struct assignment
+      perm_string struct_member_;
+      int struct_member_idx_ = -1;
 
 	// Virtual interface member access (vif.member)
       perm_string vif_member_name_;

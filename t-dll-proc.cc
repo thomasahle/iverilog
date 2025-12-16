@@ -181,6 +181,11 @@ bool dll_target::make_single_lval_(const LineInfo*li, struct ivl_lval_s*cur, con
       cur->vif_member_name = 0;
       cur->vif_member_sig = 0;
 
+      // Initialize unpacked struct member fields
+      cur->struct_member_idx = asn->get_struct_member_idx();
+      cur->struct_member_name = asn->is_struct_member()
+          ? asn->get_struct_member_name().str() : 0;
+
       if (asn->sig()) {
 	    cur->type_ = IVL_LVAL_REG;
 	    cur->n.sig = find_signal(des_, asn->sig());

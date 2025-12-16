@@ -282,6 +282,90 @@ NetAssign_* PEIdent::elaborate_lval(Design*des,
 	    return nullptr;
       }
 
+	// Handle interface port member l-value: intf.signal = value
+	// Interface ports are compile-time bindings - we find the bound interface
+	// instance and directly use its member signal.
+      if (const netvirtual_interface_t*vif_type =
+	        dynamic_cast<const netvirtual_interface_t*>(sr.type)) {
+	    if (!member_path.empty()) {
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PEIdent::elaborate_lval: "
+			     << "Interface port member l-value: " << path_
+			     << " member_path=" << member_path << endl;
+		  }
+
+		  // Find the bound interface instance
+		  const NetScope* iface_inst = nullptr;
+		  perm_string iface_name = vif_type->interface_name();
+
+		  // Look for interface instance in parent scope (where instantiation happens)
+		  NetScope* parent = scope->parent();
+		  if (parent) {
+			iface_inst = parent->child_by_module_name(iface_name);
+		  }
+
+		  // Fallback: search root scopes
+		  if (!iface_inst) {
+			for (NetScope* root : des->find_root_scopes()) {
+			      const NetScope* found = root->child_by_module_name(iface_name);
+			      if (found && found->is_interface()) {
+				    iface_inst = found;
+				    break;
+			      }
+			}
+		  }
+
+		  if (!iface_inst) {
+			cerr << get_fileline() << ": error: "
+			     << "Interface instance of type `" << iface_name
+			     << "` not found for interface port `" << sr.path_head
+			     << "`." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Get the member name from the path
+		  ivl_assert(*this, member_path.size() >= 1);
+		  name_component_t member_comp = member_path.front();
+
+		  // Look up the member signal in the interface instance
+		  NetNet* member_sig = const_cast<NetScope*>(iface_inst)->find_signal(member_comp.name);
+		  if (!member_sig) {
+			cerr << get_fileline() << ": error: "
+			     << "Interface `" << iface_name
+			     << "` has no member `" << member_comp.name << "`." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Check that the member signal is assignable (reg type)
+		  if ((member_sig->type() != NetNet::REG)
+		      && ((member_sig->type() != NetNet::UNRESOLVED_WIRE) || !member_sig->coerced_to_uwire())
+		      && !is_force) {
+			cerr << get_fileline() << ": error: '"
+			     << iface_name << "." << member_comp.name
+			     << "' is not a valid l-value for a procedural assignment."
+			     << endl;
+			cerr << member_sig->get_fileline() << ":      : '"
+			     << member_comp.name << "' is declared as a "
+			     << member_sig->type() << " in the interface." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PEIdent::elaborate_lval: "
+			     << "Found interface instance " << iface_inst->fullname()
+			     << ", member signal " << member_sig->name() << endl;
+		  }
+
+		  // Create a direct l-value reference to the interface member signal
+		  NetAssign_*lv = new NetAssign_(member_sig);
+
+		  return lv;
+	    }
+      }
+
 	/* We are elaborating procedural assignments. Wires are not allowed
 	   unless this is the l-value of a force. */
       if ((reg->type() != NetNet::REG)
@@ -1378,10 +1462,8 @@ bool PEIdent::elaborate_lval_net_packed_member_(Design*des, NetScope*scope,
       }
 
       if (! struct_type->packed()) {
-	    cerr << get_fileline() << ": sorry: Only packed structures "
-		 << "are supported in l-value." << endl;
-	    des->errors += 1;
-	    return false;
+	      // For unpacked structs, delegate to the unpacked member handler
+	    return elaborate_lval_net_unpacked_member_(des, scope, lv, member_path, is_force);
       }
 
 	// Looking for the base name. We need that to know about
@@ -1738,6 +1820,81 @@ bool PEIdent::elaborate_lval_net_packed_member_(Design*des, NetScope*scope,
 	   << "I don't know how to handle this index expression? " << *packed_base << endl;
       ivl_assert(*this, 0);
       return false;
+}
+
+/*
+ * Handle l-value member access for unpacked structs.
+ * Unlike packed structs where we calculate bit offsets, for unpacked
+ * structs we store the member index and use per-member storage at runtime.
+ */
+bool PEIdent::elaborate_lval_net_unpacked_member_(Design*des, NetScope*scope,
+						  NetAssign_*lv,
+						  pform_name_t member_path,
+						  bool is_force) const
+{
+      if (debug_elaborate) {
+	    cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+		 << "path_=" << path_
+		 << " member_path=" << member_path
+		 << endl;
+      }
+
+      NetNet*reg = lv->sig();
+      ivl_assert(*this, reg);
+
+      const netstruct_t*struct_type = reg->struct_type();
+      ivl_assert(*this, struct_type);
+      ivl_assert(*this, !struct_type->packed());
+
+      if (is_force) {
+	    cerr << get_fileline() << ": error: Cannot force/release "
+		 << "unpacked struct members." << endl;
+	    des->errors += 1;
+	    return false;
+      }
+
+	// For now, only support single-level member access (no nested structs)
+      if (member_path.size() != 1) {
+	    cerr << get_fileline() << ": sorry: Nested unpacked struct "
+		 << "member access not yet supported." << endl;
+	    des->errors += 1;
+	    return false;
+      }
+
+      const name_component_t& member_comp = member_path.front();
+      const perm_string& member_name = member_comp.name;
+
+	// Look up the member by name
+      int member_idx = struct_type->member_idx_from_name(member_name);
+      if (member_idx < 0) {
+	    cerr << get_fileline() << ": error: "
+		 << "No member '" << member_name << "' in struct type." << endl;
+	    des->errors += 1;
+	    return false;
+      }
+
+      const netstruct_t::member_t* member = struct_type->get_member(member_idx);
+      ivl_assert(*this, member);
+
+	// Member index expression not supported yet for unpacked structs
+      if (!member_comp.index.empty()) {
+	    cerr << get_fileline() << ": sorry: Indexed access to unpacked "
+		 << "struct members not yet supported." << endl;
+	    des->errors += 1;
+	    return false;
+      }
+
+      if (debug_elaborate) {
+	    cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+		 << "Found member '" << member_name << "' at index " << member_idx
+		 << ", type=" << *(member->net_type)
+		 << endl;
+      }
+
+	// Store the struct member information in the l-value
+      lv->set_struct_member(member_name, member_idx);
+
+      return true;
 }
 
 NetAssign_* PENumber::elaborate_lval(Design*des, NetScope*, bool, bool, bool) const

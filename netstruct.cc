@@ -98,19 +98,24 @@ const netstruct_t::member_t* netstruct_t::packed_member(perm_string name, unsign
 
 long netstruct_t::packed_width(void) const
 {
-      if (! packed_)
-	    return -1;
-
 	// If this is a packed union, then all the members are the
 	// same width, so it is sufficient to return the width of any
 	// single member.
       if (union_)
 	    return members_.front().net_type->packed_width();
 
-	// The width of a packed struct is the sum of member widths.
+	// The width of a struct (packed or unpacked) is the sum of member widths.
+	// For unpacked structs, this gives the total storage required when
+	// members are stored contiguously (as packed vectors).
       long res = 0;
-      for (size_t idx = 0 ; idx < members_.size() ; idx += 1)
-	    res += members_[idx].net_type->packed_width();
+      for (size_t idx = 0 ; idx < members_.size() ; idx += 1) {
+	    long mwid = members_[idx].net_type->packed_width();
+	    if (mwid < 0) {
+		    // If any member has unpacked type, can't compute total width
+		  return -1;
+	    }
+	    res += mwid;
+      }
 
       return res;
 }
@@ -146,4 +151,28 @@ bool netstruct_t::test_equivalence(ivl_type_t that) const
 	    return this == that;
 
       return packed_types_equivalent(this, that);
+}
+
+/*
+ * Member indexing for unpacked struct support.
+ * Get member index from name, returns -1 if not found.
+ */
+int netstruct_t::member_idx_from_name(perm_string name) const
+{
+      for (size_t idx = 0; idx < members_.size(); idx++) {
+	    if (members_[idx].name == name) {
+		  return static_cast<int>(idx);
+	    }
+      }
+      return -1;
+}
+
+/*
+ * Get member by index. Returns null if index is out of range.
+ */
+const netstruct_t::member_t* netstruct_t::get_member(size_t idx) const
+{
+      if (idx >= members_.size())
+	    return 0;
+      return &members_[idx];
 }

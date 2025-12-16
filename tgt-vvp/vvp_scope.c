@@ -436,8 +436,18 @@ static void draw_reg_in_scope(ivl_signal_t sig)
       int lsb;
       switch (ivl_signal_packed_dimensions(sig)) {
 	  case 0:
-	    msb = 0;
-	    lsb = 0;
+	      /* Check if this is a struct type with computable width */
+	    { unsigned struct_members = ivl_type_struct_members(ivl_signal_net_type(sig));
+	      if (struct_members > 0) {
+		    /* It's a struct - use ivl_signal_width to get total width */
+		    unsigned wid = ivl_signal_width(sig);
+		    msb = wid > 0 ? (int)wid - 1 : 0;
+		    lsb = 0;
+	      } else {
+		    msb = 0;
+		    lsb = 0;
+	      }
+	    }
 	    break;
 	  case 1:
 	    msb = ivl_signal_packed_msb(sig, 0);

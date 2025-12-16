@@ -156,6 +156,8 @@ ivl_lval_vif_member
 ivl_lval_vif_sig
 ivl_lval_vif_base_sig
 ivl_lval_vif_nest
+ivl_lval_struct_member_idx
+ivl_lval_struct_member_name
 
 ivl_nature_name
 
@@ -343,6 +345,11 @@ ivl_type_prop_name
 ivl_type_prop_type
 ivl_type_properties
 ivl_type_signed
+ivl_type_struct_members
+ivl_type_struct_member_name
+ivl_type_struct_member_type
+ivl_type_struct_is_packed
+ivl_type_struct_member_offset
 
 ivl_udp_init
 ivl_udp_file

@@ -25,6 +25,7 @@
 # include  "netdarray.h"
 # include  "netparray.h"
 # include  "netenum.h"
+# include  "netstruct.h"
 # include  "ivl_assert.h"
 
 using namespace std;
@@ -165,6 +166,15 @@ ivl_type_t NetAssign_::net_type() const
 	    ntype = class_type->get_prop_type(member_idx_);
       }
 
+      // For unpacked struct member access, use the member's type
+      if (struct_member_idx_ >= 0) {
+	    const netstruct_t *struct_type = dynamic_cast<const netstruct_t*>(ntype);
+	    ivl_assert(*this, struct_type);
+	    const netstruct_t::member_t* member = struct_type->get_member(struct_member_idx_);
+	    ivl_assert(*this, member);
+	    ntype = member->net_type;
+      }
+
       // For virtual interface member access, use the member signal's type
       if (vif_member_sig_) {
 	    ntype = vif_member_sig_->net_type();
@@ -225,6 +235,12 @@ void NetAssign_::set_vif_member(const perm_string&member_name, const NetNet*memb
       // pruned by nodangle even if only accessed through virtual interface
       if (member_sig)
 	    const_cast<NetNet*>(member_sig)->incr_lref();
+}
+
+void NetAssign_::set_struct_member(const perm_string&name, int idx)
+{
+      struct_member_ = name;
+      struct_member_idx_ = idx;
 }
 
 /*

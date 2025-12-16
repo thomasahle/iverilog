@@ -1584,6 +1584,13 @@ extern ivl_signal_t ivl_lval_vif_sig(ivl_lval_t net);
 extern ivl_signal_t ivl_lval_vif_base_sig(ivl_lval_t net);
 extern ivl_lval_t ivl_lval_vif_nest(ivl_lval_t net);
 
+/* Unpacked struct member l-value access.
+ * ivl_lval_struct_member_idx returns the member index, or -1 if not a
+ * struct member access. ivl_lval_struct_member_name returns the member
+ * name or NULL if not a struct member access. */
+extern int ivl_lval_struct_member_idx(ivl_lval_t net);
+extern const char* ivl_lval_struct_member_name(ivl_lval_t net);
+
 
 /* NEXUS
  * connections of signals and nodes is handled by single-bit
@@ -2431,6 +2438,19 @@ extern int         ivl_type_properties(ivl_type_t net);
 extern const char* ivl_type_prop_name(ivl_type_t net, int idx);
 extern ivl_type_t  ivl_type_prop_type(ivl_type_t net, int idx);
 extern ivl_type_t  ivl_type_super(ivl_type_t net);
+
+/* Struct member access functions.
+ * ivl_type_struct_members returns the number of struct members (0 if not a struct).
+ * ivl_type_struct_member_name returns the name of member at idx.
+ * ivl_type_struct_member_type returns the type of member at idx.
+ * ivl_type_struct_is_packed returns 1 if struct is packed, 0 otherwise.
+ * ivl_type_struct_member_offset returns the bit offset of member (only valid for
+ * packed structs or unpacked structs with packed members). */
+extern unsigned    ivl_type_struct_members(ivl_type_t net);
+extern const char* ivl_type_struct_member_name(ivl_type_t net, unsigned idx);
+extern ivl_type_t  ivl_type_struct_member_type(ivl_type_t net, unsigned idx);
+extern int         ivl_type_struct_is_packed(ivl_type_t net);
+extern unsigned    ivl_type_struct_member_offset(ivl_type_t net, unsigned idx);
 
 
 #if defined(__MINGW32__) || defined (__CYGWIN__)

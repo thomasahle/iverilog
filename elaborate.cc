@@ -4235,6 +4235,67 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			      // pop_front/pop_back are functions, not tasks - handled elsewhere
 			}
 
+			// Check if property type is a virtual interface - VIF method dispatch
+			if (const netvirtual_interface_t* vif_type =
+			    dynamic_cast<const netvirtual_interface_t*>(prop_type)) {
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+					 << "VIF task call via class property: " << prop_name
+					 << "." << method_name << endl;
+			      }
+
+			      // Get the interface definition
+			      const NetScope* iface_def = vif_type->interface_def();
+			      if (!iface_def) {
+				    perm_string iface_name = vif_type->interface_name();
+				    for (NetScope* root : des->find_root_scopes()) {
+					  const NetScope* found = root->child_by_module_name(iface_name);
+					  if (found && found->is_interface()) {
+						iface_def = found;
+						break;
+					  }
+				    }
+			      }
+
+			      if (!iface_def) {
+				    cerr << get_fileline() << ": error: "
+					 << "Interface definition `" << vif_type->interface_name()
+					 << "` not found." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+
+			      // Find the task/function in the interface scope
+			      std::list<hname_t> method_path;
+			      method_path.push_back(hname_t(method_name));
+			      NetScope* task = des->find_scope(const_cast<NetScope*>(iface_def),
+							     method_path, NetScope::TASK);
+			      if (!task) {
+				    task = des->find_scope(const_cast<NetScope*>(iface_def),
+							  method_path, NetScope::FUNC);
+			      }
+
+			      if (task) {
+				    if (debug_elaborate) {
+					  cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+					       << "Found task/func " << task->basename()
+					       << " in interface " << iface_def->basename() << endl;
+				    }
+
+				    // VIF tasks/functions don't take a 'this' argument.
+				    // The task body accesses interface signals directly in its scope.
+				    // Pass nullptr for use_this.
+				    return elaborate_build_call_(des, scope, task, nullptr);
+			      } else {
+				    cerr << get_fileline() << ": error: "
+					 << "Task/function `" << method_name
+					 << "` not found in interface `" << vif_type->interface_name()
+					 << "`." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+			}
+
 			// Check if property type is a class - then look for method in that class
 			const netclass_t* prop_class = dynamic_cast<const netclass_t*>(prop_type);
 			if (prop_class) {
@@ -4337,6 +4398,72 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 	    }
 
 	    return elaborate_build_call_(des, scope, task, use_this, is_super_call);
+      }
+
+      // Check for virtual interface method calls (vif.task_name())
+      if (const netvirtual_interface_t*vif_type =
+	        dynamic_cast<const netvirtual_interface_t*>(sr.type)) {
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+		       << "VIF method call detected: " << method_name
+		       << " on interface type " << vif_type->interface_name() << endl;
+	    }
+
+	    // Get the interface definition scope
+	    const NetScope* iface_def = vif_type->interface_def();
+
+	    // If interface_def is null, try to find it by searching
+	    if (!iface_def) {
+		  perm_string iface_name = vif_type->interface_name();
+		  for (NetScope* root : des->find_root_scopes()) {
+			const NetScope* found = root->child_by_module_name(iface_name);
+			if (found && found->is_interface()) {
+			      iface_def = found;
+			      break;
+			}
+		  }
+	    }
+
+	    if (!iface_def) {
+		  cerr << get_fileline() << ": error: "
+		       << "Interface definition `" << vif_type->interface_name()
+		       << "` not found for virtual interface method call." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Look up the task/function in the interface scope
+	    // Try TASK first, then FUNC if not found
+	    std::list<hname_t> method_path;
+	    method_path.push_back(hname_t(method_name));
+	    NetScope*task = des->find_scope(const_cast<NetScope*>(iface_def),
+					   method_path, NetScope::TASK);
+	    if (!task) {
+		  task = des->find_scope(const_cast<NetScope*>(iface_def),
+					method_path, NetScope::FUNC);
+	    }
+	    if (task == 0) {
+		  cerr << get_fileline() << ": error: "
+		       << "Task/function `" << method_name
+		       << "` not found in interface `" << vif_type->interface_name()
+		       << "`." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+		       << "Found task " << task->basename()
+		       << " in interface " << iface_def->basename() << endl;
+	    }
+
+	    // For VIF method calls, we need to pass the VIF expression as context
+	    // The task will access signals through the VIF at runtime.
+	    // Create an expression for the VIF object itself.
+	    NetESignal* vif_expr = new NetESignal(net);
+	    vif_expr->set_line(*this);
+
+	    return elaborate_build_call_(des, scope, task, vif_expr);
       }
 
       return 0;

@@ -67,6 +67,14 @@ class netstruct_t : public LineInfo, public ivl_type_s {
       const struct member_t* packed_member(perm_string name, unsigned long&off) const;
       const std::vector<member_t>& members() const { return members_; }
 
+	// Member indexing for unpacked struct support
+	// Get member index from name, returns -1 if not found
+      int member_idx_from_name(perm_string name) const;
+	// Get member by index (null if out of range)
+      const member_t* get_member(size_t idx) const;
+	// Get total member count
+      size_t member_count() const { return members_.size(); }
+
 	// Return the width (in bits) of the packed record, or -1 if
 	// the record is not packed.
       long packed_width() const override;

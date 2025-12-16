@@ -27,6 +27,7 @@
 # include  "netdarray.h"
 # include  "netenum.h"
 # include  "netparray.h"
+# include  "netstruct.h"
 # include  "netvector.h"
 # include  <cstdlib>
 # include  <cstdio>
@@ -1847,6 +1848,18 @@ extern "C" ivl_signal_t ivl_lval_vif_sig(ivl_lval_t net)
       return net->vif_member_sig;
 }
 
+extern "C" int ivl_lval_struct_member_idx(ivl_lval_t net)
+{
+      assert(net);
+      return net->struct_member_idx;
+}
+
+extern "C" const char* ivl_lval_struct_member_name(ivl_lval_t net)
+{
+      assert(net);
+      return net->struct_member_name;
+}
+
 extern "C" const char* ivl_nature_name(ivl_nature_t net)
 {
       assert(net);
@@ -3461,6 +3474,64 @@ extern "C" ivl_type_t ivl_type_super(ivl_type_t net)
 	    return 0;
 
       return class_type->get_super();
+}
+
+extern "C" unsigned ivl_type_struct_members(ivl_type_t net)
+{
+      const netstruct_t*struct_type = dynamic_cast<const netstruct_t*>(net);
+      if (struct_type == 0)
+	    return 0;
+      return struct_type->member_count();
+}
+
+extern "C" const char* ivl_type_struct_member_name(ivl_type_t net, unsigned idx)
+{
+      const netstruct_t*struct_type = dynamic_cast<const netstruct_t*>(net);
+      if (struct_type == 0)
+	    return 0;
+      const netstruct_t::member_t* member = struct_type->get_member(idx);
+      if (member == 0)
+	    return 0;
+      return member->name.str();
+}
+
+extern "C" ivl_type_t ivl_type_struct_member_type(ivl_type_t net, unsigned idx)
+{
+      const netstruct_t*struct_type = dynamic_cast<const netstruct_t*>(net);
+      if (struct_type == 0)
+	    return 0;
+      const netstruct_t::member_t* member = struct_type->get_member(idx);
+      if (member == 0)
+	    return 0;
+      return member->net_type;
+}
+
+extern "C" int ivl_type_struct_is_packed(ivl_type_t net)
+{
+      const netstruct_t*struct_type = dynamic_cast<const netstruct_t*>(net);
+      if (struct_type == 0)
+	    return 0;
+      return struct_type->packed() ? 1 : 0;
+}
+
+extern "C" unsigned ivl_type_struct_member_offset(ivl_type_t net, unsigned idx)
+{
+      const netstruct_t*struct_type = dynamic_cast<const netstruct_t*>(net);
+      if (struct_type == 0)
+	    return 0;
+
+      // Compute offset by summing widths of all preceding members
+      // Members are stored LSB first (member 0 at lowest bit position)
+      unsigned offset = 0;
+      for (unsigned i = 0; i < idx && i < struct_type->member_count(); ++i) {
+	    const netstruct_t::member_t* member = struct_type->get_member(i);
+	    if (member && member->net_type) {
+		  long wid = member->net_type->packed_width();
+		  if (wid > 0)
+			offset += wid;
+	    }
+      }
+      return offset;
 }
 
 extern "C" int ivl_type_signed(ivl_type_t net)

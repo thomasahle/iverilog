@@ -25,6 +25,7 @@
 
 /* Forward declaration for use in show_stmt_assign_vector */
 static int show_stmt_assign_sig_cobject(ivl_statement_t net);
+static int show_stmt_assign_struct_member(ivl_statement_t net);
 
 /*
  * These functions handle the blocking assignment. Use the %set
@@ -1580,6 +1581,77 @@ static int show_stmt_assign_vif_member(ivl_statement_t net)
       return errors;
 }
 
+/*
+ * Handle assignment to an unpacked struct member.
+ * This is invoked when the l-value has struct_member_idx >= 0.
+ *
+ * For unpacked structs with packed members, we treat the whole struct
+ * as a packed bit vector and compute member offsets. This is an interim
+ * implementation that works for common use cases.
+ */
+static int show_stmt_assign_struct_member(ivl_statement_t net)
+{
+      int errors = 0;
+      ivl_lval_t lval = ivl_stmt_lval(net, 0);
+      ivl_signal_t sig = ivl_lval_sig(lval);
+      ivl_expr_t rval = ivl_stmt_rval(net);
+      int member_idx = ivl_lval_struct_member_idx(lval);
+      const char* member_name = ivl_lval_struct_member_name(lval);
+
+      if (!sig) {
+            fprintf(stderr, "%s:%u: error: No signal for struct member assignment.\n",
+                    ivl_stmt_file(net), ivl_stmt_lineno(net));
+            return 1;
+      }
+
+      ivl_type_t sig_type = ivl_signal_net_type(sig);
+      if (!sig_type) {
+            fprintf(stderr, "%s:%u: error: No type for struct signal.\n",
+                    ivl_stmt_file(net), ivl_stmt_lineno(net));
+            return 1;
+      }
+
+      /* Get struct member info */
+      unsigned num_members = ivl_type_struct_members(sig_type);
+      if (num_members == 0) {
+            fprintf(stderr, "%s:%u: error: Signal type is not a struct.\n",
+                    ivl_stmt_file(net), ivl_stmt_lineno(net));
+            return 1;
+      }
+
+      if ((unsigned)member_idx >= num_members) {
+            fprintf(stderr, "%s:%u: error: Struct member index out of range.\n",
+                    ivl_stmt_file(net), ivl_stmt_lineno(net));
+            return 1;
+      }
+
+      /* Get member offset and width */
+      unsigned member_off = ivl_type_struct_member_offset(sig_type, member_idx);
+      ivl_type_t member_type = ivl_type_struct_member_type(sig_type, member_idx);
+      unsigned member_wid = member_type ? ivl_type_packed_width(member_type) : 0;
+
+      if (member_wid == 0) {
+            fprintf(stderr, "%s:%u: sorry: Struct member '%s' has unsupported type.\n",
+                    ivl_stmt_file(net), ivl_stmt_lineno(net),
+                    member_name ? member_name : "?");
+            return 1;
+      }
+
+      fprintf(vvp_out, "    ; Struct member assignment: %s (idx=%d, off=%u, wid=%u)\n",
+              member_name ? member_name : "?", member_idx, member_off, member_wid);
+
+      /* Evaluate the r-value expression */
+      draw_eval_vec4(rval);
+
+      /* Load the member offset into an index register and store */
+      int offset_index = allocate_word();
+      fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
+      fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n", sig, offset_index, member_wid);
+      clr_word(offset_index);
+
+      return errors;
+}
+
 int show_stmt_assign(ivl_statement_t net)
 {
       ivl_lval_t lval;
@@ -1593,6 +1665,11 @@ int show_stmt_assign(ivl_statement_t net)
       /* Check for virtual interface member assignment first */
       if (ivl_lval_is_vif(lval)) {
 	    return show_stmt_assign_vif_member(net);
+      }
+
+      /* Check for unpacked struct member assignment */
+      if (ivl_lval_struct_member_idx(lval) >= 0) {
+	    return show_stmt_assign_struct_member(net);
       }
 
       sig = ivl_lval_sig(lval);

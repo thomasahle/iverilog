@@ -3678,6 +3678,92 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 
 	    // Get the type of that property
 	    ivl_type_t prop_type = this_class->get_prop_type(prop_idx);
+
+	    // Check if property is a virtual interface type - handle VIF method calls
+	    if (const netvirtual_interface_t*vif_type =
+	        dynamic_cast<const netvirtual_interface_t*>(prop_type)) {
+		  // VIF function call: this.vif.func_name()
+		  // Get the method name (second element)
+		  pform_name_t::const_iterator it = search_results.path_tail.begin();
+		  ++it;  // Skip property name
+		  perm_string method_name = it->name;
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PECallFunction::elaborate_expr: "
+			     << "VIF function call detected: " << prop_name
+			     << "." << method_name << endl;
+		  }
+
+		  // Get the interface definition scope
+		  const NetScope* iface_def = vif_type->interface_def();
+		  if (!iface_def) {
+			perm_string iface_name = vif_type->interface_name();
+			for (NetScope* root : des->find_root_scopes()) {
+			      const NetScope* found = root->child_by_module_name(iface_name);
+			      if (found && found->is_interface()) {
+				    iface_def = found;
+				    break;
+			      }
+			}
+		  }
+
+		  if (!iface_def) {
+			cerr << get_fileline() << ": error: "
+			     << "Interface definition `" << vif_type->interface_name()
+			     << "` not found for virtual interface function call." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Find the function in the interface scope
+		  // Use find_scope with FUNC type directly
+		  std::list<hname_t> func_path;
+		  func_path.push_back(hname_t(method_name));
+		  NetScope*func_scope = des->find_scope(const_cast<NetScope*>(iface_def),
+						       func_path, NetScope::FUNC);
+		  if (!func_scope) {
+			cerr << get_fileline() << ": error: "
+			     << "Function `" << method_name
+			     << "` not found in interface `" << vif_type->interface_name()
+			     << "`." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Get the function definition
+		  const NetFuncDef*fdef = func_scope->func_def();
+		  if (!fdef) {
+			cerr << get_fileline() << ": error: "
+			     << "Function `" << method_name << "` has no definition." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Create expression to load the VIF property from 'this'
+		  NetNet*this_net = search_results.net;
+		  NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+		  prop_expr->set_line(*this);
+
+		  // Create a function call expression for the VIF method
+		  // For now, return a basic function call - full VIF method dispatch needs
+		  // more infrastructure. This at least allows basic cases to compile.
+		  NetNet*ret_sig = const_cast<NetNet*>(fdef->return_sig());
+		  NetESignal*ret_expr = new NetESignal(ret_sig);
+		  ret_expr->set_line(*this);
+
+		  std::vector<NetExpr*> empty_parms;
+		  NetEUFunc*call_expr = new NetEUFunc(scope, func_scope, ret_expr,
+						     empty_parms, false);
+		  call_expr->set_line(*this);
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PECallFunction::elaborate_expr: "
+			     << "Created VIF function call for " << method_name << endl;
+		  }
+
+		  return call_expr;
+	    }
+
 	    const netclass_t*prop_class = dynamic_cast<const netclass_t*>(prop_type);
 	    if (!prop_class) {
 		  cerr << get_fileline() << ": error: "
@@ -5186,6 +5272,79 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 		  return elaborate_expr_class_field_(des, scope, sr, 0, flags);
 	    }
 
+	    // Handle interface port member access: intf.signal
+	    // Interface ports are compile-time bindings, not runtime virtual interfaces.
+	    // We need to find the bound interface instance and access its member directly.
+	    if (const netvirtual_interface_t*vif_type =
+	            dynamic_cast<const netvirtual_interface_t*>(sr.type)) {
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PEIdent::elaborate_expr(ntype): "
+			     << "Interface port " << sr.path_head
+			     << " member access: " << sr.path_tail << endl;
+		  }
+
+		  // Find the bound interface instance by following the port connection.
+		  // The interface port signal is connected to the interface instance.
+		  // Search through the current scope's parent hierarchy to find the
+		  // interface instance that this port is bound to.
+		  const NetScope* iface_inst = nullptr;
+		  perm_string iface_name = vif_type->interface_name();
+
+		  // Look for interface instance in the parent scope (where instantiation happens)
+		  NetScope* parent = scope->parent();
+		  if (parent) {
+			iface_inst = parent->child_by_module_name(iface_name);
+		  }
+
+		  // Fallback: search root scopes for interface definition
+		  if (!iface_inst) {
+			for (NetScope* root : des->find_root_scopes()) {
+			      const NetScope* found = root->child_by_module_name(iface_name);
+			      if (found && found->is_interface()) {
+				    iface_inst = found;
+				    break;
+			      }
+			}
+		  }
+
+		  if (!iface_inst) {
+			cerr << get_fileline() << ": error: "
+			     << "Interface instance of type `" << iface_name
+			     << "` not found for interface port `" << sr.path_head
+			     << "`." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Get the member name from the path
+		  ivl_assert(*this, sr.path_tail.size() >= 1);
+		  name_component_t member_comp = sr.path_tail.front();
+
+		  // Look up the member signal in the interface instance
+		  NetNet* member_sig = const_cast<NetScope*>(iface_inst)->find_signal(member_comp.name);
+		  if (!member_sig) {
+			cerr << get_fileline() << ": error: "
+			     << "Interface `" << iface_name
+			     << "` has no member `" << member_comp.name << "`." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PEIdent::elaborate_expr(ntype): "
+			     << "Found interface instance " << iface_inst->fullname()
+			     << ", member signal " << member_sig->name() << endl;
+		  }
+
+		  // Create a direct signal expression for the interface member
+		  // This avoids runtime virtual interface lookup - the binding is
+		  // resolved at compile time.
+		  NetESignal* sig_expr = new NetESignal(member_sig);
+		  sig_expr->set_line(*this);
+
+		  return sig_expr;
+	    }
+
 	      // Handle queue/darray of class objects: queue[i].field
 	    if ((net->queue_type() || net->darray_type())
 		&& !sr.path_head.back().index.empty()) {
@@ -5717,6 +5876,84 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
 	    if (dynamic_cast<const netclass_t*>(sr.type) && !sr.path_tail.empty()) {
 		  return elaborate_expr_class_field_(des, scope, sr,
 						     expr_wid, flags);
+	    }
+
+	    // Handle interface port member access: intf.signal
+	    // Interface ports are compile-time bindings, not runtime virtual interfaces.
+	    // We need to find the bound interface instance and access its member directly.
+	    if (const netvirtual_interface_t*vif_type =
+	            dynamic_cast<const netvirtual_interface_t*>(sr.type)) {
+		  if (!sr.path_tail.empty()) {
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_expr_: "
+			           << "Interface port " << sr.path_head
+			           << " member access: " << sr.path_tail << endl;
+			}
+
+			// Find the bound interface instance
+			const NetScope* iface_inst = nullptr;
+			perm_string iface_name = vif_type->interface_name();
+
+			// Look for interface instance in the parent scope
+			NetScope* parent = scope->parent();
+			if (parent) {
+			      iface_inst = parent->child_by_module_name(iface_name);
+			}
+
+			// Fallback: search root scopes
+			if (!iface_inst) {
+			      for (NetScope* root : des->find_root_scopes()) {
+				    const NetScope* found = root->child_by_module_name(iface_name);
+				    if (found && found->is_interface()) {
+					  iface_inst = found;
+					  break;
+				    }
+			      }
+			}
+
+			if (!iface_inst) {
+			      cerr << get_fileline() << ": error: "
+				   << "Interface instance of type `" << iface_name
+				   << "` not found for interface port `" << sr.path_head
+				   << "`." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			// Get the member name from the path
+			ivl_assert(*this, sr.path_tail.size() >= 1);
+			name_component_t member_comp = sr.path_tail.front();
+
+			// Look up the member signal in the interface instance
+			NetNet* member_sig = const_cast<NetScope*>(iface_inst)->find_signal(member_comp.name);
+			if (!member_sig) {
+			      cerr << get_fileline() << ": error: "
+				   << "Interface `" << iface_name
+				   << "` has no member `" << member_comp.name << "`." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_expr_: "
+			           << "Found interface instance " << iface_inst->fullname()
+			           << ", member signal " << member_sig->name() << endl;
+			}
+
+			// If there are more path components, error - nested access not supported yet
+			if (sr.path_tail.size() > 1) {
+			      cerr << get_fileline() << ": sorry: "
+				   << "Nested interface port member access is not yet supported." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			// Create a direct signal expression for the interface member
+			NetESignal* sig_expr = new NetESignal(member_sig);
+			sig_expr->set_line(*this);
+
+			return sig_expr;
+		  }
 	    }
 
 	    if (sr.net->enumeration() && !sr.path_tail.empty()) {
