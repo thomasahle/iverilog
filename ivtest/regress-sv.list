@@ -684,6 +684,7 @@ sv_end_labels		normal,-g2009		ivltests
 sv_end_labels_bad	CE,-g2009		ivltests gold=sv_end_labels_bad.gold
 sv_end_labels_unnamed	CE,-g2009		ivltests gold=sv_end_labels_unnamed.gold
 sv_enum1		normal,-g2009		ivltests
+sv_enum_name_property	normal,-g2012		ivltests
 sv_export1		normal,-g2009		ivltests
 sv_export2		normal,-g2009		ivltests
 sv_export3		normal,-g2009		ivltests

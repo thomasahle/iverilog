@@ -420,6 +420,11 @@ static PLI_INT32 ivl_enum_method_name_compiletf(ICARUS_VPI_CONST PLI_BYTE8*name)
 	case vpiReg:
 	case vpiShortIntVar:
 	    break;
+	case vpiConstant:
+	case vpiParameter:
+	    /* Allow constant/parameter if it's a numeric (non-string) type */
+	    if (vpi_get(vpiConstType, arg_var) != vpiStringConst) break;
+	    // fallthrough
 	default:
 	    vpi_printf("%s:%d: compiler error: ", vpi_get_str(vpiFile, sys),
 	               (int) vpi_get(vpiLineNo,sys));

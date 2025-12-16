@@ -3841,6 +3841,31 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return call_expr;
 	    }
 
+	    // Check if property is an enum type - handle enum methods like .name()
+	    if (const netenum_t*enum_type = dynamic_cast<const netenum_t*>(prop_type)) {
+		  // Get the method name (second element)
+		  pform_name_t::const_iterator it = search_results.path_tail.begin();
+		  ++it;  // Skip property name
+		  perm_string method_name = it->name;
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PECallFunction::elaborate_expr: "
+			     << "Enum method call detected: " << prop_name
+			     << "." << method_name << endl;
+		  }
+
+		  // Create expression to load the enum property from 'this'
+		  NetNet*this_net = search_results.net;
+		  NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+		  prop_expr->set_line(*this);
+
+		  // Call the existing enum method handler
+		  return check_for_enum_methods(this, des, scope,
+						enum_type, path_,
+						method_name, prop_expr,
+						parms_);
+	    }
+
 	    const netclass_t*prop_class = dynamic_cast<const netclass_t*>(prop_type);
 	    if (!prop_class) {
 		  cerr << get_fileline() << ": error: "
