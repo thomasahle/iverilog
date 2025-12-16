@@ -1,3 +1,5 @@
+../lib/ivl/uvm/uvm_pkg.sv:2096: note: Detected run_test() call.
 UVM_INFO @ 0: test.bfm [BFM] Interface initialized
 UVM_INFO @ 5: test.bfm.drive [BFM] Driving data: ab
 PASSED
+./ivltests/sv_uvm_macros_interface.v:44: $finish called at 35 (1s)

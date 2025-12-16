@@ -51,21 +51,20 @@ class MyClass;
     `MY_INFO("Ending run")
   endtask
 
-  // Test 'this' in forever block (like UVM run_phase)
-  task run_forever();
-    int count = 0;
-    forever begin
+  // Test 'this' in loop (like UVM run_phase)
+  task run_loop();
+    int count;
+    for (count = 0; count < 3; count++) begin
       `MY_INFO($sformatf("Iteration %0d", count))
       this.set_value(count);
-      count++;
-      if (count >= 3) break;
     end
   endtask
 endclass
 
 module test;
   initial begin
-    MyClass obj = new("test_obj");
+    MyClass obj;
+    obj = new("test_obj");
 
     obj.run();
 
@@ -74,7 +73,7 @@ module test;
       $finish;
     end
 
-    obj.run_forever();
+    obj.run_loop();
 
     if (obj.get_value() != 2) begin
       $display("FAILED: Expected value 2, got %0d", obj.get_value());

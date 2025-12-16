@@ -2,10 +2,10 @@
 // The macros should use %m format specifier to get hierarchical path
 
 `include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 
 // Simple interface that uses UVM macros
 interface simple_bfm;
-  import uvm_pkg::*;
 
   logic [7:0] data;
   logic valid;

@@ -1119,10 +1119,10 @@ sv_const_ref2		normal,-g2012		ivltests
 sv_const_ref3		normal,-g2012		ivltests
 sv_const_ref4		normal,-g2012		ivltests
 sv_interface_array1	normal,-g2012		ivltests
-sv_class_this_unnamed_block	normal,-g2012	gold	ivltests
+sv_class_this_unnamed_block	normal,-g2012	ivltests gold=sv_class_this_unnamed_block.gold
 sv_class_param_property	normal,-g2012		ivltests
 sv_uvm_do_copy		normal,-g2012,-I../lib/ivl/uvm		ivltests
-sv_uvm_macros_interface	normal,-g2012,-I../lib/ivl/uvm	gold	ivltests
+sv_uvm_macros_interface	normal,-g2012,-I../lib/ivl/uvm	ivltests gold=sv_uvm_macros_interface.gold
 sv_uvm_p_sequencer	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_test_done	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_tlm_fifo		normal,-g2012,-I../lib/ivl/uvm		ivltests
