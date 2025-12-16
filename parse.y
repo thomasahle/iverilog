@@ -1795,6 +1795,8 @@ select_condition
       { delete[]$3; /* binsof(coverpoint) - parsed but not enforced */ }
   | K_binsof '(' IDENTIFIER '[' expression ']' ')' intersect_opt
       { delete[]$3; /* binsof(coverpoint[idx]) - parsed but not enforced */ }
+  | K_binsof '(' IDENTIFIER '.' IDENTIFIER ')' intersect_opt
+      { delete[]$3; delete[]$5; /* binsof(coverpoint.bin) - parsed but not enforced */ }
   ;
 
 intersect_opt
