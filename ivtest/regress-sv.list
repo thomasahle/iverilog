@@ -1108,3 +1108,4 @@ sv_uvm_reg_field1	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_reg1		normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_reg_block1	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_reg_adapter1	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_const_ref1		normal,-g2012		ivltests

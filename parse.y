@@ -3455,6 +3455,41 @@ tf_port_item /* IEEE1800-2005: A.2.7 */
 	}
       }
 
+    /* IEEE1800-2005: const ref is a special port direction */
+  | K_const K_ref K_var_opt data_type_or_implicit IDENTIFIER dimensions_opt initializer_opt
+      { std::vector<pform_tf_port_t>*tmp;
+
+	if (!pform_requires_sv(@1, "const ref port"))
+	      YYERROR;
+
+	list<pform_port_t>* port_list = make_port_list($5, @5.lexical_pos, $6, 0);
+
+	port_declaration_context.port_type = NetNet::PREF;
+	if ($4 == 0) {
+	      $4 = new vector_type_t(IVL_VT_LOGIC, false, 0);
+	      FILE_NAME($4, @5);
+	}
+	port_declaration_context.data_type = $4;
+	tmp = pform_make_task_ports(@4, NetNet::PREF, $4, port_list);
+
+	// Mark the port as const
+	if (tmp && !tmp->empty()) {
+	      for (size_t idx = 0; idx < tmp->size(); idx++) {
+		    if (tmp->at(idx).port)
+			  tmp->at(idx).port->set_const(true);
+	      }
+	}
+
+	$$ = tmp;
+	if ($7) {
+	      pform_requires_sv(@7, "Task/function default argument");
+	      if (!pform_in_extern_declaration()) {
+		  assert(tmp->size()==1);
+		  tmp->front().defe = $7;
+	      }
+	}
+      }
+
   /* Rules to match error cases... */
 
   | port_direction_opt K_var_opt data_type_or_implicit IDENTIFIER error

@@ -162,9 +162,11 @@ static void sig_check_data_type(Design*des, const NetScope*scope,
 static void sig_check_port_type(Design*des, const NetScope*scope,
 			        const PWire *wire, const NetNet *sig)
 {
-      if (sig->port_type() == NetNet::PREF) {
+      // Ref ports in module ports are not yet fully supported,
+      // but ref ports in task/function are allowed.
+      if (sig->port_type() == NetNet::PREF && scope->type() == NetScope::MODULE) {
 	    cerr << wire->get_fileline() << ": sorry: "
-		 << "Reference ports not supported yet." << endl;
+		 << "Reference ports in modules not supported yet." << endl;
 	    des->errors += 1;
       }
 
@@ -841,13 +843,16 @@ void PTaskFunc::elaborate_sig_ports_(Design*des, NetScope*scope,
 	    ports[idx] = tmp;
 	    port_names[idx] = port_name;
 	    pdefs[idx] = tmp_def;
-	    if (scope->type()==NetScope::FUNC && tmp->port_type()!=NetNet::PINPUT) {
+	    // Function ports must be input, or const ref (which acts like input)
+	    bool is_valid_func_port = (tmp->port_type() == NetNet::PINPUT) ||
+	                              (tmp->port_type() == NetNet::PREF && tmp->get_const());
+	    if (scope->type()==NetScope::FUNC && !is_valid_func_port) {
 		  cerr << tmp->get_fileline() << ": error: "
 		       << "Function " << scope_path(scope)
 		       << " port " << port_name
 		       << " is not an input port." << endl;
 		  cerr << tmp->get_fileline() << ":      : "
-		       << "Function arguments must be input ports." << endl;
+		       << "Function arguments must be input ports or const ref." << endl;
 		  des->errors += 1;
 	    }
 	    if (tmp->unpacked_dimensions() != 0) {
