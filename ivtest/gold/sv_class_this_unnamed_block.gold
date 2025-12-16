@@ -1,0 +1,9 @@
+[test_obj] Starting run
+[test_obj] In nested block
+[test_obj] In deeply nested block
+[test_obj] Value check passed
+[test_obj] Ending run
+[test_obj] Iteration 0
+[test_obj] Iteration 1
+[test_obj] Iteration 2
+PASSED
