@@ -129,8 +129,22 @@ netranges_t netstruct_t::slice_dimensions() const
 
 ivl_variable_type_t netstruct_t::base_type() const
 {
-      if (! packed_)
+      if (! packed_) {
+	      // For unpacked structs, check if all members have packed types.
+	      // If so, we can treat it as IVL_VT_LOGIC since it's stored as
+	      // a contiguous bit vector.
+	    long pw = packed_width();
+	    if (pw > 0) {
+		    // Has a valid packed width - all members are packed
+		    // Return the most specific type found in members
+		  for (size_t idx = 0 ; idx < members_.size() ; idx += 1) {
+			if (members_[idx].data_type() != IVL_VT_BOOL)
+			      return members_[idx].data_type();
+		  }
+		  return IVL_VT_BOOL;
+	    }
 	    return IVL_VT_NO_TYPE;
+      }
 
       for (size_t idx = 0 ;  idx < members_.size() ; idx += 1) {
 	    if (members_[idx].data_type() != IVL_VT_BOOL)

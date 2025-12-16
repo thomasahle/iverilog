@@ -2635,12 +2635,26 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
       const netstruct_t*struct_type = net->struct_type();
       ivl_assert(*li, struct_type);
 
-      if (! struct_type->packed()) {
-	    cerr << li->get_fileline() << ": sorry: "
-		 << "Unpacked structures not supported here."
-		 << endl;
-	    des->errors += 1;
-	    return 0;
+	// Check if we can work with this struct. Packed structs are always
+	// supported. Unpacked structs are supported if all members have
+	// packed types (i.e., the struct has a valid packed_width).
+      bool is_packed_struct = struct_type->packed();
+      if (! is_packed_struct) {
+	    long pw = struct_type->packed_width();
+	    if (pw < 0) {
+		    // Truly unpacked - has unpacked members
+		  cerr << li->get_fileline() << ": sorry: "
+		       << "Unpacked structures with unpacked members not supported here."
+		       << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+	      // Unpacked struct but all members are packed - we can handle it
+	    if (debug_elaborate) {
+		  cerr << li->get_fileline() << ": check_for_struct_members: "
+		       << "Allowing unpacked struct with packed members, packed_width=" << pw
+		       << endl;
+	    }
       }
 
 	// These make up the "part" select that is the equivilent of
@@ -2666,13 +2680,36 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 		       << endl;
 	    }
 
-	      // Calculate the offset within the packed structure of the
-	      // member, and any indices. We will add in the offset of the
-	      // struct into the packed array later. Note that this works
-	      // for packed unions as well (although the offset will be 0
-	      // for union members).
+	      // Calculate the offset within the structure of the member.
+	      // For packed structs, packed_member gives the offset from MSB.
+	      // For unpacked structs with packed members, we use LSB-first
+	      // offsets to match the l-value code and VVP storage.
 	    unsigned long tmp_off;
-	    const netstruct_t::member_t* member = struct_type->packed_member(member_name, tmp_off);
+	    const netstruct_t::member_t* member;
+
+	    if (is_packed_struct) {
+		    // Packed structs use MSB-first offsets via packed_member
+		  member = struct_type->packed_member(member_name, tmp_off);
+	    } else {
+		    // Unpacked structs use LSB-first offsets
+		    // Sum widths of all preceding members
+		  int member_idx = struct_type->member_idx_from_name(member_name);
+		  if (member_idx < 0) {
+			cerr << li->get_fileline() << ": error: Member " << member_name
+			     << " is not a member of struct type of "
+			     << net->name()
+			     << "." << completed_path << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  member = struct_type->get_member(member_idx);
+		  tmp_off = 0;
+		  for (int i = 0; i < member_idx; i++) {
+			const netstruct_t::member_t* prev_member = struct_type->get_member(i);
+			if (prev_member && prev_member->net_type)
+			      tmp_off += prev_member->net_type->packed_width();
+		  }
+	    }
 
 	    if (member == 0) {
 		  cerr << li->get_fileline() << ": error: Member " << member_name
@@ -2687,6 +2724,7 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 		  cerr << li->get_fileline() << ": check_for_struct_members: "
 		       << "Member type: " << *member_type
 		       << " (" << typeid(*member_type).name() << ")"
+		       << ", tmp_off=" << tmp_off
 		       << endl;
 	    }
 
@@ -2912,36 +2950,42 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 
       } while (!member_path.empty() && struct_type != 0);
 
-	// The dimensions in the expression must match the packed
-	// dimensions that are declared for the variable. For example,
-	// if foo is a packed array of struct, then this expression
-	// must be "b[n][m]" with the right number of dimensions to
-	// match the declaration of "b".
-	// Note that one of the packed dimensions is the packed struct
-	// itself.
-      ivl_assert(*li, base_index.size()+1 == net->packed_dimensions());
-
       NetExpr*packed_base = 0;
-      if (net->packed_dimensions() > 1) {
-	    list<index_component_t>tmp_index = base_index;
-	    index_component_t member_select;
-	    member_select.sel = index_component_t::SEL_BIT;
-	    member_select.msb = new PENumber(new verinum(off));
-	    tmp_index.push_back(member_select);
-	    packed_base = collapse_array_exprs(des, scope, li, net, tmp_index);
-	    ivl_assert(*li, packed_base);
-	    if (debug_elaborate) {
-		  cerr << li->get_fileline() << ": debug: check_for_struct_members: "
-		       << "Got collapsed array expr: " << *packed_base << endl;
+
+	// For packed structs, handle array indexing and dimension checking
+      if (is_packed_struct) {
+	      // The dimensions in the expression must match the packed
+	      // dimensions that are declared for the variable. For example,
+	      // if foo is a packed array of struct, then this expression
+	      // must be "b[n][m]" with the right number of dimensions to
+	      // match the declaration of "b".
+	      // Note that one of the packed dimensions is the packed struct
+	      // itself.
+	    ivl_assert(*li, base_index.size()+1 == net->packed_dimensions());
+
+	    if (net->packed_dimensions() > 1) {
+		  list<index_component_t>tmp_index = base_index;
+		  index_component_t member_select;
+		  member_select.sel = index_component_t::SEL_BIT;
+		  member_select.msb = new PENumber(new verinum(off));
+		  tmp_index.push_back(member_select);
+		  packed_base = collapse_array_exprs(des, scope, li, net, tmp_index);
+		  ivl_assert(*li, packed_base);
+		  if (debug_elaborate) {
+			cerr << li->get_fileline() << ": debug: check_for_struct_members: "
+			     << "Got collapsed array expr: " << *packed_base << endl;
+		  }
+	    }
+
+	    long tmp;
+	    if (packed_base && eval_as_long(tmp, packed_base)) {
+		  off += tmp;
+		  delete packed_base;
+		  packed_base = 0;
 	    }
       }
-
-      long tmp;
-      if (packed_base && eval_as_long(tmp, packed_base)) {
-	    off += tmp;
-	    delete packed_base;
-	    packed_base = 0;
-      }
+	// For unpacked structs, we don't have packed dimensions to check,
+	// and base_index should be empty for simple member access.
 
       NetESignal*sig = new NetESignal(net);
       NetExpr   *base = packed_base? packed_base : make_const_val(off);
