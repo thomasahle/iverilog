@@ -115,6 +115,7 @@
 // Start item on sequencer
 `define uvm_do(SEQ_OR_ITEM) \
   begin \
+    SEQ_OR_ITEM = new(`"SEQ_OR_ITEM`"); \
     start_item(SEQ_OR_ITEM); \
     if (!SEQ_OR_ITEM.randomize()) begin \
       `uvm_warning("RNDFLD", "Randomization failed in uvm_do") \
@@ -122,9 +123,10 @@
     finish_item(SEQ_OR_ITEM); \
   end
 
-// Start item with inline constraints (simplified - ignores constraints)
+// Start item with inline constraints
 `define uvm_do_with(SEQ_OR_ITEM, CONSTRAINTS) \
   begin \
+    SEQ_OR_ITEM = new(`"SEQ_OR_ITEM`"); \
     start_item(SEQ_OR_ITEM); \
     if (!SEQ_OR_ITEM.randomize() with CONSTRAINTS) begin \
       `uvm_warning("RNDFLD", "Randomization failed in uvm_do_with") \
@@ -143,9 +145,10 @@
     finish_item(SEQ_OR_ITEM); \
   end
 
-// Start item on sequencer
+// Start item on specified sequencer
 `define uvm_do_on(SEQ_OR_ITEM, SEQR) \
   begin \
+    SEQ_OR_ITEM = new(`"SEQ_OR_ITEM`"); \
     start_item(SEQ_OR_ITEM); \
     if (!SEQ_OR_ITEM.randomize()) begin \
       `uvm_warning("RNDFLD", "Randomization failed in uvm_do_on") \
@@ -155,6 +158,7 @@
 
 `define uvm_do_on_with(SEQ_OR_ITEM, SEQR, CONSTRAINTS) \
   begin \
+    SEQ_OR_ITEM = new(`"SEQ_OR_ITEM`"); \
     start_item(SEQ_OR_ITEM); \
     if (!SEQ_OR_ITEM.randomize() with CONSTRAINTS) begin \
       `uvm_warning("RNDFLD", "Randomization failed in uvm_do_on_with") \

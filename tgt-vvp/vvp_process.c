@@ -1686,8 +1686,16 @@ static int show_stmt_utask(ivl_statement_t net)
 		  fprintf(vvp_out, ", S_%p;\n", task);
 	    }
       } else {
-	    fprintf(vvp_out, "    %%fork TD_%s",
-		    vvp_mangle_id(ivl_scope_name(task)));
+	    // Task call
+	    if (is_class_method && !is_super_call) {
+		    // Virtual task call - emit %fork/virt for runtime dispatch
+		  fprintf(vvp_out, "    %%fork/virt TD_%s",
+			  vvp_mangle_id(ivl_scope_name(task)));
+	    } else {
+		    // Regular task call
+		  fprintf(vvp_out, "    %%fork TD_%s",
+			  vvp_mangle_id(ivl_scope_name(task)));
+	    }
 	    fprintf(vvp_out, ", S_%p;\n", task);
 	    fprintf(vvp_out, "    %%join;\n");
       }

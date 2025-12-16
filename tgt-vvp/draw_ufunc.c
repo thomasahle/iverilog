@@ -201,7 +201,11 @@ static void draw_ufunc_preamble(ivl_expr_t expr)
 	    fprintf(vvp_out, ", S_%p;\n", def);
 	    break;
 	  default:
-	    fprintf(vvp_out, "    %%fork TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    if (is_virtual) {
+		fprintf(vvp_out, "    %%fork/virt TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    } else {
+		fprintf(vvp_out, "    %%fork TD_%s", vvp_mangle_id(ivl_scope_name(def)));
+	    }
 	    fprintf(vvp_out, ", S_%p;\n", def);
 	    fprintf(vvp_out, "    %%join;\n");
 	    break;

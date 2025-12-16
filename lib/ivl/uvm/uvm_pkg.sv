@@ -363,6 +363,8 @@ package uvm_pkg;
     endfunction
 
     virtual task run_phase(uvm_phase phase);
+      // Base class run_phase - should be overridden by test
+      $display("UVM_DEBUG: uvm_component::run_phase base class called for %s (SHOULD BE OVERRIDDEN!)", get_full_name());
     endtask
 
     virtual function void extract_phase(uvm_phase phase);
@@ -411,13 +413,17 @@ package uvm_pkg;
     endfunction
 
     virtual task do_run_phase(uvm_phase phase);
-      // Note: Simplified - no fork/join_none due to Icarus runtime assertion issue
-      // Run children first, then self
+      // Run parent's run_phase first (starts sequences), then children (drivers)
+      // This is a simplified approach - not true parallel execution
+      $display("UVM_DEBUG: do_run_phase for %s (type=%s)", get_full_name(), get_type_name());
+      // NOTE: Call through 'this' to attempt virtual dispatch
+      this.run_phase(phase);
+      $display("UVM_DEBUG: do_run_phase %s - starting children", get_full_name());
       for (int i = 0; i < m_num_children; i++) begin
         uvm_component child = m_children[i];
         if (child != null) child.do_run_phase(phase);
       end
-      run_phase(phase);
+      $display("UVM_DEBUG: do_run_phase %s - complete", get_full_name());
     endtask
 
     virtual function void do_extract_phase(uvm_phase phase);
@@ -520,9 +526,13 @@ package uvm_pkg;
     virtual task start(uvm_sequencer_base sequencer, uvm_sequence_base parent_sequence = null);
       m_sequencer = sequencer;
       m_parent_sequence = parent_sequence;
+      $display("UVM_DEBUG: sequence.start() - calling pre_body()");
       pre_body();
+      $display("UVM_DEBUG: sequence.start() - calling body()");
       body();
+      $display("UVM_DEBUG: sequence.start() - calling post_body()");
       post_body();
+      $display("UVM_DEBUG: sequence.start() - complete");
     endtask
 
     function uvm_sequencer_base get_sequencer();
@@ -796,8 +806,44 @@ package uvm_pkg;
       // Simplified - no actual connection tracking
     endfunction
 
+    // Note: Using uvm_object instead of T due to Icarus limitation
+    // with type parameter resolution in method parameters
+    virtual function void write(uvm_object t);
+      // Simplified - override in subclass for actual functionality
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Analysis Export - TLM export for receiving analysis transactions
+  // ============================================================================
+  class uvm_analysis_export #(type T = int) extends uvm_object;
+    function new(string name = "", uvm_component parent = null);
+      super.new(name);
+    endfunction
+
+    virtual function void connect(uvm_object port);
+      // Simplified - no actual connection tracking
+    endfunction
+
     virtual function void write(T t);
       // Simplified - override in subclass for actual functionality
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Analysis Imp - TLM implementation for receiving analysis transactions
+  // ============================================================================
+  class uvm_analysis_imp #(type T = int, type IMP = uvm_component) extends uvm_object;
+    IMP m_imp;
+
+    function new(string name = "", IMP imp = null);
+      super.new(name);
+      m_imp = imp;
+    endfunction
+
+    virtual function void write(T t);
+      // Calls write method on the implementing component
+      // In actual UVM, this calls imp.write(t)
     endfunction
   endclass
 
@@ -859,9 +905,15 @@ package uvm_pkg;
       phase.name = "run";
       if (m_test != null) begin
         $display("UVM_INFO: Running run_phase...");
-        // Note: Simplified - run phase sequentially instead of with fork/join_none
-        // due to Icarus runtime assertion issues with nested fork/join_none in class tasks
+        // Start test's run_phase - it will run sequences that feed items to drivers
+        // Run phases execute in parent->child order, but since each may block,
+        // we need to handle this specially
         m_test.do_run_phase(phase);
+        // Wait for all objections to be dropped (in case any phases raise them)
+        while (!phase.is_done()) begin
+          #1;
+        end
+        $display("UVM_INFO: All objections dropped, ending run_phase...");
       end
 
       // Extract phase
@@ -949,10 +1001,10 @@ package uvm_pkg;
       return null;
     endfunction
 
-    // Static create - note: type_id::create() is not fully supported
+    // Static create - creates the object directly
     static function T create(string name = "");
-      $display("UVM_WARNING: type_id::create() not fully supported. Use direct 'new()' instead.");
-      return null;
+      T obj = new(name);
+      return obj;
     endfunction
   endclass
 

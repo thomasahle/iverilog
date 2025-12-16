@@ -27,6 +27,7 @@
 # include  "vvp_cleanup.h"
 #endif
 # include  <cassert>
+# include  <cstdio>
 
 using namespace std;
 
@@ -589,6 +590,14 @@ void class_type::set_string(class_type::inst_t obj, size_t pid,
 string class_type::get_string(class_type::inst_t obj, size_t pid) const
 {
       char*buf = reinterpret_cast<char*> (obj);
+      if (pid >= properties_.size()) {
+	    fprintf(stderr, "ERROR: get_string pid=%zu >= properties_.size()=%zu class=%s\n",
+		    pid, properties_.size(), class_name_.c_str());
+	    // Print all property names
+	    for (size_t i = 0; i < properties_.size(); ++i) {
+		  fprintf(stderr, "  property[%zu] = %s\n", i, properties_[i].name.c_str());
+	    }
+      }
       assert(pid < properties_.size());
       return properties_[pid].type->get_string(buf);
 }
