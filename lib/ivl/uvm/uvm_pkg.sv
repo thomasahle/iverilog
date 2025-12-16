@@ -88,18 +88,20 @@ package uvm_pkg;
   typedef bit [63:0] uvm_reg_data_t;
 
   // Access type enumeration (for register operations)
-  typedef enum {
-    UVM_READ,
-    UVM_WRITE,
-    UVM_BURST_READ,
-    UVM_BURST_WRITE
+  // Note: Using explicit bit width for packed struct compatibility
+  typedef enum logic [1:0] {
+    UVM_READ       = 2'b00,
+    UVM_WRITE      = 2'b01,
+    UVM_BURST_READ = 2'b10,
+    UVM_BURST_WRITE = 2'b11
   } uvm_access_e;
 
   // Status enumeration
-  typedef enum {
-    UVM_IS_OK,
-    UVM_NOT_OK,
-    UVM_HAS_X
+  // Note: Using explicit bit width for packed struct compatibility
+  typedef enum logic [1:0] {
+    UVM_IS_OK  = 2'b00,
+    UVM_NOT_OK = 2'b01,
+    UVM_HAS_X  = 2'b10
   } uvm_status_e;
 
   // Path enumeration (for register access)
@@ -139,13 +141,15 @@ package uvm_pkg;
   } uvm_predict_e;
 
   // Register bus operation struct - used by adapter
-  typedef struct {
-    uvm_access_e kind;       // UVM_READ or UVM_WRITE
-    uvm_reg_addr_t addr;     // Register address
-    uvm_reg_data_t data;     // Read/write data
-    int n_bits;              // Number of bits to transfer
-    uvm_status_e status;     // Status of operation
-    bit [7:0] byte_en;       // Byte enables (fixed size for Icarus)
+  // Note: Converted to packed struct for Icarus compatibility
+  // (Icarus doesn't support unpacked struct member assignment)
+  typedef struct packed {
+    uvm_access_e kind;       // UVM_READ or UVM_WRITE (2 bits)
+    uvm_reg_addr_t addr;     // Register address (64 bits)
+    uvm_reg_data_t data;     // Read/write data (64 bits)
+    logic [31:0] n_bits;     // Number of bits to transfer (32 bits)
+    uvm_status_e status;     // Status of operation (2 bits)
+    logic [7:0] byte_en;     // Byte enables (8 bits)
   } uvm_reg_bus_op;
 
   // ============================================================================
