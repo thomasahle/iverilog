@@ -1,0 +1,2 @@
+func_with_ref(10) = 11
+PASSED

@@ -843,16 +843,16 @@ void PTaskFunc::elaborate_sig_ports_(Design*des, NetScope*scope,
 	    ports[idx] = tmp;
 	    port_names[idx] = port_name;
 	    pdefs[idx] = tmp_def;
-	    // Function ports must be input, or const ref (which acts like input)
+	    // Function ports must be input, ref, or const ref (IEEE 1800-2012 13.4.1)
 	    bool is_valid_func_port = (tmp->port_type() == NetNet::PINPUT) ||
-	                              (tmp->port_type() == NetNet::PREF && tmp->get_const());
+	                              (tmp->port_type() == NetNet::PREF);
 	    if (scope->type()==NetScope::FUNC && !is_valid_func_port) {
 		  cerr << tmp->get_fileline() << ": error: "
 		       << "Function " << scope_path(scope)
 		       << " port " << port_name
 		       << " is not an input port." << endl;
 		  cerr << tmp->get_fileline() << ":      : "
-		       << "Function arguments must be input ports or const ref." << endl;
+		       << "Function arguments must be input, ref, or const ref." << endl;
 		  des->errors += 1;
 	    }
 	    if (tmp->unpacked_dimensions() != 0) {

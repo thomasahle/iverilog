@@ -1,0 +1,2 @@
+BusOp: addr=1000 data=55aa write=1
+PASSED
