@@ -1077,6 +1077,32 @@ package uvm_pkg;
   uvm_root uvm_top = uvm_root::get();
 
   // ============================================================================
+  // UVM Test Done - For setting drain time and end-of-test controls
+  // ============================================================================
+  class uvm_test_done_objection extends uvm_object;
+    time m_drain_time = 0;
+
+    function new(string name = "uvm_test_done");
+      super.new(name);
+    endfunction
+
+    function void set_drain_time(uvm_component comp, time t);
+      m_drain_time = t;
+    endfunction
+
+    function time get_drain_time();
+      return m_drain_time;
+    endfunction
+
+    virtual function string get_type_name();
+      return "uvm_test_done_objection";
+    endfunction
+  endclass
+
+  // Global uvm_test_done instance
+  uvm_test_done_objection uvm_test_done = new("uvm_test_done");
+
+  // ============================================================================
   // Factory Registration Classes
   // Note: Simplified to avoid self-referential typedef crash in Icarus
   // ============================================================================
@@ -1202,19 +1228,62 @@ package uvm_pkg;
   class uvm_tlm_analysis_fifo #(type T = uvm_object) extends uvm_component;
 
     int m_count;
+    // Simple queue to store items (max 64 items in stub)
+    T m_items[64];
+    int m_head;
+    int m_tail;
+    // Analysis export for connection
+    uvm_analysis_export #(T) analysis_export;
 
     // Analysis export (implements write)
     function new(string name, uvm_component parent);
       super.new(name, parent);
       m_count = 0;
+      m_head = 0;
+      m_tail = 0;
+      analysis_export = new("analysis_export", this);
     endfunction
 
-    // Write method - receives data from analysis port (stub - just counts)
+    // Write method - receives data from analysis port
     virtual function void write(T t);
-      m_count++;
+      if (m_count < 64) begin
+        m_items[m_tail] = t;
+        m_tail = (m_tail + 1) % 64;
+        m_count++;
+      end
     endfunction
 
-    // Size - number of items written (stub)
+    // Get method - blocking task to retrieve next item
+    virtual task get(output T t);
+      while (m_count == 0) begin
+        #1; // Wait for item to be written
+      end
+      t = m_items[m_head];
+      m_head = (m_head + 1) % 64;
+      m_count--;
+    endtask
+
+    // Try_get - non-blocking get
+    virtual function bit try_get(output T t);
+      if (m_count > 0) begin
+        t = m_items[m_head];
+        m_head = (m_head + 1) % 64;
+        m_count--;
+        return 1;
+      end
+      return 0;
+    endfunction
+
+    // Peek - look at next item without removing
+    virtual function bit try_peek(output T t);
+      if (m_count > 0) begin
+        t = m_items[m_head];
+        return 1;
+      end
+      return 0;
+    endfunction
+
+    // Size - number of items in fifo
     virtual function int size();
       return m_count;
     endfunction
@@ -1224,9 +1293,11 @@ package uvm_pkg;
       return m_count == 0;
     endfunction
 
-    // Flush - reset count
+    // Flush - reset fifo
     virtual function void flush();
       m_count = 0;
+      m_head = 0;
+      m_tail = 0;
     endfunction
 
     // Used returns count (compatible with real UVM API)

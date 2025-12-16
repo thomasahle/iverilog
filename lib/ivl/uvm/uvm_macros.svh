@@ -10,24 +10,25 @@
 // that don't require a trailing semicolon (for compatibility with typical usage)
 // ============================================================================
 
+// Note: Use %m format specifier for hierarchical path - works in both classes and interfaces/modules
 `define uvm_info(ID, MSG, VERBOSITY) \
   begin \
-    $display("UVM_INFO @ %0t: %s [%s] %s", $time, this.get_full_name(), ID, MSG); \
+    $display("UVM_INFO @ %0t: %m [%s] %s", $time, ID, MSG); \
   end
 
 `define uvm_warning(ID, MSG) \
   begin \
-    $display("UVM_WARNING @ %0t: %s [%s] %s", $time, this.get_full_name(), ID, MSG); \
+    $display("UVM_WARNING @ %0t: %m [%s] %s", $time, ID, MSG); \
   end
 
 `define uvm_error(ID, MSG) \
   begin \
-    $display("UVM_ERROR @ %0t: %s [%s] %s", $time, this.get_full_name(), ID, MSG); \
+    $display("UVM_ERROR @ %0t: %m [%s] %s", $time, ID, MSG); \
   end
 
 `define uvm_fatal(ID, MSG) \
   begin \
-    $display("UVM_FATAL @ %0t: %s [%s] %s", $time, this.get_full_name(), ID, MSG); \
+    $display("UVM_FATAL @ %0t: %m [%s] %s", $time, ID, MSG); \
     $finish; \
   end
 
@@ -205,8 +206,15 @@
 // Misc Utility Macros
 // ============================================================================
 
-// Declare sequence library (no-op in simplified implementation)
-`define uvm_declare_p_sequencer(SEQUENCER)
+// Declare p_sequencer handle for virtual sequences
+// This allows sequences to access the sequencer they are running on
+`define uvm_declare_p_sequencer(SEQUENCER) \
+  SEQUENCER p_sequencer; \
+  virtual function void m_set_p_sequencer(); \
+    if (!$cast(p_sequencer, m_sequencer)) begin \
+      `uvm_warning("SQRTYPE", "Failed to cast m_sequencer to p_sequencer") \
+    end \
+  endfunction
 
 // Random sequence selection (simplified)
 `define uvm_rand_send(SEQ_OR_ITEM) \
