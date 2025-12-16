@@ -1,0 +1,4 @@
+find_first_index with (item > 25) parsed, idx=0
+find_last_index with (item < 35) parsed, idx=0
+find_index with (item == 30) parsed, idx=0
+PASSED
