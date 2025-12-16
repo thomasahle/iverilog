@@ -5702,6 +5702,8 @@ bool of_NEW_DARRAY(vthread_t thr, vvp_code_t cp)
 	    obj = new vvp_darray_real(size);
       } else if (strcmp(text,"S") == 0) {
 	    obj = new vvp_darray_string(size);
+      } else if (strcmp(text,"o") == 0) {
+	    obj = new vvp_darray_object(size);
       } else {
 	    cerr << get_fileline()
 	         << "Internal error: Unsupported dynamic array type: "
@@ -6997,6 +6999,11 @@ inline static string get_darray_type(const vvp_vector4_t&value)
       return res;
 }
 
+inline static string get_darray_type(const vvp_object_t&)
+{
+      return "darray<object>";
+}
+
 /*
  * The following are used to allow a common template to be written for
  * darray real/string/vec4 operations
@@ -7014,6 +7021,11 @@ inline static void dar_pop_value(vthread_t thr, string&value)
 inline static void dar_pop_value(vthread_t thr, vvp_vector4_t&value)
 {
       value = thr->pop_vec4();
+}
+
+inline static void dar_pop_value(vthread_t thr, vvp_object_t&value)
+{
+      thr->pop_object(value);
 }
 
 template <typename ELEM>
@@ -7073,6 +7085,15 @@ bool of_STORE_DAR_STR(vthread_t thr, vvp_code_t cp)
 bool of_STORE_DAR_VEC4(vthread_t thr, vvp_code_t cp)
 {
       return store_dar<vvp_vector4_t>(thr, cp);
+}
+
+/*
+ * %store/dar/o <var>
+ * Store object to dynamic array of objects at index in register 3.
+ */
+bool of_STORE_DAR_O(vthread_t thr, vvp_code_t cp)
+{
+      return store_dar<vvp_object_t>(thr, cp);
 }
 
 /*

@@ -1067,6 +1067,11 @@ static void show_stmt_assign_sig_darray_queue_mux(ivl_statement_t net)
 	    draw_eval_string(rval);
 	    draw_eval_expr_into_integer(mux, 3);
 	    break;
+	  case IVL_VT_CLASS:
+	    assert(ivl_stmt_opcode(net) == 0);
+	    draw_eval_object(rval);
+	    draw_eval_expr_into_integer(mux, 3);
+	    break;
 	  case IVL_VT_BOOL:
 	  case IVL_VT_LOGIC:
 	    if (ivl_stmt_opcode(net) != 0) {
@@ -1187,6 +1192,9 @@ static int show_stmt_assign_sig_darray(ivl_statement_t net)
 		case IVL_VT_BOOL:
 		case IVL_VT_LOGIC:
 		  fprintf(vvp_out, "    %%store/dar/vec4 v%p_0;\n", var);
+		  break;
+		case IVL_VT_CLASS:
+		  fprintf(vvp_out, "    %%store/dar/o v%p_0;\n", var);
 		  break;
 	    default:
 		  assert(0);
