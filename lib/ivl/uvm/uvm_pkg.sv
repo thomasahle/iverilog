@@ -357,6 +357,16 @@ package uvm_pkg;
       // Base implementation does nothing - override in derived classes
     endfunction
 
+    // Return a string representation of the object
+    virtual function string sprint(uvm_printer printer = null);
+      return {"[", get_type_name(), ":", get_name(), "]"};
+    endfunction
+
+    // Convert to string (alias for sprint)
+    virtual function string convert2string();
+      return sprint();
+    endfunction
+
     virtual function uvm_object clone();
       return null;
     endfunction
