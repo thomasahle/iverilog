@@ -54,6 +54,15 @@ package uvm_pkg;
   typedef class uvm_printer;
   typedef class uvm_comparer;
 
+  // Forward declarations for RAL
+  typedef class uvm_reg_field;
+  typedef class uvm_reg;
+  typedef class uvm_reg_file;
+  typedef class uvm_reg_block;
+  typedef class uvm_reg_map;
+  typedef class uvm_reg_adapter;
+  typedef class uvm_reg_frontdoor;
+
   // ============================================================================
   // UVM Radix Enum (for printing)
   // ============================================================================
@@ -71,6 +80,73 @@ package uvm_pkg;
     UVM_REAL_EXP = 10,
     UVM_NORADIX = 11
   } uvm_radix_enum;
+
+  // ============================================================================
+  // UVM RAL Type Definitions
+  // ============================================================================
+  typedef bit [63:0] uvm_reg_addr_t;
+  typedef bit [63:0] uvm_reg_data_t;
+
+  // Access type enumeration (for register operations)
+  typedef enum {
+    UVM_READ,
+    UVM_WRITE,
+    UVM_BURST_READ,
+    UVM_BURST_WRITE
+  } uvm_access_e;
+
+  // Status enumeration
+  typedef enum {
+    UVM_IS_OK,
+    UVM_NOT_OK,
+    UVM_HAS_X
+  } uvm_status_e;
+
+  // Path enumeration (for register access)
+  typedef enum {
+    UVM_FRONTDOOR,
+    UVM_BACKDOOR,
+    UVM_PREDICT,
+    UVM_DEFAULT_PATH
+  } uvm_path_e;
+
+  // Check enumeration
+  typedef enum {
+    UVM_NO_CHECK,
+    UVM_CHECK
+  } uvm_check_e;
+
+  // Endianness enumeration
+  typedef enum {
+    UVM_NO_ENDIAN,
+    UVM_LITTLE_ENDIAN,
+    UVM_BIG_ENDIAN,
+    UVM_LITTLE_FIFO,
+    UVM_BIG_FIFO
+  } uvm_endianness_e;
+
+  // Hierarchy enumeration
+  typedef enum {
+    UVM_NO_HIER,
+    UVM_HIER
+  } uvm_hier_e;
+
+  // Prediction type
+  typedef enum {
+    UVM_PREDICT_DIRECT,
+    UVM_PREDICT_READ,
+    UVM_PREDICT_WRITE
+  } uvm_predict_e;
+
+  // Register bus operation struct - used by adapter
+  typedef struct {
+    uvm_access_e kind;       // UVM_READ or UVM_WRITE
+    uvm_reg_addr_t addr;     // Register address
+    uvm_reg_data_t data;     // Read/write data
+    int n_bits;              // Number of bits to transfer
+    uvm_status_e status;     // Status of operation
+    bit [7:0] byte_en;       // Byte enables (fixed size for Icarus)
+  } uvm_reg_bus_op;
 
   // ============================================================================
   // UVM Printer - For formatted printing of objects
@@ -1288,6 +1364,581 @@ package uvm_pkg;
       if (m_state == SUSPENDED)
         m_state = RUNNING;
     endfunction
+  endclass
+
+  // ============================================================================
+  // UVM RAL Classes - Register Abstraction Layer
+  // ============================================================================
+
+  // Stub class for frontdoor access (not fully implemented)
+  class uvm_reg_frontdoor extends uvm_object;
+    function new(string name = "uvm_reg_frontdoor");
+      super.new(name);
+    endfunction
+  endclass
+
+  // ============================================================================
+  // uvm_reg_field - The smallest addressable unit in the RAL hierarchy
+  // ============================================================================
+  class uvm_reg_field extends uvm_object;
+    protected uvm_reg m_parent;
+    protected int unsigned m_lsb;
+    protected int unsigned m_size;
+    protected string m_access;
+    protected uvm_reg_data_t m_reset;
+    protected uvm_reg_data_t m_value;
+    protected uvm_reg_data_t m_mirrored;
+    protected bit m_volatile;
+    protected bit m_has_reset;
+    protected bit m_is_rand;
+
+    function new(string name = "uvm_reg_field");
+      super.new(name);
+      m_lsb = 0;
+      m_size = 0;
+      m_access = "RW";
+      m_reset = 0;
+      m_value = 0;
+      m_mirrored = 0;
+      m_volatile = 0;
+      m_has_reset = 0;
+      m_is_rand = 0;
+    endfunction
+
+    // Configure the field
+    virtual function void configure(uvm_reg parent,
+                            int unsigned size,
+                            int unsigned lsb_pos,
+                            string access,
+                            bit volatile_field,
+                            uvm_reg_data_t reset,
+                            bit has_reset,
+                            bit is_rand,
+                            bit individually_accessible);
+      m_parent = parent;
+      m_size = size;
+      m_lsb = lsb_pos;
+      m_access = access;
+      m_reset = reset;
+      m_value = reset;
+      m_mirrored = reset;
+      m_volatile = volatile_field;
+      m_has_reset = has_reset;
+      m_is_rand = is_rand;
+    endfunction
+
+    // Get number of bits
+    virtual function int unsigned get_n_bits();
+      return m_size;
+    endfunction
+
+    // Get LSB position
+    virtual function int unsigned get_lsb_pos();
+      return m_lsb;
+    endfunction
+
+    // Get access mode
+    virtual function string get_access(uvm_reg_map map = null);
+      return m_access;
+    endfunction
+
+    // Get the desired value
+    virtual function uvm_reg_data_t get();
+      return m_value;
+    endfunction
+
+    // Set the desired value
+    virtual function void set(uvm_reg_data_t value, string fname = "", int lineno = 0);
+      uvm_reg_data_t mask;
+      if (m_size >= 64)
+        mask = {64{1'b1}};
+      else
+        mask = (64'b1 << m_size) - 1;
+      m_value = value & mask;
+    endfunction
+
+    // Get the mirrored value
+    virtual function uvm_reg_data_t get_mirrored_value();
+      return m_mirrored;
+    endfunction
+
+    // Get reset value
+    virtual function uvm_reg_data_t get_reset(string kind = "HARD");
+      return m_reset;
+    endfunction
+
+    // Reset the field
+    virtual function void reset(string kind = "HARD");
+      m_value = m_reset;
+      m_mirrored = m_reset;
+    endfunction
+
+    // Predict the field value
+    virtual function bit predict(uvm_reg_data_t value,
+                                 uvm_reg_data_t be = -1,
+                                 uvm_predict_e kind = UVM_PREDICT_DIRECT,
+                                 uvm_path_e path = UVM_FRONTDOOR,
+                                 uvm_reg_map map = null,
+                                 string fname = "",
+                                 int lineno = 0);
+      uvm_reg_data_t mask;
+      if (m_size >= 64)
+        mask = {64{1'b1}};
+      else
+        mask = (64'b1 << m_size) - 1;
+      m_mirrored = value & mask;
+      return 1;
+    endfunction
+
+    // Get parent register
+    virtual function uvm_reg get_parent();
+      return m_parent;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // uvm_reg - A register is a collection of fields at a specific address
+  // ============================================================================
+  class uvm_reg extends uvm_object;
+    protected uvm_reg_block m_parent;
+    protected int unsigned m_n_bits;
+    protected bit m_has_cover;
+    local uvm_reg_field m_fields[16];  // Fixed array for Icarus (max 16 fields)
+    local int m_n_fields;
+    protected uvm_reg_data_t m_reset;
+
+    function new(string name = "uvm_reg", int unsigned n_bits = 32, int has_coverage = 0);
+      super.new(name);
+      m_n_bits = n_bits;
+      m_has_cover = has_coverage;
+      m_n_fields = 0;
+      m_reset = 0;
+    endfunction
+
+    // Build - called by derived classes to add fields
+    virtual function void build();
+      // Override in derived register classes
+    endfunction
+
+    // Configure the register
+    virtual function void configure(uvm_reg_block blk_parent,
+                                    uvm_reg_file regfile_parent = null,
+                                    string hdl_path = "");
+      m_parent = blk_parent;
+    endfunction
+
+    // Add a field to this register
+    function void add_field(uvm_reg_field field);
+      if (m_n_fields < 16) begin
+        m_fields[m_n_fields] = field;
+        m_n_fields++;
+      end
+    endfunction
+
+    // Get number of bits
+    virtual function int unsigned get_n_bits();
+      return m_n_bits;
+    endfunction
+
+    // Get parent block
+    virtual function uvm_reg_block get_parent();
+      return m_parent;
+    endfunction
+
+    // Get all fields
+    virtual function void get_fields(ref uvm_reg_field fields[$]);
+      for (int i = 0; i < m_n_fields; i++)
+        fields.push_back(m_fields[i]);
+    endfunction
+
+    // Get the desired value (composite of all fields)
+    virtual function uvm_reg_data_t get(string fname = "", int lineno = 0);
+      uvm_reg_data_t value = 0;
+      for (int i = 0; i < m_n_fields; i++) begin
+        value = value | (m_fields[i].get() << m_fields[i].get_lsb_pos());
+      end
+      return value;
+    endfunction
+
+    // Set the desired value (distributes to all fields)
+    virtual function void set(uvm_reg_data_t value, string fname = "", int lineno = 0);
+      for (int i = 0; i < m_n_fields; i++) begin
+        uvm_reg_data_t field_val;
+        int unsigned lsb = m_fields[i].get_lsb_pos();
+        int unsigned size = m_fields[i].get_n_bits();
+        uvm_reg_data_t mask;
+        if (size >= 64)
+          mask = {64{1'b1}};
+        else
+          mask = (64'b1 << size) - 1;
+        field_val = (value >> lsb) & mask;
+        m_fields[i].set(field_val);
+      end
+    endfunction
+
+    // Get the mirrored value
+    virtual function uvm_reg_data_t get_mirrored_value(string fname = "", int lineno = 0);
+      uvm_reg_data_t value = 0;
+      for (int i = 0; i < m_n_fields; i++) begin
+        value = value | (m_fields[i].get_mirrored_value() << m_fields[i].get_lsb_pos());
+      end
+      return value;
+    endfunction
+
+    // Reset all fields
+    virtual function void reset(string kind = "HARD");
+      for (int i = 0; i < m_n_fields; i++) begin
+        m_fields[i].reset(kind);
+      end
+    endfunction
+
+    // Predict the register value
+    virtual function bit predict(uvm_reg_data_t value,
+                                 uvm_reg_data_t be = -1,
+                                 uvm_predict_e kind = UVM_PREDICT_DIRECT,
+                                 uvm_path_e path = UVM_FRONTDOOR,
+                                 uvm_reg_map map = null,
+                                 string fname = "",
+                                 int lineno = 0);
+      for (int i = 0; i < m_n_fields; i++) begin
+        uvm_reg_data_t field_val;
+        int unsigned lsb = m_fields[i].get_lsb_pos();
+        int unsigned size = m_fields[i].get_n_bits();
+        uvm_reg_data_t mask;
+        if (size >= 64)
+          mask = {64{1'b1}};
+        else
+          mask = (64'b1 << size) - 1;
+        field_val = (value >> lsb) & mask;
+        void'(m_fields[i].predict(field_val, be, kind, path, map, fname, lineno));
+      end
+      return 1;
+    endfunction
+
+    // Read register (frontdoor) - stub implementation
+    virtual task read(output uvm_status_e status,
+                      output uvm_reg_data_t value,
+                      input uvm_path_e path = UVM_DEFAULT_PATH,
+                      input uvm_reg_map map = null,
+                      input uvm_sequence_base parent = null,
+                      input int prior = -1,
+                      input uvm_object extension = null,
+                      input string fname = "",
+                      input int lineno = 0);
+      // Stub - returns mirrored value
+      status = UVM_IS_OK;
+      value = get_mirrored_value();
+    endtask
+
+    // Write register (frontdoor) - stub implementation
+    virtual task write(output uvm_status_e status,
+                       input uvm_reg_data_t value,
+                       input uvm_path_e path = UVM_DEFAULT_PATH,
+                       input uvm_reg_map map = null,
+                       input uvm_sequence_base parent = null,
+                       input int prior = -1,
+                       input uvm_object extension = null,
+                       input string fname = "",
+                       input int lineno = 0);
+      // Stub - sets desired value
+      set(value);
+      status = UVM_IS_OK;
+    endtask
+  endclass
+
+  // Stub for uvm_reg_file (not fully implemented)
+  class uvm_reg_file extends uvm_object;
+    function new(string name = "uvm_reg_file");
+      super.new(name);
+    endfunction
+  endclass
+
+  // ============================================================================
+  // uvm_reg_map - Address maps manage relationship between registers and addresses
+  // ============================================================================
+  class uvm_reg_map extends uvm_object;
+    protected uvm_reg_block m_parent;
+    protected uvm_reg_addr_t m_base_addr;
+    protected int unsigned m_n_bytes;
+    protected uvm_endianness_e m_endian;
+    protected uvm_sequencer_base m_sequencer;
+    protected uvm_reg_adapter m_adapter;
+    protected bit m_byte_addressing;
+
+    // Register storage - fixed arrays for Icarus
+    local uvm_reg m_regs[256];
+    local uvm_reg_addr_t m_reg_addrs[256];
+    local int m_n_regs;
+
+    function new(string name = "uvm_reg_map");
+      super.new(name);
+      m_n_regs = 0;
+      m_base_addr = 0;
+      m_n_bytes = 4;
+      m_endian = UVM_LITTLE_ENDIAN;
+      m_byte_addressing = 1;
+    endfunction
+
+    // Configure the map
+    virtual function void configure(uvm_reg_block parent,
+                                    uvm_reg_addr_t base_addr,
+                                    int unsigned n_bytes,
+                                    uvm_endianness_e endian,
+                                    bit byte_addressing = 1);
+      m_parent = parent;
+      m_base_addr = base_addr;
+      m_n_bytes = n_bytes;
+      m_endian = endian;
+      m_byte_addressing = byte_addressing;
+    endfunction
+
+    // Add a register to the map
+    virtual function void add_reg(uvm_reg rg,
+                                  uvm_reg_addr_t offset,
+                                  string rights = "RW",
+                                  bit unmapped = 0,
+                                  uvm_reg_frontdoor frontdoor = null);
+      if (m_n_regs < 256) begin
+        m_regs[m_n_regs] = rg;
+        m_reg_addrs[m_n_regs] = offset;
+        m_n_regs++;
+      end
+    endfunction
+
+    // Get base address
+    virtual function uvm_reg_addr_t get_base_addr(uvm_hier_e hier = UVM_HIER);
+      return m_base_addr;
+    endfunction
+
+    // Get number of bytes per access
+    virtual function int unsigned get_n_bytes(uvm_hier_e hier = UVM_HIER);
+      return m_n_bytes;
+    endfunction
+
+    // Get endianness
+    virtual function uvm_endianness_e get_endian(uvm_hier_e hier = UVM_HIER);
+      return m_endian;
+    endfunction
+
+    // Get register by offset
+    virtual function uvm_reg get_reg_by_offset(uvm_reg_addr_t offset, bit read = 1);
+      for (int i = 0; i < m_n_regs; i++) begin
+        if (m_reg_addrs[i] == offset)
+          return m_regs[i];
+      end
+      return null;
+    endfunction
+
+    // Set sequencer and adapter
+    virtual function void set_sequencer(uvm_sequencer_base sequencer,
+                                        uvm_reg_adapter adapter = null);
+      m_sequencer = sequencer;
+      m_adapter = adapter;
+    endfunction
+
+    // Get sequencer
+    virtual function uvm_sequencer_base get_sequencer(uvm_hier_e hier = UVM_HIER);
+      return m_sequencer;
+    endfunction
+
+    // Get adapter
+    virtual function uvm_reg_adapter get_adapter(uvm_hier_e hier = UVM_HIER);
+      return m_adapter;
+    endfunction
+
+    // Get parent block
+    virtual function uvm_reg_block get_parent();
+      return m_parent;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // uvm_reg_block - Top-level container for registers and maps
+  // ============================================================================
+  class uvm_reg_block extends uvm_object;
+    protected uvm_reg_block m_parent;
+    local uvm_reg_map m_maps[8];        // Fixed array for Icarus (max 8 maps)
+    local int m_n_maps;
+    local uvm_reg m_regs[256];          // Fixed array (max 256 regs)
+    local int m_n_regs;
+    local bit m_locked;
+    uvm_reg_map default_map;            // Public access for convenience
+
+    function new(string name = "uvm_reg_block", int has_coverage = 0);
+      super.new(name);
+      m_n_maps = 0;
+      m_n_regs = 0;
+      m_locked = 0;
+      default_map = null;
+    endfunction
+
+    // Build - override in derived classes
+    virtual function void build();
+    endfunction
+
+    // Configure the block
+    virtual function void configure(uvm_reg_block parent = null, string hdl_path = "");
+      m_parent = parent;
+    endfunction
+
+    // Create an address map
+    virtual function uvm_reg_map create_map(string name,
+                                            uvm_reg_addr_t base_addr,
+                                            int unsigned n_bytes,
+                                            uvm_endianness_e endian,
+                                            bit byte_addressing = 1);
+      uvm_reg_map map;
+      if (m_n_maps >= 8) return null;
+      map = new(name);
+      map.configure(this, base_addr, n_bytes, endian, byte_addressing);
+      m_maps[m_n_maps] = map;
+      m_n_maps++;
+      if (default_map == null)
+        default_map = map;
+      return map;
+    endfunction
+
+    // Get map by name
+    virtual function uvm_reg_map get_map_by_name(string name);
+      for (int i = 0; i < m_n_maps; i++) begin
+        if (m_maps[i].get_name() == name)
+          return m_maps[i];
+      end
+      return null;
+    endfunction
+
+    // Get default map
+    virtual function uvm_reg_map get_default_map();
+      return default_map;
+    endfunction
+
+    // Set default map
+    virtual function void set_default_map(uvm_reg_map map);
+      default_map = map;
+    endfunction
+
+    // Add a register to the block
+    function void add_reg(uvm_reg rg);
+      if (m_n_regs < 256) begin
+        m_regs[m_n_regs] = rg;
+        m_n_regs++;
+      end
+    endfunction
+
+    // Get all registers
+    virtual function void get_registers(ref uvm_reg regs[$], input uvm_hier_e hier = UVM_HIER);
+      for (int i = 0; i < m_n_regs; i++)
+        regs.push_back(m_regs[i]);
+    endfunction
+
+    // Lock the model
+    virtual function void lock_model();
+      m_locked = 1;
+    endfunction
+
+    // Check if locked
+    virtual function bit is_locked();
+      return m_locked;
+    endfunction
+
+    // Reset all registers
+    virtual function void reset(string kind = "HARD");
+      for (int i = 0; i < m_n_regs; i++)
+        m_regs[i].reset(kind);
+    endfunction
+
+    // Get parent block
+    virtual function uvm_reg_block get_parent();
+      return m_parent;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // uvm_reg_adapter - Converts between register ops and bus transactions
+  // ============================================================================
+  class uvm_reg_adapter extends uvm_object;
+    // Configuration flags
+    bit supports_byte_enable;
+    bit provides_responses;
+
+    function new(string name = "uvm_reg_adapter");
+      super.new(name);
+      supports_byte_enable = 0;
+      provides_responses = 0;
+    endfunction
+
+    // Convert register operation to bus transaction
+    // Must be overridden by protocol-specific adapter
+    virtual function uvm_sequence_item reg2bus(ref uvm_reg_bus_op rw);
+      return null;
+    endfunction
+
+    // Convert bus response back to register operation
+    // Must be overridden by protocol-specific adapter
+    virtual function void bus2reg(uvm_sequence_item bus_item, ref uvm_reg_bus_op rw);
+    endfunction
+
+    // Helper to get parent sequence
+    virtual function uvm_sequence_base get_item();
+      return null;
+    endfunction
+  endclass
+
+  // ============================================================================
+  // uvm_reg_predictor - Updates register model based on observed transactions
+  // ============================================================================
+  class uvm_reg_predictor extends uvm_component;
+    uvm_reg_adapter adapter;
+    uvm_reg_map map;
+
+    function new(string name = "uvm_reg_predictor", uvm_component parent = null);
+      super.new(name, parent);
+    endfunction
+
+    // Process an observed transaction
+    virtual function void write(uvm_sequence_item tr);
+      uvm_reg_bus_op rw;
+      uvm_reg rg;
+
+      if (adapter == null || map == null) return;
+
+      // Convert bus transaction to register operation
+      adapter.bus2reg(tr, rw);
+
+      // Find the register at this address
+      rg = map.get_reg_by_offset(rw.addr);
+      if (rg == null) return;
+
+      // Update the register model
+      if (rw.kind == UVM_READ)
+        void'(rg.predict(rw.data, .kind(UVM_PREDICT_READ)));
+      else
+        void'(rg.predict(rw.data, .kind(UVM_PREDICT_WRITE)));
+    endfunction
+  endclass
+
+  // ============================================================================
+  // uvm_reg_sequence - Base class for register sequences
+  // ============================================================================
+  class uvm_reg_sequence extends uvm_sequence_base;
+    uvm_reg_block model;
+    uvm_reg_map reg_map;
+
+    function new(string name = "uvm_reg_sequence");
+      super.new(name);
+    endfunction
+
+    // Convenience method for writing a register
+    virtual task write_reg(uvm_reg rg, output uvm_status_e status, input uvm_reg_data_t value,
+                           input uvm_path_e path = UVM_FRONTDOOR);
+      rg.write(status, value, path, reg_map, this);
+    endtask
+
+    // Convenience method for reading a register
+    virtual task read_reg(uvm_reg rg, output uvm_status_e status, output uvm_reg_data_t value,
+                          input uvm_path_e path = UVM_FRONTDOOR);
+      rg.read(status, value, path, reg_map, this);
+    endtask
   endclass
 
   // Global run_test task
