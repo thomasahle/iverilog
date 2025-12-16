@@ -1469,6 +1469,30 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 		  fprintf(vvp_out, "    %%store/prop/obj %d, %d; IVL_VT_DARRAY\n", prop_idx, idx);
 		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 
+	    } else if (ivl_type_base(prop_type) == IVL_VT_ASSOC) {
+		    /* Associative array property assignment */
+		  ivl_expr_t idx_expr = ivl_lval_idx(lval);
+		  if (idx_expr) {
+			  /* Indexed assignment to associative array property */
+			ivl_type_t element_type = ivl_type_element(prop_type);
+			unsigned assoc_wid = ivl_type_packed_width(element_type);
+
+			  /* Evaluate the value to store onto the vec4 stack */
+			draw_eval_vec4(rval);
+
+			  /* Evaluate the key as a string onto the string stack */
+			draw_eval_string(idx_expr);
+
+			  /* Emit the store opcode */
+			fprintf(vvp_out, "    %%store/prop/assoc/vec4 %d, %u;\n", prop_idx, assoc_wid);
+			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  } else {
+			  /* Assignment of whole array - treat as object */
+			errors += draw_eval_object(rval);
+			fprintf(vvp_out, "    %%store/prop/obj %d, 0; IVL_VT_ASSOC (whole array)\n", prop_idx);
+			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  }
+
 	    } else if (ivl_type_base(prop_type) == IVL_VT_CLASS) {
 
 		  int idx = 0;

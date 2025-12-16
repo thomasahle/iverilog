@@ -7401,6 +7401,108 @@ bool of_STORE_PROP_VA(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %store/prop/assoc/vec4 <pid>, <wid>
+ *
+ * Store a vec4 value to an associative array property.
+ * The string key is popped from the string stack.
+ * The vec4 value is popped from the vec4 stack.
+ * The cobject remains on top of the object stack.
+ */
+bool of_STORE_PROP_ASSOC_VEC4(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+      unsigned wid = cp->bit_idx[0];
+
+      // Pop the string key (pushed last)
+      string key = thr->pop_str();
+
+      // Pop the value to store (pushed first)
+      vvp_vector4_t val = thr->pop_vec4();
+      assert(val.size() >= wid);
+      val.resize(wid);
+
+      // Get the class object from the object stack
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "ERROR of_STORE_PROP_ASSOC_VEC4: cobj null at pid=%lu scope=%s\n",
+	            (unsigned long)pid, scope ? scope->scope_name() : "(null)");
+	    return true;
+      }
+
+      // Get the associative array property object
+      vvp_object_t prop_obj;
+      cobj->get_object(pid, prop_obj, 0);
+
+      // Try to get the associative array
+      vvp_assoc*assoc = prop_obj.peek<vvp_assoc>();
+      if (assoc == 0) {
+	    // Create a new associative array if it doesn't exist
+	    assoc = new vvp_assoc_vec4(wid);
+	    vvp_object_t new_obj(assoc);
+	    cobj->set_object(pid, new_obj, 0);
+	    // Re-fetch to get the correct pointer
+	    cobj->get_object(pid, prop_obj, 0);
+	    assoc = prop_obj.peek<vvp_assoc>();
+      }
+
+      if (assoc)
+	    assoc->set_word(key, val);
+
+      return true;
+}
+
+/*
+ * %prop/assoc/vec4 <pid>
+ *
+ * Load a vec4 value from an associative array property.
+ * The string key is popped from the string stack.
+ * The vec4 value is pushed to the vec4 stack.
+ * The cobject remains on top of the object stack.
+ */
+bool of_PROP_ASSOC_VEC4(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+
+      // Pop the string key
+      string key = thr->pop_str();
+
+      // Get the class object from the object stack
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "ERROR of_PROP_ASSOC_VEC4: cobj null at pid=%lu scope=%s\n",
+	            (unsigned long)pid, scope ? scope->scope_name() : "(null)");
+	    // Push a default value
+	    vvp_vector4_t val(32, BIT4_X);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      // Get the associative array property object
+      vvp_object_t prop_obj;
+      cobj->get_object(pid, prop_obj, 0);
+
+      // Get the associative array
+      vvp_assoc*assoc = prop_obj.peek<vvp_assoc>();
+      if (assoc == 0) {
+	    // Array doesn't exist, return default value
+	    vvp_vector4_t val(32, BIT4_X);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      // Get the value from the associative array
+      vvp_vector4_t val;
+      assoc->get_word(key, val);
+      thr->push_vec4(val);
+
+      return true;
+}
+
+/*
  * %prop/va <pid>
  *
  * Load vector value from property array element. The array index is

@@ -929,9 +929,19 @@ static void draw_property_vec4(ivl_expr_t expr)
       }
 
       if (array_idx) {
-	    // Property array access - push index first, then use indexed opcode
-	    draw_eval_vec4(array_idx);
-	    fprintf(vvp_out, "    %%prop/va %u;\n", pidx);
+	    // Check if property is an associative array
+	    ivl_type_t class_type = sig ? ivl_signal_net_type(sig) : NULL;
+	    ivl_type_t prop_type = class_type ? ivl_type_prop_type(class_type, pidx) : NULL;
+
+	    if (prop_type && ivl_type_base(prop_type) == IVL_VT_ASSOC) {
+		  // Associative array property - convert index to string and use assoc opcode
+		  draw_eval_string(array_idx);
+		  fprintf(vvp_out, "    %%prop/assoc/vec4 %u;\n", pidx);
+	    } else {
+		  // Regular array property - use integer index
+		  draw_eval_vec4(array_idx);
+		  fprintf(vvp_out, "    %%prop/va %u;\n", pidx);
+	    }
       } else {
 	    fprintf(vvp_out, "    %%prop/v %u;\n", pidx);
       }

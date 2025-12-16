@@ -1298,6 +1298,7 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 		  }
 	    }
 	    NetExpr *canon_index = nullptr;
+	    NetExpr *assoc_index = nullptr;
 	    if (!member_cur.index.empty()) {
 		  if (const netsarray_t *stype = dynamic_cast<const netsarray_t*>(ptype)) {
 			canon_index = make_canonical_index(des, scope, this,
@@ -1307,6 +1308,38 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 			// For packed vectors, bit-select is allowed but not yet fully supported
 			cerr << get_fileline() << ": warning: "
 			     << "Bit-select on class vector property not yet fully supported." << endl;
+		  } else if (const netassoc_t *atype = dynamic_cast<const netassoc_t*>(ptype)) {
+			// Associative array indexing - elaborate the key expression
+			if (member_cur.index.size() != 1) {
+			      cerr << get_fileline() << ": error: "
+				   << "Associative arrays only support single index." << endl;
+			      des->errors++;
+			} else {
+			      const index_component_t&idx = member_cur.index.front();
+			      if (idx.msb && !idx.lsb) {
+				    assoc_index = elab_and_eval(des, scope, idx.msb, -1);
+			      } else {
+				    cerr << get_fileline() << ": error: "
+					 << "Invalid index expression for associative array." << endl;
+				    des->errors++;
+			      }
+			}
+		  } else if (const netdarray_t *dtype = dynamic_cast<const netdarray_t*>(ptype)) {
+			// Dynamic array indexing
+			if (member_cur.index.size() != 1) {
+			      cerr << get_fileline() << ": error: "
+				   << "Dynamic arrays only support single index." << endl;
+			      des->errors++;
+			} else {
+			      const index_component_t&idx = member_cur.index.front();
+			      if (idx.msb && !idx.lsb) {
+				    assoc_index = elab_and_eval(des, scope, idx.msb, -1);
+			      } else {
+				    cerr << get_fileline() << ": error: "
+					 << "Invalid index expression for dynamic array." << endl;
+				    des->errors++;
+			      }
+			}
 		  } else {
 			cerr << get_fileline() << ": error: "
 			     << "Index expressions don't apply to this type of property." << endl;
@@ -1339,6 +1372,8 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 
 	    if (canon_index)
 		  lv->set_word(canon_index);
+	    if (assoc_index)
+		  lv->set_word(assoc_index);
 
 	      // If the current member is a class object, then get the
 	      // type. We may wind up iterating, and need the proper

@@ -3179,6 +3179,24 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 		  canon_index = make_canonical_index(des, scope, this,
 						     comp.index, tmp_ua, false);
 	    }
+      } else if (dynamic_cast<const netassoc_t*>(tmp_type)) {
+	      // Associative array property access
+	    if (!comp.index.empty()) {
+		  if (comp.index.size() != 1) {
+			cerr << get_fileline() << ": error: "
+			     << "Associative arrays only support single index." << endl;
+			des->errors++;
+		  } else {
+			const index_component_t&idx = comp.index.front();
+			if (idx.msb && !idx.lsb) {
+			      canon_index = elab_and_eval(des, scope, idx.msb, -1);
+			} else {
+			      cerr << get_fileline() << ": error: "
+				   << "Invalid index expression for associative array property." << endl;
+			      des->errors++;
+			}
+		  }
+	    }
       }
 
       if (debug_elaborate && canon_index) {

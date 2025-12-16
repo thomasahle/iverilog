@@ -91,6 +91,7 @@ static void show_prop_type(ivl_type_t ptype)
 	  case IVL_VT_DARRAY:
 	  case IVL_VT_QUEUE:
 	  case IVL_VT_CLASS:
+	  case IVL_VT_ASSOC:
 	    fprintf(vvp_out, "\"o\"");
 	    if (packed_dimensions > 0) {
 		  unsigned idx;

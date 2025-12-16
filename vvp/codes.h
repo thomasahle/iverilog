@@ -250,6 +250,8 @@ extern bool of_STORE_ASSOC_R(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_ASSOC_STR(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_OBJ(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_OBJA(vthread_t thr, vvp_code_t code);
+extern bool of_STORE_PROP_ASSOC_VEC4(vthread_t thr, vvp_code_t code);
+extern bool of_PROP_ASSOC_VEC4(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_OBJ(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_R(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_STR(vthread_t thr, vvp_code_t code);
