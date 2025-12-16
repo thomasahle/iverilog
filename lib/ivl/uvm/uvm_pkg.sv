@@ -587,6 +587,16 @@ package uvm_pkg;
     function uvm_sequence_base get_parent_sequence();
       return m_parent_sequence;
     endfunction
+
+    // Copy method - override in derived classes to copy field values
+    virtual function void do_copy(uvm_object rhs);
+      // Base implementation - derived classes should copy their fields
+    endfunction
+
+    // Compare method - override in derived classes to compare field values
+    virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer = null);
+      return 1; // Base implementation returns true
+    endfunction
   endclass
 
   // ============================================================================
