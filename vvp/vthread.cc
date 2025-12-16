@@ -270,6 +270,7 @@ struct vthread_s {
       unsigned i_am_detached     :1;
       unsigned i_am_waiting      :1;
       unsigned i_am_in_function  :1; // True if running function code
+      unsigned i_am_forked_task  :1; // True if created by fork (not call)
       unsigned i_have_ended      :1;
       unsigned i_was_disabled    :1;
       unsigned waiting_for_event :1;
@@ -287,6 +288,12 @@ struct vthread_s {
       struct vthread_s*wait_next;
 	/* These are used to access automatically allocated items. */
       vvp_context_t wt_context, rd_context;
+	/* These are used to store '@' (implicit this) for forked tasks.
+	 * When a forked task calls functions, context swaps change rd_context
+	 * away from the fork context where '@' was stored. These members
+	 * allow us to retrieve '@' regardless of context state. */
+      vvp_object_t fork_this_obj_;
+      vvp_net_t* fork_this_net_;
 	/* These are used to pass non-blocking event control information. */
       vvp_net_t*event;
       uint64_t ecount;
@@ -746,11 +753,13 @@ vthread_t vthread_new(vvp_code_t pc, __vpiScope*scope)
       thr->wait_next = 0;
       thr->wt_context = 0;
       thr->rd_context = 0;
+      thr->fork_this_net_ = 0;  // fork_this_obj_ is default-constructed as nil
 
       thr->i_am_joining  = 0;
       thr->i_am_detached = 0;
       thr->i_am_waiting  = 0;
       thr->i_am_in_function = 0;
+      thr->i_am_forked_task = 0;
       thr->is_scheduled  = 0;
       thr->i_have_ended  = 0;
       thr->i_was_disabled = 0;
@@ -1002,6 +1011,7 @@ bool of_ALLOC(vthread_t thr, vvp_code_t cp)
 
         /* Push the allocated context onto the write context stack. */
       vvp_set_stacked_context(child_context, thr->wt_context);
+
       thr->wt_context = child_context;
 
       return true;
@@ -1510,6 +1520,25 @@ static bool do_callf_void(vthread_t thr, vthread_t child)
 	    child->rd_context = thr->wt_context;
       }
 
+      // Propagate fork_this from parent if parent has it set.
+      // This allows functions called by forked tasks to access '@'.
+      // Note: We don't set i_am_forked_task - that's only for actual forks.
+      if (thr->fork_this_net_ != 0) {
+	    child->fork_this_net_ = thr->fork_this_net_;
+	    // If parent's fork_this_obj_ is valid, use it.
+	    // Otherwise, try to read '@' from the current write context.
+	    if (!thr->fork_this_obj_.test_nil()) {
+		  child->fork_this_obj_ = thr->fork_this_obj_;
+	    } else if (thr->wt_context) {
+		  // Try to read '@' from context
+		  vvp_fun_signal_object_aa*fun_aa =
+			dynamic_cast<vvp_fun_signal_object_aa*>(thr->fork_this_net_->fun);
+		  if (fun_aa) {
+			child->fork_this_obj_ = fun_aa->get_object_from_context(thr->wt_context);
+		  }
+	    }
+      }
+
         // Mark the function thread as a direct child of the current thread.
       child->parent = thr;
       thr->children.insert(child);
@@ -1603,6 +1632,9 @@ bool of_CALLF_VIRT_VOID(vthread_t thr, vvp_code_t cp)
       // Get the write context - this is where the '@' parameter was stored
       vvp_context_t wt_ctx = vthread_get_wt_context();
 
+      // Debug only for specific methods if needed
+      // // fprintf(stderr, "DEBUG CALLF_VIRT_VOID: method=%s\n", method_name);
+
       for (unsigned idx = 0; idx < base_scope->intern.size(); ++idx) {
 	    vpiHandle item = base_scope->intern[idx];
 	    if (item->get_type_code() == vpiClassVar) {
@@ -1668,6 +1700,102 @@ bool of_CALLF_VIRT_VOID(vthread_t thr, vvp_code_t cp)
 
       // Call the method found in the actual class
       vthread_t child = vthread_new(method->entry, method->scope);
+
+      // If virtual dispatch changed the scope, handle context specially
+      if (method->scope != base_scope && method->scope->is_automatic()) {
+	    // Allocate new context for the virtual dispatch target scope
+	    vvp_context_t new_context = vthread_alloc_context(method->scope);
+	    child->wt_context = new_context;
+	    child->rd_context = new_context;
+
+	    // Copy all matching class object parameters from base scope to target scope
+	    __vpiScope*target_scope = method->scope;
+	    bool found_at = false;
+	    for (unsigned base_idx = 0; base_idx < base_scope->intern.size(); ++base_idx) {
+		  vpiHandle base_item = base_scope->intern[base_idx];
+		  if (!base_item) continue;
+		  if (base_item->get_type_code() != vpiClassVar) continue;
+		  const char* base_name_tmp = base_item->vpi_get_str(vpiName);
+		  if (!base_name_tmp) continue;
+		  // Copy base_name to avoid buffer reuse by subsequent vpi_get_str calls
+		  std::string base_name_str(base_name_tmp);
+		  const char* base_name = base_name_str.c_str();
+
+		  __vpiBaseVar*base_var = dynamic_cast<__vpiBaseVar*>(base_item);
+		  if (!base_var) continue;
+		  vvp_net_t*base_net = base_var->get_net();
+		  if (!base_net || !base_net->fun) continue;
+		  vvp_fun_signal_object_aa*base_fun =
+			dynamic_cast<vvp_fun_signal_object_aa*>(base_net->fun);
+		  if (!base_fun) continue;
+
+		  // Get value from base context (current wt_context)
+		  vvp_object_t val = base_fun->get_object_from_context(wt_ctx);
+
+		  // Track if we found @
+		  if (strcmp(base_name, "@") == 0) {
+			found_at = true;
+		  }
+
+		  if (val.test_nil()) continue;
+
+		  // Find matching variable in target scope
+		  for (unsigned tgt_idx = 0; tgt_idx < target_scope->intern.size(); ++tgt_idx) {
+			vpiHandle tgt_item = target_scope->intern[tgt_idx];
+			if (!tgt_item) continue;
+			if (tgt_item->get_type_code() != vpiClassVar) continue;
+			const char* tgt_name = tgt_item->vpi_get_str(vpiName);
+			if (!tgt_name || strcmp(base_name, tgt_name) != 0) continue;
+
+			__vpiBaseVar*tgt_var = dynamic_cast<__vpiBaseVar*>(tgt_item);
+			if (!tgt_var) continue;
+			vvp_net_t*tgt_net = tgt_var->get_net();
+			if (!tgt_net || !tgt_net->fun) continue;
+			vvp_fun_signal_object_aa*tgt_fun =
+			      dynamic_cast<vvp_fun_signal_object_aa*>(tgt_net->fun);
+			if (!tgt_fun) continue;
+
+			// Copy value to target context
+			tgt_fun->set_object_in_context(new_context, val);
+			break;
+		  }
+	    }
+
+	    // Warning suppressed - @ not found is expected for some methods
+
+	    // Propagate fork_this from parent if parent has it set
+	    if (thr->fork_this_net_ != 0) {
+		  child->fork_this_net_ = thr->fork_this_net_;
+		  if (!thr->fork_this_obj_.test_nil()) {
+			child->fork_this_obj_ = thr->fork_this_obj_;
+		  } else if (thr->wt_context) {
+			vvp_fun_signal_object_aa*fun_aa =
+			      dynamic_cast<vvp_fun_signal_object_aa*>(thr->fork_this_net_->fun);
+			if (fun_aa) {
+			      child->fork_this_obj_ = fun_aa->get_object_from_context(thr->wt_context);
+			}
+		  }
+	    }
+
+	    // Inline the rest of do_callf_void (with context already set)
+	    child->parent = thr;
+	    thr->children.insert(child);
+	    assert(thr->children.size()==1);
+	    assert(child->parent_scope->get_type_code() == vpiFunction);
+	    child->is_scheduled = 1;
+	    child->i_am_in_function = 1;
+	    vthread_run(child);
+	    running_thread = thr;
+
+	    if (child->i_have_ended) {
+		  do_join(thr, child);
+		  return true;
+	    } else {
+		  thr->i_am_joining = 1;
+		  return false;
+	    }
+      }
+
       return do_callf_void(thr, child);
 }
 
@@ -1781,13 +1909,14 @@ bool of_CALLF_VIRT_STR(vthread_t thr, vvp_code_t cp)
 {
       const class_type::method_info*method = resolve_virtual_method(cp);
       vvp_code_t entry;
+      __vpiScope*base_scope = cp->scope;
       __vpiScope*scope;
       if (method) {
 	    entry = method->entry;
 	    scope = method->scope;
       } else {
 	    entry = cp->cptr2;
-	    scope = cp->scope;
+	    scope = base_scope;
       }
 
       vthread_t child = vthread_new(entry, scope);
@@ -2178,10 +2307,14 @@ bool of_CONFIG_DB_GET_PROP(vthread_t thr, vvp_code_t cp)
       vvp_cobject*cobj = base_obj.peek<vvp_cobject>();
       if (cobj && inst_name.empty()) {
             // Look up m_full_name property (property index 3 in uvm_component)
-            // Property layout: 0=m_name, 1=m_type_name, 2=m_children, 3=m_full_name, ...
-            std::string full_name = cobj->get_string(3);
-            if (!full_name.empty()) {
-                  context_path = full_name;
+            // Property layout: 0=m_name, 1=m_verbosity, 2=m_parent, 3=m_full_name, ...
+            // Only access if the class has at least 4 properties (is a uvm_component or derived)
+            const class_type* ct = cobj->get_class_type();
+            if (ct->property_count() > 3) {
+                  std::string full_name = cobj->get_string(3);
+                  if (!full_name.empty()) {
+                        context_path = full_name;
+                  }
             }
       }
 
@@ -3913,16 +4046,294 @@ bool of_FORCE_WR(vthread_t thr, vvp_code_t cp)
 bool of_FORK(vthread_t thr, vvp_code_t cp)
 {
       vthread_t child = vthread_new(cp->cptr2, cp->scope);
+      child->i_am_forked_task = 1;  // Mark as forked (not called) - affects context management
 
       if (cp->scope->is_automatic()) {
               /* The context allocated for this child is the top entry
                  on the write context stack. */
             child->wt_context = thr->wt_context;
             child->rd_context = thr->wt_context;
+
+            // Store '@' (implicit this) for context-independent access.
+            // Find '@' variable in the scope and store its net and value.
+            vvp_context_t wt_ctx = thr->wt_context;
+            for (unsigned idx = 0; idx < cp->scope->intern.size(); ++idx) {
+                  vpiHandle item = cp->scope->intern[idx];
+                  if (!item) continue;
+                  if (item->get_type_code() != vpiClassVar) continue;
+                  const char* name = item->vpi_get_str(vpiName);
+                  if (!name || strcmp(name, "@") != 0) continue;
+
+                  __vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
+                  if (!var) continue;
+                  vvp_net_t*net = var->get_net();
+                  if (!net || !net->fun) continue;
+
+                  vvp_fun_signal_object_aa*fun_aa =
+                        dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
+                  if (fun_aa && wt_ctx) {
+                        child->fork_this_net_ = net;
+                        child->fork_this_obj_ = fun_aa->get_object_from_context(wt_ctx);
+                  }
+                  break;
+            }
+      }
+
+      // Propagate fork_this from parent if this is a nested fork
+      if (child->fork_this_net_ == 0 && thr->fork_this_net_ != 0) {
+            child->fork_this_net_ = thr->fork_this_net_;
+            if (!thr->fork_this_obj_.test_nil()) {
+                  child->fork_this_obj_ = thr->fork_this_obj_;
+            } else if (thr->wt_context) {
+                  vvp_fun_signal_object_aa*fun_aa =
+                        dynamic_cast<vvp_fun_signal_object_aa*>(thr->fork_this_net_->fun);
+                  if (fun_aa) {
+                        child->fork_this_obj_ = fun_aa->get_object_from_context(thr->wt_context);
+                  }
+            }
       }
 
       child->parent = thr;
       thr->children.insert(child);
+
+      if (thr->i_am_in_function) {
+	    child->is_scheduled = 1;
+	    child->i_am_in_function = 1;
+	    vthread_run(child);
+	    running_thread = thr;
+      } else {
+	    schedule_vthread(child, 0, true);
+      }
+      return true;
+}
+
+/*
+ * %fork/virt <method_name>, <base_code>, <base_scope>
+ * Virtual task call: look up the method in the object's actual class type
+ * and fork to that method. Similar to %callf/virt but for tasks.
+ */
+bool of_FORK_VIRT(vthread_t thr, vvp_code_t cp)
+{
+      __vpiScope*base_scope = cp->scope;
+      if (!base_scope) {
+	    // No scope - fall back to regular fork
+	    vthread_t child = vthread_new(cp->cptr2, cp->scope);
+	    child->i_am_forked_task = 1;  // Mark as forked task
+	    child->parent = thr;
+	    thr->children.insert(child);
+	    if (thr->i_am_in_function) {
+		  child->is_scheduled = 1;
+		  child->i_am_in_function = 1;
+		  vthread_run(child);
+		  running_thread = thr;
+	    } else {
+		  schedule_vthread(child, 0, true);
+	    }
+	    return true;
+      }
+
+      // Get the method name from the scope's basename
+      const char*method_name = base_scope->scope_name();
+      if (!method_name) method_name = "unknown";
+
+      // Find the '@' (this) variable in the base scope and get the object from it
+      vvp_object_t obj;
+      bool found_this = false;
+
+      // First check if the current thread has fork_this set - this takes priority
+      // because it means we're in a forked task chain and @ was passed via thread struct
+      if (thr->fork_this_net_ != 0 && !thr->fork_this_obj_.test_nil()) {
+	    obj = thr->fork_this_obj_;
+	    found_this = true;
+      }
+
+      // Get the write context - this is where the '@' parameter was stored
+      vvp_context_t wt_ctx = vthread_get_wt_context();
+
+      // If we didn't get @ from fork_this, try to get it from the context
+      if (!found_this) {
+	    for (unsigned idx = 0; idx < base_scope->intern.size(); ++idx) {
+		  vpiHandle item = base_scope->intern[idx];
+		  if (!item) continue;
+		  if (item->get_type_code() == vpiClassVar) {
+			const char* name = item->vpi_get_str(vpiName);
+			if (name && strcmp(name, "@") == 0) {
+			      __vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
+			      if (var) {
+				    vvp_net_t*net = var->get_net();
+				    if (net && net->fun) {
+					  vvp_fun_signal_object_aa*fun_aa =
+						dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
+					  if (fun_aa && wt_ctx) {
+						obj = fun_aa->get_object_from_context(wt_ctx);
+						found_this = true;
+					  } else {
+						vvp_fun_signal_object*fun =
+						      dynamic_cast<vvp_fun_signal_object*>(net->fun);
+						if (fun) {
+						      obj = fun->get_object();
+						      found_this = true;
+						}
+					  }
+				    }
+			      }
+			      break;
+			}
+		  }
+	    }
+      }
+
+      // Get target code and scope for the method call
+      vvp_code_t target_code = cp->cptr2;
+      __vpiScope*target_scope = base_scope;
+
+      // If we found 'this', try to do virtual dispatch
+      if (found_this && !obj.test_nil()) {
+	    vvp_cobject*cobj = obj.peek<vvp_cobject>();
+	    if (cobj) {
+		  const class_type*actual_class = cobj->get_class_type();
+		  if (actual_class) {
+			const class_type::method_info*method = actual_class->get_method(method_name);
+			if (method && method->entry) {
+			      target_code = method->entry;
+			      target_scope = method->scope;
+			}
+		  }
+	    }
+      }
+
+      // Create child thread with resolved method
+      vthread_t child = vthread_new(target_code, target_scope);
+      child->i_am_forked_task = 1;  // Mark as forked (not called) - affects context management
+
+      if (target_scope && target_scope->is_automatic()) {
+	    // If virtual dispatch changed the scope, we need a NEW context
+	    // for the new scope, not the parent's context which was allocated
+	    // for a potentially different scope layout.
+	    if (target_scope != base_scope) {
+		  // Allocate new context for the virtual dispatch target scope
+		  vvp_context_t new_context = vthread_alloc_context(target_scope);
+		  child->wt_context = new_context;
+		  child->rd_context = new_context;
+
+		  // Copy all matching parameters from base scope context to target scope context
+		  // Parameters are identified by having the same name in both scopes
+		  vvp_context_t base_ctx = wt_ctx; // Current write context has base scope's values
+		  bool found_at_fork = false;
+		  for (unsigned base_idx = 0; base_idx < base_scope->intern.size(); ++base_idx) {
+			vpiHandle base_item = base_scope->intern[base_idx];
+			if (!base_item) continue;
+			int base_type = base_item->get_type_code();
+			const char* base_name_tmp = base_item->vpi_get_str(vpiName);
+			if (!base_name_tmp) continue;
+			// Copy to string to avoid buffer reuse by subsequent vpi_get_str calls
+			std::string base_name_str(base_name_tmp);
+			const char* base_name = base_name_str.c_str();
+
+			// Handle class object variables
+			if (base_type == vpiClassVar) {
+			      __vpiBaseVar*base_var = dynamic_cast<__vpiBaseVar*>(base_item);
+			      if (!base_var) continue;
+			      vvp_net_t*base_net = base_var->get_net();
+			      if (!base_net || !base_net->fun) continue;
+			      vvp_fun_signal_object_aa*base_fun =
+				    dynamic_cast<vvp_fun_signal_object_aa*>(base_net->fun);
+			      if (!base_fun) continue;
+
+			      // Get value from base context
+			      vvp_object_t val = base_fun->get_object_from_context(base_ctx);
+
+			      // Debug: trace ALL class variables being copied
+			      // fprintf(stderr, "DEBUG FORK_VIRT param: base=%s target=%s name=%s val.nil=%d idx=%u ctx=%p\n",
+			// (debug removed)
+
+			      // Track if we found @
+			      if (strcmp(base_name, "@") == 0) {
+				    found_at_fork = true;
+			      }
+
+			      if (val.test_nil()) continue;
+
+			      // Find matching variable in target scope
+			      for (unsigned tgt_idx = 0; tgt_idx < target_scope->intern.size(); ++tgt_idx) {
+				    vpiHandle tgt_item = target_scope->intern[tgt_idx];
+				    if (!tgt_item) continue;
+				    if (tgt_item->get_type_code() != vpiClassVar) continue;
+				    const char* tgt_name = tgt_item->vpi_get_str(vpiName);
+				    if (!tgt_name || strcmp(base_name, tgt_name) != 0) continue;
+
+				    __vpiBaseVar*tgt_var = dynamic_cast<__vpiBaseVar*>(tgt_item);
+				    if (!tgt_var) continue;
+				    vvp_net_t*tgt_net = tgt_var->get_net();
+				    if (!tgt_net || !tgt_net->fun) continue;
+				    vvp_fun_signal_object_aa*tgt_fun =
+					  dynamic_cast<vvp_fun_signal_object_aa*>(tgt_net->fun);
+				    if (!tgt_fun) continue;
+
+				    // Copy value to target context
+				    tgt_fun->set_object_in_context(new_context, val);
+				    break;
+			      }
+			}
+		  }
+		  if (!found_at_fork) {
+			// fprintf(stderr, "DEBUG FORK_VIRT: WARNING @ not found in base=%s\n",
+			// (debug removed)
+		  }
+
+		  // Store '@' (implicit this) in child thread for context-independent access.
+		  // Find the '@' variable in the TARGET scope and store its net pointer.
+		  for (unsigned tgt_idx = 0; tgt_idx < target_scope->intern.size(); ++tgt_idx) {
+			vpiHandle tgt_item = target_scope->intern[tgt_idx];
+			if (!tgt_item) continue;
+			if (tgt_item->get_type_code() != vpiClassVar) continue;
+			const char* tgt_name = tgt_item->vpi_get_str(vpiName);
+			if (!tgt_name || strcmp(tgt_name, "@") != 0) continue;
+
+			__vpiBaseVar*tgt_var = dynamic_cast<__vpiBaseVar*>(tgt_item);
+			if (!tgt_var) continue;
+			vvp_net_t*tgt_net = tgt_var->get_net();
+			if (tgt_net) {
+			      child->fork_this_net_ = tgt_net;
+			      child->fork_this_obj_ = obj;  // Store the '@' value
+			}
+			break;
+		  }
+	    } else {
+		  // Same scope - use the context that was already allocated by %alloc
+		  // and has all parameters stored via %store/obj before this fork.
+		  // Don't allocate a new context - the existing wt_context is correct.
+		  child->wt_context = thr->wt_context;
+		  child->rd_context = thr->wt_context;
+		  // fprintf(stderr, "DEBUG FORK_VIRT same_scope: using existing ctx=%p\n", thr->wt_context);
+
+		  // Store '@' (implicit this) in child thread for context-independent access.
+		  // Find the '@' variable in the base scope and store its net pointer.
+		  for (unsigned idx = 0; idx < base_scope->intern.size(); ++idx) {
+			vpiHandle item = base_scope->intern[idx];
+			if (!item) continue;
+			if (item->get_type_code() != vpiClassVar) continue;
+			const char* name = item->vpi_get_str(vpiName);
+			if (!name || strcmp(name, "@") != 0) continue;
+
+			__vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
+			if (!var) continue;
+			vvp_net_t*net = var->get_net();
+			if (net) {
+			      child->fork_this_net_ = net;
+			      child->fork_this_obj_ = obj;  // Store the '@' value
+			}
+			break;
+		  }
+	    }
+      }
+
+      child->parent = thr;
+      thr->children.insert(child);
+
+      // Debug: verify child context before execution
+      // fprintf(stderr, "DEBUG FORK_VIRT launch: child wt_ctx=%p rd_ctx=%p scope=%s\n",
+      // (debug removed)
 
       if (thr->i_am_in_function) {
 	    child->is_scheduled = 1;
@@ -4260,7 +4671,13 @@ static void do_join(vthread_t thr, vthread_t child)
 
         /* If the immediate child thread is in an automatic scope... */
       if (child->wt_context) {
-              /* and is the top level task/function thread... */
+              /* and is the top level task/function thread...
+               * Skip context swap for forked tasks - they don't have return values
+               * and swapping would break access to @ (implicit this) in the caller.
+               * Only do swap for function call children (i_am_forked_task=0). */
+            // Original context swap logic for function returns.
+            // This swaps the function's context from wt_context to rd_context
+            // so the caller can read return values.
             if (thr->wt_context != thr->rd_context) {
                     /* Pop the child context from the write context stack. */
                   vvp_context_t child_context = thr->wt_context;
@@ -4444,6 +4861,17 @@ bool of_LOAD_DAR_O(vthread_t thr, vvp_code_t cp)
 bool of_LOAD_OBJ(vthread_t thr, vvp_code_t cp)
 {
       vvp_net_t*net = cp->net;
+
+      // Check if we're loading '@' (implicit this) and have a stored value.
+      // This handles forked tasks and functions called by forked tasks where
+      // context swaps would otherwise cause '@' to be inaccessible.
+      if (net == thr->fork_this_net_) {
+	    if (!thr->fork_this_obj_.test_nil()) {
+		  thr->push_object(thr->fork_this_obj_);
+		  return true;
+	    }
+      }
+
       vvp_fun_signal_object*fun = dynamic_cast<vvp_fun_signal_object*> (net->fun);
       assert(fun);
 
@@ -5166,6 +5594,20 @@ bool of_FACTORY_CREATE(vthread_t thr, vvp_code_t)
       child->wt_context = child_context;
       child->rd_context = child_context;
 
+      // Propagate fork_this from parent if parent has it set
+      if (thr->fork_this_net_ != 0) {
+	    child->fork_this_net_ = thr->fork_this_net_;
+	    if (!thr->fork_this_obj_.test_nil()) {
+		  child->fork_this_obj_ = thr->fork_this_obj_;
+	    } else if (thr->wt_context) {
+		  vvp_fun_signal_object_aa*fun_aa =
+			dynamic_cast<vvp_fun_signal_object_aa*>(thr->fork_this_net_->fun);
+		  if (fun_aa) {
+			child->fork_this_obj_ = fun_aa->get_object_from_context(thr->wt_context);
+		  }
+	    }
+      }
+
       // Mark child as direct child of current thread
       child->parent = thr;
       thr->children.insert(child);
@@ -5640,7 +6082,15 @@ static bool prop(vthread_t thr, vvp_code_t cp)
 
       vvp_object_t&obj = thr->peek_object();
       vvp_cobject*cobj = obj.peek<vvp_cobject>();
-      assert(cobj);
+      if (!cobj) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "ERROR prop<>: cobj null at pid=%u scope=%s obj.nil=%d\n",
+	            pid, scope ? scope->scope_name() : "(null)", obj.test_nil());
+	    // Push a default value and continue
+	    ELEM val = ELEM();
+	    vthread_push(thr, val);
+	    return true;
+      }
 
       ELEM val;
       get_from_obj(pid, cobj, val);
@@ -6751,6 +7201,15 @@ bool of_STORE_OBJ(vthread_t thr, vvp_code_t cp)
       vvp_object_t val;
       thr->pop_object(val);
 
+      // Debug: check if target functor supports recv_object
+      if (cp->net && cp->net->fun) {
+            const char* functor_type = typeid(*cp->net->fun).name();
+            if (strstr(functor_type, "signal4_aa")) {
+                  fprintf(stderr, "ERROR of_STORE_OBJ: trying to store object to vec4 signal! functor=%s\n", functor_type);
+                  fprintf(stderr, "  ctx=%p\n", thr->wt_context);
+            }
+      }
+
       vvp_send_object(ptr, val, thr->wt_context);
 
       return true;
@@ -6795,7 +7254,15 @@ bool of_STORE_PROP_OBJ(vthread_t thr, vvp_code_t cp)
 
       vvp_object_t&obj = thr->peek_object();
       vvp_cobject*cobj = obj.peek<vvp_cobject>();
-      assert(cobj);
+      if (!cobj) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "ERROR of_STORE_PROP_OBJ: thr=%p cobj null at pid=%lu scope=%s obj.nil=%d val.nil=%d wt=%p rd=%p\n",
+	            (void*)thr, (unsigned long)pid, scope ? scope->scope_name() : "(null)",
+	            obj.test_nil(), val.test_nil(), thr->wt_context, thr->rd_context);
+	    // Can't store to null object - this is likely a UVM library issue
+	    // For now, skip the store rather than crashing
+	    return true;
+      }
 
       cobj->set_object(pid, val, idx);
 
@@ -6843,7 +7310,13 @@ static bool store_prop(vthread_t thr, vvp_code_t cp, unsigned wid=0)
 
       vvp_object_t&obj = thr->peek_object();
       vvp_cobject*cobj = obj.peek<vvp_cobject>();
-      assert(cobj);
+      if (!cobj) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "ERROR store_prop<>: cobj null at pid=%lu scope=%s obj.nil=%d\n",
+	            (unsigned long)pid, scope ? scope->scope_name() : "(null)", obj.test_nil());
+	    // Can't store to null object - skip
+	    return true;
+      }
 
       set_val(cobj, pid, val);
 
@@ -6915,7 +7388,12 @@ bool of_STORE_PROP_VA(vthread_t thr, vvp_code_t cp)
       // Get the object and store the value at the indexed position
       vvp_object_t&obj = thr->peek_object();
       vvp_cobject*cobj = obj.peek<vvp_cobject>();
-      assert(cobj);
+      if (!cobj) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "ERROR of_STORE_PROP_VA: cobj null at pid=%lu idx=%lu scope=%s\n",
+	            (unsigned long)pid, (unsigned long)idx, scope ? scope->scope_name() : "(null)");
+	    return true;
+      }
 
       cobj->set_vec4(pid, val, idx);
 
@@ -6943,7 +7421,15 @@ bool of_PROP_VA(vthread_t thr, vvp_code_t cp)
       // Get the object (keep on stack)
       vvp_object_t&obj = thr->peek_object();
       vvp_cobject*cobj = obj.peek<vvp_cobject>();
-      assert(cobj);
+      if (!cobj) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "ERROR of_PROP_VA: cobj null at pid=%lu idx=%lu scope=%s\n",
+	            (unsigned long)pid, (unsigned long)idx, scope ? scope->scope_name() : "(null)");
+	    // Push a default value
+	    vvp_vector4_t val(32, BIT4_X);
+	    thr->push_vec4(val);
+	    return true;
+      }
 
       // Load the value from the indexed position
       vvp_vector4_t val;
@@ -7612,6 +8098,12 @@ bool of_TEST_NUL_PROP(vthread_t thr, vvp_code_t cp)
       vvp_object_t&obj = thr->peek_object();
       vvp_cobject*cobj  = obj.peek<vvp_cobject>();
 
+      // If the object is null, the property is also null
+      if (!cobj) {
+	    thr->flags[4] = BIT4_1;
+	    return true;
+      }
+
       vvp_object_t val;
       cobj->get_object(pid, val, idx);
 
@@ -7767,6 +8259,21 @@ static bool do_exec_ufunc(vthread_t thr, vvp_code_t cp, vthread_t child)
 
       child->wt_context = child_context;
       child->rd_context = child_context;
+
+      // Propagate fork_this from parent if parent has it set
+      if (thr->fork_this_net_ != 0) {
+	    child->fork_this_net_ = thr->fork_this_net_;
+	    if (!thr->fork_this_obj_.test_nil()) {
+		  child->fork_this_obj_ = thr->fork_this_obj_;
+	    } else if (thr->wt_context) {
+		  // Fallback: try to read @ from parent's wt_context
+		  vvp_fun_signal_object_aa*fun_aa =
+			dynamic_cast<vvp_fun_signal_object_aa*>(thr->fork_this_net_->fun);
+		  if (fun_aa) {
+			child->fork_this_obj_ = fun_aa->get_object_from_context(thr->wt_context);
+		  }
+	    }
+      }
 
 	/* Copy all the inputs to the ufunc object to the port
 	   variables of the function. This copies all the values

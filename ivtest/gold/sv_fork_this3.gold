@@ -1,0 +1,5 @@
+Initial derived: value = 5
+Derived::do_work: value = 110
+Initial base: value = 10
+Base::do_work: value = 11
+PASSED

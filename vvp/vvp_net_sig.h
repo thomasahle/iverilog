@@ -380,6 +380,8 @@ class vvp_fun_signal_object_aa : public vvp_fun_signal_object, public automatic_
 
       vvp_object_t get_object() const override;
       vvp_object_t get_object_from_context(vvp_context_t context) const;
+      void set_object_in_context(vvp_context_t context, const vvp_object_t& obj);
+      unsigned get_context_idx() const { return context_idx_; }
 
     public: // These objects are only permallocated.
       static void* operator new(std::size_t size);

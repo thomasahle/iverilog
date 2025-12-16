@@ -814,6 +814,14 @@ vvp_object_t vvp_fun_signal_object_aa::get_object_from_context(vvp_context_t con
       return *bits;
 }
 
+void vvp_fun_signal_object_aa::set_object_in_context(vvp_context_t context, const vvp_object_t& obj)
+{
+      if (!context) return;
+      vvp_object_t*bits = static_cast<vvp_object_t*>
+	    (vvp_get_context_item(context, context_idx_));
+      *bits = obj;
+}
+
 void vvp_fun_signal_object_aa::recv_object(vvp_net_ptr_t ptr, vvp_object_t bit,
 					   vvp_context_t context)
 {

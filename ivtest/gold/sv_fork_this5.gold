@@ -1,0 +1,9 @@
+test_seq: body starting
+test_seq: start_item(1)
+test_seq: finish_item(1), total=1
+test_seq: start_item(2)
+test_seq: finish_item(2), total=2
+test_seq: start_item(3)
+test_seq: finish_item(3), total=3
+test_seq: body complete, sent 3 items
+PASSED

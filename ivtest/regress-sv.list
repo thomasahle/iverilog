@@ -1028,6 +1028,13 @@ sv_cast_class		normal,-g2012		ivltests
 # fork/join_none in class
 sv_fork_join_none_class	normal,-g2012		ivltests
 
+# fork_this mechanism - preserving 'this' in forked tasks
+sv_fork_this1		normal,-g2012		ivltests
+sv_fork_this2		normal,-g2012		ivltests
+sv_fork_this3		normal,-g2012		ivltests
+sv_fork_this4		normal,-g2012		ivltests
+sv_fork_this5		normal,-g2012		ivltests
+
 # foreach with this.array syntax
 sv_foreach_this1	normal,-g2012		ivltests
 sv_foreach_this2	normal,-g2012		ivltests
