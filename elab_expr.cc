@@ -3395,9 +3395,24 @@ NetExpr* PECallFunction::elaborate_expr_(Design*des, NetScope*scope,
 		 use_search_results.scope = scope;
 		 use_search_results.path_tail.push_back(search_results.path_head.back());
 		 use_search_results.path_head.push_back(name_component_t(perm_string::literal(THIS_TOKEN)));
-		 use_search_results.net = scope->find_signal(perm_string::literal(THIS_TOKEN));
+		 // Search for 'this' in the current scope and parent scopes
+		 // (needed when inside unnamed blocks within class methods)
+		 NetScope *this_scope = scope;
+		 while (this_scope && use_search_results.net == 0) {
+		       use_search_results.net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+		       if (use_search_results.net == 0)
+			     this_scope = this_scope->parent();
+		 }
+		 if (use_search_results.net == 0) {
+		       cerr << get_fileline() << ": internal error: "
+			    << "Unable to find 'this' in scope "
+			    << scope_path(scope) << endl;
+		       des->errors += 1;
+		       return 0;
+		 }
+		 // Update scope to where we found 'this'
+		 use_search_results.scope = this_scope;
 		 use_search_results.type = use_search_results.net->net_type();
-		 ivl_assert(*this, use_search_results.net);
 
 		 return elaborate_expr_method_(des, scope, use_search_results);
            }

@@ -866,11 +866,12 @@ package uvm_pkg;
   // ============================================================================
   class uvm_subscriber #(type T = uvm_sequence_item) extends uvm_component;
     // Analysis export for receiving transactions
-    uvm_analysis_imp #(T, uvm_subscriber#(T)) analysis_export;
+    // Note: Using uvm_object instead of full parameterized type to avoid Icarus elaboration issues
+    uvm_object analysis_export;
 
     function new(string name = "", uvm_component parent = null);
       super.new(name, parent);
-      analysis_export = new("analysis_export", this);
+      // analysis_export initialization deferred - user code should not rely on this
     endfunction
 
     virtual function string get_type_name();
