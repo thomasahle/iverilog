@@ -3924,6 +3924,29 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
+	    // Array locator methods - stub implementations that return 0
+	    // TODO: Implement actual locator logic
+	    if (method_name == "find_last_index" || method_name == "find_first_index"
+		|| method_name == "find_index") {
+		  // These methods return queue of int (indices)
+		  // For now, return constant 0 as stub
+		  cerr << get_fileline() << ": sorry: '" << method_name << "()' "
+		       << "array locator method returns 0 (not yet implemented)." << endl;
+		  verinum zero ((uint64_t)0, 32);
+		  NetEConst*result = new NetEConst(zero);
+		  result->set_line(*this);
+		  return result;
+	    }
+
+	    if (method_name == "find" || method_name == "find_first" || method_name == "find_last") {
+		  // These methods return queue of elements
+		  // For now, emit warning and return null
+		  cerr << get_fileline() << ": sorry: '" << method_name << "()' "
+		       << "array locator method is not yet implemented." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
 	    cerr << get_fileline() << ": error: Method " << method_name
 		 << " is not a queue method." << endl;
 	    des->errors += 1;
