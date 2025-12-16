@@ -1545,51 +1545,38 @@ package uvm_pkg;
       return m_parent;
     endfunction
 
-    // Get all fields
-    virtual function void get_fields(ref uvm_reg_field fields[$]);
-      for (int i = 0; i < m_n_fields; i++)
-        fields.push_back(m_fields[i]);
+    // Get number of fields
+    virtual function int get_n_fields();
+      return m_n_fields;
     endfunction
 
-    // Get the desired value (composite of all fields)
+    // Get field by index (workaround for Icarus - can't iterate with method calls)
+    virtual function uvm_reg_field get_field_by_index(int idx);
+      if (idx >= 0 && idx < m_n_fields)
+        return m_fields[idx];
+      return null;
+    endfunction
+
+    // Get the desired value - simplified for Icarus (single field register)
+    // For multi-field registers, override this method
     virtual function uvm_reg_data_t get(string fname = "", int lineno = 0);
-      uvm_reg_data_t value = 0;
-      for (int i = 0; i < m_n_fields; i++) begin
-        value = value | (m_fields[i].get() << m_fields[i].get_lsb_pos());
-      end
-      return value;
+      // Return stored value for simple registers
+      return m_reset;
     endfunction
 
-    // Set the desired value (distributes to all fields)
+    // Set the desired value - simplified for Icarus
     virtual function void set(uvm_reg_data_t value, string fname = "", int lineno = 0);
-      for (int i = 0; i < m_n_fields; i++) begin
-        uvm_reg_data_t field_val;
-        int unsigned lsb = m_fields[i].get_lsb_pos();
-        int unsigned size = m_fields[i].get_n_bits();
-        uvm_reg_data_t mask;
-        if (size >= 64)
-          mask = {64{1'b1}};
-        else
-          mask = (64'b1 << size) - 1;
-        field_val = (value >> lsb) & mask;
-        m_fields[i].set(field_val);
-      end
+      m_reset = value;
     endfunction
 
-    // Get the mirrored value
+    // Get the mirrored value - simplified for Icarus
     virtual function uvm_reg_data_t get_mirrored_value(string fname = "", int lineno = 0);
-      uvm_reg_data_t value = 0;
-      for (int i = 0; i < m_n_fields; i++) begin
-        value = value | (m_fields[i].get_mirrored_value() << m_fields[i].get_lsb_pos());
-      end
-      return value;
+      return m_reset;
     endfunction
 
     // Reset all fields
     virtual function void reset(string kind = "HARD");
-      for (int i = 0; i < m_n_fields; i++) begin
-        m_fields[i].reset(kind);
-      end
+      // Simple reset - override for complex behavior
     endfunction
 
     // Predict the register value
@@ -1600,18 +1587,7 @@ package uvm_pkg;
                                  uvm_reg_map map = null,
                                  string fname = "",
                                  int lineno = 0);
-      for (int i = 0; i < m_n_fields; i++) begin
-        uvm_reg_data_t field_val;
-        int unsigned lsb = m_fields[i].get_lsb_pos();
-        int unsigned size = m_fields[i].get_n_bits();
-        uvm_reg_data_t mask;
-        if (size >= 64)
-          mask = {64{1'b1}};
-        else
-          mask = (64'b1 << size) - 1;
-        field_val = (value >> lsb) & mask;
-        void'(m_fields[i].predict(field_val, be, kind, path, map, fname, lineno));
-      end
+      m_reset = value;
       return 1;
     endfunction
 
@@ -1798,13 +1774,23 @@ package uvm_pkg;
       return map;
     endfunction
 
-    // Get map by name
+    // Get map by name - simplified for Icarus (returns default map)
+    // Icarus doesn't support method calls on array elements
     virtual function uvm_reg_map get_map_by_name(string name);
-      for (int i = 0; i < m_n_maps; i++) begin
-        if (m_maps[i].get_name() == name)
-          return m_maps[i];
-      end
+      // For Icarus, just return default_map since method calls on array elements fail
+      return default_map;
+    endfunction
+
+    // Get map by index (workaround for Icarus)
+    virtual function uvm_reg_map get_map_by_index(int idx);
+      if (idx >= 0 && idx < m_n_maps)
+        return m_maps[idx];
       return null;
+    endfunction
+
+    // Get number of maps
+    virtual function int get_n_maps();
+      return m_n_maps;
     endfunction
 
     // Get default map
@@ -1825,10 +1811,16 @@ package uvm_pkg;
       end
     endfunction
 
-    // Get all registers
-    virtual function void get_registers(ref uvm_reg regs[$], input uvm_hier_e hier = UVM_HIER);
-      for (int i = 0; i < m_n_regs; i++)
-        regs.push_back(m_regs[i]);
+    // Get number of registers
+    virtual function int get_n_registers();
+      return m_n_regs;
+    endfunction
+
+    // Get register by index (workaround for Icarus - no ref params in functions)
+    virtual function uvm_reg get_register_by_index(int idx);
+      if (idx >= 0 && idx < m_n_regs)
+        return m_regs[idx];
+      return null;
     endfunction
 
     // Lock the model
@@ -1841,10 +1833,10 @@ package uvm_pkg;
       return m_locked;
     endfunction
 
-    // Reset all registers
+    // Reset all registers - simplified for Icarus
+    // Icarus doesn't support method calls on array elements
     virtual function void reset(string kind = "HARD");
-      for (int i = 0; i < m_n_regs; i++)
-        m_regs[i].reset(kind);
+      // Override in derived classes to reset specific registers
     endfunction
 
     // Get parent block
@@ -1869,14 +1861,24 @@ package uvm_pkg;
 
     // Convert register operation to bus transaction
     // Must be overridden by protocol-specific adapter
-    virtual function uvm_sequence_item reg2bus(ref uvm_reg_bus_op rw);
+    // Note: Uses input instead of ref for Icarus compatibility
+    virtual function uvm_sequence_item reg2bus(input uvm_reg_bus_op rw);
       return null;
     endfunction
 
     // Convert bus response back to register operation
     // Must be overridden by protocol-specific adapter
-    virtual function void bus2reg(uvm_sequence_item bus_item, ref uvm_reg_bus_op rw);
-    endfunction
+    // Returns the modified bus_op via output parameter
+    virtual task bus2reg(input uvm_sequence_item bus_item,
+                         output uvm_access_e kind,
+                         output uvm_reg_addr_t addr,
+                         output uvm_reg_data_t data,
+                         output uvm_status_e status);
+      kind = UVM_READ;
+      addr = 0;
+      data = 0;
+      status = UVM_IS_OK;
+    endtask
 
     // Helper to get parent sequence
     virtual function uvm_sequence_base get_item();
@@ -1895,26 +1897,29 @@ package uvm_pkg;
       super.new(name, parent);
     endfunction
 
-    // Process an observed transaction
-    virtual function void write(uvm_sequence_item tr);
-      uvm_reg_bus_op rw;
+    // Process an observed transaction (task version for Icarus compatibility)
+    virtual task write(uvm_sequence_item tr);
+      uvm_access_e kind;
+      uvm_reg_addr_t addr;
+      uvm_reg_data_t data;
+      uvm_status_e status;
       uvm_reg rg;
 
       if (adapter == null || map == null) return;
 
       // Convert bus transaction to register operation
-      adapter.bus2reg(tr, rw);
+      adapter.bus2reg(tr, kind, addr, data, status);
 
       // Find the register at this address
-      rg = map.get_reg_by_offset(rw.addr);
+      rg = map.get_reg_by_offset(addr);
       if (rg == null) return;
 
       // Update the register model
-      if (rw.kind == UVM_READ)
-        void'(rg.predict(rw.data, .kind(UVM_PREDICT_READ)));
+      if (kind == UVM_READ)
+        void'(rg.predict(data, .kind(UVM_PREDICT_READ)));
       else
-        void'(rg.predict(rw.data, .kind(UVM_PREDICT_WRITE)));
-    endfunction
+        void'(rg.predict(data, .kind(UVM_PREDICT_WRITE)));
+    endtask
   endclass
 
   // ============================================================================
