@@ -808,11 +808,69 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
+  // UVM Analysis Port - TLM port for broadcasting (simplified)
+  // NOTE: Moved before uvm_subscriber so it can be used as a type
+  // ============================================================================
+  class uvm_analysis_port #(type T = int) extends uvm_object;
+    function new(string name = "", uvm_component parent = null);
+      super.new(name);
+    endfunction
+
+    virtual function void connect(uvm_object port);
+      // Simplified - no actual connection tracking
+    endfunction
+
+    // Note: Using uvm_object instead of T due to Icarus limitation
+    // with type parameter resolution in method parameters
+    virtual function void write(uvm_object t);
+      // Simplified - override in subclass for actual functionality
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Analysis Export - TLM export for receiving analysis transactions
+  // ============================================================================
+  class uvm_analysis_export #(type T = int) extends uvm_object;
+    function new(string name = "", uvm_component parent = null);
+      super.new(name);
+    endfunction
+
+    virtual function void connect(uvm_object port);
+      // Simplified - no actual connection tracking
+    endfunction
+
+    virtual function void write(T t);
+      // Simplified - override in subclass for actual functionality
+    endfunction
+  endclass
+
+  // ============================================================================
+  // UVM Analysis Imp - TLM implementation for receiving analysis transactions
+  // ============================================================================
+  class uvm_analysis_imp #(type T = int, type IMP = uvm_component) extends uvm_object;
+    IMP m_imp;
+
+    function new(string name = "", IMP imp = null);
+      super.new(name);
+      m_imp = imp;
+    endfunction
+
+    virtual function void write(T t);
+      // Calls write method on the implementing component
+      // In actual UVM, this calls imp.write(t)
+    endfunction
+  endclass
+
+  // ============================================================================
   // UVM Subscriber - Analysis component that subscribes to transactions
   // ============================================================================
   class uvm_subscriber #(type T = uvm_sequence_item) extends uvm_component;
+    // Analysis export for receiving transactions
+    uvm_analysis_imp #(T, uvm_subscriber#(T)) analysis_export;
+
     function new(string name = "", uvm_component parent = null);
       super.new(name, parent);
+      analysis_export = new("analysis_export", this);
     endfunction
 
     virtual function string get_type_name();
@@ -881,59 +939,6 @@ package uvm_pkg;
 
     virtual function string get_type_name();
       return "uvm_test";
-    endfunction
-  endclass
-
-  // ============================================================================
-  // UVM Analysis Port - TLM port for broadcasting (simplified)
-  // ============================================================================
-  class uvm_analysis_port #(type T = int) extends uvm_object;
-    function new(string name = "", uvm_component parent = null);
-      super.new(name);
-    endfunction
-
-    virtual function void connect(uvm_object port);
-      // Simplified - no actual connection tracking
-    endfunction
-
-    // Note: Using uvm_object instead of T due to Icarus limitation
-    // with type parameter resolution in method parameters
-    virtual function void write(uvm_object t);
-      // Simplified - override in subclass for actual functionality
-    endfunction
-  endclass
-
-  // ============================================================================
-  // UVM Analysis Export - TLM export for receiving analysis transactions
-  // ============================================================================
-  class uvm_analysis_export #(type T = int) extends uvm_object;
-    function new(string name = "", uvm_component parent = null);
-      super.new(name);
-    endfunction
-
-    virtual function void connect(uvm_object port);
-      // Simplified - no actual connection tracking
-    endfunction
-
-    virtual function void write(T t);
-      // Simplified - override in subclass for actual functionality
-    endfunction
-  endclass
-
-  // ============================================================================
-  // UVM Analysis Imp - TLM implementation for receiving analysis transactions
-  // ============================================================================
-  class uvm_analysis_imp #(type T = int, type IMP = uvm_component) extends uvm_object;
-    IMP m_imp;
-
-    function new(string name = "", IMP imp = null);
-      super.new(name);
-      m_imp = imp;
-    endfunction
-
-    virtual function void write(T t);
-      // Calls write method on the implementing component
-      // In actual UVM, this calls imp.write(t)
     endfunction
   endclass
 
