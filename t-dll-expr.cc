@@ -348,16 +348,18 @@ void dll_target::expr_creal(const NetECReal*net)
 void dll_target::expr_last(const NetELast*net)
 {
       assert(expr_ == 0);
-      ivl_expr_t expr = new struct ivl_expr_s;
-      expr->type_   = IVL_EX_SFUNC;
-      expr->value_  = IVL_VT_LOGIC;
-      expr->width_  = 32;
-      expr->signed_ = 1;
-      expr->sized_  = 1;
-      expr->net_type  = 0;
-      FILE_NAME(expr, net);
 
-      expr->u_.sfunc_.name_ = "$high";
+	// First build the $high(sig) expression
+      ivl_expr_t high_expr = new struct ivl_expr_s;
+      high_expr->type_   = IVL_EX_SFUNC;
+      high_expr->value_  = IVL_VT_LOGIC;
+      high_expr->width_  = 32;
+      high_expr->signed_ = 1;
+      high_expr->sized_  = 1;
+      high_expr->net_type  = 0;
+      FILE_NAME(high_expr, net);
+
+      high_expr->u_.sfunc_.name_ = "$high";
 
       ivl_signal_t sig = find_signal(des_, net->sig());
 
@@ -371,11 +373,32 @@ void dll_target::expr_last(const NetELast*net)
       esig->u_.signal_.word = 0;
       esig->u_.signal_.sig = sig;
 
-      expr->u_.sfunc_.parms = 1;
-      expr->u_.sfunc_.parm = new ivl_expr_t[1];
-      expr->u_.sfunc_.parm[0] = esig;
+      high_expr->u_.sfunc_.parms = 1;
+      high_expr->u_.sfunc_.parm = new ivl_expr_t[1];
+      high_expr->u_.sfunc_.parm[0] = esig;
 
-      expr_ = expr;
+	// If there's an offset, wrap in subtraction: $high(sig) - offset
+      if (net->offset()) {
+	    const_cast<NetExpr*>(net->offset())->expr_scan(this);
+	    ivl_expr_t offset_expr = expr_;
+	    expr_ = 0;
+
+	    ivl_expr_t sub_expr = new struct ivl_expr_s;
+	    sub_expr->type_   = IVL_EX_BINARY;
+	    sub_expr->value_  = IVL_VT_LOGIC;
+	    sub_expr->width_  = 32;
+	    sub_expr->signed_ = 1;
+	    sub_expr->sized_  = 1;
+	    sub_expr->net_type  = 0;
+	    FILE_NAME(sub_expr, net);
+	    sub_expr->u_.binary_.op_ = '-';
+	    sub_expr->u_.binary_.lef_ = high_expr;
+	    sub_expr->u_.binary_.rig_ = offset_expr;
+
+	    expr_ = sub_expr;
+      } else {
+	    expr_ = high_expr;
+      }
 }
 
 void dll_target::expr_new(const NetENew*net)

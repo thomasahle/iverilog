@@ -186,7 +186,8 @@ NetEEvent* NetEEvent::dup_expr() const
 
 NetELast* NetELast::dup_expr() const
 {
-      NetELast*tmp = new NetELast(sig_);
+      NetExpr*off_dup = offset_ ? offset_->dup_expr() : 0;
+      NetELast*tmp = new NetELast(sig_, off_dup);
       ivl_assert(*this, tmp);
       tmp->set_line(*this);
       return tmp;

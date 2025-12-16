@@ -342,13 +342,14 @@ ivl_variable_type_t NetECString::expr_type() const
       return IVL_VT_STRING;
 }
 
-NetELast::NetELast(NetNet*s)
-: sig_(s)
+NetELast::NetELast(NetNet*s, NetExpr*off)
+: sig_(s), offset_(off)
 {
 }
 
 NetELast::~NetELast()
 {
+      delete offset_;
 }
 
 ivl_variable_type_t NetELast::expr_type() const

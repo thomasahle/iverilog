@@ -5004,6 +5004,33 @@ expr_primary
 	delete $3;
 	$$ = tmp;
       }
+    /* Array locator methods with 'with (expression)' clause:
+       array.find_last_index with (item.field == value)
+       array.find_first with (item > 10)
+       etc. */
+  | hierarchy_identifier K_with '(' expression ')'
+      { pform_requires_sv(@2, "Array locator method with clause");
+	/* For now, parse but emit sorry message - call without args */
+	yywarn(@2, "sorry: Array locator method with 'with' clause not yet implemented.");
+	/* Create function call without with clause (stub behavior) */
+	list<named_pexpr_t>*empty_args = new list<named_pexpr_t>;
+	PECallFunction*tmp = pform_make_call_function(@1, *$1, *empty_args);
+	delete $1;
+	delete empty_args;
+	$$ = tmp;
+      }
+    /* Array locator methods with arguments and 'with (expression)' clause:
+       array.find_last_index() with (item.field == value) */
+  | hierarchy_identifier attribute_list_opt argument_list_parens K_with '(' expression ')'
+      { pform_requires_sv(@4, "Array locator method with clause");
+	/* For now, parse but emit sorry message - call without with clause */
+	yywarn(@4, "sorry: Array locator method with 'with' clause not yet implemented.");
+	PECallFunction*tmp = pform_make_call_function(@1, *$1, *$3);
+	delete $1;
+	delete $2;
+	delete $3;
+	$$ = tmp;
+      }
   | class_hierarchy_identifier argument_list_parens
       { PECallFunction*tmp = pform_make_call_function(@1, *$1, *$2);
 	delete $1;
@@ -5853,6 +5880,17 @@ hierarchy_identifier
 	index_component_t itmp;
 	itmp.sel = index_component_t::SEL_BIT_LAST;
 	itmp.msb = 0;
+	itmp.lsb = 0;
+	tail.index.push_back(itmp);
+	$$ = tmp;
+      }
+  | hierarchy_identifier '[' '$' '-' expression ']'
+      { pform_requires_sv(@3, "Last element with offset ($-n)");
+        pform_name_t * tmp = $1;
+	name_component_t&tail = tmp->back();
+	index_component_t itmp;
+	itmp.sel = index_component_t::SEL_BIT_LAST;
+	itmp.msb = $5;  // Store offset in msb
 	itmp.lsb = 0;
 	tail.index.push_back(itmp);
 	$$ = tmp;

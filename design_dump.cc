@@ -1846,7 +1846,10 @@ void NetEEvent::dump(ostream&o) const
 
 void NetELast::dump(ostream&fd) const
 {
-      fd << "<last of " << sig_->name() << ">";
+      fd << "<last of " << sig_->name();
+      if (offset_)
+	    fd << " - " << *offset_;
+      fd << ">";
 }
 
 void NetENetenum::dump(ostream&o) const

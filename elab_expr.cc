@@ -7291,7 +7291,7 @@ NetExpr* PEIdent::elaborate_expr_net_bit_(Design*des, NetScope*scope,
       return ss;
 }
 
-NetExpr* PEIdent::elaborate_expr_net_bit_last_(Design*, NetScope*,
+NetExpr* PEIdent::elaborate_expr_net_bit_last_(Design*des, NetScope*scope,
 					       NetESignal*net,
 					       NetScope* /* found_in */,
 					       bool need_const) const
@@ -7312,7 +7312,15 @@ NetExpr* PEIdent::elaborate_expr_net_bit_last_(Design*, NetScope*,
 	    use_type = queue->element_type();
       }
 
-      NetELast*mux = new NetELast(net->sig());
+	// Get the offset expression from the index (if present)
+      NetExpr*offset = 0;
+      const index_component_t&idx = path_.back().index.back();
+      if (idx.msb) {
+	    offset = elab_and_eval(des, scope, idx.msb, -1);
+	    if (offset == 0) return 0;
+      }
+
+      NetELast*mux = new NetELast(net->sig(), offset);
       mux->set_line(*this);
       NetESelect*ss = new NetESelect(net, mux, use_width, use_type);
       ss->set_line(*this);

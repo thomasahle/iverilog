@@ -3969,10 +3969,11 @@ class NetTaskDef : public NetBaseDef {
 class NetELast : public NetExpr {
 
     public:
-      explicit NetELast(NetNet*sig);
+      explicit NetELast(NetNet*sig, NetExpr*offset = 0);
       ~NetELast() override;
 
       inline const NetNet*sig() const { return sig_; }
+      inline const NetExpr*offset() const { return offset_; }
 
       virtual ivl_variable_type_t expr_type() const override;
       virtual void dump(std::ostream&) const override;
@@ -3984,6 +3985,7 @@ class NetELast : public NetExpr {
 
     private:
       NetNet*sig_;
+      NetExpr*offset_;  // Optional offset for $-n expressions
 };
 
 /*
