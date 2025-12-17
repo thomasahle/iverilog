@@ -2183,6 +2183,26 @@ static bool get_array_info(const NetExpr*arg, long dim,
 	    right = range.get_lsb();
 	    return false;
       }
+	/* Handle class property expressions - darray/queue/assoc properties
+	 * must be handled at runtime since size is dynamic. */
+      if (const NetEProperty*prop = dynamic_cast<const NetEProperty*>(arg)) {
+	    ivl_type_t prop_type = prop->net_type();
+	    if (prop_type) {
+		  ivl_variable_type_t base = ivl_type_base(prop_type);
+		  switch (base) {
+		      case IVL_VT_DARRAY:
+		      case IVL_VT_QUEUE:
+		      case IVL_VT_ASSOC:
+		      case IVL_VT_STRING:
+			  defer = true;
+			  return true;
+		      default:
+			  break;
+		  }
+	    }
+	    // Non-dynamic property - return error (can't get info statically)
+	    return true;
+      }
 	/* The argument must be a signal that has enough dimensions. */
       const NetESignal*esig = dynamic_cast<const NetESignal*>(arg);
       if (esig == 0) return true;

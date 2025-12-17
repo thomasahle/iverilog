@@ -1130,4 +1130,8 @@ sv_uvm_p_sequencer	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_test_done	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_tlm_fifo		normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_foreach_class_array	normal,-g2012		ivltests
+sv_foreach_darray_property	normal,-g2012		ivltests
+sv_foreach_darray_prop_int	normal,-g2012		ivltests
+sv_foreach_darray_prop_nested	normal,-g2012		ivltests
+sv_darray_property_size	normal,-g2012		ivltests
 sv_interface_array_port	normal,-g2012		ivltests

@@ -929,7 +929,7 @@ static void draw_property_vec4(ivl_expr_t expr)
       }
 
       if (array_idx) {
-	    // Check if property is an associative array
+	    // Check if property is an associative array or dynamic array
 	    ivl_type_t class_type = sig ? ivl_signal_net_type(sig) : NULL;
 	    ivl_type_t prop_type = class_type ? ivl_type_prop_type(class_type, pidx) : NULL;
 
@@ -937,15 +937,25 @@ static void draw_property_vec4(ivl_expr_t expr)
 		  // Associative array property - convert index to string and use assoc opcode
 		  draw_eval_string(array_idx);
 		  fprintf(vvp_out, "    %%prop/assoc/vec4 %u;\n", pidx);
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    } else if (prop_type && ivl_type_base(prop_type) == IVL_VT_DARRAY) {
+		  // Dynamic array property - load darray, then index into it
+		  int idx_word = allocate_word();
+		  draw_eval_expr_into_integer(array_idx, idx_word);
+		  fprintf(vvp_out, "    %%prop/obj %u, 0; Load darray property\n", pidx);
+		  fprintf(vvp_out, "    %%pop/obj 1, 1; Pop class obj, keep darray\n");
+		  fprintf(vvp_out, "    %%get/dar/obj/vec4 %d;\n", idx_word);
+		  clr_word(idx_word);
 	    } else {
 		  // Regular array property - use integer index
 		  draw_eval_vec4(array_idx);
 		  fprintf(vvp_out, "    %%prop/va %u;\n", pidx);
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 	    }
       } else {
 	    fprintf(vvp_out, "    %%prop/v %u;\n", pidx);
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
       }
-      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 }
 
 /*
@@ -1109,6 +1119,33 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
       if (strcmp(ivl_expr_name(expr),"$ivl_queue_method$pop_front")==0) {
 	    draw_darray_pop(expr);
 	    return;
+      }
+
+      if (strcmp(ivl_expr_name(expr),"$size")==0) {
+	    /* Special handling for $size on property expressions.
+	       For property expressions, we need to load the containing
+	       object and use %prop/dar/size to get the dynamic array size. */
+	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+	    if (arg && ivl_expr_type(arg) == IVL_EX_PROPERTY) {
+		  ivl_signal_t sig = ivl_expr_signal(arg);
+		  ivl_expr_t base = ivl_expr_property_base(arg);
+		  unsigned prop_idx = ivl_expr_property_idx(arg);
+
+		  if (base) {
+			/* Nested property access - evaluate base expression */
+			draw_eval_object(base);
+		  } else {
+			/* Direct property access - load the 'this' signal */
+			fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+		  }
+
+		  /* Get the size of the darray property */
+		  fprintf(vvp_out, "    %%prop/dar/size %u;\n", prop_idx);
+		  /* Pop the object from the object stack */
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  return;
+	    }
+	    /* Fall through to generic VPI handling for signals */
       }
 
       if (strcmp(ivl_expr_name(expr),"$ivl_randomize")==0) {

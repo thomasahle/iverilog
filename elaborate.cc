@@ -6054,13 +6054,77 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 	    // Check for dynamic array property
 	    const netdarray_t*dtype = dynamic_cast<const netdarray_t*> (ptype);
 	    if (dtype != 0) {
-		  // Dynamic array property foreach not yet supported - would need
-		  // $low/$high to work with property expressions in VPI
-		  cerr << get_fileline() << ": sorry: "
-		       << "foreach on dynamic array class property '" << array_var_
-		       << "' not yet supported. Consider using a for loop with .size()." << endl;
-		  des->errors += 1;
-		  return 0;
+		  // Dynamic array property foreach - generate for loop with .size()
+		  // for (idx = 0; idx < property.size(); idx += 1)
+
+		  if (index_vars_.size() != 1) {
+			cerr << get_fileline() << ": sorry: "
+			     << "Multi-index foreach loops on class properties not supported." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Find the 'this' signal - search through parent scopes
+		  // (needed for unnamed blocks within class methods)
+		  NetNet*this_net = 0;
+		  NetScope*this_scope = scope;
+		  while (this_scope && this_net == 0) {
+			this_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+			if (this_net == 0)
+			      this_scope = this_scope->parent();
+		  }
+		  if (this_net == 0) {
+			cerr << get_fileline() << ": internal error: "
+			     << "Unable to find 'this' in scope for foreach on property "
+			     << array_var_ << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Get the signal for the index variable.
+		  pform_name_t index_name;
+		  index_name.push_back(name_component_t(index_vars_[0]));
+		  NetNet*idx_sig = des->find_signal(scope, index_name);
+		  ivl_assert(*this, idx_sig);
+
+		  // Create property expression for the dynamic array
+		  NetEProperty*prop_expr = new NetEProperty(this_net, class_property);
+		  prop_expr->set_line(*this);
+
+		  // Create index variable expression for the condition
+		  NetESignal*idx_exp = new NetESignal(idx_sig);
+		  idx_exp->set_line(*this);
+
+		  // Make initialization expression: idx = 0
+		  // Dynamic arrays always start at index 0
+		  NetEConst*init_expr = make_const_val(0);
+		  init_expr->set_line(*this);
+
+		  // Make condition expression: idx < $size(property)
+		  NetESFunc*size_exp = new NetESFunc("$size", &netvector_t::atom2u32, 1);
+		  size_exp->set_line(*this);
+		  size_exp->parm(0, prop_expr);
+
+		  NetEBComp*cond_expr = new NetEBComp('<', idx_exp, size_exp);
+		  cond_expr->set_line(*this);
+
+		  // Elaborate the statement that is contained in the foreach loop
+		  NetProc*sub;
+		  if (statement_)
+			sub = statement_->elaborate(des, scope);
+		  else
+			sub = new NetBlock(NetBlock::SEQU, 0);
+
+		  // Make step statement: idx += 1
+		  NetAssign_*idx_lv = new NetAssign_(idx_sig);
+		  NetEConst*step_val = make_const_val(1);
+		  NetAssign*step = new NetAssign(idx_lv, '+', step_val);
+		  step->set_line(*this);
+
+		  NetForLoop*stmt = new NetForLoop(idx_sig, init_expr, cond_expr, sub, step);
+		  stmt->set_line(*this);
+
+		  return stmt;
 	    }
 
 	    // Check for associative array property

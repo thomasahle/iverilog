@@ -6037,6 +6037,47 @@ bool of_POW_WR(vthread_t thr, vvp_code_t)
 }
 
 /*
+ * %prop/dar/size <pid>
+ *
+ * Get the size of a dynamic array property from the cobject on the object stack.
+ * Push the size onto the vec4 stack as a 32-bit unsigned integer.
+ * Does NOT pop the object from the object stack.
+ */
+bool of_PROP_DAR_SIZE(vthread_t thr, vvp_code_t cp)
+{
+      unsigned pid = cp->number;
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+
+      if (cobj == 0) {
+	    cerr << thr->get_fileline()
+	         << "Error: %prop/dar/size on null object." << endl;
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_X));
+	    return true;
+      }
+
+      // Get the darray property value
+      vvp_object_t dar_obj;
+      cobj->get_object(pid, dar_obj, 0);
+
+      vvp_darray*dar = dar_obj.peek<vvp_darray>();
+      size_t size = 0;
+      if (dar) {
+	    size = dar->get_size();
+      }
+
+      // Push size as 32-bit unsigned
+      vvp_vector4_t result(32);
+      for (unsigned i = 0; i < 32; i++) {
+	    result.set_bit(i, (size >> i) & 1 ? BIT4_1 : BIT4_0);
+      }
+      thr->push_vec4(result);
+
+      return true;
+}
+
+/*
  * %prop/obj <pid>, <idx>
  *
  * Load an object value from the cobject and push it onto the object stack.
@@ -6809,28 +6850,13 @@ bool of_SCOPY(vthread_t thr, vvp_code_t)
       return true;
 }
 
-static void thread_peek(vthread_t thr, double&value)
-{
-      value = thr->peek_real(0);
-}
-
-static void thread_peek(vthread_t thr, string&value)
-{
-      value = thr->peek_str(0);
-}
-
-static void thread_peek(vthread_t thr, vvp_vector4_t&value)
-{
-      value = thr->peek_vec4(0);
-}
-
 template <typename ELEM>
 static bool set_dar_obj(vthread_t thr, vvp_code_t cp)
 {
       unsigned adr = thr->words[cp->number].w_int;
 
       ELEM value;
-      thread_peek(thr, value);
+      dar_pop_value(thr, value);
 
       vvp_object_t&top = thr->peek_object();
       vvp_darray*darray = top.peek<vvp_darray>();
@@ -6887,6 +6913,32 @@ bool of_GET_DAR_OBJ_O(vthread_t thr, vvp_code_t cp)
       // else elem remains nil
 
       thr->push_object(elem);
+      return true;
+}
+
+/*
+ * %get/dar/obj/vec4 <index_reg>
+ *
+ * Get a vec4 from the darray on top of the object stack at the index
+ * specified by the word register. Pop the darray and push the element
+ * to the vec4 stack. This is used for reading elements of int[] class
+ * properties in expressions like $display(arr[i]).
+ */
+bool of_GET_DAR_OBJ_VEC4(vthread_t thr, vvp_code_t cp)
+{
+      unsigned idx_reg = cp->number;
+      int64_t adr = thr->words[idx_reg].w_int;
+
+      vvp_object_t dar_obj;
+      thr->pop_object(dar_obj);
+      vvp_darray*darray = dar_obj.peek<vvp_darray>();
+
+      vvp_vector4_t elem(32, BIT4_X);  // Default to 32-bit X
+      if (darray && (adr >= 0) && (thr->flags[4] == BIT4_0)) {
+	    darray->get_word(adr, elem);
+      }
+
+      thr->push_vec4(elem);
       return true;
 }
 
