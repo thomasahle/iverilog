@@ -3921,10 +3921,84 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 						parms_);
 	    }
 
+	    // Check if property is an associative array - handle array methods
+	    if (const netassoc_t*assoc_type = dynamic_cast<const netassoc_t*>(prop_type)) {
+		  // Get the method name (second element)
+		  pform_name_t::const_iterator it = search_results.path_tail.begin();
+		  ++it;  // Skip property name
+		  perm_string method_name = it->name;
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PECallFunction::elaborate_expr: "
+			     << "Associative array method call detected: " << prop_name
+			     << "." << method_name << endl;
+		  }
+
+		  // Check if the key type is supported (only string keys work in VVP)
+		  ivl_type_t key_type = assoc_type->index_type();
+		  bool string_key = (key_type == 0); // null means string key
+		  if (!string_key) {
+			cerr << get_fileline() << ": sorry: "
+			     << "Associative array methods on property '" << prop_name
+			     << "' with non-string keys are not yet supported." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Handle supported methods
+		  if (method_name == "size" || method_name == "num") {
+			// Create expression to load the property from 'this'
+			NetNet*this_net = search_results.net;
+			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+			prop_expr->set_line(*this);
+
+			NetESFunc*sys_expr = new NetESFunc("$size", &netvector_t::atom2u32, 1);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			return sys_expr;
+		  }
+
+		  // exists(), delete(), first(), last(), next(), prev() need more work
+		  cerr << get_fileline() << ": sorry: "
+		       << "Associative array method '" << method_name
+		       << "' on class property '" << prop_name
+		       << "' is not yet supported." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Check if property is a dynamic array - handle array methods
+	    if (const netdarray_t*darray_type = dynamic_cast<const netdarray_t*>(prop_type)) {
+		  // Get the method name (second element)
+		  pform_name_t::const_iterator it = search_results.path_tail.begin();
+		  ++it;  // Skip property name
+		  perm_string method_name = it->name;
+
+		  if (method_name == "size") {
+			// Create expression to load the property from 'this'
+			NetNet*this_net = search_results.net;
+			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+			prop_expr->set_line(*this);
+
+			NetESFunc*sys_expr = new NetESFunc("$size", &netvector_t::atom2u32, 1);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			return sys_expr;
+		  }
+
+		  cerr << get_fileline() << ": sorry: "
+		       << "Dynamic array method '" << method_name
+		       << "' on class property '" << prop_name
+		       << "' is not yet supported." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
 	    const netclass_t*prop_class = dynamic_cast<const netclass_t*>(prop_type);
 	    if (!prop_class) {
 		  cerr << get_fileline() << ": error: "
-		       << "Property " << prop_name << " is not a class type." << endl;
+		       << "Property " << prop_name << " is not a class type, "
+		       << "cannot call methods on it." << endl;
 		  des->errors += 1;
 		  return 0;
 	    }
@@ -3933,6 +4007,51 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    pform_name_t::const_iterator it = search_results.path_tail.begin();
 	    ++it;  // Skip property name
 	    perm_string method_name = it->name;
+
+	    // Check if we have a deeper property chain (more than 2 elements)
+	    // e.g., cfg.slave_memory.exists() where cfg is class, slave_memory is assoc array
+	    if (search_results.path_tail.size() > 2) {
+		  // Look up the next property in the chain
+		  int next_prop_idx = prop_class->property_idx_from_name(method_name);
+		  if (next_prop_idx >= 0) {
+			ivl_type_t next_prop_type = prop_class->get_prop_type(next_prop_idx);
+
+			// Get the final method name
+			pform_name_t::const_iterator method_it = it;
+			++method_it;
+			perm_string final_method = method_it->name;
+
+			// Handle associative array property followed by method
+			if (const netassoc_t*next_assoc = dynamic_cast<const netassoc_t*>(next_prop_type)) {
+			      ivl_type_t key_type = next_assoc->index_type();
+			      bool string_key = (key_type == 0);
+			      if (!string_key) {
+				    cerr << get_fileline() << ": sorry: "
+					 << "Associative array property '" << method_name
+					 << "' with non-string keys: method '" << final_method
+					 << "' not yet supported." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+			      cerr << get_fileline() << ": sorry: "
+				   << "Associative array method '" << final_method
+				   << "' on nested property '" << prop_name << "." << method_name
+				   << "' not yet supported." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			// Handle dynamic array property followed by method
+			if (const netdarray_t*next_darray = dynamic_cast<const netdarray_t*>(next_prop_type)) {
+			      cerr << get_fileline() << ": sorry: "
+				   << "Dynamic array method '" << final_method
+				   << "' on nested property '" << prop_name << "." << method_name
+				   << "' not yet supported." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+		  }
+	    }
 
 	    // Handle built-in randomize() method on class properties
 	    if (method_name == "randomize") {
