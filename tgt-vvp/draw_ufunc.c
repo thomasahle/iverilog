@@ -212,9 +212,71 @@ static void draw_ufunc_preamble(ivl_expr_t expr)
       }
 }
 
+/*
+ * Copy output/inout arguments back to the caller's variables.
+ * This must be done after the function call but before freeing
+ * the function's local storage.
+ */
+static void draw_ufunc_output_args(ivl_expr_t expr)
+{
+      ivl_scope_t def = ivl_expr_def(expr);
+      unsigned idx;
+
+      for (idx = 0; idx < ivl_expr_parms(expr); idx += 1) {
+	    ivl_signal_t port = ivl_scope_port(def, idx+1);
+	    ivl_signal_port_t port_dir = ivl_signal_port(port);
+
+	    /* Only process output and inout ports */
+	    if (port_dir != IVL_SIP_OUTPUT && port_dir != IVL_SIP_INOUT)
+		  continue;
+
+	    ivl_expr_t parm_expr = ivl_expr_parm(expr, idx);
+	    if (!parm_expr)
+		  continue;
+
+	    /* The expression must be a signal reference for output args */
+	    if (ivl_expr_type(parm_expr) != IVL_EX_SIGNAL)
+		  continue;
+
+	    ivl_signal_t caller_sig = ivl_expr_signal(parm_expr);
+	    if (!caller_sig)
+		  continue;
+
+	    /* Load from function port and store to caller's variable */
+	    ivl_variable_type_t dtype = ivl_signal_data_type(port);
+	    switch (dtype) {
+		case IVL_VT_BOOL:
+		case IVL_VT_LOGIC:
+		    fprintf(vvp_out, "    %%load/vec4 v%p_0;\n", port);
+		    fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n",
+					caller_sig, ivl_signal_width(caller_sig));
+		    break;
+		case IVL_VT_REAL:
+		    fprintf(vvp_out, "    %%load/real v%p_0;\n", port);
+		    fprintf(vvp_out, "    %%store/real v%p_0;\n", caller_sig);
+		    break;
+		case IVL_VT_STRING:
+		    fprintf(vvp_out, "    %%load/str v%p_0;\n", port);
+		    fprintf(vvp_out, "    %%store/str v%p_0;\n", caller_sig);
+		    break;
+		case IVL_VT_CLASS:
+		case IVL_VT_DARRAY:
+		    fprintf(vvp_out, "    %%load/obj v%p_0;\n", port);
+		    fprintf(vvp_out, "    %%store/obj v%p_0;\n", caller_sig);
+		    break;
+		default:
+		    /* Other types not yet supported */
+		    break;
+	    }
+      }
+}
+
 static void draw_ufunc_epilogue(ivl_expr_t expr)
 {
       ivl_scope_t def = ivl_expr_def(expr);
+
+        /* Copy output/inout arguments back to caller before freeing */
+      draw_ufunc_output_args(expr);
 
         /* If this is an automatic function, free the local storage. */
       if (ivl_scope_is_auto(def)) {

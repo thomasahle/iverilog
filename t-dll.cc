@@ -2630,6 +2630,11 @@ void dll_target::signal(const NetNet*net)
 	    obj->port_ = IVL_SIP_INOUT;
 	    break;
 
+	  case NetNet::PREF:
+	    /* Treat ref arguments like inout for copy-back purposes */
+	    obj->port_ = IVL_SIP_INOUT;
+	    break;
+
 	  default:
 	    obj->port_ = IVL_SIP_NONE;
 	    break;
