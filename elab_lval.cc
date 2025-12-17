@@ -1394,6 +1394,74 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 		  }
 	    }
 
+	      // Check if this is a struct-typed property with more path components
+	    if (!class_type && !member_path.empty()) {
+		  const netstruct_t*struct_type = dynamic_cast<const netstruct_t*>(ptype);
+		  if (struct_type) {
+			// Struct member access through class property (e.g., obj.struct_prop.member)
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_class_member_: "
+				   << "Property " << method_name << " is struct type, member_path="
+				   << member_path << endl;
+			}
+
+			// Get the struct member name from the remaining path
+			name_component_t member_comp = member_path.front();
+			member_path.pop_front();
+			perm_string member_name = member_comp.name;
+
+			if (struct_type->packed()) {
+			      // For packed struct, calculate bit offset
+			      unsigned long off = 0;
+			      const netstruct_t::member_t* member = struct_type->packed_member(member_name, off);
+			      if (!member) {
+				    cerr << get_fileline() << ": error: "
+					 << "No member '" << member_name << "' in struct type." << endl;
+				    des->errors++;
+				    return 0;
+			      }
+
+			      // Set part select for the member
+			      long member_wid = member->net_type->packed_width();
+			      lv->set_part(new NetEConst(verinum(off)), member_wid);
+
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_lval_net_class_member_: "
+					 << "Packed struct member " << member_name
+					 << " at offset " << off << ", width " << member_wid << endl;
+			      }
+			} else {
+			      // For unpacked struct, store member index
+			      int member_idx = struct_type->member_idx_from_name(member_name);
+			      if (member_idx < 0) {
+				    cerr << get_fileline() << ": error: "
+					 << "No member '" << member_name << "' in struct type." << endl;
+				    des->errors++;
+				    return 0;
+			      }
+
+			      lv->set_struct_member(member_name, member_idx);
+
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_lval_net_class_member_: "
+					 << "Unpacked struct member " << member_name
+					 << " at index " << member_idx << endl;
+			      }
+			}
+
+			// Handle nested struct access if more path components remain
+			if (!member_path.empty()) {
+			      cerr << get_fileline() << ": sorry: "
+				   << "Nested struct member access through class property "
+				   << "is not yet supported." << endl;
+			      des->errors++;
+			      return 0;
+			}
+
+			return lv;
+		  }
+	    }
+
 	      // Check if this is a virtual interface property with more path components
 	    if (!class_type && !member_path.empty()) {
 		  const netvirtual_interface_t*vif_type =

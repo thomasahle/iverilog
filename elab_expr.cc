@@ -3173,7 +3173,7 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 		  prop_expr->set_line(*this);
 		  current_expr = prop_expr;
 
-		  // If there are more path components, the current property must be a class type
+		  // If there are more path components, the current property must be a class or struct type
 		  if (!member_path.empty()) {
 			// For indexed dynamic arrays, get the element type
 			if (darray_type && prop_index) {
@@ -3182,11 +3182,64 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			      current_class = dynamic_cast<const netclass_t*>(mem_ptype);
 			}
 			if (!current_class) {
-			      cerr << get_fileline() << ": error: "
-				   << "Property " << member_comp.name
-				   << " is not a class type, cannot access members." << endl;
-			      des->errors += 1;
-			      return nullptr;
+			      // Check if it's a struct type
+			      const netstruct_t* struct_type = dynamic_cast<const netstruct_t*>(mem_ptype);
+			      if (struct_type) {
+				    // Handle struct member access through class property
+				    // Get the struct member from the remaining path
+				    name_component_t struct_member_comp = member_path.front();
+				    member_path.pop_front();
+
+				    if (debug_elaborate) {
+					  cerr << get_fileline() << ": PEIdent::elaborate_expr_class_field_: "
+					       << "Struct property " << member_comp.name
+					       << ", accessing member " << struct_member_comp.name << endl;
+				    }
+
+				    if (struct_type->packed()) {
+					  // For packed struct, calculate bit offset and create part select
+					  unsigned long off = 0;
+					  const netstruct_t::member_t* member = struct_type->packed_member(struct_member_comp.name, off);
+					  if (!member) {
+						cerr << get_fileline() << ": error: "
+						     << "No member '" << struct_member_comp.name
+						     << "' in struct type." << endl;
+						des->errors += 1;
+						return nullptr;
+					  }
+
+					  long member_wid = member->net_type->packed_width();
+					  // Create a part select expression for the struct member
+					  NetESelect* sel = new NetESelect(current_expr,
+									   new NetEConst(verinum(off)),
+									   member_wid, IVL_SEL_OTHER);
+					  sel->set_line(*this);
+					  current_expr = sel;
+				    } else {
+					  // Unpacked struct member access through class property
+					  // is not yet supported for r-value (expressions)
+					  cerr << get_fileline() << ": sorry: "
+					       << "Reading unpacked struct members through class property "
+					       << "is not yet supported." << endl;
+					  des->errors += 1;
+					  return nullptr;
+				    }
+
+				    // Check for nested struct access
+				    if (!member_path.empty()) {
+					  cerr << get_fileline() << ": sorry: "
+					       << "Nested struct member access through class property "
+					       << "is not yet supported." << endl;
+					  des->errors += 1;
+					  return nullptr;
+				    }
+			      } else {
+				    cerr << get_fileline() << ": error: "
+					 << "Property " << member_comp.name
+					 << " is not a class type, cannot access members." << endl;
+				    des->errors += 1;
+				    return nullptr;
+			      }
 			}
 		  }
 	    }
