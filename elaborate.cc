@@ -5906,25 +5906,38 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
       if (class_scope!=0 && class_property >= 0) {
 	    ivl_type_t ptype = class_scope->get_prop_type(class_property);
 	    const netsarray_t*atype = dynamic_cast<const netsarray_t*> (ptype);
-	    if (atype == 0) {
-		  cerr << get_fileline() << ": error: "
-		       << "I can't handle the type of " << array_var_
-		       << " as a foreach loop." << endl;
+	    if (atype != 0) {
+		  // Static array property - use static bounds
+		  const netranges_t&dims = atype->static_dimensions();
+		  if (dims.size() < index_vars_.size()) {
+			cerr << get_fileline() << ": error: "
+			     << "class " << class_scope->get_name()
+			     << " property " << array_var_
+			     << " has too few dimensions for foreach dimension list." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  return elaborate_static_array_(des, scope, dims);
+	    }
+
+	    // Check for dynamic array property
+	    const netdarray_t*dtype = dynamic_cast<const netdarray_t*> (ptype);
+	    if (dtype != 0) {
+		  // Dynamic array property foreach not yet supported - would need
+		  // $low/$high to work with property expressions in VPI
+		  cerr << get_fileline() << ": sorry: "
+		       << "foreach on dynamic array class property '" << array_var_
+		       << "' not yet supported. Consider using a for loop with .size()." << endl;
 		  des->errors += 1;
 		  return 0;
 	    }
 
-	    const netranges_t&dims = atype->static_dimensions();
-	    if (dims.size() < index_vars_.size()) {
-		  cerr << get_fileline() << ": error: "
-		       << "class " << class_scope->get_name()
-		       << " property " << array_var_
-		       << " has too few dimensions for foreach dimension list." << endl;
-		  des->errors += 1;
-		  return 0;
-	    }
-
-	    return elaborate_static_array_(des, scope, dims);
+	    cerr << get_fileline() << ": error: "
+		 << "I can't handle the type of " << array_var_
+		 << " as a foreach loop." << endl;
+	    des->errors += 1;
+	    return 0;
       }
 
       if (array_sig == 0) {
