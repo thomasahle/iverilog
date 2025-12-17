@@ -1303,6 +1303,22 @@ class NetScope : public Definitions, public Attrib {
 
       std::map<perm_string,LocalVar> loop_index_tmp;
 
+	/* Interface port bindings: maps port name to bound interface scope.
+	   Used when a module has interface ports to store which interface
+	   instance is bound to each port. */
+      std::map<perm_string, const NetScope*> interface_port_bindings_;
+
+	/* Set an interface port binding */
+      void set_interface_port_binding(perm_string port_name, const NetScope* iface_scope) {
+	    interface_port_bindings_[port_name] = iface_scope;
+      }
+
+	/* Get an interface port binding */
+      const NetScope* get_interface_port_binding(perm_string port_name) const {
+	    auto it = interface_port_bindings_.find(port_name);
+	    return (it != interface_port_bindings_.end()) ? it->second : nullptr;
+      }
+
     private:
       void evaluate_type_parameter_(Design*des, param_ref_t cur);
       void evaluate_parameter_logic_(Design*des, param_ref_t cur);

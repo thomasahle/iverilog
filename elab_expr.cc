@@ -5548,28 +5548,53 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 		  return elaborate_expr_class_field_(des, scope, sr, 0, flags);
 	    }
 
+	    // Debug: print type info for interface port investigation
+	    if (sr.net && sr.type) {
+		  cerr << get_fileline() << ": DEBUG TYPE: path=" << path_
+		       << ", sr.type=" << (sr.type ? typeid(*sr.type).name() : "null")
+		       << ", path_tail.size()=" << sr.path_tail.size()
+		       << endl;
+	    }
+
 	    // Handle interface port member access: intf.signal
 	    // Interface ports are compile-time bindings, not runtime virtual interfaces.
 	    // We need to find the bound interface instance and access its member directly.
 	    if (const netvirtual_interface_t*vif_type =
 	            dynamic_cast<const netvirtual_interface_t*>(sr.type)) {
+		  cerr << get_fileline() << ": DEBUG INTF: vif detected, path_head=" << sr.path_head
+		       << ", path_tail.size()=" << sr.path_tail.size()
+		       << ", scope=" << scope_path(scope) << endl;
 		  if (debug_elaborate) {
 			cerr << get_fileline() << ": PEIdent::elaborate_expr(ntype): "
 			     << "Interface port " << sr.path_head
 			     << " member access: " << sr.path_tail << endl;
 		  }
 
-		  // Find the bound interface instance by following the port connection.
-		  // The interface port signal is connected to the interface instance.
-		  // Search through the current scope's parent hierarchy to find the
-		  // interface instance that this port is bound to.
+		  // Find the bound interface instance. First check if there's an
+		  // explicit binding stored (for interface array port connections).
 		  const NetScope* iface_inst = nullptr;
 		  perm_string iface_name = vif_type->interface_name();
 
-		  // Look for interface instance in the parent scope (where instantiation happens)
-		  NetScope* parent = scope->parent();
-		  if (parent) {
-			iface_inst = parent->child_by_module_name(iface_name);
+		  // Get the port name from sr.path_head
+		  perm_string port_name = peek_tail_name(sr.path_head);
+
+		  cerr << get_fileline() << ": DEBUG member access: port_name=" << port_name
+		       << ", scope=" << scope_path(scope) << endl;
+
+		  // First, check for stored interface port binding
+		  iface_inst = scope->get_interface_port_binding(port_name);
+
+		  if (iface_inst)
+			cerr << get_fileline() << ": DEBUG: binding lookup result=" << scope_path(iface_inst) << endl;
+		  else
+			cerr << get_fileline() << ": DEBUG: binding lookup result=null" << endl;
+
+		  // If no explicit binding, look in parent scope (where instantiation happens)
+		  if (!iface_inst) {
+			NetScope* parent = scope->parent();
+			if (parent) {
+			      iface_inst = parent->child_by_module_name(iface_name);
+			}
 		  }
 
 		  // Fallback: search root scopes for interface definition
@@ -6166,14 +6191,29 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
 			           << " member access: " << sr.path_tail << endl;
 			}
 
-			// Find the bound interface instance
+			// Find the bound interface instance. First check for stored binding.
 			const NetScope* iface_inst = nullptr;
 			perm_string iface_name = vif_type->interface_name();
 
-			// Look for interface instance in the parent scope
-			NetScope* parent = scope->parent();
-			if (parent) {
-			      iface_inst = parent->child_by_module_name(iface_name);
+			// Get the port name from sr.path_head
+			perm_string port_name = peek_tail_name(sr.path_head);
+
+			// First, check for stored interface port binding (from generate loops)
+			// We may need to search up the scope hierarchy to find the instance scope
+			const NetScope* search_scope = scope;
+			while (search_scope) {
+			      iface_inst = search_scope->get_interface_port_binding(port_name);
+			      if (iface_inst)
+				    break;
+			      search_scope = search_scope->parent();
+			}
+
+			// If no explicit binding, look in parent scope
+			if (!iface_inst) {
+			      NetScope* parent = scope->parent();
+			      if (parent) {
+				    iface_inst = parent->child_by_module_name(iface_name);
+			      }
 			}
 
 			// Fallback: search root scopes

@@ -294,14 +294,22 @@ NetAssign_* PEIdent::elaborate_lval(Design*des,
 			     << " member_path=" << member_path << endl;
 		  }
 
-		  // Find the bound interface instance
+		  // Find the bound interface instance. First check for stored binding.
 		  const NetScope* iface_inst = nullptr;
 		  perm_string iface_name = vif_type->interface_name();
 
-		  // Look for interface instance in parent scope (where instantiation happens)
-		  NetScope* parent = scope->parent();
-		  if (parent) {
-			iface_inst = parent->child_by_module_name(iface_name);
+		  // Get the port name from sr.path_head
+		  perm_string port_name = peek_tail_name(sr.path_head);
+
+		  // First, check for stored interface port binding
+		  iface_inst = scope->get_interface_port_binding(port_name);
+
+		  // If no explicit binding, look in parent scope (where instantiation happens)
+		  if (!iface_inst) {
+			NetScope* parent = scope->parent();
+			if (parent) {
+			      iface_inst = parent->child_by_module_name(iface_name);
+			}
 		  }
 
 		  // Fallback: search root scopes

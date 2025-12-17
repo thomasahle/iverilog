@@ -1368,6 +1368,72 @@ void PGModule::elaborate_mod_(Design*des, Module*rmod, NetScope*scope) const
 	// later.
 
       NetScope::scope_vec_t&instance = scope->instance_arrays[get_name()];
+
+	// Pre-scan: Detect interface port bindings BEFORE elaborating module
+	// contents. This is needed because expressions inside the module may
+	// reference interface port members, and they need to know which
+	// interface instance is bound to each port.
+      for (unsigned idx = 0; idx < pins.size(); idx += 1) {
+	    const PEIdent*pin_ident = dynamic_cast<const PEIdent*>(pins[idx]);
+	    if (!pin_ident) continue;
+
+	    pform_name_t iface_path = pin_ident->path().name;
+	    symbol_search_results sr;
+	    symbol_search(pin_ident, des, scope, iface_path, UINT_MAX, &sr);
+
+	    // Check if this pin refers to an interface instance (scope)
+	    if (sr.is_scope() && sr.scope && sr.scope->is_interface()) {
+		  // This is an interface port connection - store binding
+		  perm_string port_name = rmod->get_port_name(idx);
+		  for (unsigned inst = 0; inst < instance.size(); inst++) {
+			NetScope*inst_scope = instance[instance.size()-inst-1];
+			inst_scope->set_interface_port_binding(port_name, sr.scope);
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": debug: Bound interface port "
+			           << port_name << " to " << scope_path(sr.scope)
+			           << " for " << scope_path(inst_scope) << endl;
+			}
+		  }
+	    } else if (!iface_path.empty()) {
+		  // The path might be an indexed interface array (e.g., intf_arr[i])
+		  // Evaluate the index for each instance
+		  name_component_t path_comp = iface_path.back();
+		  if (!path_comp.index.empty()) {
+			perm_string port_name = rmod->get_port_name(idx);
+			for (unsigned inst = 0; inst < instance.size(); inst++) {
+			      NetScope*inst_scope = instance[instance.size()-inst-1];
+			      // Get the generate scope that contains genvar values
+			      NetScope*gen_scope = inst_scope->parent();
+
+			      // Evaluate index in generate scope context
+			      bool error_flag = false;
+			      hname_t hpath = eval_path_component(des, gen_scope, path_comp, error_flag);
+			      if (!error_flag) {
+				    // Look for the interface scope
+				    const NetScope* parent_scope = scope;
+				    if (iface_path.size() > 1) {
+					  pform_name_t prefix = iface_path;
+					  prefix.pop_back();
+					  symbol_search_results prefix_sr;
+					  symbol_search(pin_ident, des, scope, prefix, UINT_MAX, &prefix_sr);
+					  if (prefix_sr.is_scope())
+						parent_scope = prefix_sr.scope;
+				    }
+				    const NetScope* iface_inst = parent_scope->child(hpath);
+				    if (iface_inst && iface_inst->is_interface()) {
+					  inst_scope->set_interface_port_binding(port_name, iface_inst);
+					  if (debug_elaborate) {
+						cerr << get_fileline() << ": debug: Bound indexed interface port "
+						     << port_name << " to " << scope_path(iface_inst)
+						     << " for " << scope_path(inst_scope) << endl;
+					  }
+				    }
+			      }
+			}
+		  }
+	    }
+      }
+
       if (debug_elaborate) cerr << get_fileline() << ": debug: start "
 	    "recursive elaboration of " << instance.size() << " instance(s) of " <<
 	    get_name() << "..." << endl;
@@ -1521,6 +1587,69 @@ void PGModule::elaborate_mod_(Design*des, Module*rmod, NetScope*scope) const
 			ptype = PortType::merged(netnet->port_type(), ptype);
 		  }
 		  inst_scope->add_module_port_info(idx, port_name, ptype, prt_vector_width );
+	    }
+
+	      // Check if this is an interface port. Interface ports need special
+	      // handling because they bind to interface instances (scopes), not nets.
+	    if (!prts.empty() && prts[0] && prts[0]->net_type()) {
+		  const netvirtual_interface_t*vif_type =
+			dynamic_cast<const netvirtual_interface_t*>(prts[0]->net_type());
+		  if (vif_type) {
+			// This is an interface port. Find the bound interface instance.
+			// The pins[idx] expression should refer to an interface instance.
+			const PEIdent*pin_ident = dynamic_cast<const PEIdent*>(pins[idx]);
+			if (pin_ident) {
+			      // Search for the interface instance in the calling scope
+			      pform_name_t iface_path = pin_ident->path().name;
+			      symbol_search_results sr;
+			      symbol_search(pin_ident, des, scope, iface_path, UINT_MAX, &sr);
+
+			      // For each module instance, find and bind the interface
+			      // (Note: bindings may already exist from pre-scan, this ensures
+			      // they're set if pre-scan didn't find them)
+			      for (unsigned inst = 0; inst < instance.size(); inst++) {
+				    NetScope*inst_scope = instance[instance.size()-inst-1];
+
+				    if (sr.is_scope()) {
+					  // Found the interface scope directly
+					  inst_scope->set_interface_port_binding(port_name, sr.scope);
+				    } else if (!iface_path.empty()) {
+					  // The path might have an index that needs evaluation
+					  // (e.g., intf_arr[i] where i is a genvar)
+					  name_component_t path_comp = iface_path.back();
+					  if (!path_comp.index.empty()) {
+						// Evaluate the index in the current scope context
+						bool error_flag = false;
+						hname_t hpath = eval_path_component(des, scope, path_comp, error_flag);
+						if (!error_flag) {
+						      // Look for child scope with the evaluated index
+						      const NetScope* parent_scope = scope;
+						      if (iface_path.size() > 1) {
+							    // Multi-component path - need to navigate
+							    pform_name_t prefix = iface_path;
+							    prefix.pop_back();
+							    symbol_search_results prefix_sr;
+							    symbol_search(pin_ident, des, scope, prefix, UINT_MAX, &prefix_sr);
+							    if (prefix_sr.is_scope())
+								  parent_scope = prefix_sr.scope;
+						      }
+						      const NetScope* iface_inst = parent_scope->child(hpath);
+						      if (iface_inst && iface_inst->is_interface()) {
+							    inst_scope->set_interface_port_binding(port_name, iface_inst);
+							    if (debug_elaborate) {
+								  cerr << get_fileline() << ": debug: "
+								       << "Bound interface port " << port_name
+								       << " to indexed instance " << scope_path(iface_inst) << endl;
+							    }
+						      }
+						}
+					  }
+				    }
+			      }
+			}
+			// Skip normal port binding for interface ports
+			continue;
+		  }
 	    }
 
 	      // If I find that the port is unconnected inside the
