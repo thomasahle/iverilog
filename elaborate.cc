@@ -49,6 +49,7 @@
 # include  "netvector.h"
 # include  "netdarray.h"
 # include  "netparray.h"
+# include  "netassoc.h"
 # include  "netqueue.h"
 # include  "netscalar.h"
 # include  "netclass.h"
@@ -6058,6 +6059,17 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 		  cerr << get_fileline() << ": sorry: "
 		       << "foreach on dynamic array class property '" << array_var_
 		       << "' not yet supported. Consider using a for loop with .size()." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Check for associative array property
+	    const netassoc_t*atype_assoc = dynamic_cast<const netassoc_t*> (ptype);
+	    if (atype_assoc != 0) {
+		  // Associative array property foreach not yet supported
+		  cerr << get_fileline() << ": sorry: "
+		       << "foreach on associative array class property '" << array_var_
+		       << "' not yet supported. Consider using first()/next() methods." << endl;
 		  des->errors += 1;
 		  return 0;
 	    }
