@@ -1438,8 +1438,28 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			        ivl_stmt_file(net), ivl_stmt_lineno(net));
 		  }
 
-		  /* Check for array index expression */
+		  /* Check for array index expression and part select */
 		  ivl_expr_t idx_expr = ivl_lval_idx(lval);
+		  ivl_expr_t part_off_ex = ivl_lval_part_off(lval);
+		  unsigned long part_off = 0;
+		  int part_off_idx = 0;
+
+		  /* Handle part select offset (for packed struct member writes) */
+		  if (part_off_ex) {
+			if (number_is_immediate(part_off_ex, IMM_WID, 0) &&
+			    !number_is_unknown(part_off_ex)) {
+			      /* Static part select - load offset into index register */
+			      part_off = get_number_immediate(part_off_ex);
+			      part_off_idx = allocate_word();
+			      fprintf(vvp_out, "    %%ix/load %d, %lu, 0;\n",
+			              part_off_idx, part_off);
+			} else {
+			      /* Dynamic part select - evaluate expression */
+			      part_off_idx = allocate_word();
+			      draw_eval_vec4(part_off_ex);
+			      fprintf(vvp_out, "    %%ix/vec4 %d;\n", part_off_idx);
+			}
+		  }
 
 		  if (ivl_stmt_opcode(net) != 0) {
 			if (idx_expr) {
@@ -1465,6 +1485,11 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			draw_eval_vec4(idx_expr);
 			fprintf(vvp_out, "    %%store/prop/va %d, %u; Store in logic property array %s\n",
 			        prop_idx, lwid, ivl_type_prop_name(sig_type, prop_idx));
+		  } else if (part_off_ex) {
+			/* Part select store (for struct member writes) */
+			fprintf(vvp_out, "    %%store/prop/v/s %d, %d, %u; Store in logic property %s (part select)\n",
+			        prop_idx, part_off_idx, lwid, ivl_type_prop_name(sig_type, prop_idx));
+			clr_word(part_off_idx);
 		  } else {
 			fprintf(vvp_out, "    %%store/prop/v %d, %u; Store in logic property %s\n",
 			        prop_idx, lwid, ivl_type_prop_name(sig_type, prop_idx));

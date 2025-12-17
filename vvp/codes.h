@@ -260,6 +260,7 @@ extern bool of_STORE_PROP_R(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_STR(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_V(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_VA(vthread_t thr, vvp_code_t code);
+extern bool of_STORE_PROP_VS(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_VA(vthread_t thr, vvp_code_t code);
 extern bool of_VIF_LOAD_V(vthread_t thr, vvp_code_t code);
 extern bool of_VIF_STORE_V(vthread_t thr, vvp_code_t code);

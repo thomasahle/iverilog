@@ -7476,6 +7476,58 @@ bool of_STORE_PROP_VA(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %store/prop/v/s <pid>, <off_idx>, <wid>
+ *
+ * Store vector value with part-select into property <pid> of cobject on the
+ * top of the object stack. This is used for packed struct member writes.
+ * The offset is taken from the word register specified by <off_idx>.
+ * Do NOT pop the object stack.
+ */
+bool of_STORE_PROP_VS(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+      unsigned off_idx = cp->bit_idx[0];
+      unsigned wid = cp->bit_idx[1];
+
+      // Get the offset from the word register
+      int64_t off = off_idx ? thr->words[off_idx].w_int : 0;
+
+      // Pop the value to store
+      vvp_vector4_t val = thr->pop_vec4();
+      assert(val.size() >= wid);
+      val.resize(wid);
+
+      // Get the object and its current property value
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "ERROR of_STORE_PROP_VS: cobj null at pid=%lu scope=%s\n",
+	            (unsigned long)pid, scope ? scope->scope_name() : "(null)");
+	    return true;
+      }
+
+      // Get the current property value
+      vvp_vector4_t prop_val;
+      cobj->get_vec4(pid, prop_val, 0);
+
+      // Resize if needed to accommodate the part select
+      if (prop_val.size() < (size_t)(off + wid)) {
+	    prop_val.resize(off + wid, BIT4_X);
+      }
+
+      // Insert the new value at the offset
+      for (unsigned i = 0; i < wid; i++) {
+	    prop_val.set_bit(off + i, val.value(i));
+      }
+
+      // Store the modified value back
+      cobj->set_vec4(pid, prop_val, 0);
+
+      return true;
+}
+
+/*
  * %store/prop/assoc/vec4 <pid>, <wid>
  *
  * Store a vec4 value to an associative array property.
