@@ -261,6 +261,40 @@ bool symbol_search(const LineInfo*li, Design*des, NetScope*scope,
 		  }
 	    }
 
+	    // Check if this matches a class type (for static method calls like
+	    // ClassName::method()). The class might be imported from a package.
+	    // First try direct lookup in the current scope and explicit imports.
+	    if (netclass_t* class_type = scope->find_class(des, path_tail.name)) {
+		  NetScope* class_scope = const_cast<NetScope*>(class_type->class_scope());
+		  if (class_scope) {
+			path.push_back(path_tail);
+			res->scope = class_scope;
+			res->path_head = path;
+			return true;
+		  }
+	    }
+
+	    // For wildcard imports (import pkg::*), the class might not be in
+	    // explicit_imports yet. Search all packages to find the class.
+	    // This handles cases like: import test_pkg::*; ... converter::method()
+	    if (!passed_module_boundary) {
+		  list<NetScope*> pkg_list = des->find_package_scopes();
+		  for (list<NetScope*>::iterator it = pkg_list.begin()
+			 ; it != pkg_list.end() ; ++it) {
+			NetScope* pkg_scope = *it;
+			netclass_t* class_type = pkg_scope->find_class(des, path_tail.name);
+			if (class_type) {
+			      NetScope* class_scope = const_cast<NetScope*>(class_type->class_scope());
+			      if (class_scope) {
+				    path.push_back(path_tail);
+				    res->scope = class_scope;
+				    res->path_head = path;
+				    return true;
+			      }
+			}
+		  }
+	    }
+
 	    // Search class inheritance hierarchy for methods/functions.
 	    // If we're in a class scope and didn't find the method, search parent classes.
 	    if (scope->type() == NetScope::CLASS) {
