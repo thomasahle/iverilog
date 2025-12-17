@@ -1288,15 +1288,6 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 
 	      // Now get the type of the property.
 	    ivl_type_t ptype = class_type->get_prop_type(pidx);
-	    const netdarray_t*mtype = dynamic_cast<const netdarray_t*> (ptype);
-	    if (mtype) {
-		  if (! member_cur.index.empty()) {
-			cerr << get_fileline() << ": sorry: "
-			     << "Array index of array properties not supported."
-			     << endl;
-			des->errors += 1;
-		  }
-	    }
 	    NetExpr *canon_index = nullptr;
 	    NetExpr *assoc_index = nullptr;
 	    if (!member_cur.index.empty()) {
@@ -1379,6 +1370,21 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 	      // type. We may wind up iterating, and need the proper
 	      // class type.
 	    class_type = dynamic_cast<const netclass_t*>(ptype);
+
+	      // If the property is a dynamic array and was indexed, get the
+	      // element type. For dynamic arrays of class objects, we need
+	      // the element class type to continue elaboration.
+	    if (!class_type && assoc_index) {
+		  const netdarray_t *darray = dynamic_cast<const netdarray_t*>(ptype);
+		  if (darray) {
+			ivl_type_t elem_type = darray->element_type();
+			class_type = dynamic_cast<const netclass_t*>(elem_type);
+			if (debug_elaborate && class_type) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_lval_method_class_member_: "
+				   << "Dynamic array element type is class " << class_type->get_name() << endl;
+			}
+		  }
+	    }
 
 	      // Check if this is a virtual interface property with more path components
 	    if (!class_type && !member_path.empty()) {

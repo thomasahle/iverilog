@@ -6865,6 +6865,60 @@ bool of_SET_DAR_OBJ_VEC4(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %get/dar/obj/o <index_reg>
+ *
+ * Get an object from the darray on top of the object stack at the index
+ * specified by the word register. Pop the darray and push the element.
+ * This is used for accessing elements of darray class properties.
+ */
+bool of_GET_DAR_OBJ_O(vthread_t thr, vvp_code_t cp)
+{
+      unsigned idx_reg = cp->number;
+      int64_t adr = thr->words[idx_reg].w_int;
+
+      vvp_object_t dar_obj;
+      thr->pop_object(dar_obj);
+      vvp_darray*darray = dar_obj.peek<vvp_darray>();
+
+      vvp_object_t elem;
+      if (darray && (adr >= 0) && (thr->flags[4] == BIT4_0)) {
+	    darray->get_word(adr, elem);
+      }
+      // else elem remains nil
+
+      thr->push_object(elem);
+      return true;
+}
+
+/*
+ * %set/dar/obj/o <index_reg>
+ *
+ * Set an object into the darray on the object stack at the index
+ * specified by the word register. Pop the value from object stack,
+ * then store into darray (which is next on stack).
+ * Stack layout: [... darray value] -> [... darray] after store
+ */
+bool of_SET_DAR_OBJ_O(vthread_t thr, vvp_code_t cp)
+{
+      unsigned idx_reg = cp->number;
+      int64_t adr = thr->words[idx_reg].w_int;
+
+      // Pop the value to store
+      vvp_object_t value;
+      thr->pop_object(value);
+
+      // Peek the darray (it stays on the stack)
+      vvp_object_t&dar_obj = thr->peek_object();
+      vvp_darray*darray = dar_obj.peek<vvp_darray>();
+
+      if (darray && (adr >= 0) && (thr->flags[4] == BIT4_0)) {
+	    darray->set_word(adr, value);
+      }
+
+      return true;
+}
+
+/*
  * %shiftl <idx>
  *
  * Pop the operand, then push the result.

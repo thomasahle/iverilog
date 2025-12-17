@@ -3134,21 +3134,53 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			des->errors += 1;
 		  }
 
+		  // Check for dynamic array indexing
+		  NetExpr* prop_index = nullptr;
+		  const netdarray_t* darray_type = dynamic_cast<const netdarray_t*>(mem_ptype);
+		  if (darray_type && !member_comp.index.empty()) {
+			// Elaborate the index expression for dynamic array access
+			if (member_comp.index.size() != 1) {
+			      cerr << get_fileline() << ": error: "
+				   << "Dynamic arrays only support single index." << endl;
+			      des->errors += 1;
+			      return nullptr;
+			}
+			const index_component_t& idx = member_comp.index.front();
+			if (idx.msb && !idx.lsb) {
+			      prop_index = elab_and_eval(des, scope, idx.msb, -1, false);
+			} else {
+			      cerr << get_fileline() << ": error: "
+				   << "Invalid index expression for dynamic array." << endl;
+			      des->errors += 1;
+			      return nullptr;
+			}
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_expr_class_field_: "
+				   << "Dynamic array index for property " << member_comp.name
+				   << ": " << *prop_index << endl;
+			}
+		  }
+
 		  // Create property access expression
 		  NetEProperty* prop_expr;
 		  if (current_expr == nullptr) {
 			// First property access - use the signal
-			prop_expr = new NetEProperty(sr.net, mem_pidx, nullptr);
+			prop_expr = new NetEProperty(sr.net, mem_pidx, prop_index);
 		  } else {
 			// Nested property access - use the previous expression
-			prop_expr = new NetEProperty(current_expr, mem_pidx, nullptr);
+			prop_expr = new NetEProperty(current_expr, mem_pidx, prop_index);
 		  }
 		  prop_expr->set_line(*this);
 		  current_expr = prop_expr;
 
 		  // If there are more path components, the current property must be a class type
 		  if (!member_path.empty()) {
-			current_class = dynamic_cast<const netclass_t*>(mem_ptype);
+			// For indexed dynamic arrays, get the element type
+			if (darray_type && prop_index) {
+			      current_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+			} else {
+			      current_class = dynamic_cast<const netclass_t*>(mem_ptype);
+			}
 			if (!current_class) {
 			      cerr << get_fileline() << ": error: "
 				   << "Property " << member_comp.name
@@ -3237,6 +3269,29 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			} else {
 			      cerr << get_fileline() << ": error: "
 				   << "Invalid index expression for associative array property." << endl;
+			      des->errors++;
+			}
+		  }
+	    }
+      } else if (dynamic_cast<const netdarray_t*>(tmp_type)) {
+	      // Dynamic array property access
+	    if (!comp.index.empty()) {
+		  if (comp.index.size() != 1) {
+			cerr << get_fileline() << ": error: "
+			     << "Dynamic arrays only support single index." << endl;
+			des->errors++;
+		  } else {
+			const index_component_t&idx = comp.index.front();
+			if (idx.msb && !idx.lsb) {
+			      canon_index = elab_and_eval(des, scope, idx.msb, -1);
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_member_: "
+					 << "Dynamic array property " << class_type->get_prop_name(pidx)
+					 << " index: " << *canon_index << endl;
+			      }
+			} else {
+			      cerr << get_fileline() << ": error: "
+				   << "Invalid index expression for dynamic array property." << endl;
 			      des->errors++;
 			}
 		  }

@@ -385,17 +385,35 @@ static ivl_type_t draw_lval_expr(ivl_lval_t lval)
       ivl_type_t sub_type = draw_lval_expr(lval_nest);
       assert(ivl_type_base(sub_type) == IVL_VT_CLASS);
 
-      if (ivl_lval_idx(lval_nest)) {
-	    fprintf(vvp_out, " ; XXXX Don't know how to handle ivl_lval_idx values here.\n");
-      }
-
       int prop_idx = ivl_lval_property_idx(lval_nest);
+      ivl_type_t prop_type = ivl_type_prop_type(sub_type, prop_idx);
+      ivl_expr_t nest_idx = ivl_lval_idx(lval_nest);
+
+      if (nest_idx && ivl_type_base(prop_type) == IVL_VT_DARRAY) {
+	    /* Property is a dynamic array with an index - access the element */
+	    ivl_type_t element_type = ivl_type_element(prop_type);
+
+	    /* Load the array index into a register */
+	    int idx_reg = allocate_word();
+	    draw_eval_expr_into_integer(nest_idx, idx_reg);
+
+	    /* Load the darray property */
+	    fprintf(vvp_out, "    %%prop/obj %d, 0; Load darray property %s\n", prop_idx,
+		    ivl_type_prop_name(sub_type, prop_idx));
+	    fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+
+	    /* Access the element at the index - pops darray, pushes element */
+	    fprintf(vvp_out, "    %%get/dar/obj/o %d; Load darray element\n", idx_reg);
+	    clr_word(idx_reg);
+
+	    return element_type;
+      }
 
       fprintf(vvp_out, "    %%prop/obj %d, 0; Load property %s\n", prop_idx,
 	      ivl_type_prop_name(sub_type, prop_idx));
       fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
 
-      return ivl_type_prop_type(sub_type, prop_idx);
+      return prop_type;
 }
 
 /*
@@ -1398,7 +1416,19 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 
       if (prop_idx >= 0) {
 	    ivl_type_t sig_type = draw_lval_expr(lval);
-	    ivl_type_t prop_type = ivl_type_prop_type(sig_type, prop_idx);
+
+	    /* Check if sig_type is already the final property type (e.g., darray).
+	       This happens when draw_lval_expr processed a nested l-value that
+	       included the property access. In that case, sig_type IS the property
+	       type, not the containing class. */
+	    ivl_type_t prop_type;
+	    if (ivl_type_base(sig_type) == IVL_VT_CLASS) {
+		  /* Normal case: sig_type is the containing class */
+		  prop_type = ivl_type_prop_type(sig_type, prop_idx);
+	    } else {
+		  /* sig_type is already the property type (nested l-value case) */
+		  prop_type = sig_type;
+	    }
 
 	    if (ivl_type_base(prop_type) == IVL_VT_BOOL ||
 	        ivl_type_base(prop_type) == IVL_VT_LOGIC) {
@@ -1468,14 +1498,46 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 
 	    } else if (ivl_type_base(prop_type) == IVL_VT_DARRAY) {
 
-		  int idx = 0;
+		  ivl_expr_t idx_expr = ivl_lval_idx(lval);
+		  if (idx_expr) {
+			/* Indexed assignment to darray element: arr[i] = value
+			   At this point, the containing class is on the object stack.
+			   We need to load the darray property, then store to element. */
+			ivl_type_t element_type = ivl_type_element(prop_type);
 
-		    /* The property is a darray, and there is no mux
-		       expression to the assignment is of an entire
-		       array object. */
-		  errors += draw_eval_object(rval);
-		  fprintf(vvp_out, "    %%store/prop/obj %d, %d; IVL_VT_DARRAY\n", prop_idx, idx);
-		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			/* Load the darray property onto stack.
+			   Only do this if sig_type is a class (meaning we haven't
+			   already loaded the darray via nested l-value). */
+			if (ivl_type_base(sig_type) == IVL_VT_CLASS) {
+			      fprintf(vvp_out, "    %%prop/obj %d, 0; Load darray property for indexed store\n", prop_idx);
+			      fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+			}
+
+			if (ivl_type_base(element_type) == IVL_VT_CLASS) {
+			      /* darray of class objects: arr[i] = obj
+			         Stack: [darray] -> evaluate rval -> [darray value]
+			         Use %set/dar/obj/o -> [darray] then pop darray */
+			      int idx = allocate_word();
+			      draw_eval_expr_into_integer(idx_expr, idx);
+			      errors += draw_eval_object(rval);
+			      fprintf(vvp_out, "    %%set/dar/obj/o %d; IVL_VT_DARRAY element (class)\n", idx);
+			      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			      clr_word(idx);
+			} else {
+			      /* darray of primitive types - use %set/dar/obj/vec4 */
+			      int idx = allocate_word();
+			      draw_eval_expr_into_integer(idx_expr, idx);
+			      draw_eval_vec4(rval);
+			      fprintf(vvp_out, "    %%set/dar/obj/vec4 %d; IVL_VT_DARRAY element (vec4)\n", idx);
+			      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			      clr_word(idx);
+			}
+		  } else {
+			/* Whole array assignment: arr = new[n] or arr = other_arr */
+			errors += draw_eval_object(rval);
+			fprintf(vvp_out, "    %%store/prop/obj %d, 0; IVL_VT_DARRAY (whole array)\n", prop_idx);
+			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  }
 
 	    } else if (ivl_type_base(prop_type) == IVL_VT_ASSOC) {
 		    /* Associative array property assignment */
