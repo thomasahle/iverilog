@@ -1707,6 +1707,10 @@ static int show_stmt_assign_vif_member(ivl_statement_t net)
  * For unpacked structs with packed members, we treat the whole struct
  * as a packed bit vector and compute member offsets. This is an interim
  * implementation that works for common use cases.
+ *
+ * This handles both:
+ * 1. Direct struct variable member access: my_struct.member = value
+ * 2. Class property struct member access: this.data.member = value
  */
 static int show_stmt_assign_struct_member(ivl_statement_t net)
 {
@@ -1716,6 +1720,7 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
       ivl_expr_t rval = ivl_stmt_rval(net);
       int member_idx = ivl_lval_struct_member_idx(lval);
       const char* member_name = ivl_lval_struct_member_name(lval);
+      int prop_idx = ivl_lval_property_idx(lval);
 
       if (!sig) {
             fprintf(stderr, "%s:%u: error: No signal for struct member assignment.\n",
@@ -1730,8 +1735,21 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
             return 1;
       }
 
+      /* For class property struct member access, get the property type */
+      ivl_type_t struct_type = sig_type;
+      int is_class_prop = 0;
+      if (ivl_type_base(sig_type) == IVL_VT_CLASS && prop_idx >= 0) {
+            struct_type = ivl_type_prop_type(sig_type, prop_idx);
+            is_class_prop = 1;
+            if (!struct_type) {
+                  fprintf(stderr, "%s:%u: error: Cannot get property type for class.\n",
+                          ivl_stmt_file(net), ivl_stmt_lineno(net));
+                  return 1;
+            }
+      }
+
       /* Get struct member info */
-      unsigned num_members = ivl_type_struct_members(sig_type);
+      unsigned num_members = ivl_type_struct_members(struct_type);
       if (num_members == 0) {
             fprintf(stderr, "%s:%u: error: Signal type is not a struct.\n",
                     ivl_stmt_file(net), ivl_stmt_lineno(net));
@@ -1745,8 +1763,8 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
       }
 
       /* Get member offset and width */
-      unsigned member_off = ivl_type_struct_member_offset(sig_type, member_idx);
-      ivl_type_t member_type = ivl_type_struct_member_type(sig_type, member_idx);
+      unsigned member_off = ivl_type_struct_member_offset(struct_type, member_idx);
+      ivl_type_t member_type = ivl_type_struct_member_type(struct_type, member_idx);
       unsigned member_wid = member_type ? ivl_type_packed_width(member_type) : 0;
 
       if (member_wid == 0) {
@@ -1756,17 +1774,28 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
             return 1;
       }
 
-      fprintf(vvp_out, "    ; Struct member assignment: %s (idx=%d, off=%u, wid=%u)\n",
-              member_name ? member_name : "?", member_idx, member_off, member_wid);
+      fprintf(vvp_out, "    ; Struct member assignment: %s (idx=%d, off=%u, wid=%u, class_prop=%d)\n",
+              member_name ? member_name : "?", member_idx, member_off, member_wid, is_class_prop);
 
       /* Evaluate the r-value expression */
       draw_eval_vec4(rval);
 
-      /* Load the member offset into an index register and store */
-      int offset_index = allocate_word();
-      fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
-      fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n", sig, offset_index, member_wid);
-      clr_word(offset_index);
+      if (is_class_prop) {
+            /* Class property struct member: load object, store to property with offset */
+            int offset_index = allocate_word();
+            fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+            fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
+            fprintf(vvp_out, "    %%store/prop/v/s %d, %d, %u; Store in struct property member\n",
+                    prop_idx, offset_index, member_wid);
+            fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+            clr_word(offset_index);
+      } else {
+            /* Direct struct: load member offset and store directly */
+            int offset_index = allocate_word();
+            fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
+            fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n", sig, offset_index, member_wid);
+            clr_word(offset_index);
+      }
 
       return errors;
 }

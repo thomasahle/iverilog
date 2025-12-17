@@ -1135,3 +1135,6 @@ sv_foreach_darray_prop_int	normal,-g2012		ivltests
 sv_foreach_darray_prop_nested	normal,-g2012		ivltests
 sv_darray_property_size	normal,-g2012		ivltests
 sv_interface_array_port	normal,-g2012		ivltests
+sv_interface_instance_shadow	normal,-g2012		ivltests
+sv_class_array_method	normal,-g2012		ivltests
+sv_struct_class_property	normal,-g2012		ivltests

@@ -1046,7 +1046,11 @@ NetFuncDef* Design::find_function(NetScope*scope, const pform_name_t&name)
 
 NetScope* Design::find_task(NetScope*scope, const pform_name_t&name)
 {
-      std::list<hname_t> eval_path = eval_scope_path(this, scope, name);
+	// Use report_errors=false because this is a speculative lookup.
+	// If the path contains variable indices (e.g., arr[i].method),
+	// it's probably a class method call, not a task scope reference.
+	// The caller will fall back to elaborate_method_ if we return 0.
+      std::list<hname_t> eval_path = eval_scope_path(this, scope, name, false);
       NetScope*task = find_scope(scope, eval_path, NetScope::TASK);
       if (task && (task->type() == NetScope::TASK))
 	    return task;

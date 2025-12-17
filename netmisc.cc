@@ -1225,7 +1225,8 @@ bool eval_as_double(double&value, NetExpr*expr)
  */
 hname_t eval_path_component(Design*des, NetScope*scope,
 			    const name_component_t&comp,
-			    bool&error_flag)
+			    bool&error_flag,
+			    bool report_errors)
 {
 	// No index expression, so the path component is an undecorated
 	// name, for example "foo".
@@ -1239,9 +1240,12 @@ hname_t eval_path_component(Design*des, NetScope*scope,
 	    const index_component_t&index = *cur;
 
 	    if (index.sel != index_component_t::SEL_BIT) {
-		  cerr << index.msb->get_fileline() << ": error: "
-		       << "Part select is not valid for this kind of object." << endl;
-		  des->errors += 1;
+		  if (report_errors) {
+			cerr << index.msb->get_fileline() << ": error: "
+			     << "Part select is not valid for this kind of object." << endl;
+			des->errors += 1;
+		  }
+		  error_flag = true;
 		  return hname_t(comp.name, 0);
 	    }
 
@@ -1259,15 +1263,18 @@ hname_t eval_path_component(Design*des, NetScope*scope,
 		  delete ctmp;
 		  continue;
 	    }
-#if 1
-	      // Darn, the expression doesn't evaluate to a constant. That's
-	      // an error to be reported. And make up a fake index value to
-	      // return to the caller.
-	    cerr << index.msb->get_fileline() << ": error: "
-		 << "Scope index expression is not constant: "
-		 << *index.msb << endl;
-	    des->errors += 1;
-#endif
+
+	      // The expression doesn't evaluate to a constant. For scope
+	      // path lookups (e.g. module instances) this is an error.
+	      // But for speculative lookups (e.g. find_task checking if
+	      // a path is a task before trying class method dispatch),
+	      // we silently set error_flag and let caller handle it.
+	    if (report_errors) {
+		  cerr << index.msb->get_fileline() << ": error: "
+		       << "Scope index expression is not constant: "
+		       << *index.msb << endl;
+		  des->errors += 1;
+	    }
 	    error_flag = true;
 
 	    delete tmp;
@@ -1277,7 +1284,8 @@ hname_t eval_path_component(Design*des, NetScope*scope,
 }
 
 std::list<hname_t> eval_scope_path(Design*des, NetScope*scope,
-				   const pform_name_t&path)
+				   const pform_name_t&path,
+				   bool report_errors)
 {
       bool path_error_flag = false;
       list<hname_t> res;
@@ -1286,7 +1294,7 @@ std::list<hname_t> eval_scope_path(Design*des, NetScope*scope,
 
       for (pform_path_it cur = path.begin() ; cur != path.end(); ++ cur ) {
 	    const name_component_t&comp = *cur;
-	    res.push_back( eval_path_component(des,scope,comp,path_error_flag) );
+	    res.push_back( eval_path_component(des,scope,comp,path_error_flag,report_errors) );
       }
 #if 0
       if (path_error_flag) {

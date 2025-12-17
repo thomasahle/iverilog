@@ -412,12 +412,16 @@ bool eval_as_double(double&value, NetExpr*expr);
 
 /*
  * Evaluate an entire scope path in the context of the given scope.
+ * If report_errors is false, errors from non-constant indices will not
+ * be reported (useful for speculative lookups like find_task).
  */
 extern std::list<hname_t> eval_scope_path(Design*des, NetScope*scope,
-					  const pform_name_t&path);
+					  const pform_name_t&path,
+					  bool report_errors = true);
 extern hname_t eval_path_component(Design*des, NetScope*scope,
 				   const name_component_t&comp,
-				   bool&error_flag);
+				   bool&error_flag,
+				   bool report_errors = true);
 
 /*
  * If this scope is contained within a class scope (i.e. a method of a

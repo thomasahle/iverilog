@@ -3216,13 +3216,49 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 					  sel->set_line(*this);
 					  current_expr = sel;
 				    } else {
-					  // Unpacked struct member access through class property
-					  // is not yet supported for r-value (expressions)
-					  cerr << get_fileline() << ": sorry: "
-					       << "Reading unpacked struct members through class property "
-					       << "is not yet supported." << endl;
-					  des->errors += 1;
-					  return nullptr;
+					  // For unpacked struct with packed members, we can still
+					  // use the same approach - members are stored contiguously
+					  long pw = struct_type->packed_width();
+					  if (pw > 0) {
+						// Get member index for consistent offset calculation
+						int member_idx = struct_type->member_idx_from_name(struct_member_comp.name);
+						if (member_idx < 0) {
+						      cerr << get_fileline() << ": error: "
+							   << "No member '" << struct_member_comp.name
+							   << "' in struct type." << endl;
+						      des->errors += 1;
+						      return nullptr;
+						}
+						const netstruct_t::member_t* member = struct_type->get_member(member_idx);
+						ivl_assert(*this, member);
+
+						// Compute offset by summing widths of all preceding members
+						// This matches the l-value code (member 0 at offset 0)
+						unsigned long off = 0;
+						for (int i = 0; i < member_idx; ++i) {
+						      const netstruct_t::member_t* m = struct_type->get_member(i);
+						      if (m && m->net_type) {
+							    long wid = m->net_type->packed_width();
+							    if (wid > 0)
+								  off += wid;
+						      }
+						}
+
+						long member_wid = member->net_type->packed_width();
+						// Create a part select expression for the struct member
+						NetESelect* sel = new NetESelect(current_expr,
+										 new NetEConst(verinum(off)),
+										 member_wid, IVL_SEL_OTHER);
+						sel->set_line(*this);
+						current_expr = sel;
+					  } else {
+						// True unpacked struct with unpacked members
+						cerr << get_fileline() << ": sorry: "
+						     << "Reading unpacked struct members (with unpacked element types) "
+						     << "through class property is not yet supported." << endl;
+						des->errors += 1;
+						return nullptr;
+					  }
 				    }
 
 				    // Check for nested struct access
@@ -4166,8 +4202,34 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return 0;
 	    }
 
-	    // Create expression to load the property from 'this'
-	    NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+	    // Check if this is an array access with an index in path_head
+	    // For arr[i].inner.get_val(), we need to create arr[i] first, then .inner
+	    NetExpr*base_expr = 0;
+	    bool is_array_access = false;
+	    if (this_net->unpacked_dimensions() > 0 || this_net->darray_type()) {
+		  // Check if path_head has an index expression
+		  if (!search_results.path_head.empty() &&
+		      !search_results.path_head.back().index.empty()) {
+			const index_component_t&use_index = search_results.path_head.back().index.back();
+			if (use_index.msb != 0) {
+			      NetExpr*word_index = elab_and_eval(des, scope, use_index.msb, -1, false);
+			      if (word_index) {
+				    NetESignal*sig_expr = new NetESignal(this_net, word_index);
+				    sig_expr->set_line(*this);
+				    base_expr = sig_expr;
+				    is_array_access = true;
+			      }
+			}
+		  }
+	    }
+
+	    // Create expression to load the property from 'this' (or array element)
+	    NetEProperty*prop_expr;
+	    if (is_array_access && base_expr) {
+		  prop_expr = new NetEProperty(base_expr, prop_idx);
+	    } else {
+		  prop_expr = new NetEProperty(this_net, prop_idx);
+	    }
 	    prop_expr->set_line(*this);
 
 	    // Build parameter list for the method call
@@ -4228,9 +4290,90 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 
       NetExpr* sub_expr = 0;
       if (search_results.net) {
-	    NetESignal*tmp = new NetESignal(search_results.net);
-	    tmp->set_line(*this);
-	    sub_expr = tmp;
+	    NetNet*net = search_results.net;
+
+	    // Check for arrays of class objects with an index
+	    // e.g., arr[i].inner.get_val() where arr is outer_class arr[4] or arr[]
+	    NetExpr*word_index = 0;
+	    bool is_class_array = false;
+
+	    if (net->darray_type()) {
+		  // Dynamic array of class objects
+		  const netdarray_t*darray_type = net->darray_type();
+		  if (dynamic_cast<const netclass_t*>(darray_type->element_type())) {
+			is_class_array = true;
+		  }
+	    } else if (net->unpacked_dimensions() > 0 && net->data_type() == IVL_VT_CLASS) {
+		  // Static array of class objects
+		  is_class_array = true;
+	    }
+
+	    if (is_class_array && !search_results.path_head.empty() &&
+		!search_results.path_head.back().index.empty()) {
+		  // Elaborate the array index expression
+		  const index_component_t&use_index = search_results.path_head.back().index.back();
+		  if (use_index.msb != 0) {
+			word_index = elab_and_eval(des, scope, use_index.msb, -1, false);
+		  }
+	    }
+
+	    if (word_index) {
+		  NetESignal*tmp = new NetESignal(net, word_index);
+		  tmp->set_line(*this);
+		  sub_expr = tmp;
+	    } else {
+		  NetESignal*tmp = new NetESignal(net);
+		  tmp->set_line(*this);
+		  sub_expr = tmp;
+	    }
+
+	    // For class array method calls like arr[i].inner.get_val(),
+	    // we need to traverse the property chain in path_tail.
+	    // path_tail contains ["inner", "get_val"] where "get_val" is the method.
+	    if (is_class_array && word_index && search_results.path_tail.size() > 1) {
+		  // Get the element class type
+		  const netclass_t*current_class = 0;
+		  if (net->darray_type()) {
+			const netdarray_t*darray_type = net->darray_type();
+			current_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+		  } else {
+			current_class = dynamic_cast<const netclass_t*>(net->net_type());
+		  }
+
+		  // Traverse properties in path_tail except the last (method name)
+		  pform_name_t::const_iterator tail_it = search_results.path_tail.begin();
+		  pform_name_t::const_iterator tail_end = search_results.path_tail.end();
+		  --tail_end; // Skip the method name at the end
+
+		  while (current_class && tail_it != tail_end) {
+			perm_string prop_name = tail_it->name;
+			int pidx = current_class->property_idx_from_name(prop_name);
+
+			if (pidx < 0) {
+			      // Not a property - stop traversal
+			      break;
+			}
+
+			// Create property access expression
+			NetEProperty*prop_expr = new NetEProperty(sub_expr, pidx);
+			prop_expr->set_line(*this);
+			sub_expr = prop_expr;
+
+			// Get the property type for further traversal
+			ivl_type_t prop_type = current_class->get_prop_type(pidx);
+			const netclass_t* next_class = dynamic_cast<const netclass_t*>(prop_type);
+			if (next_class) {
+			      current_class = next_class;
+			      // Update search_results.type to reflect the new class
+			      search_results.type = next_class;
+			} else {
+			      // Property is not a class - can't traverse further
+			      break;
+			}
+
+			++tail_it;
+		  }
+	    }
       }
 
       // Queue variable with a select expression. The type of this expression
@@ -4433,9 +4576,8 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    vector<NetExpr*> parms(def->port_count());
 	    if (!is_static) {
 		  // Non-static method: first parameter is 'this'
-		  NetESignal*ethis = new NetESignal(net);
-		  ethis->set_line(*this);
-		  parms[0] = ethis;
+		  // Use sub_expr which already has the proper array index (if any)
+		  parms[0] = sub_expr;
 	    }
 
 	    elaborate_arguments_(des, scope, def, false, parms, args_offset);
@@ -6345,7 +6487,42 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
 						expr, {});
 	    }
 
+	    // Fallback: Check if this is an interface instance member access.
+	    // This can happen when an interface instance is used as a port argument,
+	    // which may create a signal that shadows the interface scope.
 	    if (! sr.path_tail.empty()) {
+		  // Try to find an interface scope with the same name as the signal
+		  perm_string base_name = peek_tail_name(sr.path_head);
+		  const NetScope* iface_scope = 0;
+
+		  // Search for interface scope by instance name in scope hierarchy
+		  for (NetScope* search = scope; search && !iface_scope; search = search->parent()) {
+			const NetScope* child_scope = search->child(hname_t(base_name));
+			if (child_scope && child_scope->is_interface()) {
+			      iface_scope = child_scope;
+			}
+		  }
+
+		  if (iface_scope) {
+			// Found an interface scope - try to access the member
+			ivl_assert(*this, sr.path_tail.size() >= 1);
+			name_component_t member_comp = sr.path_tail.front();
+
+			NetNet* member_sig = const_cast<NetScope*>(iface_scope)->find_signal(member_comp.name);
+			if (member_sig) {
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr: "
+					 << "Interface instance " << base_name
+					 << " member access via fallback: " << member_comp.name << endl;
+			      }
+
+			      NetESignal* sig_expr = new NetESignal(member_sig);
+			      sig_expr->set_line(*this);
+			      return sig_expr;
+			}
+		  }
+
+		  // No interface scope or member not found - report error
 		  cerr << get_fileline() << ": error: Variable "
 		       << sr.path_head
 		       << " does not have a field named: "

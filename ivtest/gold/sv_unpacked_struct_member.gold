@@ -1,4 +1,4 @@
-./ivltests/sv_unpacked_struct_member.sv:6: warning: Unpacked structs parsed but not yet fully supported.
+./ivltests/sv_unpacked_struct_member.v:6: warning: Unpacked structs parsed but not yet fully supported.
 Wrote s.a=AA, s.b=BBBB, s.c=CCCCCCCC
 Wrote s.a=12, s.b=3456, s.c=789ABCDE
 Zeroed struct members

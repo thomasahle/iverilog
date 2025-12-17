@@ -374,6 +374,56 @@ NetAssign_* PEIdent::elaborate_lval(Design*des,
 	    }
       }
 
+	// Fallback: Check if this is an interface instance member l-value.
+	// This can happen when an interface instance is used as a port argument,
+	// which may create a wire that shadows the interface scope.
+      if (!member_path.empty()) {
+	    perm_string base_name = peek_tail_name(sr.path_head);
+	    const NetScope* iface_scope = 0;
+
+	    // Search for interface scope by instance name in scope hierarchy
+	    for (NetScope* search = scope; search && !iface_scope; search = search->parent()) {
+		  const NetScope* child_scope = search->child(hname_t(base_name));
+		  if (child_scope && child_scope->is_interface()) {
+			iface_scope = child_scope;
+		  }
+	    }
+
+	    if (iface_scope) {
+		  // Found an interface scope - try to access the member
+		  ivl_assert(*this, member_path.size() >= 1);
+		  name_component_t member_comp = member_path.front();
+
+		  NetNet* member_sig = const_cast<NetScope*>(iface_scope)->find_signal(member_comp.name);
+		  if (member_sig) {
+			// Check that the member signal is assignable (reg type)
+			if ((member_sig->type() != NetNet::REG)
+			    && ((member_sig->type() != NetNet::UNRESOLVED_WIRE) || !member_sig->coerced_to_uwire())
+			    && !is_force) {
+			      cerr << get_fileline() << ": error: '"
+			           << iface_scope->module_name() << "." << member_comp.name
+			           << "' is not a valid l-value for a procedural assignment."
+			           << endl;
+			      cerr << member_sig->get_fileline() << ":      : '"
+			           << member_comp.name << "' is declared as a "
+			           << member_sig->type() << " in the interface." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_lval: "
+			           << "Interface instance " << base_name
+			           << " member l-value via fallback: " << member_comp.name << endl;
+			}
+
+			// Create a direct l-value reference to the interface member signal
+			NetAssign_*lv = new NetAssign_(member_sig);
+			return lv;
+		  }
+	    }
+      }
+
 	/* We are elaborating procedural assignments. Wires are not allowed
 	   unless this is the l-value of a force. */
       if ((reg->type() != NetNet::REG)
