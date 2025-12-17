@@ -156,13 +156,53 @@ ivl_variable_type_t netstruct_t::base_type() const
 
 bool netstruct_t::test_compatibility(ivl_type_t that) const
 {
+      if (!packed_) {
+	    // For unpacked structs, use structural equivalence
+	    // This allows typedef'd structs from different scopes to match
+	    return test_equivalence(that);
+      }
       return packed_type_compatible(that);
 }
 
 bool netstruct_t::test_equivalence(ivl_type_t that) const
 {
-      if (!packed_)
-	    return this == that;
+      if (!packed_) {
+	    // For unpacked structs, implement structural equivalence
+	    // This allows typedef'd structs from different scopes to match
+	    const netstruct_t*that_s = dynamic_cast<const netstruct_t*>(that);
+	    if (!that_s)
+		  return false;
+
+	    // Must also be unpacked
+	    if (that_s->packed())
+		  return false;
+
+	    // Check union flag matches
+	    if (union_ != that_s->union_flag())
+		  return false;
+
+	    // Check same number of members
+	    if (members_.size() != that_s->member_count())
+		  return false;
+
+	    // Check each member has same name and equivalent type
+	    for (size_t idx = 0; idx < members_.size(); ++idx) {
+		  const member_t*m1 = &members_[idx];
+		  const member_t*m2 = that_s->get_member(idx);
+		  if (!m2)
+			return false;
+
+		  // Names must match
+		  if (m1->name != m2->name)
+			return false;
+
+		  // Types must be equivalent
+		  if (!m1->net_type->type_equivalent(m2->net_type))
+			return false;
+	    }
+
+	    return true;
+      }
 
       return packed_types_equivalent(this, that);
 }
