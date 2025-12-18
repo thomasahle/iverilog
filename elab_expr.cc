@@ -4354,6 +4354,17 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      if (next_class) {
 				    current_class = next_class;
 			      } else {
+				    // Check if this is an enum type followed by a method call
+				    const netenum_t* enum_type = dynamic_cast<const netenum_t*>(comp_prop_type);
+				    if (enum_type && !remaining_tail.empty()) {
+					  // Get the enum method name from remaining_tail
+					  perm_string enum_method = remaining_tail.front().name;
+					  pform_scoped_name_t use_path;
+					  use_path.name.push_back(name_component_t(comp_name));
+					  return check_for_enum_methods(this, des, scope,
+									enum_type, use_path,
+									enum_method, base_expr, parms_);
+				    }
 				    break;
 			      }
 			}
@@ -4498,6 +4509,25 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				   << "' not yet supported." << endl;
 			      des->errors += 1;
 			      return 0;
+			}
+
+			// Handle enum property followed by method (e.g., obj.enum_prop.name())
+			if (const netenum_t*next_enum = dynamic_cast<const netenum_t*>(next_prop_type)) {
+			      // Create expression to load the first property
+			      NetNet*this_net = search_results.net;
+			      NetEProperty*first_prop = new NetEProperty(this_net, prop_idx);
+			      first_prop->set_line(*this);
+
+			      // Create expression to load the enum property from first property
+			      NetEProperty*enum_prop = new NetEProperty(first_prop, next_prop_idx);
+			      enum_prop->set_line(*this);
+
+			      // Call the enum method handler
+			      pform_scoped_name_t use_path;
+			      use_path.name.push_back(name_component_t(method_name));
+			      return check_for_enum_methods(this, des, scope,
+							   next_enum, use_path,
+							   final_method, enum_prop, parms_);
 			}
 		  }
 	    }
