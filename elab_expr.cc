@@ -4128,7 +4128,13 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    if (func && func->type() == NetScope::FUNC) {
 					  // Build function call
 					  NetFuncDef* func_def = func->func_def();
-					  ivl_assert(*this, func_def);
+					  if (!func_def) {
+						cerr << get_fileline() << ": error: "
+						     << "Function " << comp_name << " has no definition "
+						     << "(extern declaration without body)." << endl;
+						des->errors += 1;
+						return 0;
+					  }
 
 					  NetExpr* use_this = 0;
 					  if (func_def->port_count() > 0) {
@@ -4186,7 +4192,13 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			NetScope* func = current_class->method_from_name(method_name);
 			if (func && func->type() == NetScope::FUNC) {
 			      NetFuncDef* func_def = func->func_def();
-			      ivl_assert(*this, func_def);
+			      if (!func_def) {
+				    cerr << get_fileline() << ": error: "
+					 << "Function " << method_name << " has no definition "
+					 << "(extern declaration without body)." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
 
 			      NetExpr* use_this = 0;
 			      if (func_def->port_count() > 0) {
@@ -4218,7 +4230,13 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			NetScope* func = current_class->method_from_name(method_name);
 			if (func && func->type() == NetScope::FUNC) {
 			      NetFuncDef* func_def = func->func_def();
-			      ivl_assert(*this, func_def);
+			      if (!func_def) {
+				    cerr << get_fileline() << ": error: "
+					 << "Function " << method_name << " has no definition "
+					 << "(extern declaration without body)." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
 
 			      NetExpr* use_this = 0;
 			      if (func_def->port_count() > 0) {
@@ -4729,10 +4747,22 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    }
 
 	    const NetFuncDef*def = method->func_def();
-	    ivl_assert(*this, def);
+	    if (!def) {
+		  cerr << get_fileline() << ": error: "
+		       << "Method " << method_name << " of class " << class_type->get_name()
+		       << " has no definition (extern declaration without body)." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
 
 	    NetNet*res = method->find_signal(method->basename());
-	    ivl_assert(*this, res);
+	    if (!res) {
+		  cerr << get_fileline() << ": internal error: "
+		       << "Method " << method_name << " of class " << class_type->get_name()
+		       << " has no return signal." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
 
 	    // Check if this is a static method (no 'this' parameter)
 	    bool is_static = true;
