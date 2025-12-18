@@ -6362,7 +6362,10 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 	    find_property_in_class(*this, scope, simple_name, class_scope, class_property);
       }
 
-	// Handle explicit this.property syntax (array_var_.size() == 2)
+	// Handle explicit this.property or obj.property syntax (array_var_.size() == 2)
+      // Also tracks intermediate object for nested property access (e.g., this.prop1.prop2)
+      NetNet*intermediate_obj_net = 0;
+      int intermediate_property = -1;
       if (array_sig == 0 && class_scope == 0 && array_var_.size() == 2) {
 	    perm_string first_name = array_var_.front().name;
 	    if (first_name == perm_string::literal(THIS_TOKEN)) {
@@ -6371,6 +6374,53 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 		  ++it;  // Skip "this"
 		  perm_string prop_name = it->name;
 		  find_property_in_class(*this, scope, prop_name, class_scope, class_property);
+	    } else {
+		  // obj.property - first try as local variable
+		  pform_name_t obj_name;
+		  obj_name.push_back(name_component_t(first_name));
+		  NetNet*obj_sig = des->find_signal(scope, obj_name);
+		  if (obj_sig && obj_sig->net_type()) {
+			const netclass_t*obj_class = dynamic_cast<const netclass_t*>(obj_sig->net_type());
+			if (obj_class) {
+			      pform_name_t::const_iterator it = array_var_.begin();
+			      ++it;  // Skip object name
+			      perm_string prop_name = it->name;
+			      class_property = obj_class->property_idx_from_name(prop_name);
+			      if (class_property >= 0) {
+				    class_scope = obj_class;
+			      }
+			}
+		  } else {
+			// Not a local variable - try as property of 'this'
+			// Pattern: foreach(this_prop.nested_prop[i])
+			const netclass_t*this_class = 0;
+			int this_prop_idx = -1;
+			find_property_in_class(*this, scope, first_name, this_class, this_prop_idx);
+			if (this_class && this_prop_idx >= 0) {
+			      // Found first component as property of 'this'
+			      ivl_type_t first_prop_type = this_class->get_prop_type(this_prop_idx);
+			      const netclass_t*nested_class = dynamic_cast<const netclass_t*>(first_prop_type);
+			      if (nested_class) {
+				    // First property is a class - look up second component
+				    pform_name_t::const_iterator it = array_var_.begin();
+				    ++it;  // Skip first property name
+				    perm_string nested_prop_name = it->name;
+				    class_property = nested_class->property_idx_from_name(nested_prop_name);
+				    if (class_property >= 0) {
+					  class_scope = nested_class;
+					  // Track the intermediate object for code generation
+					  intermediate_property = this_prop_idx;
+					  // Find 'this' signal
+					  NetScope*this_scope = scope;
+					  while (this_scope && intermediate_obj_net == 0) {
+						intermediate_obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+						if (intermediate_obj_net == 0)
+						      this_scope = this_scope->parent();
+					  }
+				    }
+			      }
+			}
+		  }
 	    }
       }
 
@@ -6417,18 +6467,41 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 			return 0;
 		  }
 
-		  // Find the 'this' signal - search through parent scopes
-		  // (needed for unnamed blocks within class methods)
-		  NetNet*this_net = 0;
-		  NetScope*this_scope = scope;
-		  while (this_scope && this_net == 0) {
-			this_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
-			if (this_net == 0)
-			      this_scope = this_scope->parent();
+		  // Find the object signal that owns this property
+		  // Could be 'this' (implicit or explicit) or an object variable
+		  NetNet*obj_net = 0;
+		  if (array_var_.size() == 1) {
+			// Simple name: property of 'this'
+			NetScope*this_scope = scope;
+			while (this_scope && obj_net == 0) {
+			      obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+			      if (obj_net == 0)
+				    this_scope = this_scope->parent();
+			}
+		  } else if (array_var_.size() >= 2) {
+			perm_string first_name = array_var_.front().name;
+			if (first_name == perm_string::literal(THIS_TOKEN)) {
+			      // Explicit this.property
+			      NetScope*this_scope = scope;
+			      while (this_scope && obj_net == 0) {
+				    obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+				    if (obj_net == 0)
+					  this_scope = this_scope->parent();
+			      }
+			} else {
+			      // obj.property - try as local variable first
+			      pform_name_t obj_name;
+			      obj_name.push_back(name_component_t(first_name));
+			      obj_net = des->find_signal(scope, obj_name);
+			      // If not found, use intermediate_obj_net for nested property case
+			      if (obj_net == 0 && intermediate_obj_net != 0) {
+				    obj_net = intermediate_obj_net;
+			      }
+			}
 		  }
-		  if (this_net == 0) {
+		  if (obj_net == 0) {
 			cerr << get_fileline() << ": internal error: "
-			     << "Unable to find 'this' in scope for foreach on property "
+			     << "Unable to find object signal for foreach on property "
 			     << array_var_ << endl;
 			des->errors += 1;
 			return 0;
@@ -6441,7 +6514,18 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 		  ivl_assert(*this, idx_sig);
 
 		  // Create property expression for the dynamic array
-		  NetEProperty*prop_expr = new NetEProperty(this_net, class_property);
+		  // For nested property access (e.g., this.prop1.prop2), use intermediate expression
+		  NetEProperty*prop_expr;
+		  if (intermediate_property >= 0 && intermediate_obj_net != 0) {
+			// Nested property: create expression for intermediate object first
+			NetEProperty*intermediate_expr = new NetEProperty(obj_net, intermediate_property);
+			intermediate_expr->set_line(*this);
+			// Then create nested expression for the array property
+			prop_expr = new NetEProperty(intermediate_expr, class_property);
+		  } else {
+			// Direct property access
+			prop_expr = new NetEProperty(obj_net, class_property);
+		  }
 		  prop_expr->set_line(*this);
 
 		  // Create index variable expression for the condition
