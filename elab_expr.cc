@@ -3023,9 +3023,10 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
       const name_component_t comp = sr.path_tail.front();
 
       if (debug_elaborate) {
-	    cerr << get_fileline() << ": PEIdent::elaborate_expr: "
-		 << "Ident " << sr.path_head
-		 << " look for property " << comp << endl;
+	    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_field_: "
+		 << "path_head=" << sr.path_head
+		 << ", path_tail.size()=" << sr.path_tail.size()
+		 << ", comp=" << comp << endl;
       }
 
       if (sr.path_tail.size() > 1) {
@@ -3039,9 +3040,85 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 		  name_component_t member_comp = member_path.front();
 		  member_path.pop_front();
 
-		  // Check for virtual interface access
+		  // Check for property or method access
 		  int mem_pidx = current_class->property_idx_from_name(member_comp.name);
 		  if (mem_pidx < 0) {
+			// Property not found - check if this is the last element
+			// and could be a method call without parentheses
+			if (member_path.empty()) {
+			      // This is the last path component - check for method
+			      NetScope* func = current_class->method_from_name(member_comp.name);
+			      if (func && func->type() == NetScope::FUNC) {
+				    NetFuncDef* func_def = func->func_def();
+				    if (!func_def) {
+					  cerr << get_fileline() << ": error: "
+					       << "Function " << member_comp.name << " has no definition "
+					       << "(extern declaration without body)." << endl;
+					  des->errors += 1;
+					  return nullptr;
+				    }
+
+				    // Build the function call with 'this' arg and default values
+				    unsigned parm_count = func_def->port_count();
+				    vector<NetExpr*> argv(parm_count);
+
+				    // Track which index is 'this' (usually 0)
+				    unsigned this_idx = UINT_MAX;
+
+				    // First pass: find and set 'this' parameter
+				    for (unsigned idx = 0; idx < parm_count; idx++) {
+					  if (func_def->port(idx) &&
+					      func_def->port(idx)->name() == perm_string::literal(THIS_TOKEN)) {
+						this_idx = idx;
+						if (current_expr) {
+						      argv[idx] = current_expr;
+						} else if (sr.net) {
+						      // Use the original class signal
+						      NetESignal* sig_expr = new NetESignal(sr.net);
+						      sig_expr->set_line(*this);
+						      argv[idx] = sig_expr;
+						}
+						break;
+					  }
+				    }
+
+				    // Second pass: fill in default values for all other parameters
+				    bool missing_required = false;
+				    for (unsigned idx = 0; idx < parm_count; idx++) {
+					  if (idx == this_idx)
+						continue;
+
+					  if (func_def->port_defe(idx)) {
+						argv[idx] = func_def->port_defe(idx)->dup_expr();
+					  } else {
+						cerr << get_fileline() << ": error: "
+						     << "Method '" << member_comp.name
+						     << "' has parameter without default value, "
+						     << "cannot call without parentheses." << endl;
+						des->errors += 1;
+						missing_required = true;
+					  }
+				    }
+
+				    if (missing_required)
+					  return nullptr;
+
+				    NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
+				    if (!ret_sig) {
+					  cerr << get_fileline() << ": error: "
+					       << "Method '" << member_comp.name << "' has no return signal." << endl;
+					  des->errors += 1;
+					  return nullptr;
+				    }
+				    NetESignal* ret_expr = new NetESignal(ret_sig);
+				    ret_expr->set_line(*this);
+
+				    NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+				    call->set_line(*this);
+				    return call;
+			      }
+			}
+
 			cerr << get_fileline() << ": error: "
 			     << "Class " << current_class->get_name()
 			     << " has no property " << member_comp.name << "." << endl;
@@ -3296,6 +3373,12 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 	    // SystemVerilog allows calling methods without parentheses when
 	    // all parameters have default values.
 	    NetScope* func = class_type->method_from_name(comp.name);
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": debug: method_from_name('"
+		       << comp.name << "') on class " << class_type->get_name()
+		       << " returned " << (func ? func->basename().str() : "NULL")
+		       << endl;
+	    }
 	    if (func && func->type() == NetScope::FUNC) {
 		  NetFuncDef* func_def = func->func_def();
 		  if (!func_def) {
