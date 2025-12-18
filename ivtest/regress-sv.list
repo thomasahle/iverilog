@@ -1147,3 +1147,4 @@ sv_method_no_parens		normal,-g2012		ivltests
 sv_method_default_param		normal,-g2012		ivltests
 sv_method_inherit_default		normal,-g2012		ivltests
 sv_method_nested_access		normal,-g2012		ivltests
+sv_cross_pkg_static	normal,-g2012	ivltests gold=sv_cross_pkg_static.gold

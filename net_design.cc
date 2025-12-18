@@ -29,6 +29,7 @@
  */
 
 # include  "netlist.h"
+# include  "netclass.h"
 # include  "netscalar.h"
 # include  "netvector.h"
 # include  "util.h"
@@ -254,6 +255,25 @@ NetScope* Design::find_scope_(NetScope*scope, const std::list<hname_t>&path,
 			if (found_scope)
 			      found_scope = found_scope->child(key);
 		  }
+		    // If still not found, search all packages for a class
+		    // with this name. This handles wildcard imports where
+		    // the class isn't explicitly registered.
+		  if (found_scope == 0) {
+			perm_string class_name = key.peek_name();
+			list<NetScope*> pkg_list = find_package_scopes();
+			for (list<NetScope*>::iterator it = pkg_list.begin()
+			       ; it != pkg_list.end() ; ++it) {
+			      NetScope*pkg_scope = *it;
+			      netclass_t*class_type = pkg_scope->find_class(this, class_name);
+			      if (class_type) {
+				    const NetScope*class_scope = class_type->class_scope();
+				    if (class_scope) {
+					  found_scope = const_cast<NetScope*>(class_scope);
+					  break;
+				    }
+			      }
+			}
+		  }
 		  scope = found_scope;
 		  if (scope == 0) break;
 	    }
@@ -334,6 +354,25 @@ NetScope* Design::find_scope_(NetScope*scope, const hname_t&path,
 	    found_scope = scope->find_import(this, path.peek_name());
 	    if (found_scope)
 		  found_scope = found_scope->child(path);
+      }
+	// If still not found, search all packages for a class
+	// with this name. This handles wildcard imports where
+	// the class isn't explicitly registered.
+      if (found_scope == 0) {
+	    perm_string class_name = path.peek_name();
+	    list<NetScope*> pkg_list = find_package_scopes();
+	    for (list<NetScope*>::iterator it = pkg_list.begin()
+		   ; it != pkg_list.end() ; ++it) {
+		  NetScope*pkg_scope = *it;
+		  netclass_t*class_type = pkg_scope->find_class(this, class_name);
+		  if (class_type) {
+			const NetScope*class_scope = class_type->class_scope();
+			if (class_scope) {
+			      found_scope = const_cast<NetScope*>(class_scope);
+			      break;
+			}
+		  }
+	    }
       }
       return found_scope;
 }
