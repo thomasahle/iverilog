@@ -316,6 +316,7 @@ void pform_set_this_class(const struct vlltype&loc, PTaskFunc*net)
 	// The pform_make_task_ports() function deletes the this_name
 	// object.
 
+      ivl_assert(loc, !this_port->empty());
       ivl_assert(loc, this_port->at(0).defe == 0);
       PWire*this_wire = this_port->at(0).port;
       delete this_port;

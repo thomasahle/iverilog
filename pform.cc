@@ -743,6 +743,9 @@ PFunction* pform_start_external_function(const struct vlltype&loc,
       // Apply qualifiers from extern declaration if available.
       // This propagates virtual, static, and other qualifiers from the
       // class's extern declaration to the out-of-body method definition.
+      // We must reset the static flag first, since it may have been set
+      // by a previous extern declaration in the class.
+      pform_reset_method_static();
       if (class_scope->type) {
 	    std::map<perm_string, property_qualifier_t>::iterator quals_it =
 	          class_scope->type->extern_method_quals.find(fname);
@@ -750,7 +753,8 @@ PFunction* pform_start_external_function(const struct vlltype&loc,
 		  property_qualifier_t quals = quals_it->second;
 		  if (quals.test_virtual())
 			func->set_virtual(true);
-		  // Note: static methods are handled via pform_set_this_class
+		  if (quals.test_static())
+			pform_set_method_static(true);
 		  // protected/local are currently not stored in PTaskFunc
 	    }
       }
@@ -816,6 +820,9 @@ PTask* pform_start_external_task(const struct vlltype&loc,
       // Apply qualifiers from extern declaration if available.
       // This propagates virtual, static, and other qualifiers from the
       // class's extern declaration to the out-of-body method definition.
+      // We must reset the static flag first, since it may have been set
+      // by a previous extern declaration in the class.
+      pform_reset_method_static();
       if (class_scope->type) {
 	    std::map<perm_string, property_qualifier_t>::iterator quals_it =
 	          class_scope->type->extern_method_quals.find(tname);
@@ -823,7 +830,8 @@ PTask* pform_start_external_task(const struct vlltype&loc,
 		  property_qualifier_t quals = quals_it->second;
 		  if (quals.test_virtual())
 			task->set_virtual(true);
-		  // Note: static methods are handled via pform_set_this_class
+		  if (quals.test_static())
+			pform_set_method_static(true);
 		  // protected/local are currently not stored in PTaskFunc
 	    }
       }
