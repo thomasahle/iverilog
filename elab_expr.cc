@@ -2819,39 +2819,100 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 				   << endl;
 			}
 
+			// Try to evaluate the last index - first without requiring constant
+			// to avoid triggering errors, then check if result is constant
+			const index_component_t& last_idx = member_comp.index.back();
+			NetExpr* idx_expr = elab_and_eval(des, scope, last_idx.msb, -1, false);
 			long tail_off = 0;
-			unsigned long tail_wid = 0;
-			rc = calculate_part(li, des, scope, member_comp.index.back(), tail_off, tail_wid);
-			if (! rc) return 0;
+			bool is_constant_idx = (idx_expr && eval_as_long(tail_off, idx_expr));
 
-			if (debug_elaborate) {
-			      cerr << li->get_fileline() << ": check_for_struct_member: "
-				   << "calculate_part for tail returns tail_off=" << tail_off
-				   << ", tail_wid=" << tail_wid
-				   << endl;
+			if (is_constant_idx) {
+			      // Constant index - use existing logic
+			      delete idx_expr;
+			      unsigned long tail_wid = (last_idx.sel == index_component_t::SEL_BIT) ? 1 : 0;
+			      if (last_idx.lsb && last_idx.sel != index_component_t::SEL_BIT) {
+				    NetExpr* lsb_expr = elab_and_eval(des, scope, last_idx.lsb, -1, true);
+				    long lsb_val;
+				    if (lsb_expr && eval_as_long(lsb_val, lsb_expr)) {
+					  if (tail_off >= lsb_val)
+						tail_wid = tail_off - lsb_val + 1;
+					  else
+						tail_wid = lsb_val - tail_off + 1;
+					  tail_off = (tail_off >= lsb_val) ? lsb_val : tail_off;
+				    }
+				    delete lsb_expr;
+			      } else if (last_idx.sel == index_component_t::SEL_BIT) {
+				    tail_wid = 1;
+			      }
+
+			      if (debug_elaborate) {
+				    cerr << li->get_fileline() << ": check_for_struct_member: "
+					 << "constant tail_off=" << tail_off
+					 << ", tail_wid=" << tail_wid
+					 << endl;
+			      }
+
+			      // Now use the prefix_to_slice function to calculate the
+			      // offset and width of the addressed slice
+			      long loff;
+			      unsigned long lwid;
+			      prefix_to_slice(mem_packed_dims, prefix_indices, tail_off, loff, lwid);
+
+			      if (debug_elaborate) {
+				    cerr << li->get_fileline() << ": check_for_struct_members: "
+					 << "Calculate loff=" << loff << " lwid=" << lwid
+					 << " tail_off=" << tail_off << " tail_wid=" << tail_wid
+					 << " off=" << off << " use_width=" << use_width
+					 << endl;
+			      }
+
+			      off += loff;
+			      use_width = lwid * tail_wid;
+			} else {
+			      // Variable index - create runtime bit-select
+			      delete idx_expr;
+			      idx_expr = elab_and_eval(des, scope, last_idx.msb, -1, false);
+			      if (idx_expr == 0) {
+				    cerr << li->get_fileline() << ": error: "
+					 << "Cannot elaborate index expression." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+
+			      // Calculate member offset (without variable index)
+			      long loff;
+			      unsigned long lwid;
+			      prefix_to_slice(mem_packed_dims, prefix_indices, 0, loff, lwid);
+
+			      // Total member offset = struct position + member slice offset
+			      off += loff;
+
+			      // Use index expression width for the add result width
+			      // (need enough bits to hold the bit index)
+			      unsigned add_width = idx_expr->expr_width();
+			      if (add_width < 32) add_width = 32;
+
+			      if (debug_elaborate) {
+				    cerr << li->get_fileline() << ": check_for_struct_members: "
+					 << "Variable index: member at off=" << off
+					 << ", add_width=" << add_width
+					 << endl;
+			      }
+
+			      // Create struct signal + offset expression
+			      NetESignal*sig = new NetESignal(net);
+			      NetExpr*base_offset = make_const_val(off);
+
+			      // Add variable index to base offset using proper width
+			      NetEBAdd*var_base = new NetEBAdd('+', base_offset, idx_expr, add_width, true);
+			      var_base->set_line(*li);
+
+			      // Create bit-select with width 1
+			      NetESelect*sel = new NetESelect(sig, var_base, 1, member_type);
+			      sel->set_line(*li);
+
+			      return sel;
 			}
-
-
-			  // Now use the prefix_to_slice function to calculate the
-			  // offset and width of the addressed slice
-			  // of the member. The lwid comming out of
-			  // the prefix_to_slice is the number of
-			  // elements, and should be 1. The tmp_wid it
-			  // the bit with of the result.
-			long loff;
-			unsigned long lwid;
-			prefix_to_slice(mem_packed_dims, prefix_indices, tail_off, loff, lwid);
-
-			if (debug_elaborate) {
-			      cerr << li->get_fileline() << ": check_for_struct_members: "
-				   << "Calculate loff=" << loff << " lwid=" << lwid
-				   << " tail_off=" << tail_off << " tail_wid=" << tail_wid
-				   << " off=" << off << " use_width=" << use_width
-				   << endl;
-			}
-
-			off += loff;
-			use_width = lwid * tail_wid;
 		  }
 
 		    // The netvector_t only has atom elements, so
