@@ -59,7 +59,11 @@ class class_type : public __vpiHandle {
 	// Set the details about the property. This is used during
 	// parse of the .vvp file to fill in the details of the
 	// property for the class definition.
-      void set_property(size_t idx, const std::string&name, const std::string&type, uint64_t array_size);
+	// rand_flag: 0=normal, 1=rand, 2=randc
+      void set_property(size_t idx, const std::string&name, const std::string&type, uint64_t array_size, int rand_flag = 0);
+
+	// Check if property is rand/randc (for randomize())
+      bool property_is_rand(size_t pid) const;
 
 	// This method is called after all the properties are
 	// defined. This calculates information about the definition.
@@ -106,6 +110,7 @@ class class_type : public __vpiHandle {
       struct prop_t {
 	    std::string name;
 	    class_property_t*type;
+	    int rand_flag;  // 0=normal, 1=rand, 2=randc
       };
       std::vector<prop_t> properties_;
       size_t instance_size_;

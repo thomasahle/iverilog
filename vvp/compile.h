@@ -562,7 +562,8 @@ extern void compile_island_tranvp(char*island, char*ba, char*bb,
 extern void delete_udp_symbols(void);
 
 extern void compile_class_start(char*lab, char*nam, unsigned nprop, char*parent_lab);
-extern void compile_class_property(unsigned idx, char*nam, char*typ, uint64_t array_size);
+/* rand_flag: 0=normal, 1=rand, 2=randc */
+extern void compile_class_property(unsigned idx, char*nam, char*typ, uint64_t array_size, int rand_flag);
 extern void compile_class_done(void);
 extern void compile_class_resolve_parents(void);
 

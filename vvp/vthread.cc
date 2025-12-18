@@ -6524,12 +6524,11 @@ static bool do_release_vec(vvp_code_t cp, bool net_flag)
 /*
  * %randomize
  *
- * Pop a class object from the object stack, randomize all its vec4 properties,
+ * Pop a class object from the object stack, randomize its 'rand' properties,
  * and push 1 (success) to the vec4 stack.
  *
- * NOTE: This is a simplified implementation that randomizes ALL vec4 properties.
- * A full implementation would only randomize properties marked with the 'rand'
- * qualifier and would respect constraints.
+ * Only properties marked with 'rand' or 'randc' qualifier are randomized.
+ * TODO: Respect constraints
  */
 bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 {
@@ -6547,10 +6546,13 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       const class_type* defn = cobj->get_class_type();
       size_t nprop = defn->property_count();
 
-      // Randomize each property
-      // TODO: Only randomize properties marked with 'rand' qualifier
+      // Randomize each property marked with 'rand' or 'randc'
       // TODO: Respect constraints
       for (size_t i = 0; i < nprop; i++) {
+	    // Only randomize properties marked with 'rand' or 'randc'
+	    if (!defn->property_is_rand(i))
+		  continue;
+
 	    // Only randomize vec4-compatible properties (skip strings, objects, etc.)
 	    if (!defn->property_supports_vec4(i))
 		  continue;

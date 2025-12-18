@@ -3467,6 +3467,18 @@ extern "C" ivl_type_t ivl_type_prop_type(ivl_type_t net, int idx)
       return class_type->get_prop_type(idx);
 }
 
+extern "C" int ivl_type_prop_rand(ivl_type_t net, int idx)
+{
+      if (idx < 0) return 0;
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (!class_type) return 0;
+
+      property_qualifier_t qual = class_type->get_prop_qual(idx);
+      if (qual.test_randc()) return 2;
+      if (qual.test_rand()) return 1;
+      return 0;
+}
+
 extern "C" ivl_type_t ivl_type_super(ivl_type_t net)
 {
       const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);

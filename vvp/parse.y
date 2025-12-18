@@ -96,6 +96,7 @@ static struct __vpiModPath*modpath_dst = 0;
 %token K_PART_V K_PART_V_S K_PORT K_PORT_INFO K_PV K_REDUCE_AND K_REDUCE_OR K_REDUCE_XOR
 %token K_REDUCE_NAND K_REDUCE_NOR K_REDUCE_XNOR K_REPEAT
 %token K_RESOLV K_RTRAN K_RTRANIF0 K_RTRANIF1
+%token K_RAND K_RANDC
 %token K_SCOPE K_SFUNC K_SFUNC_E K_SHIFTL K_SHIFTR K_SHIFTRS
 %token K_SUBSTITUTE
 %token K_THREAD K_TIMESCALE K_TRAN K_TRANIF0 K_TRANIF1 K_TRANVP
@@ -119,7 +120,7 @@ static struct __vpiModPath*modpath_dst = 0;
 %type <flag>  local_flag
 %type <vpi_enum> port_type
 %type <numb>  signed_t_number
-%type <numb>  dimension dimensions dimensions_opt
+%type <numb>  dimension dimensions dimensions_opt rand_opt
 %type <symb>  symbol symbol_opt
 %type <symbv> symbols symbols_net
 %type <numbv> numbers
@@ -935,8 +936,14 @@ class_properties
   ;
 
 class_property
-  : T_NUMBER ':' T_STRING ',' T_STRING dimensions_opt
-      { compile_class_property($1, $3, $5, $6); }
+  : T_NUMBER ':' T_STRING ',' T_STRING dimensions_opt rand_opt
+      { compile_class_property($1, $3, $5, $6, $7); }
+  ;
+
+rand_opt
+  : K_RAND  { $$ = 1; }
+  | K_RANDC { $$ = 2; }
+  |         { $$ = 0; }
   ;
 
 /*

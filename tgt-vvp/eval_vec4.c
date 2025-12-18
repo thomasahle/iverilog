@@ -930,7 +930,13 @@ static void draw_property_vec4(ivl_expr_t expr)
 
       if (array_idx) {
 	    // Check if property is an associative array or dynamic array
-	    ivl_type_t class_type = sig ? ivl_signal_net_type(sig) : NULL;
+	    // For nested access, get the class type from the base expression's net_type
+	    ivl_type_t class_type;
+	    if (base) {
+		  class_type = ivl_expr_net_type(base);
+	    } else {
+		  class_type = sig ? ivl_signal_net_type(sig) : NULL;
+	    }
 	    ivl_type_t prop_type = class_type ? ivl_type_prop_type(class_type, pidx) : NULL;
 
 	    if (prop_type && ivl_type_base(prop_type) == IVL_VT_ASSOC) {

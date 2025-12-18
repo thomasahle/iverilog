@@ -334,6 +334,10 @@ inline uint64_t strtouint64(const char*str, char**endptr, int base)
  "/MIXED"  { return K_PORT_MIXED; }
  "/NODIR"  { return K_PORT_NODIR; }
 
+  /* Keywords for class property qualifiers */
+"rand"   { return K_RAND; }
+"randc"  { return K_RANDC; }
+
   /* Symbols are pretty much what is left. They are used to refer to
      labels so the rule must match a string that a label would match. */
 [.$_a-zA-Z\\]([.$_a-zA-Z\\0-9/]|(\\.))* {

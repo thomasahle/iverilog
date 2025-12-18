@@ -2437,6 +2437,8 @@ extern const char* ivl_type_name(ivl_type_t net);
 extern int         ivl_type_properties(ivl_type_t net);
 extern const char* ivl_type_prop_name(ivl_type_t net, int idx);
 extern ivl_type_t  ivl_type_prop_type(ivl_type_t net, int idx);
+/* Return 1 if property is 'rand', 2 if 'randc', 0 otherwise */
+extern int         ivl_type_prop_rand(ivl_type_t net, int idx);
 extern ivl_type_t  ivl_type_super(ivl_type_t net);
 
 /* Struct member access functions.

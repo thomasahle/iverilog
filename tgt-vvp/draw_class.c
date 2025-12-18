@@ -129,9 +129,13 @@ void draw_class_in_scope(ivl_type_t classtype)
       fprintf(vvp_out, "\n");
 
       for (idx = 0 ; idx < ivl_type_properties(classtype) ; idx += 1) {
+	    int rand_flag = ivl_type_prop_rand(classtype, idx);
+	    const char* rand_str = "";
+	    if (rand_flag == 1) rand_str = " rand";
+	    else if (rand_flag == 2) rand_str = " randc";
 	    fprintf(vvp_out, " %3d: \"%s\", ", idx, ivl_type_prop_name(classtype,idx));
 	    show_prop_type(ivl_type_prop_type(classtype,idx));
-	    fprintf(vvp_out, "\n");
+	    fprintf(vvp_out, "%s\n", rand_str);
       }
 
       fprintf(vvp_out, " ;\n");

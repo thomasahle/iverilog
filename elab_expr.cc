@@ -3022,13 +3022,6 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
       const netclass_t *class_type = dynamic_cast<const netclass_t*>(sr.type);
       const name_component_t comp = sr.path_tail.front();
 
-      if (debug_elaborate) {
-	    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_field_: "
-		 << "path_head=" << sr.path_head
-		 << ", path_tail.size()=" << sr.path_tail.size()
-		 << ", comp=" << comp << endl;
-      }
-
       if (sr.path_tail.size() > 1) {
 	    // Handle nested property access (e.g., this.req.cmd)
 	    // Iterate through the path, building up nested NetEProperty expressions
@@ -3211,14 +3204,16 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			des->errors += 1;
 		  }
 
-		  // Check for dynamic array indexing
+		  // Check for dynamic array or associative array indexing
 		  NetExpr* prop_index = nullptr;
 		  const netdarray_t* darray_type = dynamic_cast<const netdarray_t*>(mem_ptype);
-		  if (darray_type && !member_comp.index.empty()) {
-			// Elaborate the index expression for dynamic array access
+		  const netassoc_t* assoc_type = dynamic_cast<const netassoc_t*>(mem_ptype);
+		  if ((darray_type || assoc_type) && !member_comp.index.empty()) {
+			// Elaborate the index expression for array access
 			if (member_comp.index.size() != 1) {
 			      cerr << get_fileline() << ": error: "
-				   << "Dynamic arrays only support single index." << endl;
+				   << (darray_type ? "Dynamic" : "Associative")
+				   << " arrays only support single index." << endl;
 			      des->errors += 1;
 			      return nullptr;
 			}
@@ -3227,13 +3222,16 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			      prop_index = elab_and_eval(des, scope, idx.msb, -1, false);
 			} else {
 			      cerr << get_fileline() << ": error: "
-				   << "Invalid index expression for dynamic array." << endl;
+				   << "Invalid index expression for "
+				   << (darray_type ? "dynamic" : "associative")
+				   << " array." << endl;
 			      des->errors += 1;
 			      return nullptr;
 			}
 			if (debug_elaborate) {
 			      cerr << get_fileline() << ": PEIdent::elaborate_expr_class_field_: "
-				   << "Dynamic array index for property " << member_comp.name
+				   << (darray_type ? "Dynamic" : "Associative")
+				   << " array index for property " << member_comp.name
 				   << ": " << *prop_index << endl;
 			}
 		  }
@@ -3252,9 +3250,11 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 
 		  // If there are more path components, the current property must be a class or struct type
 		  if (!member_path.empty()) {
-			// For indexed dynamic arrays, get the element type
+			// For indexed arrays, get the element type
 			if (darray_type && prop_index) {
 			      current_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+			} else if (assoc_type && prop_index) {
+			      current_class = dynamic_cast<const netclass_t*>(assoc_type->element_type());
 			} else {
 			      current_class = dynamic_cast<const netclass_t*>(mem_ptype);
 			}
@@ -6195,22 +6195,11 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 		  return elaborate_expr_class_field_(des, scope, sr, 0, flags);
 	    }
 
-	    // Debug: print type info for interface port investigation
-	    if (sr.net && sr.type) {
-		  cerr << get_fileline() << ": DEBUG TYPE: path=" << path_
-		       << ", sr.type=" << (sr.type ? typeid(*sr.type).name() : "null")
-		       << ", path_tail.size()=" << sr.path_tail.size()
-		       << endl;
-	    }
-
 	    // Handle interface port member access: intf.signal
 	    // Interface ports are compile-time bindings, not runtime virtual interfaces.
 	    // We need to find the bound interface instance and access its member directly.
 	    if (const netvirtual_interface_t*vif_type =
 	            dynamic_cast<const netvirtual_interface_t*>(sr.type)) {
-		  cerr << get_fileline() << ": DEBUG INTF: vif detected, path_head=" << sr.path_head
-		       << ", path_tail.size()=" << sr.path_tail.size()
-		       << ", scope=" << scope_path(scope) << endl;
 		  if (debug_elaborate) {
 			cerr << get_fileline() << ": PEIdent::elaborate_expr(ntype): "
 			     << "Interface port " << sr.path_head
@@ -6225,16 +6214,8 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 		  // Get the port name from sr.path_head
 		  perm_string port_name = peek_tail_name(sr.path_head);
 
-		  cerr << get_fileline() << ": DEBUG member access: port_name=" << port_name
-		       << ", scope=" << scope_path(scope) << endl;
-
 		  // First, check for stored interface port binding
 		  iface_inst = scope->get_interface_port_binding(port_name);
-
-		  if (iface_inst)
-			cerr << get_fileline() << ": DEBUG: binding lookup result=" << scope_path(iface_inst) << endl;
-		  else
-			cerr << get_fileline() << ": DEBUG: binding lookup result=null" << endl;
 
 		  // If no explicit binding, look in parent scope (where instantiation happens)
 		  if (!iface_inst) {
@@ -6501,12 +6482,6 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
 				 unsigned expr_wid, unsigned flags) const
 {
       ivl_assert(*this, scope);
-
-      if (debug_elaborate) {
-	    cerr << get_fileline() << ": PEIdent::elaborate_expr: "
-		 << "path_=" << path_
-		 << endl;
-      }
 
       if (path_.size() > 1) {
             if (NEED_CONST & flags) {

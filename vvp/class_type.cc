@@ -449,10 +449,11 @@ class_type::~class_type()
 	    delete properties_[idx].type;
 }
 
-void class_type::set_property(size_t idx, const string&name, const string&type, uint64_t array_size)
+void class_type::set_property(size_t idx, const string&name, const string&type, uint64_t array_size, int rand_flag)
 {
       assert(idx < properties_.size());
       properties_[idx].name = name;
+      properties_[idx].rand_flag = rand_flag;
 
       if (type == "b8")
 	    properties_[idx].type = new property_atom<uint8_t>(array_size);
@@ -562,6 +563,13 @@ bool class_type::property_supports_vec4(size_t pid) const
       if (pid >= properties_.size())
 	    return false;
       return properties_[pid].type->supports_vec4();
+}
+
+bool class_type::property_is_rand(size_t pid) const
+{
+      if (pid >= properties_.size())
+	    return false;
+      return properties_[pid].rand_flag != 0;  // 1=rand, 2=randc
 }
 
 void class_type::set_real(class_type::inst_t obj, size_t pid,
@@ -702,10 +710,10 @@ void compile_class_resolve_parents(void)
       deferred_parents.clear();
 }
 
-void compile_class_property(unsigned idx, char*nam, char*typ, uint64_t array_size)
+void compile_class_property(unsigned idx, char*nam, char*typ, uint64_t array_size, int rand_flag)
 {
       assert(compile_class);
-      compile_class->set_property(idx, nam, typ, array_size);
+      compile_class->set_property(idx, nam, typ, array_size, rand_flag);
       delete[]nam;
       delete[]typ;
 }
