@@ -1143,3 +1143,6 @@ sv_func_output_arg	normal,-g2012		ivltests
 sv_static_method	normal,-g2012		ivltests
 sv_file_scope_import	normal,-g2012		ivltests
 sv_class_array_method	normal,-g2012		ivltests
+sv_method_no_parens		normal,-g2012		ivltests
+sv_method_default_param		normal,-g2012		ivltests
+sv_method_inherit_default		normal,-g2012		ivltests

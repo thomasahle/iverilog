@@ -1,0 +1,6 @@
+Test 1 - base sprint: Base{id=1}
+Test 2 - derived sprint: Derived{id=2, name=derived_test}
+Test 3 - grandchild sprint: Grandchild{id=3, name=grand_test, pri=10}
+Test 4 - inherited get_id: 2
+Test 5 - grandchild inherited get_id: 3
+PASSED

@@ -3292,6 +3292,93 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 
       int pidx = class_type->property_idx_from_name(comp.name);
       if (pidx < 0) {
+	    // Property not found - check if it's a method call without parentheses
+	    // SystemVerilog allows calling methods without parentheses when
+	    // all parameters have default values.
+	    NetScope* func = class_type->method_from_name(comp.name);
+	    if (func && func->type() == NetScope::FUNC) {
+		  NetFuncDef* func_def = func->func_def();
+		  if (!func_def) {
+			cerr << get_fileline() << ": error: "
+			     << "Function " << comp.name << " has no definition "
+			     << "(extern declaration without body)." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Build the 'this' expression from sr.net (if available)
+		  NetExpr* this_expr = nullptr;
+		  if (sr.net) {
+			NetESignal* sig_expr = new NetESignal(sr.net);
+			sig_expr->set_line(*this);
+			this_expr = sig_expr;
+		  }
+
+		  // Build the function call with 'this' arg and default values
+		  // for other parameters
+		  unsigned parm_count = func_def->port_count();
+		  vector<NetExpr*> argv(parm_count);
+
+		  // Track which index is 'this' (usually 0)
+		  unsigned this_idx = UINT_MAX;
+
+		  // First pass: find and set 'this' parameter
+		  for (unsigned idx = 0; idx < parm_count; idx++) {
+			if (func_def->port(idx) &&
+			    func_def->port(idx)->name() == perm_string::literal(THIS_TOKEN)) {
+			      this_idx = idx;
+			      if (this_expr) {
+				    argv[idx] = this_expr;
+			      } else {
+				    cerr << get_fileline() << ": error: "
+					 << "Cannot call method '" << comp.name
+					 << "' without parentheses on non-signal expression." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+			      break;
+			}
+		  }
+
+		  // Second pass: fill in default values for all other parameters
+		  bool missing_required = false;
+		  for (unsigned idx = 0; idx < parm_count; idx++) {
+			if (idx == this_idx)
+			      continue;  // Already handled
+
+			// Check if this parameter has a default value
+			if (func_def->port_defe(idx)) {
+			      argv[idx] = func_def->port_defe(idx)->dup_expr();
+			} else {
+			      // Parameter has no default - can't call without parens
+			      cerr << get_fileline() << ": error: "
+				   << "Method '" << comp.name
+				   << "' has parameter without default value, "
+				   << "cannot call without parentheses." << endl;
+			      des->errors += 1;
+			      missing_required = true;
+			}
+		  }
+
+		  if (missing_required)
+			return 0;
+
+		  NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
+		  if (!ret_sig) {
+			cerr << get_fileline() << ": error: "
+			     << "Method '" << comp.name << "' has no return signal." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetESignal* ret_expr = new NetESignal(ret_sig);
+		  ret_expr->set_line(*this);
+
+		  NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+		  call->set_line(*this);
+		  return call;
+	    }
+
+	    // Not a property and not a method
 	    cerr << get_fileline() << ": error: "
 		 << "Class " << class_type->get_name()
 		 << " has no property " << comp.name << "." << endl;

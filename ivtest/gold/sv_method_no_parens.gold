@@ -1,0 +1,3 @@
+sprint result: Packet{data=42}
+get_data result: 42
+PASSED

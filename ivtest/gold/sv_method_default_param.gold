@@ -1,0 +1,5 @@
+Test 1 - sprint: Transaction{id=100, name=test_txn}
+Test 2 - format: test_txn
+Test 3 - get_adjusted_id: 100
+Test 4 - expression: PASSED
+PASSED
