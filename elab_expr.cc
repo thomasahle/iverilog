@@ -4529,6 +4529,56 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 							   next_enum, use_path,
 							   final_method, enum_prop, parms_);
 			}
+
+			// Handle class property followed by method (e.g., obj.inner_class_prop.method())
+			if (const netclass_t*next_class = dynamic_cast<const netclass_t*>(next_prop_type)) {
+			      // Find the method in the nested class
+			      NetScope*method_scope = next_class->method_from_name(final_method);
+			      if (method_scope && method_scope->type() == NetScope::FUNC) {
+				    NetFuncDef*func_def = method_scope->func_def();
+				    if (!func_def) {
+					  cerr << get_fileline() << ": error: "
+					       << "Function " << final_method << " has no definition." << endl;
+					  des->errors += 1;
+					  return 0;
+				    }
+
+				    // Create expression to load the first property
+				    NetNet*this_net = search_results.net;
+				    NetEProperty*first_prop = new NetEProperty(this_net, prop_idx);
+				    first_prop->set_line(*this);
+
+				    // Create expression to load the nested class property
+				    NetEProperty*nested_prop = new NetEProperty(first_prop, next_prop_idx);
+				    nested_prop->set_line(*this);
+
+				    // Build the function call
+				    NetExpr*use_this = 0;
+				    if (func_def->port_count() > 0) {
+					  NetNet*first_port = func_def->port(0);
+					  if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+						use_this = nested_prop;
+					  }
+				    }
+
+				    unsigned parm_count = func_def->port_count();
+				    unsigned first_arg = use_this ? 1 : 0;
+				    vector<NetExpr*> argv(parm_count);
+				    if (use_this) argv[0] = use_this;
+				    for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
+					  const named_pexpr_t& parm = parms_[idx];
+					  if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+				    }
+
+				    NetNet*ret_sig = const_cast<NetNet*>(func_def->return_sig());
+				    NetESignal*ret_expr = new NetESignal(ret_sig);
+				    ret_expr->set_line(*this);
+
+				    NetEUFunc*call = new NetEUFunc(scope, method_scope, ret_expr, argv, false);
+				    call->set_line(*this);
+				    return call;
+			      }
+			}
 		  }
 	    }
 

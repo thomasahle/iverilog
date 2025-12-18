@@ -1150,3 +1150,4 @@ sv_method_nested_access		normal,-g2012		ivltests
 sv_cross_pkg_static	normal,-g2012	ivltests gold=sv_cross_pkg_static.gold
 sv_extern_constructor	normal	ivltests
 sv_enum_nested_prop	normal	ivltests
+sv_nested_class_method	normal	ivltests
