@@ -1189,9 +1189,10 @@ package uvm_pkg;
   // ============================================================================
   class __ivl_covergroup;
     // Sample method - called to sample coverage
-    // Accepts any number of arguments (in practice, covergroup sample methods
-    // are parameterized, but we use a generic signature here)
-    virtual function void sample();
+    // Uses default arguments to accept various argument counts commonly used
+    // in covergroup sample() calls (no actual coverage tracking)
+    virtual function void sample(uvm_object arg1=null, uvm_object arg2=null,
+                                  uvm_object arg3=null, uvm_object arg4=null);
       // No-op: coverage sampling not implemented
     endfunction
 

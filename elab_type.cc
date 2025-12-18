@@ -263,9 +263,22 @@ ivl_type_t covergroup_type_t::elaborate_type_raw(Design*des, NetScope*scope) con
 {
       // Try to find the __ivl_covergroup stub class
       perm_string stub_name = perm_string::literal("__ivl_covergroup");
+
+      // First try in current scope
       netclass_t* stub_class = scope->find_class(des, stub_name);
       if (stub_class) {
             return stub_class;
+      }
+
+      // Search in all package scopes (e.g., uvm_pkg)
+      list<NetScope*> pkg_list = des->find_package_scopes();
+      for (list<NetScope*>::iterator it = pkg_list.begin()
+             ; it != pkg_list.end() ; ++it) {
+            NetScope*pkg_scope = *it;
+            stub_class = pkg_scope->find_class(des, stub_name);
+            if (stub_class) {
+                  return stub_class;
+            }
       }
 
       // If not found, emit a warning and return a simple integer type
