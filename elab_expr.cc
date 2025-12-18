@@ -4075,6 +4075,178 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			return sys_expr;
 		  }
 
+		  // General handling for chained property/function access on darray properties
+		  // Handles patterns like: arr[i].func(), arr[i].member.func(), etc.
+		  // Build the initial property expression
+		  NetExpr* base_expr = 0;
+		  const netclass_t* current_class = 0;
+
+		  // Process the first component
+		  NetExpr* first_index = 0;
+		  if (!search_results.path_tail.front().index.empty()) {
+			const index_component_t& use_index = search_results.path_tail.front().index.back();
+			if (use_index.msb != 0) {
+			      first_index = elab_and_eval(des, scope, use_index.msb, -1, false);
+			}
+		  }
+
+		  // Create initial property access
+		  NetNet*this_net = search_results.net;
+		  base_expr = new NetEProperty(this_net, prop_idx, first_index);
+		  base_expr->set_line(*this);
+
+		  // Determine class type after first property access
+		  if (first_index) {
+			current_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+		  }
+
+		  // If we have more path components, traverse them
+		  if (current_class && search_results.path_tail.size() > 1) {
+			pform_name_t remaining_tail = search_results.path_tail;
+			remaining_tail.pop_front(); // Skip first component
+
+			while (!remaining_tail.empty()) {
+			      const name_component_t& comp = remaining_tail.front();
+			      perm_string comp_name = comp.name;
+
+			      // Elaborate index if present
+			      NetExpr* word_index = 0;
+			      if (!comp.index.empty()) {
+				    const index_component_t& use_index = comp.index.back();
+				    if (use_index.msb != 0) {
+					  word_index = elab_and_eval(des, scope, use_index.msb, -1, false);
+				    }
+			      }
+
+			      remaining_tail.pop_front();
+
+			      // Look up property in current class
+			      int comp_pidx = current_class->property_idx_from_name(comp_name);
+			      if (comp_pidx < 0) {
+				    // Not a property - must be the function name
+				    NetScope* func = current_class->method_from_name(comp_name);
+				    if (func && func->type() == NetScope::FUNC) {
+					  // Build function call
+					  NetFuncDef* func_def = func->func_def();
+					  ivl_assert(*this, func_def);
+
+					  NetExpr* use_this = 0;
+					  if (func_def->port_count() > 0) {
+						NetNet* first_port = func_def->port(0);
+						if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+						      use_this = base_expr;
+						}
+					  }
+
+					  unsigned parm_count = func_def->port_count();
+					  unsigned first_arg = use_this ? 1 : 0;
+					  vector<NetExpr*> argv(parm_count);
+					  if (use_this) argv[0] = use_this;
+					  for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
+						const named_pexpr_t& parm = parms_[idx];
+						if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+					  }
+
+					  NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
+					  NetESignal* ret_expr = new NetESignal(ret_sig);
+					  ret_expr->set_line(*this);
+
+					  NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+					  call->set_line(*this);
+					  return call;
+				    }
+				    break;
+			      }
+
+			      // Create nested property expression
+			      ivl_type_t comp_prop_type = current_class->get_prop_type(comp_pidx);
+			      base_expr = new NetEProperty(base_expr, comp_pidx, word_index);
+			      base_expr->set_line(*this);
+
+			      // Update current_class
+			      const netclass_t* next_class = 0;
+			      if (word_index) {
+				    const netdarray_t* comp_darray = dynamic_cast<const netdarray_t*>(comp_prop_type);
+				    if (comp_darray) {
+					  next_class = dynamic_cast<const netclass_t*>(comp_darray->element_type());
+				    }
+			      }
+			      if (!next_class) {
+				    next_class = dynamic_cast<const netclass_t*>(comp_prop_type);
+			      }
+
+			      if (next_class) {
+				    current_class = next_class;
+			      } else {
+				    break;
+			      }
+			}
+
+			// Check for function in final class
+			NetScope* func = current_class->method_from_name(method_name);
+			if (func && func->type() == NetScope::FUNC) {
+			      NetFuncDef* func_def = func->func_def();
+			      ivl_assert(*this, func_def);
+
+			      NetExpr* use_this = 0;
+			      if (func_def->port_count() > 0) {
+				    NetNet* first_port = func_def->port(0);
+				    if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+					  use_this = base_expr;
+				    }
+			      }
+
+			      unsigned parm_count = func_def->port_count();
+			      unsigned first_arg = use_this ? 1 : 0;
+			      vector<NetExpr*> argv(parm_count);
+			      if (use_this) argv[0] = use_this;
+			      for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
+				    const named_pexpr_t& parm = parms_[idx];
+				    if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+			      }
+
+			      NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
+			      NetESignal* ret_expr = new NetESignal(ret_sig);
+			      ret_expr->set_line(*this);
+
+			      NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+			      call->set_line(*this);
+			      return call;
+			}
+		  } else if (current_class) {
+			// Simple case: arr[i].func()
+			NetScope* func = current_class->method_from_name(method_name);
+			if (func && func->type() == NetScope::FUNC) {
+			      NetFuncDef* func_def = func->func_def();
+			      ivl_assert(*this, func_def);
+
+			      NetExpr* use_this = 0;
+			      if (func_def->port_count() > 0) {
+				    NetNet* first_port = func_def->port(0);
+				    if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+					  use_this = base_expr;
+				    }
+			      }
+
+			      unsigned parm_count = func_def->port_count();
+			      unsigned first_arg = use_this ? 1 : 0;
+			      vector<NetExpr*> argv(parm_count);
+			      if (use_this) argv[0] = use_this;
+			      for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
+				    const named_pexpr_t& parm = parms_[idx];
+				    if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+			      }
+
+			      NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
+			      NetESignal* ret_expr = new NetESignal(ret_sig);
+			      ret_expr->set_line(*this);
+
+			      NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+			      call->set_line(*this);
+			      return call;
+			}
+		  }
+
 		  cerr << get_fileline() << ": sorry: "
 		       << "Dynamic array method '" << method_name
 		       << "' on class property '" << prop_name

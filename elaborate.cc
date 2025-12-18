@@ -4186,6 +4186,17 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		       << *net->net_type() << endl;
 	    cerr << get_fileline() << ": PCallTask::elaborate_method_: "
 		 << net->name() << ".data_type() --> " << net->data_type() << endl;
+	    cerr << get_fileline() << ": PCallTask::elaborate_method_: EARLY DEBUG "
+		 << "sr.type=" << (sr.type ? "set" : "null")
+		 << ", sr.path_tail.empty()=" << sr.path_tail.empty()
+		 << ", sr.path_head.size()=" << sr.path_head.size()
+		 << endl;
+	    if (!sr.path_tail.empty()) {
+		  cerr << get_fileline() << ": PCallTask::elaborate_method_: EARLY DEBUG "
+		       << "sr.path_tail.front().name=" << sr.path_tail.front().name
+		       << ", has_index=" << !sr.path_tail.front().index.empty()
+		       << endl;
+	    }
       }
 
       // Is this a method of a "string" type?
@@ -4357,7 +4368,19 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  pform_name_t remaining_tail = sr.path_tail;
 
 		  while (!remaining_tail.empty()) {
-			perm_string prop_name = remaining_tail.front().name;
+			// Capture the current component including any index
+			const name_component_t& comp = remaining_tail.front();
+			perm_string prop_name = comp.name;
+
+			// Elaborate index expression if present (for array access)
+			NetExpr* word_index = 0;
+			if (!comp.index.empty()) {
+			      const index_component_t& use_index = comp.index.back();
+			      if (use_index.msb != 0) {
+				    word_index = elab_and_eval(des, scope, use_index.msb, -1, false);
+			      }
+			}
+
 			remaining_tail.pop_front();
 
 			int pidx = current_class->property_idx_from_name(prop_name);
@@ -4395,12 +4418,23 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			// Get the property type and build nested property expression
 			ivl_type_t prop_type = current_class->get_prop_type(pidx);
 
-			// Create property access expression
-			base_expr = new NetEProperty(base_expr, pidx);
+			// Create property access expression with optional index
+			base_expr = new NetEProperty(base_expr, pidx, word_index);
 			base_expr->set_line(*this);
 
 			// Check if property type is a class for further traversal
-			const netclass_t* next_class = dynamic_cast<const netclass_t*>(prop_type);
+			// Handle darray element type when indexed
+			const netclass_t* next_class = 0;
+			if (word_index) {
+			      const netdarray_t* darray_type = dynamic_cast<const netdarray_t*>(prop_type);
+			      if (darray_type) {
+				    next_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+			      }
+			}
+			if (!next_class) {
+			      next_class = dynamic_cast<const netclass_t*>(prop_type);
+			}
+
 			if (next_class) {
 			      current_class = next_class;
 			} else {
@@ -4439,11 +4473,29 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
       }
 
       // Check for queue property methods on class objects (e.g., obj.queue_prop.push_back())
+      if (debug_elaborate) {
+	    cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+		 << "sr.type=" << (sr.type ? "set" : "null")
+		 << ", sr.path_tail.empty()=" << sr.path_tail.empty()
+		 << endl;
+	    if (!sr.path_tail.empty()) {
+		  cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+		       << "sr.path_tail.front().name=" << sr.path_tail.front().name
+		       << endl;
+	    }
+      }
       if (const netclass_t*class_type = dynamic_cast<const netclass_t*>(sr.type)) {
 	    // If path_tail is not empty, the first element is a property name
 	    if (!sr.path_tail.empty()) {
 		  perm_string prop_name = sr.path_tail.front().name;
 		  int pidx = class_type->property_idx_from_name(prop_name);
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+			     << "class_type=" << class_type->get_name()
+			     << ", prop_name=" << prop_name
+			     << ", pidx=" << pidx
+			     << endl;
+		  }
 		  if (pidx >= 0) {
 			ivl_type_t prop_type = class_type->get_prop_type(pidx);
 			const netqueue_t* queue_type = dynamic_cast<const netqueue_t*>(prop_type);
@@ -4486,6 +4538,170 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 								       parm_names);
 			      }
 			      // pop_front/pop_back are functions, not tasks - handled elsewhere
+			}
+
+			// General handling for chained property/method access on class properties
+			// Handles patterns like: arr[i].method(), arr[i].member.method(),
+			// arr[i].member1.member2.method(), etc.
+			// This handles any depth of chained access with array indexing at any point
+
+			// Build the initial property expression
+			NetExpr* base_expr = 0;
+			const netclass_t* current_class = class_type;
+
+			// Process the first component (the property we just looked up)
+			NetExpr* first_index = 0;
+			if (!sr.path_tail.front().index.empty()) {
+			      const index_component_t& use_index = sr.path_tail.front().index.back();
+			      if (use_index.msb != 0) {
+				    first_index = elab_and_eval(des, scope, use_index.msb, -1, false);
+			      }
+			}
+
+			// Create initial property access
+			base_expr = new NetEProperty(net, pidx, first_index);
+			base_expr->set_line(*this);
+
+			// Determine the class type after this property access
+			const netdarray_t* darray_type = dynamic_cast<const netdarray_t*>(prop_type);
+			if (first_index && darray_type) {
+			      // Indexed darray - get element type
+			      current_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+			} else {
+			      // Non-indexed property or not a darray
+			      current_class = dynamic_cast<const netclass_t*>(prop_type);
+			}
+
+			// If we have more path components after the first, traverse them
+			if (current_class && sr.path_tail.size() > 1) {
+			      pform_name_t remaining_tail = sr.path_tail;
+			      remaining_tail.pop_front(); // Skip the first component we already processed
+
+			      while (!remaining_tail.empty()) {
+				    // Capture component including any index
+				    const name_component_t& comp = remaining_tail.front();
+				    perm_string comp_name = comp.name;
+
+				    // Elaborate index if present
+				    NetExpr* word_index = 0;
+				    if (!comp.index.empty()) {
+					  const index_component_t& use_index = comp.index.back();
+					  if (use_index.msb != 0) {
+						word_index = elab_and_eval(des, scope, use_index.msb, -1, false);
+					  }
+				    }
+
+				    remaining_tail.pop_front();
+
+				    // Look up property in current class
+				    int comp_pidx = current_class->property_idx_from_name(comp_name);
+				    if (comp_pidx < 0) {
+					  // Not a property - might be the method name
+					  NetScope* task = current_class->method_from_name(comp_name);
+					  if (task) {
+						if (debug_elaborate) {
+						      cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+							   << "Found method " << comp_name
+							   << " in class " << current_class->get_name()
+							   << " (chained access)" << endl;
+						}
+
+						// Check if method needs 'this' parameter
+						const NetBaseDef* def = 0;
+						if (task->type() == NetScope::TASK)
+						      def = task->task_def();
+						else if (task->type() == NetScope::FUNC)
+						      def = task->func_def();
+
+						NetExpr* use_this = 0;
+						if (def && def->port_count() > 0) {
+						      NetNet* first_port = def->port(0);
+						      if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+							    use_this = base_expr;
+						      }
+						}
+
+						return elaborate_build_call_(des, scope, task, use_this);
+					  }
+					  break;
+				    }
+
+				    // Get property type and create nested property expression
+				    ivl_type_t comp_prop_type = current_class->get_prop_type(comp_pidx);
+				    base_expr = new NetEProperty(base_expr, comp_pidx, word_index);
+				    base_expr->set_line(*this);
+
+				    // Update current_class for next iteration
+				    const netclass_t* next_class = 0;
+				    if (word_index) {
+					  const netdarray_t* comp_darray = dynamic_cast<const netdarray_t*>(comp_prop_type);
+					  if (comp_darray) {
+						next_class = dynamic_cast<const netclass_t*>(comp_darray->element_type());
+					  }
+				    }
+				    if (!next_class) {
+					  next_class = dynamic_cast<const netclass_t*>(comp_prop_type);
+				    }
+
+				    if (next_class) {
+					  current_class = next_class;
+				    } else {
+					  break;
+				    }
+			      }
+
+			      // After exhausting remaining_tail, check for method in final class
+			      NetScope* task = current_class->method_from_name(method_name);
+			      if (task) {
+				    if (debug_elaborate) {
+					  cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+					       << "Found method " << method_name
+					       << " in class " << current_class->get_name()
+					       << " (after chain traversal)" << endl;
+				    }
+
+				    const NetBaseDef* def = 0;
+				    if (task->type() == NetScope::TASK)
+					  def = task->task_def();
+				    else if (task->type() == NetScope::FUNC)
+					  def = task->func_def();
+
+				    NetExpr* use_this = 0;
+				    if (def && def->port_count() > 0) {
+					  NetNet* first_port = def->port(0);
+					  if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+						use_this = base_expr;
+					  }
+				    }
+
+				    return elaborate_build_call_(des, scope, task, use_this);
+			      }
+			} else if (current_class) {
+			      // Simple case: arr[i].method() with just one path component
+			      NetScope* task = current_class->method_from_name(method_name);
+			      if (task) {
+				    if (debug_elaborate) {
+					  cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+					       << "Found method " << method_name
+					       << " in class " << current_class->get_name() << endl;
+				    }
+
+				    const NetBaseDef* def = 0;
+				    if (task->type() == NetScope::TASK)
+					  def = task->task_def();
+				    else if (task->type() == NetScope::FUNC)
+					  def = task->func_def();
+
+				    NetExpr* use_this = 0;
+				    if (def && def->port_count() > 0) {
+					  NetNet* first_port = def->port(0);
+					  if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+						use_this = base_expr;
+					  }
+				    }
+
+				    return elaborate_build_call_(des, scope, task, use_this);
+			      }
 			}
 
 			// Check if property type is a virtual interface - VIF method dispatch
