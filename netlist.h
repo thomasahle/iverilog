@@ -1039,6 +1039,9 @@ class NetScope : public Definitions, public Attrib {
       NetNet* find_signal(perm_string name);
 
       netclass_t* find_class(const Design*des, perm_string name);
+    private:
+      netclass_t* find_class_(const Design*des, perm_string name, std::set<const NetScope*>&visited);
+    public:
 
 	/* The unit(), parent(), and child() methods allow users of
 	   NetScope objects to locate nearby scopes. */

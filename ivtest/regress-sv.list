@@ -1141,4 +1141,5 @@ sv_struct_class_property	normal,-g2012		ivltests
 sv_struct_type_equiv	normal,-g2012		ivltests
 sv_func_output_arg	normal,-g2012		ivltests
 sv_static_method	normal,-g2012		ivltests
+sv_file_scope_import	normal,-g2012		ivltests
 sv_class_array_method	normal,-g2012		ivltests

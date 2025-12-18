@@ -807,6 +807,17 @@ NetNet* NetScope::find_signal(perm_string key)
 
 netclass_t*NetScope::find_class(const Design*des, perm_string name)
 {
+      std::set<const NetScope*> visited;
+      return find_class_(des, name, visited);
+}
+
+netclass_t*NetScope::find_class_(const Design*des, perm_string name, std::set<const NetScope*>&visited)
+{
+	// Detect cycles - if we've already visited this scope, stop recursion.
+      if (visited.count(this))
+	    return 0;
+      visited.insert(this);
+
 	// Special case: The scope itself is the class that we are
 	// looking for. This may happen for example when elaborating
 	// methods within the class.
@@ -821,21 +832,21 @@ netclass_t*NetScope::find_class(const Design*des, perm_string name)
         // Try the imports.
       NetScope*import_scope = find_import(des, name);
       if (import_scope)
-	    return import_scope->find_class(des, name);
+	    return import_scope->find_class_(des, name, visited);
 
       if (up_==0 && type_==CLASS) {
 	    ivl_assert(*this, class_def_);
 	    NetScope*def_parent = class_def_->definition_scope();
-	    return def_parent->find_class(des, name);
+	    return def_parent->find_class_(des, name, visited);
       }
 
 	// Try looking up for the class.
       if (up_!=0 && type_!=MODULE)
-	    return up_->find_class(des, name);
+	    return up_->find_class_(des, name, visited);
 
 	// Try the compilation unit.
       if (unit_ != 0 && this != unit_)
-	    return unit_->find_class(des, name);
+	    return unit_->find_class_(des, name, visited);
 
 	// Nowhere left to try...
       return 0;
