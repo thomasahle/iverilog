@@ -412,6 +412,51 @@ void pform_covergroup_declaration(const struct vlltype&loc,
       yywarn(loc, "warning: Covergroup declarations parsed but not yet functional.");
 }
 
+/*
+ * Handle constraint declarations inside a class.
+ * Constraints are stored for later use during randomize() calls.
+ * For now, constraints are parsed and stored but not enforced.
+ */
+void pform_class_constraint(const struct vlltype&loc,
+			    bool is_static,
+			    const char* name,
+			    list<PExpr*>* expressions)
+{
+      if (!pform_cur_class) {
+	    yywarn(loc, "warning: Constraint declarations parsed but not yet functional.");
+	    delete expressions;
+	    return;
+      }
+
+      perm_string constraint_name = lex_strings.make(name);
+
+      // Check for duplicate constraint names
+      if (pform_cur_class->type->constraints.count(constraint_name)) {
+	    cerr << loc.text << ":" << loc.first_line << ": error: "
+	         << "duplicate constraint '" << name << "' in class." << endl;
+	    error_count += 1;
+	    delete expressions;
+	    return;
+      }
+
+      // Create the constraint object
+      pform_constraint_t* constraint = new pform_constraint_t(constraint_name, false);
+      constraint->set_lineno(loc.first_line);
+      constraint->set_file(filename_strings.make(loc.text));
+      constraint->is_static = is_static;
+
+      // Move expressions to the constraint
+      if (expressions) {
+	    constraint->expressions.splice(constraint->expressions.end(), *expressions);
+	    delete expressions;
+      }
+
+      // Store in the class
+      pform_cur_class->type->constraints[constraint_name] = constraint;
+
+      yywarn(loc, "warning: Constraint declarations parsed but not yet enforced.");
+}
+
 static bool pform_in_extern_decl = false;
 
 void pform_begin_extern_declaration()

@@ -785,6 +785,8 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <exprs> delay1 delay3 delay3_opt delay_value_list
 %type <exprs> expression_list_with_nuls expression_list_proper
 %type <exprs> cont_assign cont_assign_list
+%type <exprs> constraint_block_item_list constraint_block_item_list_opt
+%type <expr>  constraint_block_item constraint_expression
 
 %type <decl_assignment> variable_decl_assignment
 %type <decl_assignments> list_of_variable_decl_assignments
@@ -1531,41 +1533,75 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 
 constraint_block_item /* IEEE1800-2005 A.1.9 */
   : constraint_expression
+      { $$ = $1; }
   ;
 
 constraint_block_item_list
   : constraint_block_item_list constraint_block_item
+      { std::list<PExpr*>*tmp = $1;
+        if ($2) tmp->push_back($2);
+        $$ = tmp;
+      }
   | constraint_block_item
+      { std::list<PExpr*>*tmp = new std::list<PExpr*>;
+        if ($1) tmp->push_back($1);
+        $$ = tmp;
+      }
   ;
 
 constraint_block_item_list_opt
   :
+      { $$ = 0; }
   | constraint_block_item_list
+      { $$ = $1; }
   ;
 
 constraint_declaration /* IEEE1800-2005: A.1.9 */
   : K_static_opt K_constraint IDENTIFIER '{' constraint_block_item_list_opt '}'
-      { /* TODO: Store constraint for later use - for now, silently accept */
-        yywarn(@2, "warning: Constraint declarations parsed but not yet functional.");
+      { pform_class_constraint(@2, $1, $3, $5);
+        delete[]$3;
       }
 
   /* Error handling rules... */
 
   | K_static_opt K_constraint IDENTIFIER '{' error '}'
-      { yyerror(@4, "error: Errors in the constraint block item list."); }
+      { yyerror(@4, "error: Errors in the constraint block item list.");
+        delete[]$3;
+      }
   ;
 
 constraint_expression /* IEEE1800-2005 A.1.9 */
   : expression ';'
+      { $$ = $1; }
   | K_soft expression ';'
-      { /* Soft constraint - parsed but not enforced differently */ }
+      { /* Soft constraint - parsed but marked as soft for later */
+        $$ = $2;
+      }
   | expression K_dist '{' '}' ';'
+      { /* Dist constraint with empty distribution - use expression */
+        $$ = $1;
+      }
   | expression K_dist '{' dist_list '}' ';'
-      { /* Dist constraint - parsed but not enforced at runtime */ }
+      { /* Dist constraint - parsed but not enforced at runtime */
+        $$ = $1;
+      }
   | expression constraint_trigger
+      { /* Implication constraint - parsed but not enforced */
+        $$ = $1;
+      }
   | K_if '(' expression ')' constraint_set %prec less_than_K_else
+      { /* If constraint - complex construct, expression stored */
+        $$ = $3;
+      }
   | K_if '(' expression ')' constraint_set K_else constraint_set
+      { /* If-else constraint - complex construct, expression stored */
+        $$ = $3;
+      }
   | K_foreach '(' IDENTIFIER '[' loop_variables ']' ')' constraint_set
+      { /* Foreach constraint - complex construct, not stored */
+        delete[]$3;
+        $$ = 0;
+      }
   ;
 
 constraint_trigger

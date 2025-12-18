@@ -417,6 +417,23 @@ struct virtual_interface_type_t : public data_type_t {
 };
 
 /*
+ * The pform_constraint_t represents a constraint block for SystemVerilog
+ * constrained random verification. Constraints are attached to classes
+ * and evaluated during randomize() calls.
+ */
+struct pform_constraint_t : public LineInfo {
+      inline pform_constraint_t(perm_string n, bool s)
+            : name(n), is_soft(s), is_static(false) { }
+
+      perm_string name;     // Constraint block name
+      bool is_soft;         // true for soft constraints
+      bool is_static;       // true for static constraints
+
+      // List of constraint expressions in this block
+      std::list<PExpr*> expressions;
+};
+
+/*
  * The covergroup_type_t represents a covergroup declaration.
  * Covergroups are parsed but not fully elaborated - they become stub
  * objects with no-op sample() and get_coverage() methods.
@@ -492,6 +509,10 @@ struct class_type_t : public data_type_t {
 	// Store method qualifiers from extern declarations (virtual, static, etc).
 	// These are applied when the out-of-body method definition is processed.
       std::map<perm_string, property_qualifier_t> extern_method_quals;
+
+	// Constraint blocks for this class. The constraints are evaluated
+	// during randomize() calls to constrain random property values.
+      std::map<perm_string, pform_constraint_t*> constraints;
 
       ivl_type_t elaborate_type_raw(Design*, NetScope*) const override;
 
