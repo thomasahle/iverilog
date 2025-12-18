@@ -2439,6 +2439,25 @@ extern const char* ivl_type_prop_name(ivl_type_t net, int idx);
 extern ivl_type_t  ivl_type_prop_type(ivl_type_t net, int idx);
 /* Return 1 if property is 'rand', 2 if 'randc', 0 otherwise */
 extern int         ivl_type_prop_rand(ivl_type_t net, int idx);
+
+/* Constraint access functions for SystemVerilog constrained randomization. */
+extern unsigned    ivl_type_constraints(ivl_type_t net);
+extern const char* ivl_type_constraint_name(ivl_type_t net, unsigned idx);
+extern int         ivl_type_constraint_soft(ivl_type_t net, unsigned idx);
+
+/* Simple bounds for constraint solver.
+ * These are bounds extracted from constraint expressions like: prop > 0, prop < limit
+ * ivl_type_simple_bounds returns the number of simple bounds for a class type.
+ * Each bound has a property index, operator, and either a constant or property bound.
+ */
+extern unsigned    ivl_type_simple_bounds(ivl_type_t net);
+extern unsigned    ivl_type_simple_bound_prop(ivl_type_t net, unsigned idx);
+extern char        ivl_type_simple_bound_op(ivl_type_t net, unsigned idx);
+extern int         ivl_type_simple_bound_soft(ivl_type_t net, unsigned idx);
+extern int         ivl_type_simple_bound_has_const(ivl_type_t net, unsigned idx);
+extern int64_t     ivl_type_simple_bound_const(ivl_type_t net, unsigned idx);
+extern unsigned    ivl_type_simple_bound_prop2(ivl_type_t net, unsigned idx);
+
 extern ivl_type_t  ivl_type_super(ivl_type_t net);
 
 /* Struct member access functions.

@@ -6525,11 +6525,20 @@ static bool do_release_vec(vvp_code_t cp, bool net_flag)
  * %randomize
  *
  * Pop a class object from the object stack, randomize its 'rand' properties,
- * and push 1 (success) to the vec4 stack.
+ * and push 1 (success) or 0 (failure) to the vec4 stack.
  *
  * Only properties marked with 'rand' or 'randc' qualifier are randomized.
- * TODO: Respect constraints
+ * Non-rand properties retain their values.
+ *
+ * Constraint Support:
+ * Uses generate-and-test solver with retry mechanism:
+ *   1. Generate random values for all rand properties
+ *   2. Check constraint bounds extracted from constraint blocks
+ *   3. If any hard constraint fails, regenerate (up to MAX_CONSTRAINT_TRIES)
+ *   4. Return 0 if constraints cannot be satisfied after retries
  */
+static const int MAX_CONSTRAINT_TRIES = 100;
+
 bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 {
       vvp_object_t obj;
@@ -6545,36 +6554,67 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
       const class_type* defn = cobj->get_class_type();
       size_t nprop = defn->property_count();
+      bool has_constraints = (defn->constraint_bound_count() > 0);
 
-      // Randomize each property marked with 'rand' or 'randc'
-      // TODO: Respect constraints
-      for (size_t i = 0; i < nprop; i++) {
-	    // Only randomize properties marked with 'rand' or 'randc'
-	    if (!defn->property_is_rand(i))
-		  continue;
+      // Try to find values that satisfy constraints
+      int tries = 0;
+      bool success = false;
 
-	    // Only randomize vec4-compatible properties (skip strings, objects, etc.)
-	    if (!defn->property_supports_vec4(i))
-		  continue;
+      do {
+	    // Generate random values for all rand properties
+	    class_type::inst_t inst = cobj->get_instance();
 
-	    // Try to get the property as vec4 and randomize it
-	    vvp_vector4_t val;
-	    cobj->get_vec4(i, val);
+	    for (size_t i = 0; i < nprop; i++) {
+		  // Only randomize properties marked with 'rand' or 'randc'
+		  if (!defn->property_is_rand(i))
+			continue;
 
-	    // Generate random bits for each bit of the vector
-	    unsigned wid = val.size();
-	    if (wid > 0) {
-		  vvp_vector4_t new_val (wid);
-		  for (unsigned b = 0; b < wid; b++) {
-			new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+		  // Only randomize vec4-compatible properties (skip strings, objects, etc.)
+		  if (!defn->property_supports_vec4(i))
+			continue;
+
+		  // Try to get the property as vec4 and randomize it
+		  vvp_vector4_t val;
+		  cobj->get_vec4(i, val);
+
+		  // Generate random value
+		  unsigned wid = val.size();
+		  if (wid > 0) {
+			vvp_vector4_t new_val (wid);
+
+			if (has_constraints) {
+			      // Use constraint-aware random generation
+			      int64_t rval = defn->generate_constrained_random(inst, i, wid);
+			      for (unsigned b = 0; b < wid && b < 64; b++) {
+				    new_val.set_bit(b, (rval & (1LL << b)) ? BIT4_1 : BIT4_0);
+			      }
+			} else {
+			      // No constraints - generate purely random bits
+			      for (unsigned b = 0; b < wid; b++) {
+				    new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+			      }
+			}
+			cobj->set_vec4(i, new_val);
 		  }
-		  cobj->set_vec4(i, new_val);
 	    }
-      }
 
-      // Push success (1) to vec4 stack
+	    // Check constraints (handles != and cross-property constraints)
+	    if (!has_constraints) {
+		  // No constraints to check - always succeed
+		  success = true;
+	    } else {
+		  // Check if generated values satisfy all hard constraints
+		  success = defn->check_constraints(inst);
+	    }
+
+	    tries++;
+      } while (!success && tries < MAX_CONSTRAINT_TRIES);
+
+      // Push result to vec4 stack: 1 for success, 0 for failure
       vvp_vector4_t res (32, BIT4_0);
-      res.set_bit(0, BIT4_1);
+      if (success) {
+	    res.set_bit(0, BIT4_1);
+      }
       thr->push_vec4(res);
 
       return true;

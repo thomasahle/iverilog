@@ -103,6 +103,24 @@ class class_type : public __vpiHandle {
     public: // VPI related methods
       int get_type_code(void) const override;
 
+    public: // Constraint bounds for randomize()
+      struct simple_bound_t {
+	    size_t property_idx;  // Index of constrained rand property
+	    char op;              // '>' | '<' | 'G' (>=) | 'L' (<=) | '=' | '!'
+	    bool is_soft;         // Soft constraint (doesn't cause failure)
+	    bool has_const_bound; // true if bound is a constant
+	    int64_t const_bound;  // Constant bound value (if has_const_bound)
+	    size_t bound_prop_idx;// Property index (if !has_const_bound)
+      };
+      void add_constraint_bound(const simple_bound_t& bound);
+      size_t constraint_bound_count() const { return constraint_bounds_.size(); }
+      const simple_bound_t& get_constraint_bound(size_t idx) const;
+	// Check if all constraints are satisfied for current property values
+      bool check_constraints(inst_t inst) const;
+	// Generate constrained random value for a property
+	// Returns value within the computed valid range from constraint bounds
+      int64_t generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid) const;
+
     private:
       std::string class_name_;
       class_type*parent_;  // Parent class for inheritance hierarchy (nullptr if no parent)
@@ -117,6 +135,9 @@ class class_type : public __vpiHandle {
 
       // Virtual method dispatch table: method name -> method_info
       std::map<std::string, method_info> methods_;
+
+      // Constraint bounds for randomize()
+      std::vector<simple_bound_t> constraint_bounds_;
 };
 
 #endif /* IVL_class_type_H */

@@ -245,3 +245,56 @@ bool netclass_t::test_compatibility(ivl_type_t that) const
 
       return false;
 }
+
+/*
+ * Constraint support methods for SystemVerilog constrained randomization.
+ */
+void netclass_t::add_constraint(perm_string name, bool is_soft, NetExpr* expr)
+{
+      constraint_t tmp;
+      tmp.name = name;
+      tmp.is_soft = is_soft;
+      tmp.expr = expr;
+      constraints_.push_back(tmp);
+}
+
+perm_string netclass_t::get_constraint_name(size_t idx) const
+{
+      assert(idx < constraints_.size());
+      return constraints_[idx].name;
+}
+
+bool netclass_t::get_constraint_soft(size_t idx) const
+{
+      assert(idx < constraints_.size());
+      return constraints_[idx].is_soft;
+}
+
+NetExpr* netclass_t::get_constraint_expr(size_t idx) const
+{
+      assert(idx < constraints_.size());
+      return constraints_[idx].expr;
+}
+
+/*
+ * Simple bounds are extracted from constraint expressions during elaboration.
+ * They represent efficient runtime-checkable bounds like: value > 0, value < limit
+ */
+void netclass_t::add_simple_bound(size_t prop_idx, char op, bool is_soft,
+                                  bool has_const, int64_t const_val, size_t bound_prop)
+{
+      simple_bound_t bound;
+      bound.property_idx = prop_idx;
+      bound.op = op;
+      bound.is_soft = is_soft;
+      bound.has_const_bound = has_const;
+      bound.const_bound = const_val;
+      bound.bound_prop_idx = bound_prop;
+      simple_bounds_.push_back(bound);
+}
+
+const netclass_t::simple_bound_t& netclass_t::get_simple_bound(size_t idx) const
+{
+      assert(idx < simple_bounds_.size());
+      return simple_bounds_[idx];
+}

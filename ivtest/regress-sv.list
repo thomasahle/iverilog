@@ -1155,3 +1155,7 @@ sv_cross_pkg_static2	normal	ivltests
 sv_extern_multi_static	normal	ivltests
 sv_enum_methods_chain	normal	ivltests
 sv_nested_method_deep	normal	ivltests
+sv_constraint_simple	normal,-g2012	ivltests	gold=sv_constraint_simple.gold
+sv_constraint_signed	normal,-g2012	ivltests	gold=sv_constraint_signed.gold
+sv_constraint_prop	normal,-g2012	ivltests	gold=sv_constraint_prop.gold
+sv_constraint_tight	normal,-g2012	ivltests	gold=sv_constraint_tight.gold

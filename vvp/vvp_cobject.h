@@ -49,6 +49,9 @@ class vvp_cobject : public vvp_object {
       // Get the class type definition for virtual dispatch
       const class_type* get_class_type() const { return defn_; }
 
+      // Get the instance for constraint checking
+      class_type::inst_t get_instance() const { return properties_; }
+
     private:
       const class_type* defn_;
 	// For now, only support 32bit bool signed properties.

@@ -570,4 +570,8 @@ extern void compile_class_resolve_parents(void);
 /* Factory registration */
 extern void compile_factory(char*type_name, char*class_label);
 
+/* Constraint bound for randomize() constraint solver */
+extern void compile_constraint_bound(char*class_label, unsigned prop_idx,
+                                     char op, int soft, int has_const, int64_t value);
+
 #endif /* IVL_compile_H */

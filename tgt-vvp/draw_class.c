@@ -140,6 +140,42 @@ void draw_class_in_scope(ivl_type_t classtype)
 
       fprintf(vvp_out, " ;\n");
 
+      /* Emit constraint information if any constraints exist.
+       * Constraints are stored but not yet enforced at runtime. */
+      unsigned ncons = ivl_type_constraints(classtype);
+      if (ncons > 0) {
+	    unsigned cidx;
+	    fprintf(vvp_out, "; Class %s has %u constraint(s):\n",
+		    ivl_type_name(classtype), ncons);
+	    for (cidx = 0; cidx < ncons; cidx++) {
+		  const char* cname = ivl_type_constraint_name(classtype, cidx);
+		  int soft = ivl_type_constraint_soft(classtype, cidx);
+		  fprintf(vvp_out, ";   %s: %s\n", cname, soft ? "soft" : "hard");
+	    }
+      }
+
+      /* Emit simple bounds for constraint solver.
+       * Format: .constraint_bound <classptr>, <prop_idx>, "<op>", <soft>, <has_const>, <value/prop2_idx> ;
+       * These are runtime-enforceable bounds like: value > 0, value < limit
+       */
+      unsigned nbounds = ivl_type_simple_bounds(classtype);
+      for (unsigned bidx = 0; bidx < nbounds; bidx++) {
+	    unsigned prop_idx = ivl_type_simple_bound_prop(classtype, bidx);
+	    char op = ivl_type_simple_bound_op(classtype, bidx);
+	    int soft = ivl_type_simple_bound_soft(classtype, bidx);
+	    int has_const = ivl_type_simple_bound_has_const(classtype, bidx);
+
+	    fprintf(vvp_out, ".constraint_bound C%p, %u, \"%c\", %d, %d, ",
+		    classtype, prop_idx, op, soft, has_const);
+	    if (has_const) {
+		  int64_t const_val = ivl_type_simple_bound_const(classtype, bidx);
+		  fprintf(vvp_out, "%" PRId64 " ;\n", const_val);
+	    } else {
+		  unsigned prop2_idx = ivl_type_simple_bound_prop2(classtype, bidx);
+		  fprintf(vvp_out, "%u ;\n", prop2_idx);
+	    }
+      }
+
       /* Register class with factory for UVM-style creation by name.
        * This allows run_test("classname") and type_id::create() to work. */
       fprintf(vvp_out, ".factory \"%s\", C%p ;\n", ivl_type_name(classtype), classtype);

@@ -38,6 +38,7 @@
 # include  "pform.h"
 # include  "pform_types.h"
 # include  "PClass.h"
+# include  "PExpr.h"
 # include  "PEvent.h"
 # include  "PGenerate.h"
 # include  "PPackage.h"
@@ -7729,6 +7730,159 @@ bool Module::elaborate(Design*des, NetScope*scope) const
 }
 
 /*
+ * Helper function to extract a constant value from a PExpr, including
+ * negative constants like -10 which are represented as PEUnary('-', PENumber(10)).
+ * Returns true if a constant was extracted, false otherwise.
+ */
+static bool extract_constant_value(const PExpr*expr, int64_t&value)
+{
+      // Direct number
+      const PENumber* num = dynamic_cast<const PENumber*>(expr);
+      if (num != nullptr) {
+	    value = num->value().as_long();
+	    return true;
+      }
+
+      // Unary minus on a number: -N
+      const PEUnary* unary = dynamic_cast<const PEUnary*>(expr);
+      if (unary != nullptr && unary->get_op() == '-') {
+	    const PENumber* inner_num = dynamic_cast<const PENumber*>(unary->get_expr());
+	    if (inner_num != nullptr) {
+		  value = -inner_num->value().as_long();
+		  return true;
+	    }
+      }
+
+      // Unary plus on a number: +N (less common but valid)
+      if (unary != nullptr && unary->get_op() == '+') {
+	    const PENumber* inner_num = dynamic_cast<const PENumber*>(unary->get_expr());
+	    if (inner_num != nullptr) {
+		  value = inner_num->value().as_long();
+		  return true;
+	    }
+      }
+
+      return false;
+}
+
+/*
+ * Helper function to extract simple bounds from constraint expressions.
+ * Handles expressions of the form: property OP constant or property OP property
+ * where OP is a relational operator (>, <, >=, <=, ==, !=).
+ * Returns true if a simple bound was extracted, false otherwise.
+ */
+static bool extract_simple_bound(netclass_t*cls, PExpr*expr, bool is_soft)
+{
+      // Check if this is a comparison expression
+      const PEBComp* cmp = dynamic_cast<const PEBComp*>(expr);
+      if (cmp == nullptr) {
+	    // Also try PEBinary for compound comparisons
+	    const PEBinary* bin = dynamic_cast<const PEBinary*>(expr);
+	    if (bin == nullptr)
+		  return false;
+	    // Check if it's a relational operator
+	    char op = bin->get_op();
+	    if (op != '>' && op != '<' && op != 'G' && op != 'L' &&
+	        op != 'e' && op != 'n')
+		  return false;
+	    cmp = dynamic_cast<const PEBComp*>(expr);
+	    if (cmp == nullptr)
+		  return false;
+      }
+
+      char op = cmp->get_op();
+      // Map operators: 'e' is ==, 'n' is !=, 'G' is >=, 'L' is <=
+      if (op == 'e') op = '=';
+      else if (op == 'n') op = '!';
+
+      PExpr* left = cmp->get_left();
+      PExpr* right = cmp->get_right();
+
+      // Try to identify property name and constant bound
+      const PEIdent* prop_ident = nullptr;
+      const PEIdent* bound_ident = nullptr;
+      int64_t const_val = 0;
+      bool has_const = false;
+      bool prop_on_left = false;
+
+      // Case 1: property OP constant (including negative constants)
+      if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr &&
+          extract_constant_value(right, const_val)) {
+	    prop_on_left = true;
+	    has_const = true;
+      }
+      // Case 2: constant OP property (e.g., 0 < value, -10 < value)
+      else if (extract_constant_value(left, const_val) &&
+               (prop_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
+	    prop_on_left = false;
+	    has_const = true;
+	    // Flip the operator since we'll normalize to property OP constant
+	    switch (op) {
+		  case '>': op = '<'; break;
+		  case '<': op = '>'; break;
+		  case 'G': op = 'L'; break;
+		  case 'L': op = 'G'; break;
+		  // == and != are symmetric
+	    }
+      }
+      // Case 3: property OP property
+      else if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr &&
+               (bound_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
+	    prop_on_left = true;
+      }
+      else {
+	    return false;  // Not a simple bound
+      }
+
+      // Get property name from identifier path
+      const pform_scoped_name_t& path = prop_ident->path();
+      if (path.name.empty())
+	    return false;
+      // Get last component of path as property name
+      perm_string prop_name = path.name.back().name;
+
+      // Look up property index
+      int prop_idx = cls->property_idx_from_name(prop_name);
+      if (prop_idx < 0)
+	    return false;  // Not a property of this class
+
+      // Check if property is rand/randc
+      property_qualifier_t qual = cls->get_prop_qual(prop_idx);
+      if (!qual.test_rand() && !qual.test_randc())
+	    return false;  // Not a rand property, skip
+
+      if (has_const) {
+	    if (debug_elaborate) {
+		  cerr << "netclass_t::elaborate: extracted bound "
+		       << prop_name << " " << op << " " << const_val << endl;
+	    }
+
+	    cls->add_simple_bound(prop_idx, op, is_soft, true, const_val, 0);
+	    return true;
+      }
+      else if (bound_ident != nullptr) {
+	    // Property-to-property constraint
+	    const pform_scoped_name_t& bound_path = bound_ident->path();
+	    if (bound_path.name.empty())
+		  return false;
+	    perm_string bound_name = bound_path.name.back().name;
+	    int bound_idx = cls->property_idx_from_name(bound_name);
+	    if (bound_idx < 0)
+		  return false;
+
+	    if (debug_elaborate) {
+		  cerr << "netclass_t::elaborate: extracted bound "
+		       << prop_name << " " << op << " " << bound_name << endl;
+	    }
+
+	    cls->add_simple_bound(prop_idx, op, is_soft, false, 0, bound_idx);
+	    return true;
+      }
+
+      return false;
+}
+
+/*
  * Elaborating a netclass_t means elaborating the PFunction and PTask
  * objects that it contains. The scopes and signals have already been
  * elaborated in the class of the netclass_t scope, so we can get the
@@ -7748,6 +7902,31 @@ void netclass_t::elaborate(Design*des, PClass*pclass)
 	    NetProcTop*top = new NetProcTop(class_scope_, IVL_PR_INITIAL, stmt);
 	    top->set_line(*pclass);
 	    des->add_process(top);
+      }
+
+	// Store constraint metadata and extract simple bounds for VVP output.
+	// Full constraint expression elaboration requires method-like scope context
+	// which is not available here. However, we can pattern-match simple
+	// bounds like "value > 0" or "value < limit" and extract them directly.
+      for (auto& cons_pair : pclass->type->constraints) {
+	    perm_string cons_name = cons_pair.first;
+	    pform_constraint_t* pcons = cons_pair.second;
+
+	    if (debug_elaborate) {
+		  cerr << pcons->get_fileline() << ": netclass_t::elaborate: "
+		       << "Record constraint " << cons_name
+		       << " in class " << scope_path(class_scope_) << endl;
+	    }
+
+	      // Store constraint metadata
+	    add_constraint(cons_name, pcons->is_soft, nullptr);
+
+	      // Extract simple bounds from constraint expressions
+	    for (PExpr* expr : pcons->expressions) {
+		  if (expr != nullptr) {
+			extract_simple_bound(this, expr, pcons->is_soft);
+		  }
+	    }
       }
 
       for (map<perm_string,PFunction*>::iterator cur = pclass->funcs.begin()

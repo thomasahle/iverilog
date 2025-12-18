@@ -146,6 +146,46 @@ class netclass_t : public ivl_type_s {
       };
       std::vector<prop_t> property_table_;
 
+	// Constraint storage for randomize() support.
+	// Each constraint has a name and an elaborated expression.
+      struct constraint_t {
+	    perm_string name;
+	    bool is_soft;       // soft constraints don't cause failure
+	    NetExpr* expr;      // elaborated constraint expression
+      };
+      std::vector<constraint_t> constraints_;
+
+	// Simple bound constraints extracted from constraint blocks.
+	// These are bounds of the form: prop OP constant (e.g., value > 0)
+	// or prop OP prop (e.g., value < limit).
+	// These can be efficiently enforced at runtime.
+      struct simple_bound_t {
+	    size_t property_idx;  // Index of constrained rand property
+	    char op;              // '>' | '<' | 'G' (>=) | 'L' (<=) | '=' | '!'
+	    bool is_soft;         // Soft constraint (doesn't cause failure)
+	    bool has_const_bound; // true if bound is a constant
+	    int64_t const_bound;  // Constant bound value (if has_const_bound)
+	    size_t bound_prop_idx;// Property index (if !has_const_bound)
+      };
+      std::vector<simple_bound_t> simple_bounds_;
+
+    public:
+	// Add a constraint during elaboration
+      void add_constraint(perm_string name, bool is_soft, NetExpr* expr);
+	// Get number of constraints
+      size_t get_constraints() const { return constraints_.size(); }
+	// Get constraint info
+      perm_string get_constraint_name(size_t idx) const;
+      bool get_constraint_soft(size_t idx) const;
+      NetExpr* get_constraint_expr(size_t idx) const;
+
+	// Simple bounds API for constraint solver
+      void add_simple_bound(size_t prop_idx, char op, bool is_soft,
+                            bool has_const, int64_t const_val, size_t bound_prop);
+      size_t get_simple_bounds() const { return simple_bounds_.size(); }
+      const simple_bound_t& get_simple_bound(size_t idx) const;
+
+    private:
 	// This holds task/function definitions for methods.
       NetScope*class_scope_;
 

@@ -770,6 +770,11 @@ class PEBinary : public PExpr {
 				     unsigned expr_wid,
                                      unsigned flags) const override;
 
+	// Accessors for constraint expression analysis
+      char get_op() const { return op_; }
+      PExpr* get_left() const { return left_; }
+      PExpr* get_right() const { return right_; }
+
     protected:
       char op_;
       PExpr*left_;

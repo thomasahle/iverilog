@@ -28,6 +28,7 @@
 #endif
 # include  <cassert>
 # include  <cstdio>
+# include  <type_traits>
 
 using namespace std;
 
@@ -52,6 +53,8 @@ class class_property_t {
       virtual void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx);
       virtual void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx);
       virtual bool supports_vec4() const { return false; }
+      virtual bool is_signed() const { return false; }
+      virtual unsigned bit_width() const { return 0; }
 
       virtual void set_real(char*buf, double val);
       virtual double get_real(char*buf);
@@ -142,6 +145,8 @@ template <class T> class property_atom : public class_property_t {
       void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx) override;
       void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
       bool supports_vec4() const override { return true; }
+      bool is_signed() const override { return std::is_signed<T>::value; }
+      unsigned bit_width() const override { return sizeof(T) * 8; }
 
       void copy(char*dst, char*src) override;
 
@@ -172,6 +177,7 @@ class property_bit : public class_property_t {
       void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx) override;
       void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
       bool supports_vec4() const override { return true; }
+      unsigned bit_width() const override { return wid_; }
 
       void copy(char*dst, char*src) override;
 
@@ -203,6 +209,7 @@ class property_logic : public class_property_t {
       void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx) override;
       void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
       bool supports_vec4() const override { return true; }
+      unsigned bit_width() const override { return wid_; }
 
       void copy(char*dst, char*src) override;
 
@@ -572,6 +579,211 @@ bool class_type::property_is_rand(size_t pid) const
       return properties_[pid].rand_flag != 0;  // 1=rand, 2=randc
 }
 
+void class_type::add_constraint_bound(const simple_bound_t& bound)
+{
+      constraint_bounds_.push_back(bound);
+}
+
+const class_type::simple_bound_t& class_type::get_constraint_bound(size_t idx) const
+{
+      assert(idx < constraint_bounds_.size());
+      return constraint_bounds_[idx];
+}
+
+/*
+ * Generate a constrained random value for a property.
+ * Computes the valid range from all constraint bounds and generates
+ * a random value within that range.
+ */
+int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid) const
+{
+      // Compute the type-based min/max based on width and signedness
+      int64_t type_min = 0;
+      int64_t type_max = (1LL << wid) - 1;
+
+      // Check if property is signed using the type info
+      bool is_signed_type = false;
+      if (prop_idx < properties_.size() && properties_[prop_idx].type) {
+	    is_signed_type = properties_[prop_idx].type->is_signed();
+      }
+
+      if (is_signed_type) {
+	    // For signed types, min is negative
+	    if (wid < 64) {
+		  type_min = -(1LL << (wid - 1));
+		  type_max = (1LL << (wid - 1)) - 1;
+	    } else {
+		  type_min = INT64_MIN;
+		  type_max = INT64_MAX;
+	    }
+      } else {
+	    // For unsigned types
+	    if (wid > 63) type_max = INT64_MAX;
+      }
+
+      // Start with full range
+      int64_t min_val = type_min;
+      int64_t max_val = type_max;
+
+      // Apply all constraint bounds for this property
+      for (const auto& bound : constraint_bounds_) {
+	    if (bound.property_idx != prop_idx)
+		  continue;
+
+	    // Get the bound value
+	    int64_t bval = 0;
+	    if (bound.has_const_bound) {
+		  bval = bound.const_bound;
+	    } else if (bound.bound_prop_idx < properties_.size()) {
+		  // Get value from another property
+		  if (!properties_[bound.bound_prop_idx].type->supports_vec4())
+			continue;
+		  vvp_vector4_t prop_val;
+		  get_vec4(inst, bound.bound_prop_idx, prop_val);
+		  if (prop_val.size() <= 64) {
+			for (unsigned i = 0; i < prop_val.size(); i++) {
+			      if (prop_val.value(i) == BIT4_1)
+				    bval |= (int64_t(1) << i);
+			}
+			// Handle signed values
+			if (prop_val.size() < 64 && prop_val.size() > 0 &&
+			    prop_val.value(prop_val.size()-1) == BIT4_1) {
+			      for (unsigned i = prop_val.size(); i < 64; i++)
+				    bval |= (int64_t(1) << i);
+			}
+		  }
+	    } else {
+		  continue;
+	    }
+
+	    // Apply bound based on operator
+	    switch (bound.op) {
+		  case '>':  // val > bval => min = bval + 1
+		      if (bval + 1 > min_val) min_val = bval + 1;
+		      break;
+		  case 'G':  // val >= bval => min = bval
+		      if (bval > min_val) min_val = bval;
+		      break;
+		  case '<':  // val < bval => max = bval - 1
+		      if (bval - 1 < max_val) max_val = bval - 1;
+		      break;
+		  case 'L':  // val <= bval => max = bval
+		      if (bval < max_val) max_val = bval;
+		      break;
+		  case '=':  // val == bval => both min and max = bval
+		      min_val = max_val = bval;
+		      break;
+		  // '!' (!=) can't be easily range-bounded, skip for now
+	    }
+      }
+
+      // Generate random value in [min_val, max_val]
+      if (min_val > max_val) {
+	    // Impossible constraint - return a random value and let check fail
+	    int64_t r = 0;
+	    for (unsigned i = 0; i < wid && i < 64; i++) {
+		  if (rand() & 1) r |= (int64_t(1) << i);
+	    }
+	    return r;
+      }
+
+      // Generate random value in range
+      int64_t range = max_val - min_val + 1;
+      if (range <= 0) {
+	    // Overflow or single value
+	    return min_val;
+      }
+
+      // Use modulo for range (not perfectly uniform but good enough)
+      int64_t r = 0;
+      for (unsigned i = 0; i < 64; i++) {
+	    if (rand() & 1) r |= (int64_t(1) << i);
+      }
+      // Make sure r is non-negative for modulo
+      if (r < 0) r = -r;
+
+      return min_val + (r % range);
+}
+
+bool class_type::check_constraints(inst_t inst) const
+{
+      if (constraint_bounds_.empty())
+	    return true;
+
+      for (const auto& bound : constraint_bounds_) {
+	    // Get the value of the constrained property
+	    if (bound.property_idx >= properties_.size())
+		  continue;
+
+	    if (!properties_[bound.property_idx].type->supports_vec4())
+		  continue;
+
+	    vvp_vector4_t prop_val;
+	    get_vec4(inst, bound.property_idx, prop_val);
+
+	    // Convert to int64_t for comparison
+	    // Note: X/Z bits are treated as 0 for constraint checking
+	    int64_t val = 0;
+	    if (prop_val.size() <= 64) {
+		  for (unsigned i = 0; i < prop_val.size(); i++) {
+			if (prop_val.value(i) == BIT4_1)
+			      val |= (int64_t(1) << i);
+		  }
+		  // Handle signed values
+		  if (prop_val.size() < 64 && prop_val.size() > 0 &&
+		      prop_val.value(prop_val.size()-1) == BIT4_1) {
+			// Sign extend
+			for (unsigned i = prop_val.size(); i < 64; i++)
+			      val |= (int64_t(1) << i);
+		  }
+	    }
+
+	    // Get the bound value (constant or property)
+	    int64_t bound_val = 0;
+	    if (bound.has_const_bound) {
+		  bound_val = bound.const_bound;
+	    } else if (bound.bound_prop_idx < properties_.size()) {
+		  if (!properties_[bound.bound_prop_idx].type->supports_vec4())
+			continue;
+		  vvp_vector4_t bound_prop_val;
+		  get_vec4(inst, bound.bound_prop_idx, bound_prop_val);
+		  if (bound_prop_val.size() <= 64) {
+			for (unsigned i = 0; i < bound_prop_val.size(); i++) {
+			      if (bound_prop_val.value(i) == BIT4_1)
+				    bound_val |= (int64_t(1) << i);
+			}
+			// Handle signed values
+			if (bound_prop_val.size() < 64 && bound_prop_val.size() > 0 &&
+			    bound_prop_val.value(bound_prop_val.size()-1) == BIT4_1) {
+			      for (unsigned i = bound_prop_val.size(); i < 64; i++)
+				    bound_val |= (int64_t(1) << i);
+			}
+		  }
+	    } else {
+		  continue;
+	    }
+
+	    // Check the constraint based on operator
+	    bool satisfied = false;
+	    switch (bound.op) {
+		  case '>': satisfied = (val > bound_val); break;
+		  case '<': satisfied = (val < bound_val); break;
+		  case 'G': satisfied = (val >= bound_val); break;  // >=
+		  case 'L': satisfied = (val <= bound_val); break;  // <=
+		  case '=': satisfied = (val == bound_val); break;  // ==
+		  case '!': satisfied = (val != bound_val); break;  // !=
+		  default: satisfied = true; break;
+	    }
+
+	    if (!satisfied && !bound.is_soft) {
+		  // Hard constraint violated
+		  return false;
+	    }
+      }
+
+      return true;
+}
+
 void class_type::set_real(class_type::inst_t obj, size_t pid,
 			  double val) const
 {
@@ -757,6 +969,48 @@ void compile_factory(char*type_name, char*class_label)
       vvp_factory_registry::instance().register_class(type_name, class_def);
 
       delete[]type_name;
+      free(class_label);
+}
+
+/*
+ * Constraint bound: .constraint_bound class_label, prop_idx, "op", soft, has_const, value ;
+ * This registers a simple constraint bound for the randomize() constraint solver.
+ */
+void compile_constraint_bound(char*class_label, unsigned prop_idx,
+                              char op, int soft, int has_const, int64_t value)
+{
+      // Look up the class definition from the label
+      vpiHandle class_h = vvp_lookup_handle(class_label);
+      if (!class_h) {
+	    fprintf(stderr, "ERROR: .constraint_bound: class label '%s' not found\n",
+		    class_label);
+	    free(class_label);
+	    return;
+      }
+
+      class_type*class_def = dynamic_cast<class_type*>(class_h);
+      if (!class_def) {
+	    fprintf(stderr, "ERROR: .constraint_bound: '%s' is not a class\n",
+		    class_label);
+	    free(class_label);
+	    return;
+      }
+
+      // Create and add the constraint bound
+      class_type::simple_bound_t bound;
+      bound.property_idx = prop_idx;
+      bound.op = op;
+      bound.is_soft = (soft != 0);
+      bound.has_const_bound = (has_const != 0);
+      if (has_const) {
+	    bound.const_bound = value;
+	    bound.bound_prop_idx = 0;
+      } else {
+	    bound.const_bound = 0;
+	    bound.bound_prop_idx = static_cast<size_t>(value);
+      }
+      class_def->add_constraint_bound(bound);
+
       free(class_label);
 }
 

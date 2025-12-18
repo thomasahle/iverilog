@@ -84,6 +84,9 @@ inline uint64_t strtouint64(const char*str, char**endptr, int base)
   /* Factory registration directive at beginning of line */
 ^".factory"     { return K_FACTORY; }
 
+  /* Constraint bound directive at beginning of line */
+^".constraint_bound" { return K_CONSTRAINT_BOUND; }
+
   /* A label is any non-blank text that appears left justified. */
 ^[.$_a-zA-Z\\][.$_a-zA-Z\\0-9<>/]* {
       yylval.text = strdup(yytext);
