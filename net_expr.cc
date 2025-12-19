@@ -23,6 +23,7 @@
 # include  "netclass.h"
 # include  "netdarray.h"
 # include  "netscalar.h"
+# include  "netvector.h"
 # include  "compiler.h"
 # include  "netmisc.h"
 # include  <iostream>
@@ -434,6 +435,36 @@ NetEProperty::NetEProperty(NetExpr*base, size_t pidx, NetExpr*idx)
 
 NetEProperty::~NetEProperty()
 {
+}
+
+NetEAssocMethod::NetEAssocMethod(NetNet*net, size_t pidx, method_t method, NetExpr*key_expr)
+: net_(net), pidx_(pidx), method_(method), key_expr_(key_expr)
+{
+      // Result type is integer (1 for exists/delete return bool, first/next/etc return bool)
+      set_net_type(&netvector_t::atom2s32);
+}
+
+NetEAssocMethod::~NetEAssocMethod()
+{
+      delete key_expr_;
+}
+
+NetEAssocMethod* NetEAssocMethod::dup_expr() const
+{
+      NetEAssocMethod*dup = new NetEAssocMethod(net_, pidx_, method_,
+                                                key_expr_ ? key_expr_->dup_expr() : 0);
+      dup->set_line(*this);
+      return dup;
+}
+
+NexusSet* NetEAssocMethod::nex_input(bool, bool, bool) const
+{
+      return 0;
+}
+
+void NetEAssocMethod::dump(std::ostream&os) const
+{
+      os << "assoc_method(" << pidx_ << ", " << method_ << ")";
 }
 
 NetESelect::NetESelect(NetExpr*exp, NetExpr*base, unsigned wid,

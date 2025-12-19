@@ -257,6 +257,22 @@ extern bool of_STORE_OBJ(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_OBJA(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_ASSOC_VEC4(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_ASSOC_VEC4(vthread_t thr, vvp_code_t code);
+/* Associative array method opcodes */
+extern bool of_ASSOC_EXISTS(vthread_t thr, vvp_code_t code);
+extern bool of_ASSOC_DELETE(vthread_t thr, vvp_code_t code);
+extern bool of_ASSOC_FIRST(vthread_t thr, vvp_code_t code);
+extern bool of_ASSOC_LAST(vthread_t thr, vvp_code_t code);
+extern bool of_ASSOC_NEXT(vthread_t thr, vvp_code_t code);
+extern bool of_ASSOC_PREV(vthread_t thr, vvp_code_t code);
+extern bool of_ASSOC_NUM(vthread_t thr, vvp_code_t code);
+/* Associative array property method opcodes */
+extern bool of_PROP_ASSOC_EXISTS(vthread_t thr, vvp_code_t code);
+extern bool of_PROP_ASSOC_DELETE(vthread_t thr, vvp_code_t code);
+extern bool of_PROP_ASSOC_FIRST(vthread_t thr, vvp_code_t code);
+extern bool of_PROP_ASSOC_LAST(vthread_t thr, vvp_code_t code);
+extern bool of_PROP_ASSOC_NEXT(vthread_t thr, vvp_code_t code);
+extern bool of_PROP_ASSOC_PREV(vthread_t thr, vvp_code_t code);
+extern bool of_PROP_ASSOC_NUM(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_OBJ(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_R(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_STR(vthread_t thr, vvp_code_t code);

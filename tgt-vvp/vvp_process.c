@@ -1785,6 +1785,42 @@ static int show_delete_method(ivl_statement_t net)
       return 0;
 }
 
+static int show_assoc_delete_method(ivl_statement_t net)
+{
+      show_stmt_file_line(net, "assoc: delete");
+
+      unsigned parm_count = ivl_stmt_parm_count(net);
+      if (parm_count != 2)
+	    return 1;
+
+      ivl_expr_t parm0 = ivl_stmt_parm(net, 0);  /* The array */
+      ivl_expr_t parm1 = ivl_stmt_parm(net, 1);  /* The key */
+
+      /* Handle associative array property on class objects (obj.assoc_prop.delete) */
+      if (ivl_expr_type(parm0) == IVL_EX_PROPERTY) {
+	    ivl_signal_t sig = ivl_expr_signal(parm0);
+	    unsigned pidx = ivl_expr_property_idx(parm0);
+	    /* Load the object containing the property */
+	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+	    /* Push the key to string stack */
+	    draw_eval_string(parm1);
+	    /* Delete from property associative array */
+	    fprintf(vvp_out, "    %%prop/assoc/delete %u;\n", pidx);
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return 0;
+      }
+
+      /* Standalone associative array variable */
+      assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
+      ivl_signal_t var = ivl_expr_signal(parm0);
+
+      /* Push the key to string stack */
+      draw_eval_string(parm1);
+      /* Delete from associative array */
+      fprintf(vvp_out, "    %%assoc/delete v%p_0;\n", var);
+      return 0;
+}
+
 static int show_insert_method(ivl_statement_t net)
 {
       show_stmt_file_line(net, "queue: insert");
@@ -1956,6 +1992,9 @@ static int show_system_task_call(ivl_statement_t net)
 
       if (strcmp(stmt_name,"$ivl_darray_method$delete") == 0)
 	    return show_delete_method(net);
+
+      if (strcmp(stmt_name,"$ivl_assoc_method$delete") == 0)
+	    return show_assoc_delete_method(net);
 
       if (strcmp(stmt_name,"$ivl_queue_method$insert") == 0)
 	    return show_insert_method(net);

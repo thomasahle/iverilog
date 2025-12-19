@@ -542,6 +542,12 @@ void expr_scan_t::expr_virtual_property(const NetEVirtualProperty*)
 	    "unhandled expr_virtual_property." << endl;
 }
 
+void expr_scan_t::expr_assoc_method(const NetEAssocMethod*)
+{
+      cerr << "expr_scan_t (" << typeid(*this).name() << "): "
+	    "unhandled expr_assoc_method." << endl;
+}
+
 void expr_scan_t::expr_creal(const NetECReal*)
 {
       cerr << "expr_scan_t (" << typeid(*this).name() << "): "

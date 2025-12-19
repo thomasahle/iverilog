@@ -499,6 +499,31 @@ void dll_target::expr_virtual_property(const NetEVirtualProperty*net)
       expr_->u_.vifprop_.member_sig = 0;
 }
 
+void dll_target::expr_assoc_method(const NetEAssocMethod*net)
+{
+      // Scan the key expression if present
+      ivl_expr_t key = 0;
+      if (net->key_expr()) {
+	    net->key_expr()->expr_scan(this);
+	    key = expr_;
+	    expr_ = 0;
+      }
+
+      assert(expr_ == 0);
+      expr_ = static_cast<ivl_expr_t>(calloc(1, sizeof(struct ivl_expr_s)));
+      expr_->width_  = net->expr_width();
+      expr_->signed_ = net->has_sign();
+      expr_->sized_  = 1;
+      expr_->type_   = IVL_EX_ASSOC_METHOD;
+      FILE_NAME(expr_, net);
+      expr_->value_  = net->expr_type();
+      expr_->net_type= net->net_type();
+      expr_->u_.assoc_method_.sig = find_signal(des_, net->get_sig());
+      expr_->u_.assoc_method_.prop_idx = net->property_idx();
+      expr_->u_.assoc_method_.method = static_cast<ivl_assoc_method_t>(net->method());
+      expr_->u_.assoc_method_.key = key;
+}
+
 void dll_target::expr_event(const NetEEvent*net)
 {
       assert(expr_ == 0);

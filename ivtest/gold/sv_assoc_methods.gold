@@ -1,0 +1,10 @@
+Testing standalone associative array with string keys:
+PASSED: exists on empty array returns 0
+PASSED: num() = 3
+PASSED: size() = 3
+PASSED: exists('beta') = 1
+PASSED: exists('delta') = 0
+PASSED: delete('beta') worked
+PASSED: num() after delete = 2
+
+PASSED

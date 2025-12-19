@@ -3907,6 +3907,13 @@ NetProc* PCallTask::elaborate_sys_task_method_(Design*des, NetScope*scope,
 			     << "method takes zero or one argument." << endl;
 			des->errors += 1;
 		  }
+	    } else if (net->assoc_type()) {
+		  // Associative array delete requires a key argument
+		  if (nparms != 1) {
+			cerr << get_fileline() << ": error: assoc delete() "
+			     << "method takes one argument (the key)." << endl;
+			des->errors += 1;
+		  }
 	    } else if (nparms > 0) {
 		  cerr << get_fileline() << ": error: darray delete() "
 		       << "method takes no arguments." << endl;
@@ -4241,6 +4248,19 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 
 		  return elaborate_sys_task_method_(des, scope, net, method_name,
 						    "$ivl_string_method$realtoa",
+						    parm_names);
+	    }
+      }
+
+      // Is this a method of an associative array type? (must check before darray_type)
+      if (net->assoc_type()) {
+	    if (method_name == "delete") {
+		  static const std::vector<perm_string> parm_names = {
+			perm_string::literal("key")
+		  };
+
+		  return elaborate_sys_task_method_(des, scope, net, method_name,
+		                                    "$ivl_assoc_method$delete",
 						    parm_names);
 	    }
       }

@@ -719,6 +719,34 @@ extern "C" ivl_signal_t ivl_expr_vifprop_sig(ivl_expr_t net)
       return net->u_.vifprop_.member_sig;
 }
 
+extern "C" ivl_signal_t ivl_expr_assoc_signal(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_ASSOC_METHOD);
+      return net->u_.assoc_method_.sig;
+}
+
+extern "C" int ivl_expr_assoc_property_idx(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_ASSOC_METHOD);
+      return net->u_.assoc_method_.prop_idx;
+}
+
+extern "C" ivl_assoc_method_t ivl_expr_assoc_method(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_ASSOC_METHOD);
+      return net->u_.assoc_method_.method;
+}
+
+extern "C" ivl_expr_t ivl_expr_assoc_key(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_ASSOC_METHOD);
+      return net->u_.assoc_method_.key;
+}
+
 extern "C" ivl_scope_t ivl_expr_scope(ivl_expr_t net)
 {
       assert(net);

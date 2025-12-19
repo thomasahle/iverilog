@@ -4741,6 +4741,41 @@ class NetEProperty : public NetExpr {
       NetExpr*index_;
 };
 
+/*
+ * NetEAssocMethod represents a method call on an associative array property.
+ * Methods: exists(), delete(), first(), last(), next(), prev(), num()
+ *
+ * For exists(key): key_expr is the key to check
+ * For first/last/next/prev(ref): key_expr is the reference variable (modified)
+ * For num(): key_expr is null
+ */
+class NetEAssocMethod : public NetExpr {
+    public:
+      enum method_t { ASSOC_EXISTS, ASSOC_DELETE, ASSOC_FIRST, ASSOC_LAST,
+                      ASSOC_NEXT, ASSOC_PREV, ASSOC_NUM };
+
+      NetEAssocMethod(NetNet*net, size_t pidx, method_t method, NetExpr*key_expr);
+      ~NetEAssocMethod() override;
+
+      inline const NetNet* get_sig() const { return net_; }
+      inline size_t property_idx() const { return pidx_; }
+      inline method_t method() const { return method_; }
+      inline const NetExpr* key_expr() const { return key_expr_; }
+
+    public: // Overridden methods
+      virtual void expr_scan(struct expr_scan_t*) const override;
+      virtual NetEAssocMethod* dup_expr() const override;
+      virtual NexusSet* nex_input(bool rem_out = true, bool always_sens = false,
+                                  bool nested_func = false) const override;
+      virtual void dump(std::ostream&os) const override;
+
+    private:
+      NetNet*net_;
+      size_t pidx_;
+      method_t method_;
+      NetExpr*key_expr_;
+};
+
 class netvirtual_interface_t;  // Forward declaration
 
 /*

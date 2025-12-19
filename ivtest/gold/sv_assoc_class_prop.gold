@@ -1,0 +1,12 @@
+Testing associative array as class property:
+PASSED: count on empty = 0
+PASSED: has_alpha on empty = 0
+PASSED: count() = 3
+PASSED: has_alpha() = 1
+PASSED: has_beta() = 1
+PASSED: data['alpha'] = 100
+PASSED: data['alpha'] updated to 111
+PASSED: data.num() = 3
+PASSED: data.size() = 3
+
+PASSED

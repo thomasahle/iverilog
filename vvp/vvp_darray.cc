@@ -1088,6 +1088,55 @@ vvp_object* vvp_assoc_vec4::duplicate(void) const
       return res;
 }
 
+bool vvp_assoc_vec4::exists(const string&key) const
+{
+      return map_.find(key) != map_.end();
+}
+
+bool vvp_assoc_vec4::delete_word(const string&key)
+{
+      auto it = map_.find(key);
+      if (it != map_.end()) {
+	    map_.erase(it);
+	    return true;
+      }
+      return false;
+}
+
+bool vvp_assoc_vec4::first(string&key) const
+{
+      if (map_.empty()) return false;
+      key = map_.begin()->first;
+      return true;
+}
+
+bool vvp_assoc_vec4::last(string&key) const
+{
+      if (map_.empty()) return false;
+      key = map_.rbegin()->first;
+      return true;
+}
+
+bool vvp_assoc_vec4::next(string&key) const
+{
+      auto it = map_.find(key);
+      if (it == map_.end()) return false;
+      ++it;
+      if (it == map_.end()) return false;
+      key = it->first;
+      return true;
+}
+
+bool vvp_assoc_vec4::prev(string&key) const
+{
+      auto it = map_.find(key);
+      if (it == map_.end()) return false;
+      if (it == map_.begin()) return false;
+      --it;
+      key = it->first;
+      return true;
+}
+
 /* vvp_assoc_real */
 
 vvp_assoc_real::~vvp_assoc_real()
@@ -1124,6 +1173,55 @@ vvp_object* vvp_assoc_real::duplicate(void) const
       return res;
 }
 
+bool vvp_assoc_real::exists(const string&key) const
+{
+      return map_.find(key) != map_.end();
+}
+
+bool vvp_assoc_real::delete_word(const string&key)
+{
+      auto it = map_.find(key);
+      if (it != map_.end()) {
+	    map_.erase(it);
+	    return true;
+      }
+      return false;
+}
+
+bool vvp_assoc_real::first(string&key) const
+{
+      if (map_.empty()) return false;
+      key = map_.begin()->first;
+      return true;
+}
+
+bool vvp_assoc_real::last(string&key) const
+{
+      if (map_.empty()) return false;
+      key = map_.rbegin()->first;
+      return true;
+}
+
+bool vvp_assoc_real::next(string&key) const
+{
+      auto it = map_.find(key);
+      if (it == map_.end()) return false;
+      ++it;
+      if (it == map_.end()) return false;
+      key = it->first;
+      return true;
+}
+
+bool vvp_assoc_real::prev(string&key) const
+{
+      auto it = map_.find(key);
+      if (it == map_.end()) return false;
+      if (it == map_.begin()) return false;
+      --it;
+      key = it->first;
+      return true;
+}
+
 /* vvp_assoc_string */
 
 vvp_assoc_string::~vvp_assoc_string()
@@ -1158,4 +1256,53 @@ vvp_object* vvp_assoc_string::duplicate(void) const
       vvp_assoc_string*res = new vvp_assoc_string();
       res->map_ = map_;
       return res;
+}
+
+bool vvp_assoc_string::exists(const string&key) const
+{
+      return map_.find(key) != map_.end();
+}
+
+bool vvp_assoc_string::delete_word(const string&key)
+{
+      auto it = map_.find(key);
+      if (it != map_.end()) {
+	    map_.erase(it);
+	    return true;
+      }
+      return false;
+}
+
+bool vvp_assoc_string::first(string&key) const
+{
+      if (map_.empty()) return false;
+      key = map_.begin()->first;
+      return true;
+}
+
+bool vvp_assoc_string::last(string&key) const
+{
+      if (map_.empty()) return false;
+      key = map_.rbegin()->first;
+      return true;
+}
+
+bool vvp_assoc_string::next(string&key) const
+{
+      auto it = map_.find(key);
+      if (it == map_.end()) return false;
+      ++it;
+      if (it == map_.end()) return false;
+      key = it->first;
+      return true;
+}
+
+bool vvp_assoc_string::prev(string&key) const
+{
+      auto it = map_.find(key);
+      if (it == map_.end()) return false;
+      if (it == map_.begin()) return false;
+      --it;
+      key = it->first;
+      return true;
 }

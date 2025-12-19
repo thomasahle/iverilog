@@ -985,6 +985,61 @@ static void draw_vifprop_vec4(ivl_expr_t expr)
       fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 }
 
+/*
+ * Associative array method call: arr.exists(key), arr.first(key), etc.
+ * This generates the appropriate VVP opcode for the method.
+ */
+static void draw_assoc_method_vec4(ivl_expr_t expr)
+{
+      ivl_signal_t sig = ivl_expr_assoc_signal(expr);
+      int pidx = ivl_expr_assoc_property_idx(expr);
+      ivl_assoc_method_t method = ivl_expr_assoc_method(expr);
+      ivl_expr_t key_expr = ivl_expr_assoc_key(expr);
+
+      const char* method_name = "";
+      switch (method) {
+	  case IVL_ASSOC_EXISTS: method_name = "exists"; break;
+	  case IVL_ASSOC_DELETE: method_name = "delete"; break;
+	  case IVL_ASSOC_FIRST:  method_name = "first"; break;
+	  case IVL_ASSOC_LAST:   method_name = "last"; break;
+	  case IVL_ASSOC_NEXT:   method_name = "next"; break;
+	  case IVL_ASSOC_PREV:   method_name = "prev"; break;
+	  case IVL_ASSOC_NUM:    method_name = "num"; break;
+      }
+
+        // num() doesn't need a key argument
+      int needs_key = (method != IVL_ASSOC_NUM);
+
+      if (pidx >= 0) {
+	    /* Associative array is a class property */
+	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+
+	    /* If there's a key expression, evaluate it and convert to string */
+	    if (key_expr) {
+		  draw_eval_string(key_expr);
+	    } else if (needs_key) {
+		  /* For first/last/next/prev without argument, push empty string */
+		  fprintf(vvp_out, "    %%pushi/str \"\";\n");
+	    }
+
+	    /* Emit the property associative array method opcode */
+	    fprintf(vvp_out, "    %%prop/assoc/%s %d;\n", method_name, pidx);
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+      } else {
+	    /* Standalone associative array variable */
+	    /* If there's a key expression, evaluate it and convert to string */
+	    if (key_expr) {
+		  draw_eval_string(key_expr);
+	    } else if (needs_key) {
+		  /* For first/last/next/prev without argument, push empty string */
+		  fprintf(vvp_out, "    %%pushi/str \"\";\n");
+	    }
+
+	    /* Emit the standalone associative array method opcode */
+	    fprintf(vvp_out, "    %%assoc/%s v%p_0;\n", method_name, sig);
+      }
+}
+
 static void draw_select_vec4(ivl_expr_t expr)
 {
 	// This is the sub-expression to part-select.
@@ -1665,6 +1720,10 @@ void draw_eval_vec4(ivl_expr_t expr)
 
 	  case IVL_EX_VIFPROP:
 	    draw_vifprop_vec4(expr);
+	    return;
+
+	  case IVL_EX_ASSOC_METHOD:
+	    draw_assoc_method_vec4(expr);
 	    return;
 
 	  case IVL_EX_NULL:

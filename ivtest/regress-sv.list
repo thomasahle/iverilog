@@ -1162,3 +1162,7 @@ sv_constraint_tight	normal,-g2012	ivltests	gold=sv_constraint_tight.gold
 sv_foreach_nested_prop	normal,-g2012	ivltests	gold=sv_foreach_nested_prop.gold
 sv_struct_var_bitsel	normal	ivltests	gold=sv_struct_var_bitsel.gold
 sv_struct_member_bitsel	normal,-g2012	ivltests	gold=sv_struct_member_bitsel.gold
+sv_assoc_methods	normal,-g2012	ivltests	gold=sv_assoc_methods.gold
+sv_assoc_int_key	normal,-g2012	ivltests	gold=sv_assoc_int_key.gold
+sv_assoc_class_prop	normal,-g2012	ivltests	gold=sv_assoc_class_prop.gold
+sv_assoc_bit_types	normal,-g2012	ivltests	gold=sv_assoc_bit_types.gold

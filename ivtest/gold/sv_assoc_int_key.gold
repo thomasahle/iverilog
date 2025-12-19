@@ -1,0 +1,14 @@
+Testing associative array with integer keys:
+PASSED: exists on empty array returns 0
+PASSED: num() = 3
+PASSED: size() = 3
+PASSED: exists(20) = 1
+PASSED: exists(99) = 0
+PASSED: arr[10] = 100
+PASSED: arr[10] updated to 111
+PASSED: delete(20) worked
+PASSED: num() after delete = 2
+PASSED: exists(-5) = 1
+PASSED: arr[-5] = 500
+
+PASSED

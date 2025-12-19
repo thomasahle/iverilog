@@ -1,0 +1,20 @@
+Testing associative arrays with different bit/logic types:
+
+Testing bit[7:0] array with string keys:
+PASSED: byte_arr.num() = 3
+PASSED: byte_arr['b'] = 0xbb
+PASSED: byte_arr.exists('b') = 1
+PASSED: byte_arr.delete('b') worked
+
+Testing bit[31:0] array with int keys:
+PASSED: word_arr.num() = 2
+PASSED: word_arr[100] = 0xdeadbeef
+PASSED: word_arr.exists(100) = 1
+PASSED: word_arr.exists(999) = 0
+
+Testing logic[15:0] array with string keys:
+PASSED: logic_arr.num() = 3
+PASSED: logic_arr['y'] = 0x5678
+PASSED: logic_arr['y'] updated to 0xffff
+
+PASSED

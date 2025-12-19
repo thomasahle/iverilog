@@ -248,8 +248,20 @@ typedef enum ivl_expr_type_e {
       IVL_EX_UFUNC = 12,
       IVL_EX_ULONG = 13,
       IVL_EX_UNARY = 14,
-      IVL_EX_VIFPROP = 27  /* Virtual interface property access */
+      IVL_EX_VIFPROP = 27,  /* Virtual interface property access */
+      IVL_EX_ASSOC_METHOD = 28  /* Associative array method call */
 } ivl_expr_type_t;
+
+/* Associative array method types for IVL_EX_ASSOC_METHOD */
+typedef enum ivl_assoc_method_e {
+      IVL_ASSOC_EXISTS = 0,
+      IVL_ASSOC_DELETE = 1,
+      IVL_ASSOC_FIRST  = 2,
+      IVL_ASSOC_LAST   = 3,
+      IVL_ASSOC_NEXT   = 4,
+      IVL_ASSOC_PREV   = 5,
+      IVL_ASSOC_NUM    = 6
+} ivl_assoc_method_t;
 
 typedef enum ivl_select_type_e ENUM_UNSIGNED_INT {
       IVL_SEL_OTHER = 0,
@@ -981,6 +993,11 @@ extern ivl_expr_t ivl_expr_property_array_idx(ivl_expr_t net);
 extern ivl_expr_t ivl_expr_vifprop_base(ivl_expr_t net);  /* vif expression */
 extern const char* ivl_expr_vifprop_member(ivl_expr_t net);  /* member name */
 extern ivl_signal_t ivl_expr_vifprop_sig(ivl_expr_t net);  /* member signal */
+  /* IVL_EX_ASSOC_METHOD - associative array method call */
+extern ivl_signal_t ivl_expr_assoc_signal(ivl_expr_t net);  /* base signal */
+extern int ivl_expr_assoc_property_idx(ivl_expr_t net);  /* property index */
+extern ivl_assoc_method_t ivl_expr_assoc_method(ivl_expr_t net);  /* method type */
+extern ivl_expr_t ivl_expr_assoc_key(ivl_expr_t net);  /* key expression */
   /* IVL_EX_SCOPE */
 extern ivl_scope_t ivl_expr_scope(ivl_expr_t net);
   /* IVL_EX_PROPERTY IVL_EX_SIGNAL */

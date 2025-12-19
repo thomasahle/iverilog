@@ -7295,11 +7295,13 @@ bool of_STORE_ASSOC_VEC4(vthread_t thr, vvp_code_t cp)
 	    vvp_object_t tmp(assoc);
 	    vvp_net_ptr_t ptr(net, 0);
 	    vvp_send_object(ptr, tmp, thr->wt_context);
+	      // Re-get the assoc after sending to ensure we have the stored version
 	    assoc = obj->get_object().peek<vvp_assoc>();
       }
 
-      if (assoc)
+      if (assoc) {
 	    assoc->set_word(key, value);
+      }
 
       return true;
 }
@@ -7359,6 +7361,207 @@ bool of_STORE_ASSOC_STR(vthread_t thr, vvp_code_t cp)
       if (assoc)
 	    assoc->set_word(key, value);
 
+      return true;
+}
+
+/*
+ * %assoc/exists <array-label>
+ * Check if key exists in associative array. Key is on string stack.
+ * Pushes 1 if key exists, 0 otherwise onto vec4 stack.
+ */
+bool of_ASSOC_EXISTS(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+
+      bool exists = false;
+      if (assoc) {
+	    exists = assoc->exists(key);
+      }
+
+	// Return integer 1 (0x00000001) or 0 (0x00000000), not 0xFFFFFFFF
+      vvp_vector4_t result(32, BIT4_0);
+      if (exists) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %assoc/delete <array-label>
+ * Delete key from associative array. Key is on string stack.
+ * Pushes 1 if key was present and deleted, 0 otherwise.
+ */
+bool of_ASSOC_DELETE(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+
+        // delete() is a void method - no return value
+      if (assoc)
+	    assoc->delete_word(key);
+
+      return true;
+}
+
+/*
+ * %assoc/first <array-label>
+ * Get first key in associative array.
+ * Pops current key from string stack, pushes first key back.
+ * Pushes 1 if key found, 0 if array empty onto vec4 stack.
+ */
+bool of_ASSOC_FIRST(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();  // Pop current key (may be unused)
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+
+      bool found = false;
+      if (assoc)
+	    found = assoc->first(key);
+
+      thr->push_str(key);
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (found) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %assoc/last <array-label>
+ * Get last key in associative array.
+ * Pops current key from string stack, pushes last key back.
+ * Pushes 1 if key found, 0 if array empty onto vec4 stack.
+ */
+bool of_ASSOC_LAST(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+
+      bool found = false;
+      if (assoc)
+	    found = assoc->last(key);
+
+      thr->push_str(key);
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (found) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %assoc/next <array-label>
+ * Get next key after current key in associative array.
+ * Pops current key from string stack, pushes next key back.
+ * Pushes 1 if next key found, 0 if no more keys onto vec4 stack.
+ */
+bool of_ASSOC_NEXT(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+
+      bool found = false;
+      if (assoc)
+	    found = assoc->next(key);
+
+      thr->push_str(key);
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (found) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %assoc/prev <array-label>
+ * Get previous key before current key in associative array.
+ * Pops current key from string stack, pushes prev key back.
+ * Pushes 1 if prev key found, 0 if no more keys onto vec4 stack.
+ */
+bool of_ASSOC_PREV(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      string key = thr->pop_str();
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+
+      bool found = false;
+      if (assoc)
+	    found = assoc->prev(key);
+
+      thr->push_str(key);
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (found) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %assoc/num <array-label>
+ * Get number of elements in associative array.
+ * Pushes size onto vec4 stack.
+ */
+bool of_ASSOC_NUM(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      assert(net);
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_assoc*assoc = obj->get_object().peek<vvp_assoc>();
+
+      size_t size = 0;
+      if (assoc)
+	    size = assoc->get_size();
+
+      vvp_vector4_t result(32, BIT4_0);
+      for (unsigned i = 0; i < 32 && i < sizeof(size)*8; i++) {
+	    if (size & (1UL << i))
+		  result.set_bit(i, BIT4_1);
+      }
+      thr->push_vec4(result);
       return true;
 }
 
@@ -7720,6 +7923,237 @@ bool of_PROP_ASSOC_VEC4(vthread_t thr, vvp_code_t cp)
       assoc->get_word(key, val);
       thr->push_vec4(val);
 
+      return true;
+}
+
+/*
+ * %prop/assoc/exists <pid>
+ * Check if key exists in associative array property. Key is on string stack.
+ * Pushes 1 if key exists, 0 otherwise onto vec4 stack.
+ */
+bool of_PROP_ASSOC_EXISTS(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+      string key = thr->pop_str();
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      vvp_object_t prop_obj;
+      cobj->get_object(pid, prop_obj, 0);
+
+      vvp_assoc*assoc = prop_obj.peek<vvp_assoc>();
+      bool exists = false;
+      if (assoc)
+	    exists = assoc->exists(key);
+
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (exists) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %prop/assoc/delete <pid>
+ * Delete key from associative array property. Key is on string stack.
+ * Pushes 1 if key was deleted, 0 otherwise.
+ */
+bool of_PROP_ASSOC_DELETE(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+      string key = thr->pop_str();
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      vvp_object_t prop_obj;
+      cobj->get_object(pid, prop_obj, 0);
+
+      vvp_assoc*assoc = prop_obj.peek<vvp_assoc>();
+      bool deleted = false;
+      if (assoc)
+	    deleted = assoc->delete_word(key);
+
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (deleted) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %prop/assoc/first <pid>
+ * Get first key in associative array property.
+ * Pops current key from string stack, pushes first key back.
+ * Pushes 1 if found, 0 if array empty onto vec4 stack.
+ */
+bool of_PROP_ASSOC_FIRST(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+      string key = thr->pop_str();
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    thr->push_str("");
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      vvp_object_t prop_obj;
+      cobj->get_object(pid, prop_obj, 0);
+
+      vvp_assoc*assoc = prop_obj.peek<vvp_assoc>();
+      bool found = false;
+      if (assoc)
+	    found = assoc->first(key);
+
+      thr->push_str(key);
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (found) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %prop/assoc/last <pid>
+ * Get last key in associative array property.
+ */
+bool of_PROP_ASSOC_LAST(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+      string key = thr->pop_str();
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    thr->push_str("");
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      vvp_object_t prop_obj;
+      cobj->get_object(pid, prop_obj, 0);
+
+      vvp_assoc*assoc = prop_obj.peek<vvp_assoc>();
+      bool found = false;
+      if (assoc)
+	    found = assoc->last(key);
+
+      thr->push_str(key);
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (found) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %prop/assoc/next <pid>
+ * Get next key after current key in associative array property.
+ */
+bool of_PROP_ASSOC_NEXT(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+      string key = thr->pop_str();
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    thr->push_str("");
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      vvp_object_t prop_obj;
+      cobj->get_object(pid, prop_obj, 0);
+
+      vvp_assoc*assoc = prop_obj.peek<vvp_assoc>();
+      bool found = false;
+      if (assoc)
+	    found = assoc->next(key);
+
+      thr->push_str(key);
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (found) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %prop/assoc/prev <pid>
+ * Get previous key before current key in associative array property.
+ */
+bool of_PROP_ASSOC_PREV(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+      string key = thr->pop_str();
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    thr->push_str("");
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      vvp_object_t prop_obj;
+      cobj->get_object(pid, prop_obj, 0);
+
+      vvp_assoc*assoc = prop_obj.peek<vvp_assoc>();
+      bool found = false;
+      if (assoc)
+	    found = assoc->prev(key);
+
+      thr->push_str(key);
+	// Return integer 1 or 0
+      vvp_vector4_t result(32, BIT4_0);
+      if (found) result.set_bit(0, BIT4_1);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %prop/assoc/num <pid>
+ * Get number of elements in associative array property.
+ * Pushes size onto vec4 stack.
+ */
+bool of_PROP_ASSOC_NUM(vthread_t thr, vvp_code_t cp)
+{
+      size_t pid = cp->number;
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+      if (!cobj) {
+	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+	    return true;
+      }
+
+      vvp_object_t prop_obj;
+      cobj->get_object(pid, prop_obj, 0);
+
+      vvp_assoc*assoc = prop_obj.peek<vvp_assoc>();
+      size_t size = 0;
+      if (assoc)
+	    size = assoc->get_size();
+
+      vvp_vector4_t result(32, BIT4_0);
+      for (unsigned i = 0; i < 32 && i < sizeof(size)*8; i++) {
+	    if (size & (1UL << i))
+		  result.set_bit(i, BIT4_1);
+      }
+      thr->push_vec4(result);
       return true;
 }
 

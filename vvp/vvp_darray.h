@@ -270,7 +270,8 @@ class vvp_queue_object : public vvp_queue {
 extern std::string get_fileline();
 
 /*
- * Associative arrays - key is always a string, value varies by type.
+ * Associative arrays - key is always a string internally, value varies by type.
+ * Non-string keys (int, longint, etc.) are converted to strings at code generation.
  */
 class vvp_assoc : public vvp_object {
 
@@ -288,6 +289,26 @@ class vvp_assoc : public vvp_object {
 
       virtual void set_word(const std::string&key, const std::string&value);
       virtual void get_word(const std::string&key, std::string&value);
+
+	// Check if a key exists in the array
+      virtual bool exists(const std::string&key) const =0;
+
+	// Delete a key from the array. Returns true if key was present.
+      virtual bool delete_word(const std::string&key) =0;
+
+	// Get the first key. Returns true if array is not empty.
+      virtual bool first(std::string&key) const =0;
+
+	// Get the last key. Returns true if array is not empty.
+      virtual bool last(std::string&key) const =0;
+
+	// Get the next key after 'key'. Returns true if there is a next key.
+	// 'key' is updated to the next key value.
+      virtual bool next(std::string&key) const =0;
+
+	// Get the previous key before 'key'. Returns true if there is a prev key.
+	// 'key' is updated to the previous key value.
+      virtual bool prev(std::string&key) const =0;
 };
 
 class vvp_assoc_vec4 : public vvp_assoc {
@@ -301,6 +322,13 @@ class vvp_assoc_vec4 : public vvp_assoc {
       void get_word(const std::string&key, vvp_vector4_t&value) override;
       void shallow_copy(const vvp_object*obj) override;
       vvp_object* duplicate(void) const override;
+
+      bool exists(const std::string&key) const override;
+      bool delete_word(const std::string&key) override;
+      bool first(std::string&key) const override;
+      bool last(std::string&key) const override;
+      bool next(std::string&key) const override;
+      bool prev(std::string&key) const override;
 
     private:
       std::map<std::string, vvp_vector4_t> map_;
@@ -319,6 +347,13 @@ class vvp_assoc_real : public vvp_assoc {
       void shallow_copy(const vvp_object*obj) override;
       vvp_object* duplicate(void) const override;
 
+      bool exists(const std::string&key) const override;
+      bool delete_word(const std::string&key) override;
+      bool first(std::string&key) const override;
+      bool last(std::string&key) const override;
+      bool next(std::string&key) const override;
+      bool prev(std::string&key) const override;
+
     private:
       std::map<std::string, double> map_;
 };
@@ -334,6 +369,13 @@ class vvp_assoc_string : public vvp_assoc {
       void get_word(const std::string&key, std::string&value) override;
       void shallow_copy(const vvp_object*obj) override;
       vvp_object* duplicate(void) const override;
+
+      bool exists(const std::string&key) const override;
+      bool delete_word(const std::string&key) override;
+      bool first(std::string&key) const override;
+      bool last(std::string&key) const override;
+      bool next(std::string&key) const override;
+      bool prev(std::string&key) const override;
 
     private:
       std::map<std::string, std::string> map_;

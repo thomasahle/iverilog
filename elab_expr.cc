@@ -4254,37 +4254,53 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			     << "." << method_name << endl;
 		  }
 
-		  // Check if the key type is supported (only string keys work in VVP)
-		  ivl_type_t key_type = assoc_type->index_type();
-		  bool string_key = (key_type == 0); // null means string key
-		  if (!string_key) {
-			cerr << get_fileline() << ": sorry: "
-			     << "Associative array methods on property '" << prop_name
-			     << "' with non-string keys are not yet supported." << endl;
+		  // All key types are now supported - conversion to string for lookup
+		  // happens in the VVP runtime
+
+		  // Handle supported methods
+		  NetNet*this_net = search_results.net;
+
+		  // Handle size(), num(), exists(), delete(), first(), last(), next(), prev()
+		  NetEAssocMethod::method_t meth;
+		  bool needs_key = false;
+		  if (method_name == "size" || method_name == "num") {
+			meth = NetEAssocMethod::ASSOC_NUM;
+			needs_key = false;
+		  } else if (method_name == "exists") {
+			meth = NetEAssocMethod::ASSOC_EXISTS;
+			needs_key = true;
+		  } else if (method_name == "delete") {
+			meth = NetEAssocMethod::ASSOC_DELETE;
+			needs_key = true;
+		  } else if (method_name == "first") {
+			meth = NetEAssocMethod::ASSOC_FIRST;
+			needs_key = true;
+		  } else if (method_name == "last") {
+			meth = NetEAssocMethod::ASSOC_LAST;
+			needs_key = true;
+		  } else if (method_name == "next") {
+			meth = NetEAssocMethod::ASSOC_NEXT;
+			needs_key = true;
+		  } else if (method_name == "prev") {
+			meth = NetEAssocMethod::ASSOC_PREV;
+			needs_key = true;
+		  } else {
+			cerr << get_fileline() << ": error: "
+			     << "Unknown associative array method '" << method_name
+			     << "' on class property '" << prop_name << "'." << endl;
 			des->errors += 1;
 			return 0;
 		  }
 
-		  // Handle supported methods
-		  if (method_name == "size" || method_name == "num") {
-			// Create expression to load the property from 'this'
-			NetNet*this_net = search_results.net;
-			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
-			prop_expr->set_line(*this);
-
-			NetESFunc*sys_expr = new NetESFunc("$size", &netvector_t::atom2u32, 1);
-			sys_expr->set_line(*this);
-			sys_expr->parm(0, prop_expr);
-			return sys_expr;
+		  // Elaborate the key argument if needed
+		  NetExpr*key_expr = 0;
+		  if (needs_key && parms_.size() > 0 && parms_[0].parm) {
+			key_expr = elab_and_eval(des, scope, parms_[0].parm, -1, true);
 		  }
 
-		  // exists(), delete(), first(), last(), next(), prev() need more work
-		  cerr << get_fileline() << ": sorry: "
-		       << "Associative array method '" << method_name
-		       << "' on class property '" << prop_name
-		       << "' is not yet supported." << endl;
-		  des->errors += 1;
-		  return 0;
+		  NetEAssocMethod*method_expr = new NetEAssocMethod(this_net, prop_idx, meth, key_expr);
+		  method_expr->set_line(*this);
+		  return method_expr;
 	    }
 
 	    // Check if property is a dynamic array - handle array methods
@@ -5010,6 +5026,63 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		 << " is not a queue method." << endl;
 	    des->errors += 1;
 	    return 0;
+      }
+
+      // Associative array methods. This handles the case that the located signal
+      // is an associative array.
+      if (search_results.net && search_results.net->data_type()==IVL_VT_ASSOC
+	  && search_results.path_head.back().index.size()==0) {
+
+	    NetNet*net = search_results.net;
+	    // Get the method name that we are looking for.
+	    perm_string method_name = search_results.path_tail.back().name;
+
+	    // Handle all associative array methods including num/size
+	    NetEAssocMethod::method_t meth;
+	    bool needs_key = false;
+	    if (method_name == "size" || method_name == "num") {
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: " << method_name
+			     << "() method takes no arguments" << endl;
+			des->errors += 1;
+		  }
+		  meth = NetEAssocMethod::ASSOC_NUM;
+		  needs_key = false;
+	    } else if (method_name == "exists") {
+		  meth = NetEAssocMethod::ASSOC_EXISTS;
+		  needs_key = true;
+	    } else if (method_name == "delete") {
+		  meth = NetEAssocMethod::ASSOC_DELETE;
+		  needs_key = true;
+	    } else if (method_name == "first") {
+		  meth = NetEAssocMethod::ASSOC_FIRST;
+		  needs_key = true;
+	    } else if (method_name == "last") {
+		  meth = NetEAssocMethod::ASSOC_LAST;
+		  needs_key = true;
+	    } else if (method_name == "next") {
+		  meth = NetEAssocMethod::ASSOC_NEXT;
+		  needs_key = true;
+	    } else if (method_name == "prev") {
+		  meth = NetEAssocMethod::ASSOC_PREV;
+		  needs_key = true;
+	    } else {
+		  cerr << get_fileline() << ": error: Method " << method_name
+		       << " is not an associative array method." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Elaborate the key argument if needed
+	    NetExpr*key_expr = 0;
+	    if (needs_key && parms_.size() > 0 && parms_[0].parm) {
+		  key_expr = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+	    }
+
+	    // Use -1 for property index to indicate standalone array
+	    NetEAssocMethod*method_expr = new NetEAssocMethod(net, -1, meth, key_expr);
+	    method_expr->set_line(*this);
+	    return method_expr;
       }
 
       // Enumeration methods.
