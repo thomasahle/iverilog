@@ -1,0 +1,6 @@
+Testing method calls on darray property elements:
+c.configs[0].get_info() = cfg0=100
+c.configs[1].get_info() = cfg1=200
+c.configs[2].get_info() = cfg2=300
+
+PASSED

@@ -2068,29 +2068,87 @@ bool PEIdent::elaborate_lval_net_unpacked_member_(Design*des, NetScope*scope,
 		  }
 
 		  const index_component_t& idx_comp = member_comp.index.back();
-		  if (idx_comp.sel != index_component_t::SEL_BIT) {
-			cerr << get_fileline() << ": sorry: Part-select on struct "
-			     << "member not yet supported (only bit-select)." << endl;
+
+		  if (idx_comp.sel == index_component_t::SEL_BIT) {
+			  // Bit-select: member[bit_idx]
+			NetExpr* idx_expr = elab_and_eval(des, scope, idx_comp.msb, -1, false);
+			if (idx_expr == 0) {
+			      cerr << get_fileline() << ": error: Failed to elaborate "
+				   << "bit-select index." << endl;
+			      des->errors += 1;
+			      return false;
+			}
+			lv->set_part(idx_expr, 1);
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+				   << "Added bit-select to member '" << member_name << "'"
+				   << endl;
+			}
+		  } else if (idx_comp.sel == index_component_t::SEL_PART) {
+			  // Constant part-select: member[msb:lsb]
+			NetExpr* msb_expr = elab_and_eval(des, scope, idx_comp.msb, -1, true);
+			NetExpr* lsb_expr = elab_and_eval(des, scope, idx_comp.lsb, -1, true);
+			if (msb_expr == 0 || lsb_expr == 0) {
+			      cerr << get_fileline() << ": error: Failed to elaborate "
+				   << "part-select bounds." << endl;
+			      des->errors += 1;
+			      return false;
+			}
+			const NetEConst* msb_const = dynamic_cast<const NetEConst*>(msb_expr);
+			const NetEConst* lsb_const = dynamic_cast<const NetEConst*>(lsb_expr);
+			if (msb_const == 0 || lsb_const == 0) {
+			      cerr << get_fileline() << ": error: Part-select bounds must "
+				   << "be constant." << endl;
+			      des->errors += 1;
+			      return false;
+			}
+			long msb_val = msb_const->value().as_long();
+			long lsb_val = lsb_const->value().as_long();
+			unsigned long wid = (msb_val >= lsb_val) ? msb_val - lsb_val + 1 : lsb_val - msb_val + 1;
+			long base_val = (msb_val >= lsb_val) ? lsb_val : msb_val;
+			verinum base_ver(base_val);
+			base_ver.has_sign(true);
+			lv->set_part(new NetEConst(base_ver), wid);
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+				   << "Added part-select [" << msb_val << ":" << lsb_val
+				   << "] to member '" << member_name << "'" << endl;
+			}
+		  } else if (idx_comp.sel == index_component_t::SEL_IDX_UP ||
+			     idx_comp.sel == index_component_t::SEL_IDX_DO) {
+			  // Indexed part-select: member[base +: width] or member[base -: width]
+			NetExpr* base_expr = elab_and_eval(des, scope, idx_comp.msb, -1, false);
+			NetExpr* wid_expr = elab_and_eval(des, scope, idx_comp.lsb, -1, true);
+			if (base_expr == 0 || wid_expr == 0) {
+			      cerr << get_fileline() << ": error: Failed to elaborate "
+				   << "indexed part-select." << endl;
+			      des->errors += 1;
+			      return false;
+			}
+			const NetEConst* wid_const = dynamic_cast<const NetEConst*>(wid_expr);
+			if (wid_const == 0) {
+			      cerr << get_fileline() << ": error: Indexed part-select width "
+				   << "must be constant." << endl;
+			      des->errors += 1;
+			      return false;
+			}
+			unsigned long wid = wid_const->value().as_ulong();
+			ivl_select_type_t sel_type = (idx_comp.sel == index_component_t::SEL_IDX_UP)
+			      ? IVL_SEL_IDX_UP : IVL_SEL_IDX_DOWN;
+			lv->set_part(base_expr, wid, sel_type);
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+				   << "Added indexed part-select to member '" << member_name << "'"
+				   << endl;
+			}
+		  } else {
+			cerr << get_fileline() << ": sorry: Unsupported select type on struct "
+			     << "member." << endl;
 			des->errors += 1;
 			return false;
-		  }
-
-		    // Elaborate the index expression
-		  NetExpr* idx_expr = elab_and_eval(des, scope, idx_comp.msb, -1, false);
-		  if (idx_expr == 0) {
-			cerr << get_fileline() << ": error: Failed to elaborate "
-			     << "bit-select index." << endl;
-			des->errors += 1;
-			return false;
-		  }
-
-		    // Set the part-select info for the bit being accessed
-		  lv->set_part(idx_expr, 1);
-
-		  if (debug_elaborate) {
-			cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
-			     << "Added bit-select to member '" << member_name << "'"
-			     << endl;
 		  }
 	    } else {
 		    // Member is not a packed vector - can't do indexed access

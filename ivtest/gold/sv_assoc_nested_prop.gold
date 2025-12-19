@@ -1,0 +1,11 @@
+Testing associative array methods on nested class properties:
+PASSED: get_count on empty = 0
+PASSED: get_size on empty = 0
+PASSED: check_exists(100) on empty = 0
+PASSED: get_count = 3
+PASSED: check_exists(200) = 1
+PASSED: check_exists(999) = 0
+PASSED: env.cfg.memory.exists(100) = 1
+PASSED: env.cfg.memory.num() = 3
+
+PASSED

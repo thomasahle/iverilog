@@ -1,0 +1,11 @@
+Testing constant part-select on struct members:
+PASSED: pkt.data[7:0] = 0xef
+PASSED: pkt.data[15:8] = 0xbe
+PASSED: pkt.data[23:16] = 0xad
+PASSED: pkt.data[31:24] = 0xde
+PASSED: pkt.data[15:0] = 0xbeef
+PASSED: pkt.data[31:16] = 0xdead
+PASSED: pkt.addr[7:4] = 0x0c
+PASSED: pkt.addr[3:0] = 0x0d
+
+PASSED

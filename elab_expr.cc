@@ -4611,13 +4611,90 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			}
 
 			// Handle dynamic array property followed by method
+			// e.g., obj.darray_prop[i].method()
 			if (const netdarray_t*next_darray = dynamic_cast<const netdarray_t*>(next_prop_type)) {
-			      cerr << get_fileline() << ": sorry: "
-				   << "Dynamic array method '" << final_method
-				   << "' on nested property '" << prop_name << "." << method_name
-				   << "' not yet supported." << endl;
-			      des->errors += 1;
-			      return 0;
+			      // Get the index from the darray property access
+			      NetExpr* darray_index = 0;
+			      if (!it->index.empty()) {
+				    const index_component_t& use_index = it->index.back();
+				    if (use_index.msb != 0) {
+					  darray_index = elab_and_eval(des, scope, use_index.msb, -1, false);
+				    }
+			      }
+
+			      // If no index, we can't call methods on the array itself
+			      if (!darray_index) {
+				    cerr << get_fileline() << ": sorry: "
+					 << "Dynamic array method '" << final_method
+					 << "' on nested property '" << prop_name << "." << method_name
+					 << "' not yet supported (no index provided)." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+
+			      // Get the element type from the darray
+			      const netclass_t* element_class = dynamic_cast<const netclass_t*>(next_darray->element_type());
+			      if (!element_class) {
+				    cerr << get_fileline() << ": error: "
+					 << "Cannot call method '" << final_method
+					 << "' on non-class array element type." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+
+			      // Find the method in the element class
+			      NetScope* method_scope = element_class->method_from_name(final_method);
+			      if (!method_scope || method_scope->type() != NetScope::FUNC) {
+				    cerr << get_fileline() << ": error: "
+					 << "Method '" << final_method << "' not found in class "
+					 << element_class->get_name() << "." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+
+			      NetFuncDef* func_def = method_scope->func_def();
+			      if (!func_def) {
+				    cerr << get_fileline() << ": error: "
+					 << "Function " << final_method << " has no definition "
+					 << "(extern declaration without body)." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+
+			      // Create expression to load the first property
+			      NetNet* this_net = search_results.net;
+			      NetEProperty* first_prop = new NetEProperty(this_net, prop_idx);
+			      first_prop->set_line(*this);
+
+			      // Create expression to load the darray property and index it
+			      NetEProperty* indexed_prop = new NetEProperty(first_prop, next_prop_idx, darray_index);
+			      indexed_prop->set_line(*this);
+
+			      // Build the function call
+			      NetExpr* use_this = 0;
+			      if (func_def->port_count() > 0) {
+				    NetNet* first_port = func_def->port(0);
+				    if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+					  use_this = indexed_prop;
+				    }
+			      }
+
+			      unsigned parm_count = func_def->port_count();
+			      unsigned first_arg = use_this ? 1 : 0;
+			      vector<NetExpr*> argv(parm_count);
+			      if (use_this) argv[0] = use_this;
+			      for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
+				    const named_pexpr_t& parm = parms_[idx];
+				    if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+			      }
+
+			      NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
+			      NetESignal* ret_expr = new NetESignal(ret_sig);
+			      ret_expr->set_line(*this);
+
+			      NetEUFunc* call = new NetEUFunc(scope, method_scope, ret_expr, argv, false);
+			      call->set_line(*this);
+			      return call;
 			}
 
 			// Handle enum property followed by method (e.g., obj.enum_prop.name())
