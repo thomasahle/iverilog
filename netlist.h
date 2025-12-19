@@ -4748,16 +4748,24 @@ class NetEProperty : public NetExpr {
  * For exists(key): key_expr is the key to check
  * For first/last/next/prev(ref): key_expr is the reference variable (modified)
  * For num(): key_expr is null
+ *
+ * Two forms:
+ * 1. Direct property: net_ is 'this' signal, pidx_ is assoc array property index
+ * 2. Nested property: base_expr_ is expression for containing object, pidx_ is assoc array property index
  */
 class NetEAssocMethod : public NetExpr {
     public:
       enum method_t { ASSOC_EXISTS, ASSOC_DELETE, ASSOC_FIRST, ASSOC_LAST,
                       ASSOC_NEXT, ASSOC_PREV, ASSOC_NUM };
 
+      // Direct property access: this.assoc_prop.method()
       NetEAssocMethod(NetNet*net, size_t pidx, method_t method, NetExpr*key_expr);
+      // Nested property access: this.obj_prop.assoc_prop.method()
+      NetEAssocMethod(NetExpr*base, size_t pidx, method_t method, NetExpr*key_expr);
       ~NetEAssocMethod() override;
 
       inline const NetNet* get_sig() const { return net_; }
+      inline const NetExpr* get_base() const { return base_expr_; }
       inline size_t property_idx() const { return pidx_; }
       inline method_t method() const { return method_; }
       inline const NetExpr* key_expr() const { return key_expr_; }
@@ -4771,6 +4779,7 @@ class NetEAssocMethod : public NetExpr {
 
     private:
       NetNet*net_;
+      NetExpr*base_expr_;  // For nested property access
       size_t pidx_;
       method_t method_;
       NetExpr*key_expr_;

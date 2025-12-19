@@ -726,6 +726,13 @@ extern "C" ivl_signal_t ivl_expr_assoc_signal(ivl_expr_t net)
       return net->u_.assoc_method_.sig;
 }
 
+extern "C" ivl_expr_t ivl_expr_assoc_base(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_ASSOC_METHOD);
+      return net->u_.assoc_method_.base_expr;
+}
+
 extern "C" int ivl_expr_assoc_property_idx(ivl_expr_t net)
 {
       assert(net);

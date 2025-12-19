@@ -4560,22 +4560,54 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 
 			// Handle associative array property followed by method
 			if (const netassoc_t*next_assoc = dynamic_cast<const netassoc_t*>(next_prop_type)) {
-			      ivl_type_t key_type = next_assoc->index_type();
-			      bool string_key = (key_type == 0);
-			      if (!string_key) {
-				    cerr << get_fileline() << ": sorry: "
-					 << "Associative array property '" << method_name
-					 << "' with non-string keys: method '" << final_method
-					 << "' not yet supported." << endl;
+			      // Create expression to load the first property (the containing object)
+			      NetNet*this_net = search_results.net;
+			      NetEProperty*first_prop = new NetEProperty(this_net, prop_idx);
+			      first_prop->set_line(*this);
+
+			      // Determine method type
+			      NetEAssocMethod::method_t meth;
+			      bool needs_key = false;
+			      if (final_method == "size" || final_method == "num") {
+				    meth = NetEAssocMethod::ASSOC_NUM;
+				    needs_key = false;
+			      } else if (final_method == "exists") {
+				    meth = NetEAssocMethod::ASSOC_EXISTS;
+				    needs_key = true;
+			      } else if (final_method == "delete") {
+				    meth = NetEAssocMethod::ASSOC_DELETE;
+				    needs_key = true;
+			      } else if (final_method == "first") {
+				    meth = NetEAssocMethod::ASSOC_FIRST;
+				    needs_key = true;
+			      } else if (final_method == "last") {
+				    meth = NetEAssocMethod::ASSOC_LAST;
+				    needs_key = true;
+			      } else if (final_method == "next") {
+				    meth = NetEAssocMethod::ASSOC_NEXT;
+				    needs_key = true;
+			      } else if (final_method == "prev") {
+				    meth = NetEAssocMethod::ASSOC_PREV;
+				    needs_key = true;
+			      } else {
+				    cerr << get_fileline() << ": error: "
+					 << "Unknown associative array method '" << final_method
+					 << "' on nested property '" << prop_name << "." << method_name
+					 << "'." << endl;
 				    des->errors += 1;
 				    return 0;
 			      }
-			      cerr << get_fileline() << ": sorry: "
-				   << "Associative array method '" << final_method
-				   << "' on nested property '" << prop_name << "." << method_name
-				   << "' not yet supported." << endl;
-			      des->errors += 1;
-			      return 0;
+
+			      // Elaborate the key argument if needed (not constant)
+			      NetExpr*key_expr = 0;
+			      if (needs_key && parms_.size() > 0 && parms_[0].parm) {
+				    key_expr = elab_and_eval(des, scope, parms_[0].parm, -1, false);
+			      }
+
+			      // Create the method expression with base expression
+			      NetEAssocMethod*method_expr = new NetEAssocMethod(first_prop, next_prop_idx, meth, key_expr);
+			      method_expr->set_line(*this);
+			      return method_expr;
 			}
 
 			// Handle dynamic array property followed by method

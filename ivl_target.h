@@ -994,7 +994,8 @@ extern ivl_expr_t ivl_expr_vifprop_base(ivl_expr_t net);  /* vif expression */
 extern const char* ivl_expr_vifprop_member(ivl_expr_t net);  /* member name */
 extern ivl_signal_t ivl_expr_vifprop_sig(ivl_expr_t net);  /* member signal */
   /* IVL_EX_ASSOC_METHOD - associative array method call */
-extern ivl_signal_t ivl_expr_assoc_signal(ivl_expr_t net);  /* base signal */
+extern ivl_signal_t ivl_expr_assoc_signal(ivl_expr_t net);  /* base signal (null if base_expr set) */
+extern ivl_expr_t ivl_expr_assoc_base(ivl_expr_t net);  /* base expression for nested access */
 extern int ivl_expr_assoc_property_idx(ivl_expr_t net);  /* property index */
 extern ivl_assoc_method_t ivl_expr_assoc_method(ivl_expr_t net);  /* method type */
 extern ivl_expr_t ivl_expr_assoc_key(ivl_expr_t net);  /* key expression */

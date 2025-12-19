@@ -509,6 +509,14 @@ void dll_target::expr_assoc_method(const NetEAssocMethod*net)
 	    expr_ = 0;
       }
 
+      // Scan the base expression if present (for nested property access)
+      ivl_expr_t base = 0;
+      if (net->get_base()) {
+	    net->get_base()->expr_scan(this);
+	    base = expr_;
+	    expr_ = 0;
+      }
+
       assert(expr_ == 0);
       expr_ = static_cast<ivl_expr_t>(calloc(1, sizeof(struct ivl_expr_s)));
       expr_->width_  = net->expr_width();
@@ -518,7 +526,8 @@ void dll_target::expr_assoc_method(const NetEAssocMethod*net)
       FILE_NAME(expr_, net);
       expr_->value_  = net->expr_type();
       expr_->net_type= net->net_type();
-      expr_->u_.assoc_method_.sig = find_signal(des_, net->get_sig());
+      expr_->u_.assoc_method_.sig = net->get_sig() ? find_signal(des_, net->get_sig()) : 0;
+      expr_->u_.assoc_method_.base_expr = base;
       expr_->u_.assoc_method_.prop_idx = net->property_idx();
       expr_->u_.assoc_method_.method = static_cast<ivl_assoc_method_t>(net->method());
       expr_->u_.assoc_method_.key = key;

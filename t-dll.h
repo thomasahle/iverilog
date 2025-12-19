@@ -366,7 +366,8 @@ struct ivl_expr_s {
 	    } vifprop_;
 
 	    struct {
-		  ivl_signal_t sig;        // Base signal for class instance
+		  ivl_signal_t sig;        // Base signal for class instance (null if base_expr set)
+		  ivl_expr_t base_expr;    // Base expression for nested property access
 		  unsigned prop_idx;       // Property index in class
 		  ivl_assoc_method_t method;  // Method type
 		  ivl_expr_t key;          // Key expression (null for num())

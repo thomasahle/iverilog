@@ -992,6 +992,7 @@ static void draw_vifprop_vec4(ivl_expr_t expr)
 static void draw_assoc_method_vec4(ivl_expr_t expr)
 {
       ivl_signal_t sig = ivl_expr_assoc_signal(expr);
+      ivl_expr_t base_expr = ivl_expr_assoc_base(expr);
       int pidx = ivl_expr_assoc_property_idx(expr);
       ivl_assoc_method_t method = ivl_expr_assoc_method(expr);
       ivl_expr_t key_expr = ivl_expr_assoc_key(expr);
@@ -1010,8 +1011,24 @@ static void draw_assoc_method_vec4(ivl_expr_t expr)
         // num() doesn't need a key argument
       int needs_key = (method != IVL_ASSOC_NUM);
 
-      if (pidx >= 0) {
-	    /* Associative array is a class property */
+      if (base_expr) {
+	    /* Nested property access: base_expr.assoc_prop.method() */
+	    /* Evaluate the base expression to get the object */
+	    draw_eval_object(base_expr);
+
+	    /* If there's a key expression, evaluate it and convert to string */
+	    if (key_expr) {
+		  draw_eval_string(key_expr);
+	    } else if (needs_key) {
+		  /* For first/last/next/prev without argument, push empty string */
+		  fprintf(vvp_out, "    %%pushi/str \"\";\n");
+	    }
+
+	    /* Emit the property associative array method opcode */
+	    fprintf(vvp_out, "    %%prop/assoc/%s %d;\n", method_name, pidx);
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+      } else if (pidx >= 0) {
+	    /* Associative array is a direct class property */
 	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
 
 	    /* If there's a key expression, evaluate it and convert to string */
