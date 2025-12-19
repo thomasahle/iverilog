@@ -2043,23 +2043,63 @@ bool PEIdent::elaborate_lval_net_unpacked_member_(Design*des, NetScope*scope,
       const netstruct_t::member_t* member = struct_type->get_member(member_idx);
       ivl_assert(*this, member);
 
-	// Member index expression not supported yet for unpacked structs
-      if (!member_comp.index.empty()) {
-	    cerr << get_fileline() << ": sorry: Indexed access to unpacked "
-		 << "struct members not yet supported." << endl;
-	    des->errors += 1;
-	    return false;
-      }
+	// Store the struct member information in the l-value
+      lv->set_struct_member(member_name, member_idx);
 
       if (debug_elaborate) {
 	    cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
 		 << "Found member '" << member_name << "' at index " << member_idx
 		 << ", type=" << *(member->net_type)
+		 << ", has_index=" << (!member_comp.index.empty())
 		 << endl;
       }
 
-	// Store the struct member information in the l-value
-      lv->set_struct_member(member_name, member_idx);
+	// Handle indexed access to packed member of unpacked struct
+	// e.g., my_struct.packed_member[bit_idx] = value
+      if (!member_comp.index.empty()) {
+	    const netvector_t* vec_type = dynamic_cast<const netvector_t*>(member->net_type);
+	    if (vec_type && vec_type->packed()) {
+		    // Member is a packed vector - handle bit/part select
+		  if (member_comp.index.size() != 1) {
+			cerr << get_fileline() << ": sorry: Multi-dimensional indexed "
+			     << "access to struct members not yet supported." << endl;
+			des->errors += 1;
+			return false;
+		  }
+
+		  const index_component_t& idx_comp = member_comp.index.back();
+		  if (idx_comp.sel != index_component_t::SEL_BIT) {
+			cerr << get_fileline() << ": sorry: Part-select on struct "
+			     << "member not yet supported (only bit-select)." << endl;
+			des->errors += 1;
+			return false;
+		  }
+
+		    // Elaborate the index expression
+		  NetExpr* idx_expr = elab_and_eval(des, scope, idx_comp.msb, -1, false);
+		  if (idx_expr == 0) {
+			cerr << get_fileline() << ": error: Failed to elaborate "
+			     << "bit-select index." << endl;
+			des->errors += 1;
+			return false;
+		  }
+
+		    // Set the part-select info for the bit being accessed
+		  lv->set_part(idx_expr, 1);
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+			     << "Added bit-select to member '" << member_name << "'"
+			     << endl;
+		  }
+	    } else {
+		    // Member is not a packed vector - can't do indexed access
+		  cerr << get_fileline() << ": sorry: Indexed access to non-packed "
+		       << "struct members not yet supported." << endl;
+		  des->errors += 1;
+		  return false;
+	    }
+      }
 
       return true;
 }

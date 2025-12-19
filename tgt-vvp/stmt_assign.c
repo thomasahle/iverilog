@@ -1774,8 +1774,13 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
             return 1;
       }
 
-      fprintf(vvp_out, "    ; Struct member assignment: %s (idx=%d, off=%u, wid=%u, class_prop=%d)\n",
-              member_name ? member_name : "?", member_idx, member_off, member_wid, is_class_prop);
+      /* Check if there's an additional part/bit select on the member */
+      ivl_expr_t part_off_expr = ivl_lval_part_off(lval);
+      unsigned part_wid = ivl_lval_width(lval);
+      int has_bit_select = (part_off_expr != 0 && part_wid < member_wid);
+
+      fprintf(vvp_out, "    ; Struct member assignment: %s (idx=%d, off=%u, wid=%u, class_prop=%d, bit_sel=%d)\n",
+              member_name ? member_name : "?", member_idx, member_off, member_wid, is_class_prop, has_bit_select);
 
       /* Evaluate the r-value expression */
       draw_eval_vec4(rval);
@@ -1784,16 +1789,33 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
             /* Class property struct member: load object, store to property with offset */
             int offset_index = allocate_word();
             fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
-            fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
-            fprintf(vvp_out, "    %%store/prop/v/s %d, %d, %u; Store in struct property member\n",
-                    prop_idx, offset_index, member_wid);
+
+            if (has_bit_select) {
+                  /* Member offset + bit-select index */
+                  draw_eval_expr_into_integer(part_off_expr, offset_index);
+                  fprintf(vvp_out, "    %%ix/add %d, %u, 0; Add member base offset\n", offset_index, member_off);
+                  fprintf(vvp_out, "    %%store/prop/v/s %d, %d, %u; Store bit in struct property member\n",
+                          prop_idx, offset_index, part_wid);
+            } else {
+                  fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
+                  fprintf(vvp_out, "    %%store/prop/v/s %d, %d, %u; Store in struct property member\n",
+                          prop_idx, offset_index, member_wid);
+            }
             fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
             clr_word(offset_index);
       } else {
             /* Direct struct: load member offset and store directly */
             int offset_index = allocate_word();
-            fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
-            fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n", sig, offset_index, member_wid);
+
+            if (has_bit_select) {
+                  /* Member offset + bit-select index */
+                  draw_eval_expr_into_integer(part_off_expr, offset_index);
+                  fprintf(vvp_out, "    %%ix/add %d, %u, 0; Add member base offset\n", offset_index, member_off);
+                  fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n", sig, offset_index, part_wid);
+            } else {
+                  fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
+                  fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n", sig, offset_index, member_wid);
+            }
             clr_word(offset_index);
       }
 
