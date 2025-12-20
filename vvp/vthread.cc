@@ -2114,7 +2114,9 @@ bool of_CAST(vthread_t thr, vvp_code_t cp)
 	    // Cast succeeds - store to destination (net2 is in second union) and return 1
 	    vvp_net_ptr_t ptr (cp->net2, 0);
 	    vvp_send_object(ptr, src, thr->wt_context);
-	    thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+	    vvp_vector4_t res(32, BIT4_0);
+	    res.set_bit(0, BIT4_1);
+	    thr->push_vec4(res);
       } else {
 	    // Cast fails - return 0
 	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
@@ -2172,7 +2174,9 @@ bool of_CAST_PROP(vthread_t thr, vvp_code_t cp)
 	    if (dest_cobj) {
 		  dest_cobj->set_object(prop_idx, src, 0);
 	    }
-	    thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+	    vvp_vector4_t res(32, BIT4_0);
+	    res.set_bit(0, BIT4_1);
+	    thr->push_vec4(res);
       } else {
 	    // Cast fails
 	    thr->push_vec4(vvp_vector4_t(32, BIT4_0));
@@ -2203,7 +2207,9 @@ bool of_CONFIG_DB_GET_V(vthread_t thr, vvp_code_t cp)
             // Store value to destination signal
             vvp_net_ptr_t ptr(net, 0);
             vvp_send_vec4(ptr, value, thr->wt_context);
-            thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+            vvp_vector4_t res(32, BIT4_0);
+            res.set_bit(0, BIT4_1);
+            thr->push_vec4(res);
       } else {
             thr->push_vec4(vvp_vector4_t(32, BIT4_0));
       }
@@ -2233,7 +2239,9 @@ bool of_CONFIG_DB_GET_O(vthread_t thr, vvp_code_t cp)
             // Store value to destination signal
             vvp_net_ptr_t ptr(net, 0);
             vvp_send_object(ptr, value, thr->wt_context);
-            thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+            vvp_vector4_t res(32, BIT4_0);
+            res.set_bit(0, BIT4_1);
+            thr->push_vec4(res);
       } else {
             thr->push_vec4(vvp_vector4_t(32, BIT4_0));
       }
@@ -2327,7 +2335,9 @@ bool of_CONFIG_DB_GET_PROP(vthread_t thr, vvp_code_t cp)
             if (cobj) {
                   cobj->set_object(prop_idx, value, 0);
             }
-            thr->push_vec4(vvp_vector4_t(32, BIT4_1));
+            vvp_vector4_t res(32, BIT4_0);
+            res.set_bit(0, BIT4_1);
+            thr->push_vec4(res);
       } else {
             thr->push_vec4(vvp_vector4_t(32, BIT4_0));
       }
