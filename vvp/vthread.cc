@@ -8242,6 +8242,12 @@ static vvp_net_t* find_signal_in_scope(__vpiScope* scope, const char* name)
                   if (sig->id.name && strcmp(sig->id.name, name) == 0) {
                         return sig->node;
                   }
+            } else if (type == vpiClassVar) {
+                  // Handle class-typed variables (e.g., class objects in interfaces)
+                  __vpiCobjectVar* cvar = dynamic_cast<__vpiCobjectVar*>(handle);
+                  if (cvar && cvar->get_name() && strcmp(cvar->get_name(), name) == 0) {
+                        return cvar->get_net();
+                  }
             }
       }
       return nullptr;
