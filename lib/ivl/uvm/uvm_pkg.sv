@@ -1309,6 +1309,116 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
+  // TLM FIFO - Generic TLM FIFO for communication between components
+  // ============================================================================
+  // Note: This is a stub implementation similar to uvm_tlm_analysis_fifo but
+  // intended for request/response communication patterns.
+  class uvm_tlm_fifo #(type T = uvm_object) extends uvm_component;
+
+    int m_count;
+    // Simple queue to store items (max 64 items in stub)
+    T m_items[64];
+    int m_head;
+    int m_tail;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+      m_count = 0;
+      m_head = 0;
+      m_tail = 0;
+    endfunction
+
+    // Put method - blocking
+    virtual task put(T t);
+      while (m_count >= 64) begin
+        #1; // Wait for space
+      end
+      m_items[m_tail] = t;
+      m_tail = (m_tail + 1) % 64;
+      m_count++;
+    endtask
+
+    // Get method - blocking task to retrieve next item
+    virtual task get(output T t);
+      while (m_count == 0) begin
+        #1; // Wait for item
+      end
+      t = m_items[m_head];
+      m_head = (m_head + 1) % 64;
+      m_count--;
+    endtask
+
+    // Try_put - non-blocking put
+    virtual function bit try_put(T t);
+      if (m_count < 64) begin
+        m_items[m_tail] = t;
+        m_tail = (m_tail + 1) % 64;
+        m_count++;
+        return 1;
+      end
+      return 0;
+    endfunction
+
+    // Try_get - non-blocking get
+    virtual function bit try_get(output T t);
+      if (m_count > 0) begin
+        t = m_items[m_head];
+        m_head = (m_head + 1) % 64;
+        m_count--;
+        return 1;
+      end
+      return 0;
+    endfunction
+
+    // Peek - look at next item without removing
+    virtual function bit try_peek(output T t);
+      if (m_count > 0) begin
+        t = m_items[m_head];
+        return 1;
+      end
+      return 0;
+    endfunction
+
+    // Can_put - check if can write
+    virtual function bit can_put();
+      return m_count < 64;
+    endfunction
+
+    // Can_get - check if can read
+    virtual function bit can_get();
+      return m_count > 0;
+    endfunction
+
+    // Size - number of items in fifo
+    virtual function int size();
+      return m_count;
+    endfunction
+
+    // Is empty check
+    virtual function bit is_empty();
+      return m_count == 0;
+    endfunction
+
+    // Is full check
+    virtual function bit is_full();
+      return m_count >= 64;
+    endfunction
+
+    // Used returns count (compatible with real UVM API)
+    virtual function int used();
+      return m_count;
+    endfunction
+
+    // Flush - reset fifo
+    virtual function void flush();
+      m_count = 0;
+      m_head = 0;
+      m_tail = 0;
+    endfunction
+
+  endclass
+
+  // ============================================================================
   // semaphore - SystemVerilog built-in synchronization primitive
   // ============================================================================
   // Note: This is a stub implementation. Icarus doesn't have native semaphore
