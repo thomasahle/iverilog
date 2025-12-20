@@ -2038,6 +2038,60 @@ static int show_system_task_call(ivl_statement_t net)
 	    return 0;
       }
 
+      if (strcmp(stmt_name,"$cast") == 0) {
+	    /* $cast(dest, src) as a task - check if src's actual type is compatible
+	     * with dest's declared type. If yes, assign. Return value is discarded.
+	     * Arguments: arg0 = dest signal/property, arg1 = src expression */
+	    ivl_expr_t dst_expr = ivl_stmt_parm(net, 0);
+	    ivl_expr_t src_expr = ivl_stmt_parm(net, 1);
+
+	    show_stmt_file_line(net, "$cast task call.");
+
+	    /* Get the destination signal and its declared class type */
+	    ivl_signal_t dst_sig = NULL;
+	    ivl_type_t dst_type = NULL;
+
+	    if (ivl_expr_type(dst_expr) == IVL_EX_SIGNAL) {
+		  dst_sig = ivl_expr_signal(dst_expr);
+		  dst_type = ivl_signal_net_type(dst_sig);
+		  /* Evaluate source expression onto object stack */
+		  draw_eval_object(src_expr);
+		  /* Perform cast - pushes 1/0 to vec4 stack */
+		  fprintf(vvp_out, "    %%cast v%p_0, C%p;\n", dst_sig, dst_type);
+		  /* Pop the result since we're calling as task, not function */
+		  fprintf(vvp_out, "    %%pop/vec4 1;\n");
+	    } else if (ivl_expr_type(dst_expr) == IVL_EX_PROPERTY) {
+		  /* Cast to property - need to:
+		   * 1. Load the object containing the property
+		   * 2. Evaluate source onto object stack
+		   * 3. Check compatibility and store to property
+		   */
+		  dst_type = ivl_expr_net_type(dst_expr);
+		  int prop_idx = ivl_expr_property_idx(dst_expr);
+		  ivl_signal_t sig = ivl_expr_signal(dst_expr);
+		  ivl_expr_t base = ivl_expr_property_base(dst_expr);
+
+		  /* Load the object that owns the property */
+		  if (base) {
+			draw_eval_object(base);
+		  } else if (sig) {
+			fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+		  } else {
+			fprintf(vvp_out, "; ERROR: $cast to property - cannot find object\n");
+			return 0;
+		  }
+		  /* Evaluate source onto object stack */
+		  draw_eval_object(src_expr);
+		  /* Use %cast/prop opcode: checks type, stores if compatible */
+		  fprintf(vvp_out, "    %%cast/prop %d, C%p;\n", prop_idx, dst_type);
+		  /* Pop the result since we're calling as task, not function */
+		  fprintf(vvp_out, "    %%pop/vec4 1;\n");
+	    } else {
+		  fprintf(vvp_out, "; ERROR: $cast destination must be signal or property (got type %d)\n", ivl_expr_type(dst_expr));
+	    }
+	    return 0;
+      }
+
       show_stmt_file_line(net, "System task call.");
 
       draw_vpi_task_call(net);
