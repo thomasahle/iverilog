@@ -1685,12 +1685,26 @@ static int show_stmt_assign_vif_member(ivl_statement_t net)
 	    vif_loaded = 1;
       }
 
-      /* Evaluate the rval */
-      draw_eval_vec4(rval);
+      /* Evaluate the rval based on the member signal type or rval type */
+      ivl_variable_type_t member_data_type = IVL_VT_LOGIC;
+      if (member_sig) {
+	    member_data_type = ivl_signal_data_type(member_sig);
+      } else if (ivl_expr_value(rval) == IVL_VT_CLASS) {
+	    /* If member_sig is NULL but rval is a class, treat as class */
+	    member_data_type = IVL_VT_CLASS;
+      }
 
-      /* Store to vif member signal */
-      fprintf(vvp_out, "    %%vif/store/v \"%s\", %u; // member_sig=v%p_0\n",
-              member_name, lwid, member_sig);
+      if (member_data_type == IVL_VT_CLASS) {
+	    /* Class-typed member inside the VIF - evaluate as object */
+	    draw_eval_object(rval);
+	    fprintf(vvp_out, "    %%vif/store/obj \"%s\"; // member_sig=v%p_0 (class)\n",
+		    member_name, member_sig);
+      } else {
+	    /* Vector-typed member - use existing vec4 handling */
+	    draw_eval_vec4(rval);
+	    fprintf(vvp_out, "    %%vif/store/v \"%s\", %u; // member_sig=v%p_0\n",
+		    member_name, lwid, member_sig);
+      }
 
       /* Pop the VIF object from the stack if we loaded one */
       if (vif_loaded) {

@@ -8300,6 +8300,50 @@ bool of_VIF_LOAD_V(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %vif/store/obj "member_name"
+ *
+ * Store an object value to a class-typed variable inside a virtual interface.
+ * The virtual interface (scope pointer) is on the object stack.
+ * The object to store is also on the object stack (above the VIF).
+ */
+bool of_VIF_STORE_OBJ(vthread_t thr, vvp_code_t cp)
+{
+      const char*member_name = cp->text;
+
+      // Pop the object value to store from the object stack
+      vvp_object_t val;
+      thr->pop_object(val);
+
+      // Peek at the VIF scope reference from the object stack
+      vvp_object_t& vif_obj = thr->peek_object();
+      vvp_scope_ref* scope_ref = vif_obj.peek<vvp_scope_ref>();
+
+      if (!scope_ref) {
+            fprintf(stderr, "RUNTIME ERROR: Virtual interface is null\n");
+            return true;
+      }
+
+      __vpiScope* vif_scope = scope_ref->get_scope();
+      if (!vif_scope) {
+            fprintf(stderr, "RUNTIME ERROR: Virtual interface scope is null\n");
+            return true;
+      }
+
+      // Find the signal by name in the VIF scope
+      vvp_net_t* net = find_signal_in_scope(vif_scope, member_name);
+      if (!net) {
+            fprintf(stderr, "RUNTIME ERROR: Signal '%s' not found in virtual interface scope\n", member_name);
+            return true;
+      }
+
+      // Store the object to the signal
+      vvp_net_ptr_t ptr(net, 0);
+      vvp_send_object(ptr, val, thr->wt_context);
+
+      return true;
+}
+
+/*
  * %vif/store/v "member_name", <wid>
  *
  * Store a vector value to a virtual interface member signal.

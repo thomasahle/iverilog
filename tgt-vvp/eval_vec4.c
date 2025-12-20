@@ -1714,6 +1714,12 @@ void draw_eval_vec4(ivl_expr_t expr)
 		    ivl_expr_type(expr));
       }
 
+      if (ivl_expr_value(expr) != IVL_VT_BOOL &&
+          ivl_expr_value(expr) != IVL_VT_VECTOR) {
+	    fprintf(stderr, "draw_eval_vec4: unexpected value type %d (expr_type=%d) at %s:%u\n",
+		    ivl_expr_value(expr), ivl_expr_type(expr),
+		    ivl_expr_file(expr), ivl_expr_lineno(expr));
+      }
       assert(ivl_expr_value(expr) == IVL_VT_BOOL ||
 	     ivl_expr_value(expr) == IVL_VT_VECTOR);
 
