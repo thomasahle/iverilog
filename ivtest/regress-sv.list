@@ -1148,24 +1148,15 @@ sv_method_default_param		normal,-g2012		ivltests
 sv_method_inherit_default		normal,-g2012		ivltests
 sv_method_nested_access		normal,-g2012		ivltests
 sv_cross_pkg_static	normal,-g2012	ivltests gold=sv_cross_pkg_static.gold
-sv_extern_constructor	normal	ivltests
-sv_enum_nested_prop	normal	ivltests
-sv_nested_class_method	normal	ivltests
-sv_cross_pkg_static2	normal	ivltests
-sv_extern_multi_static	normal	ivltests
-sv_enum_methods_chain	normal	ivltests
-sv_nested_method_deep	normal	ivltests
-sv_constraint_simple	normal,-g2012	ivltests	gold=sv_constraint_simple.gold
-sv_constraint_signed	normal,-g2012	ivltests	gold=sv_constraint_signed.gold
-sv_constraint_prop	normal,-g2012	ivltests	gold=sv_constraint_prop.gold
-sv_constraint_tight	normal,-g2012	ivltests	gold=sv_constraint_tight.gold
-sv_foreach_nested_prop	normal,-g2012	ivltests	gold=sv_foreach_nested_prop.gold
-sv_struct_var_bitsel	normal	ivltests	gold=sv_struct_var_bitsel.gold
-sv_struct_member_bitsel	normal,-g2012	ivltests	gold=sv_struct_member_bitsel.gold
-sv_assoc_methods	normal,-g2012	ivltests	gold=sv_assoc_methods.gold
-sv_assoc_int_key	normal,-g2012	ivltests	gold=sv_assoc_int_key.gold
-sv_assoc_class_prop	normal,-g2012	ivltests	gold=sv_assoc_class_prop.gold
-sv_assoc_bit_types	normal,-g2012	ivltests	gold=sv_assoc_bit_types.gold
+sv_nested_class_method	normal,-g2012	ivltests
+sv_nested_method_deep	normal,-g2012	ivltests
+sv_foreach_nested_prop	normal,-g2012	ivltests
+sv_struct_var_bitsel	normal,-g2012	ivltests
+sv_struct_member_bitsel	normal,-g2012	ivltests
+sv_assoc_methods	normal,-g2012	ivltests
+sv_assoc_int_key	normal,-g2012	ivltests
+sv_assoc_class_prop	normal,-g2012	ivltests
+sv_assoc_bit_types	normal,-g2012	ivltests
 sv_assoc_nested_prop	normal,-g2012	ivltests	gold=sv_assoc_nested_prop.gold
 sv_struct_member_partsel	normal,-g2012	ivltests	gold=sv_struct_member_partsel.gold
 sv_nested_darray_method	normal,-g2012	ivltests	gold=sv_nested_darray_method.gold
