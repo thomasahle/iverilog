@@ -1011,6 +1011,18 @@ static void draw_assoc_method_vec4(ivl_expr_t expr)
         // num() doesn't need a key argument
       int needs_key = (method != IVL_ASSOC_NUM);
 
+      // first/last/next/prev update the key as a ref parameter
+      int updates_key = (method == IVL_ASSOC_FIRST || method == IVL_ASSOC_LAST ||
+                         method == IVL_ASSOC_NEXT || method == IVL_ASSOC_PREV);
+
+      // For methods that update key, get the signal to store back to
+      ivl_signal_t key_sig = NULL;
+      unsigned key_wid = 32;
+      if (updates_key && key_expr && ivl_expr_type(key_expr) == IVL_EX_SIGNAL) {
+	    key_sig = ivl_expr_signal(key_expr);
+	    key_wid = ivl_expr_width(key_expr);
+      }
+
       if (base_expr) {
 	    /* Nested property access: base_expr.assoc_prop.method() */
 	    /* Evaluate the base expression to get the object */
@@ -1027,6 +1039,12 @@ static void draw_assoc_method_vec4(ivl_expr_t expr)
 	    /* Emit the property associative array method opcode */
 	    fprintf(vvp_out, "    %%prop/assoc/%s %d;\n", method_name, pidx);
 	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+
+	    /* For first/last/next/prev, store updated key back to variable */
+	    if (key_sig) {
+		  fprintf(vvp_out, "    %%cast/vec4/str %u;\n", key_wid);
+		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", key_sig, key_wid);
+	    }
       } else if (pidx >= 0) {
 	    /* Associative array is a direct class property */
 	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
@@ -1042,6 +1060,12 @@ static void draw_assoc_method_vec4(ivl_expr_t expr)
 	    /* Emit the property associative array method opcode */
 	    fprintf(vvp_out, "    %%prop/assoc/%s %d;\n", method_name, pidx);
 	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+
+	    /* For first/last/next/prev, store updated key back to variable */
+	    if (key_sig) {
+		  fprintf(vvp_out, "    %%cast/vec4/str %u;\n", key_wid);
+		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", key_sig, key_wid);
+	    }
       } else {
 	    /* Standalone associative array variable */
 	    /* If there's a key expression, evaluate it and convert to string */
@@ -1054,6 +1078,12 @@ static void draw_assoc_method_vec4(ivl_expr_t expr)
 
 	    /* Emit the standalone associative array method opcode */
 	    fprintf(vvp_out, "    %%assoc/%s v%p_0;\n", method_name, sig);
+
+	    /* For first/last/next/prev, store updated key back to variable */
+	    if (key_sig) {
+		  fprintf(vvp_out, "    %%cast/vec4/str %u;\n", key_wid);
+		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", key_sig, key_wid);
+	    }
       }
 }
 

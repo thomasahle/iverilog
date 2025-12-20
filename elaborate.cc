@@ -6587,12 +6587,98 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 	    // Check for associative array property
 	    const netassoc_t*atype_assoc = dynamic_cast<const netassoc_t*> (ptype);
 	    if (atype_assoc != 0) {
-		  // Associative array property foreach not yet supported
-		  cerr << get_fileline() << ": sorry: "
-		       << "foreach on associative array class property '" << array_var_
-		       << "' not yet supported. Consider using first()/next() methods." << endl;
-		  des->errors += 1;
-		  return 0;
+		  // Associative array property foreach: generate first()/next() loop
+		  // foreach(assoc_prop[key]) { body } becomes:
+		  //   if (assoc_prop.first(key)) begin
+		  //     do begin
+		  //       body
+		  //     end while (assoc_prop.next(key));
+		  //   end
+
+		  if (index_vars_.size() != 1) {
+			cerr << get_fileline() << ": sorry: "
+			     << "Multi-index foreach loops on associative array class properties not supported." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Find the object signal that owns this property
+		  NetNet*obj_net = 0;
+		  if (array_var_.size() == 1) {
+			// Simple name: property of 'this'
+			NetScope*this_scope = scope;
+			while (this_scope && obj_net == 0) {
+			      obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+			      if (obj_net == 0)
+				    this_scope = this_scope->parent();
+			}
+		  } else if (array_var_.size() >= 2) {
+			perm_string first_name = array_var_.front().name;
+			if (first_name == perm_string::literal(THIS_TOKEN)) {
+			      // Explicit this.property
+			      NetScope*this_scope = scope;
+			      while (this_scope && obj_net == 0) {
+				    obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+				    if (obj_net == 0)
+					  this_scope = this_scope->parent();
+			      }
+			} else {
+			      // obj.property - try as local variable first
+			      pform_name_t obj_name;
+			      obj_name.push_back(name_component_t(first_name));
+			      obj_net = des->find_signal(scope, obj_name);
+			      // If not found, use intermediate_obj_net for nested property case
+			      if (obj_net == 0 && intermediate_obj_net != 0) {
+				    obj_net = intermediate_obj_net;
+			      }
+			}
+		  }
+		  if (obj_net == 0) {
+			cerr << get_fileline() << ": internal error: "
+			     << "Unable to find object signal for foreach on associative array property "
+			     << array_var_ << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Get the signal for the key variable.
+		  pform_name_t key_name;
+		  key_name.push_back(name_component_t(index_vars_[0]));
+		  NetNet*key_sig = des->find_signal(scope, key_name);
+		  ivl_assert(*this, key_sig);
+
+		  // Create key expression for method calls
+		  NetESignal*key_expr = new NetESignal(key_sig);
+		  key_expr->set_line(*this);
+
+		  // Create first() method expression
+		  NetEAssocMethod*first_expr = new NetEAssocMethod(obj_net, class_property,
+						    NetEAssocMethod::ASSOC_FIRST, key_expr);
+		  first_expr->set_line(*this);
+
+		  // Create next() method expression
+		  NetESignal*key_expr2 = new NetESignal(key_sig);
+		  key_expr2->set_line(*this);
+		  NetEAssocMethod*next_expr = new NetEAssocMethod(obj_net, class_property,
+						    NetEAssocMethod::ASSOC_NEXT, key_expr2);
+		  next_expr->set_line(*this);
+
+		  // Elaborate the loop body
+		  NetProc*body;
+		  if (statement_)
+			body = statement_->elaborate(des, scope);
+		  else
+			body = new NetBlock(NetBlock::SEQU, 0);
+
+		  // Create do-while loop: do { body } while (next(key))
+		  NetDoWhile*do_while = new NetDoWhile(next_expr, body);
+		  do_while->set_line(*this);
+
+		  // Create if (first(key)) { do-while }
+		  NetCondit*if_first = new NetCondit(first_expr, do_while, 0);
+		  if_first->set_line(*this);
+
+		  return if_first;
 	    }
 
 	    cerr << get_fileline() << ": error: "

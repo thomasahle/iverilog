@@ -2397,6 +2397,11 @@ bool of_CAST_VEC4_DAR(vthread_t thr, vvp_code_t cp)
 
 /*
  * %cast/vec4/str <wid>
+ *
+ * Convert string to vec4. The string contains binary data where each
+ * character represents 8 bits. If the string is shorter than wid/8 bytes,
+ * the missing low-order bytes are treated as zero (this happens when
+ * %pushv/str drops trailing zero bytes).
  */
 bool of_CAST_VEC4_STR(vthread_t thr, vvp_code_t cp)
 {
@@ -2405,24 +2410,30 @@ bool of_CAST_VEC4_STR(vthread_t thr, vvp_code_t cp)
 
       vvp_vector4_t vec(wid, BIT4_0);
 
-      if (wid != 8*str.length()) {
+      // String can be shorter than wid/8 bytes if trailing zeros were dropped.
+      // Allow short strings and treat missing bytes as zero.
+      unsigned str_bits = 8 * str.length();
+      if (str_bits > wid) {
 	    cerr << thr->get_fileline()
-	         << "VVP error: size mismatch when casting string to vector." << endl;
+	         << "VVP error: string too long when casting to vector "
+	         << "(string has " << str_bits << " bits, target is " << wid << " bits)." << endl;
             thr->push_vec4(vec);
             schedule_stop(0);
             return false;
       }
 
-      unsigned sdx = 0;
-      unsigned vdx = wid;
-      while (vdx > 0) {
-            char ch = str[sdx++];
-            vdx -= 8;
-            for (unsigned bdx = 0; bdx < 8; bdx += 1) {
-                  if (ch & 1)
-                        vec.set_bit(vdx+bdx, BIT4_1);
-                  ch >>= 1;
+      // Convert string bytes to vector bits.
+      // String byte 0 is the MSB, but the vector is stored with LSB first.
+      // We iterate from the end of the string (LSB) backwards.
+      unsigned sdx = str.length();
+      unsigned vdx = 0;
+      while (sdx > 0 && vdx < wid) {
+            char ch = str[--sdx];
+            for (unsigned bdx = 0; bdx < 8 && vdx + bdx < wid; bdx += 1) {
+                  if (ch & (1 << bdx))
+                        vec.set_bit(vdx + bdx, BIT4_1);
             }
+            vdx += 8;
       }
 
       thr->push_vec4(vec);
