@@ -6645,6 +6645,34 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 	    check_type = array_type->element_type();
       }
 
+      // Handle darray element access as r-value: arr[i] where arr is darray of class
+      // and the context expects the element type (class), not the array type.
+      if (const netdarray_t*net_darray = net->darray_type()) {
+	    const name_component_t&use_comp = path_.back();
+	    if (!use_comp.index.empty()) {
+		  ivl_type_t elem_type = net_darray->element_type();
+		  if (ntype->type_compatible(elem_type)) {
+			// The context expects the element type, and we have an index
+			const index_component_t&use_index = use_comp.index.back();
+			if (use_index.msb && !use_index.lsb) {
+			      NetExpr*index_expr = elab_and_eval(des, scope, use_index.msb, -1, false);
+			      if (!index_expr)
+				    return 0;
+
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr: "
+					 << "Creating darray element access for " << net->name()
+					 << " with index" << endl;
+			      }
+
+			      NetESignal*tmp = new NetESignal(net, index_expr);
+			      tmp->set_line(*this);
+			      return tmp;
+			}
+		  }
+	    }
+      }
+
       // For parameterized class methods, the port type might have been resolved
       // to a scalar (like int) from a type parameter, but the actual argument
       // is a class. Allow this case since it's likely a type parameter mismatch.
