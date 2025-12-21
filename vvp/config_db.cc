@@ -19,6 +19,7 @@
 
 #include "config_db.h"
 #include <cstdio>
+#include <fnmatch.h>
 
 vvp_config_db& vvp_config_db::instance()
 {
@@ -65,6 +66,20 @@ void vvp_config_db::set_object(const std::string& context_path,
       db_[key] = config_db_entry(value);
 }
 
+// Check if a pattern matches a path using UVM-style glob matching
+// UVM patterns use * as wildcard (like shell glob, not regex)
+static bool uvm_pattern_match(const std::string& pattern, const std::string& path)
+{
+      // Empty pattern matches empty path only
+      if (pattern.empty()) {
+            return path.empty();
+      }
+
+      // Use fnmatch for glob-style matching
+      // FNM_PATHNAME is not set so * matches /
+      return fnmatch(pattern.c_str(), path.c_str(), 0) == 0;
+}
+
 // Helper to find an entry with wildcard matching
 const config_db_entry* vvp_config_db_find_entry(
       const std::map<std::string, config_db_entry>& db,
@@ -79,34 +94,30 @@ const config_db_entry* vvp_config_db_find_entry(
             return &it->second;
       }
 
+      // Build the requested path for matching
+      std::string req_path;
+      if (context_path.empty() || context_path == "null") {
+            req_path = inst_name;
+      } else if (inst_name.empty()) {
+            req_path = context_path;
+      } else {
+            req_path = context_path + "." + inst_name;
+      }
+
       // Try with wildcard matching for inst_name containing "*"
-      // UVM allows wildcards in the instance path
+      // UVM allows wildcards like *env* to match any path containing "env"
       for (auto& entry : db) {
-            // Simple wildcard match: if stored key ends with same field
-            // and the inst_name pattern matches
+            // Check if field names match
             size_t field_pos = entry.first.rfind("::");
             if (field_pos != std::string::npos) {
                   std::string stored_field = entry.first.substr(field_pos + 2);
                   if (stored_field == field_name) {
                         std::string stored_path = entry.first.substr(0, field_pos);
-                        // Check if our requested path matches stored path
-                        // For now, simple prefix matching
-                        std::string req_path;
-                        if (context_path.empty() || context_path == "null") {
-                              req_path = inst_name;
-                        } else if (inst_name.empty()) {
-                              req_path = context_path;
-                        } else {
-                              req_path = context_path + "." + inst_name;
-                        }
 
-                        // Direct match or stored path is prefix of requested
-                        // Also match if stored path is "*" (wildcard)
-                        if (req_path == stored_path ||
-                            stored_path == "*" ||
-                            (req_path.length() > stored_path.length() &&
-                             req_path.substr(0, stored_path.length()) == stored_path &&
-                             req_path[stored_path.length()] == '.')) {
+                        // Check if stored path pattern matches requested path
+                        // or if requested path pattern matches stored path
+                        if (uvm_pattern_match(stored_path, req_path) ||
+                            uvm_pattern_match(req_path, stored_path)) {
                               return &entry.second;
                         }
                   }
