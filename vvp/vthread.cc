@@ -2330,15 +2330,14 @@ bool of_CONFIG_DB_GET_PROP(vthread_t thr, vvp_code_t cp)
       vvp_object_t value;
       bool found = vvp_config_db::instance().get_object(context_path, inst_name, field_name, value);
 
-      if (found) {
+      if (found && cobj) {
             // Store value to property of base object
-            if (cobj) {
-                  cobj->set_object(prop_idx, value, 0);
-            }
+            cobj->set_object(prop_idx, value, 0);
             vvp_vector4_t res(32, BIT4_0);
             res.set_bit(0, BIT4_1);
             thr->push_vec4(res);
       } else {
+            // Not found OR couldn't store (base object is null)
             thr->push_vec4(vvp_vector4_t(32, BIT4_0));
       }
 
