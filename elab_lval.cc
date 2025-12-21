@@ -438,6 +438,39 @@ NetAssign_* PEIdent::elaborate_lval(Design*des,
 	    return 0;
       }
 
+	// Handle dynamic array element with class property access
+	// Pattern: objs[i].prop = value
+      if (reg->darray_type() && !member_path.empty() && gn_system_verilog()) {
+	    ivl_type_t elem_type = reg->darray_type()->element_type();
+	    const netclass_t *elem_class = dynamic_cast<const netclass_t*>(elem_type);
+
+	    if (elem_class) {
+		    // Check if path_head has an index (darray element access)
+		  const name_component_t& head_tail = sr.path_head.back();
+		  if (!head_tail.index.empty()) {
+			const index_component_t& idx = head_tail.index.back();
+			if (idx.sel == index_component_t::SEL_BIT && idx.msb && !idx.lsb) {
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_lval: "
+					 << "Elaborating darray[i].property pattern for "
+					 << path_ << endl;
+			      }
+
+				// Create l-value for darray element
+			      NetAssign_*lv = new NetAssign_(reg);
+
+				// Elaborate the index expression and set as word
+			      NetExpr*mux = elab_and_eval(des, scope, idx.msb, -1);
+			      lv->set_word(mux);
+
+				// Now chain with class member elaboration, passing initial_lv
+			      return elaborate_lval_net_class_member_(des, scope, elem_class,
+								      reg, member_path, lv);
+			}
+		  }
+	    }
+      }
+
       return elaborate_lval_var_(des, scope, is_force, is_cassign, reg,
 			         sr.type, member_path);
 }
@@ -451,6 +484,7 @@ NetAssign_*PEIdent::elaborate_lval_var_(Design *des, NetScope *scope,
 	// example, the Verilog may be "a.b.c", so we are processing
 	// "c" at this point.
       const name_component_t&name_tail = path_.back();
+
 
 	// Use the last index to determine what kind of select
 	// (bit/part/etc) we are processing. For example, the Verilog
@@ -482,7 +516,6 @@ NetAssign_*PEIdent::elaborate_lval_var_(Design *des, NetScope *scope,
       const netclass_t *class_type = dynamic_cast<const netclass_t *>(data_type);
       if (class_type && !tail_path.empty() && gn_system_verilog())
 	    return elaborate_lval_net_class_member_(des, scope, class_type, reg, tail_path);
-
 
 	// Past this point, we should have taken care of the cases
 	// where the name is a member/method of a struct/class.
@@ -1252,24 +1285,30 @@ bool PEIdent::elaborate_lval_net_idx_(Design*des,
  */
 NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope,
 				    const netclass_t *class_type, NetNet*sig,
-				    pform_name_t member_path) const
+				    pform_name_t member_path,
+				    NetAssign_*initial_lv) const
 {
       if (debug_elaborate) {
 	    cerr << get_fileline() << ": PEIdent::elaborate_lval_net_class_member_: "
 		 << "l-value is property " << member_path
-		 << " of " << sig->name() << "." << endl;
+		 << " of " << sig->name();
+	    if (initial_lv)
+		  cerr << " (with initial_lv, e.g. darray element)";
+	    cerr << "." << endl;
       }
 
       ivl_assert(*this, class_type);
 
 	// Iterate over the member_path. This handles nested class
 	// object, by generating nested NetAssign_ object. We start
-	// with lv==0, so the front of the member_path is the member
-	// of the outermost class. This generates an lv from sig. Then
+	// with lv==initial_lv (or 0), so the front of the member_path
+	// is the member of the outermost class. If initial_lv is
+	// provided (e.g., for darray element access), it's used as the
+	// base l-value. Otherwise, we generate an lv from sig. Then
 	// iterate over the remaining of the member_path, replacing
 	// the outer lv with an lv that nests the lv from the previous
 	// iteration.
-      NetAssign_*lv = 0;
+      NetAssign_*lv = initial_lv;
       do {
 	      // Start with the first component of the member path...
 	    perm_string method_name = peek_head_name(member_path);

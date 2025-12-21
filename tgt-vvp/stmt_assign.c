@@ -399,6 +399,20 @@ static ivl_type_t draw_lval_expr_r(ivl_lval_t lval, int access_base_prop, int sk
 	    /* This is a recursive call (access_base_prop is true).
 	       Access the property for chain continuation. */
 	    int prop_idx = ivl_lval_property_idx(lval);
+	    ivl_expr_t word_idx = ivl_lval_idx(lval);
+
+	    /* Handle darray element access (without property) - e.g., objs[i] where
+	       objs is a dynamic array of class objects. After accessing the element,
+	       the outer lval can access a property of the class. */
+	    if (prop_idx < 0 && word_idx && ivl_type_base(sig_type) == IVL_VT_DARRAY) {
+		  ivl_type_t element_type = ivl_type_element(sig_type);
+		  int idx_reg = allocate_word();
+		  draw_eval_expr_into_integer(word_idx, idx_reg);
+		  fprintf(vvp_out, "    %%get/dar/obj/o %d; Load darray element for nested access\n", idx_reg);
+		  clr_word(idx_reg);
+		  return element_type;
+	    }
+
 	    if (prop_idx >= 0) {
 		  ivl_type_t prop_type = ivl_type_prop_type(sig_type, prop_idx);
 		  ivl_expr_t idx_expr = ivl_lval_idx(lval);

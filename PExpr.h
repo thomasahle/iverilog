@@ -451,7 +451,8 @@ class PEIdent : public PExpr {
       NetAssign_*elaborate_lval_net_class_member_(Design*, NetScope*,
 						   const netclass_t *class_type,
 						   NetNet*,
-						   pform_name_t) const;
+						   pform_name_t,
+						   NetAssign_*initial_lv = nullptr) const;
       bool elaborate_lval_net_packed_member_(Design*, NetScope*,
 					     NetAssign_*,
 					     pform_name_t member_path, bool is_force) const;
