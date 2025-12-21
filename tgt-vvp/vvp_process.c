@@ -2172,7 +2172,7 @@ static int show_system_task_call(ivl_statement_t net)
 			/* Source is a vector/enum - use simple property store */
 			draw_eval_vec4(src_expr);
 			/* Store to property directly */
-			fprintf(vvp_out, "    %%store/prop/v %d, 0, %u;\n", prop_idx, ivl_expr_width(src_expr));
+			fprintf(vvp_out, "    %%store/prop/v %d, %u;\n", prop_idx, ivl_expr_width(src_expr));
 			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 		  }
 	    } else if (ivl_expr_type(dst_expr) == IVL_EX_SELECT) {

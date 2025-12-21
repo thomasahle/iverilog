@@ -1340,7 +1340,7 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			/* Source is a vector/enum - use simple property store */
 			draw_eval_vec4(src_expr);
 			/* Store to property directly */
-			fprintf(vvp_out, "    %%store/prop/v %d, 0, %u;\n", prop_idx, ivl_expr_width(src_expr));
+			fprintf(vvp_out, "    %%store/prop/v %d, %u;\n", prop_idx, ivl_expr_width(src_expr));
 			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 			/* Push 1 (success) */
 			fprintf(vvp_out, "    %%pushi/vec4 1, 0, 32;\n");
