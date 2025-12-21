@@ -208,7 +208,11 @@ bool dll_target::make_single_lval_(const LineInfo*li, struct ivl_lval_s*cur, con
       if (asn->word()) {
 	    assert(expr_ == 0);
 	    asn->word()->expr_scan(this);
-	    cur->type_ = IVL_LVAL_ARR;
+	    // Only change type to ARR if we have a direct signal (REG).
+	    // For nested lvals (LVAL), keep the type but still set idx.
+	    // This prevents treating n.nest as n.sig when ivl_lval_sig() is called.
+	    if (cur->type_ == IVL_LVAL_REG)
+		  cur->type_ = IVL_LVAL_ARR;
 	    cur->idx = expr_;
 	    expr_ = 0;
       }
