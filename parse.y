@@ -6963,6 +6963,44 @@ module_item
   | KK_attribute '(' error ')' ';'
       { yyerror(@1, "error: Malformed $attribute parameter list."); }
 
+  /* SystemVerilog bind directive - IEEE 1800-2017 Section 23.11
+     bind_directive ::=
+       bind bind_target_scope [:bind_target_instance_list] bind_instantiation ;
+     | bind bind_target_instance bind_instantiation ;
+
+     The simple form: bind target_module instance_type instance_name(.connections);
+     binds instance_type to all instances of target_module. */
+
+  | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
+      { yyerror(@1, "sorry: bind directive not yet supported.");
+	delete[]$2;
+	delete[]$3;
+	delete[]$4;
+	delete $6;
+      }
+
+  | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { yyerror(@1, "sorry: bind directive not yet supported.");
+	delete[]$2;
+	delete[]$3;
+	delete[]$4;
+	delete $6;
+      }
+
+  | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' ')' ';'
+      { yyerror(@1, "sorry: bind directive not yet supported.");
+	delete[]$2;
+	delete[]$3;
+	delete[]$4;
+      }
+
+  | K_bind IDENTIFIER IDENTIFIER IDENTIFIER ';'
+      { yyerror(@1, "sorry: bind directive not yet supported.");
+	delete[]$2;
+	delete[]$3;
+	delete[]$4;
+      }
+
   | ';'
       { }
 
