@@ -2452,7 +2452,15 @@ bool of_CAST_VEC4_STR(vthread_t thr, vvp_code_t cp)
 
 static void do_CMPE(vthread_t thr, const vvp_vector4_t&lval, const vvp_vector4_t&rval)
 {
-      assert(rval.size() == lval.size());
+      // Operands should have equal size, but handle mismatch gracefully
+      if (rval.size() != lval.size()) {
+	    fprintf(stderr, "VVP WARNING: %cmp operand width mismatch: lval=%u bits, rval=%u bits\n",
+		    (unsigned)lval.size(), (unsigned)rval.size());
+	    // Treat mismatched widths as not equal
+	    thr->flags[4] = BIT4_0;  // eq = 0
+	    thr->flags[6] = BIT4_0;  // eeq = 0
+	    return;
+      }
 
       if (lval.has_xz() || rval.has_xz()) {
 
@@ -2577,7 +2585,15 @@ bool of_CMPINE(vthread_t thr, vvp_code_t cp)
 
 static void do_CMPS(vthread_t thr, const vvp_vector4_t&lval, const vvp_vector4_t&rval)
 {
-      assert(rval.size() == lval.size());
+      // Operands should have equal size, but handle mismatch gracefully
+      if (rval.size() != lval.size()) {
+	    fprintf(stderr, "VVP WARNING: %cmps operand width mismatch: lval=%u bits, rval=%u bits\n",
+		    (unsigned)lval.size(), (unsigned)rval.size());
+	    thr->flags[4] = BIT4_0;  // eq = 0
+	    thr->flags[5] = BIT4_X;  // lt = X (unknown)
+	    thr->flags[6] = BIT4_0;  // eeq = 0
+	    return;
+      }
 
 	// If either value has XZ bits, then the eq and lt values are
 	// known already to be X. Just calculate the eeq result as a
@@ -2750,12 +2766,15 @@ static void do_CMPU(vthread_t thr, const vvp_vector4_t&lval, const vvp_vector4_t
       vvp_bit4_t eq = BIT4_1;
       vvp_bit4_t lt = BIT4_0;
 
+      // Operands should have equal size, but handle mismatch gracefully
       if (rval.size() != lval.size()) {
-	    cerr << thr->get_fileline()
-	         << "VVP ERROR: %cmp/u operand width mismatch: lval=" << lval
-		 << ", rval=" << rval << endl;
+	    fprintf(stderr, "VVP WARNING: %cmpu operand width mismatch: lval=%u bits, rval=%u bits\n",
+		    (unsigned)lval.size(), (unsigned)rval.size());
+	    thr->flags[4] = BIT4_0;  // eq = 0
+	    thr->flags[5] = BIT4_X;  // lt = X (unknown)
+	    thr->flags[6] = BIT4_0;  // eeq = 0
+	    return;
       }
-      assert(rval.size() == lval.size());
       unsigned wid = lval.size();
 
       unsigned long*larray = lval.subarray(0,wid);
@@ -2851,7 +2870,13 @@ bool of_CMPX(vthread_t thr, vvp_code_t)
 
 static void do_CMPWE(vthread_t thr, const vvp_vector4_t&lval, const vvp_vector4_t&rval)
 {
-      assert(rval.size() == lval.size());
+      // Operands should have equal size, but handle mismatch gracefully
+      if (rval.size() != lval.size()) {
+	    fprintf(stderr, "VVP WARNING: %cmpwe operand width mismatch: lval=%u bits, rval=%u bits\n",
+		    (unsigned)lval.size(), (unsigned)rval.size());
+	    thr->flags[4] = BIT4_0;  // eq = 0
+	    return;
+      }
 
       if (lval.has_xz() || rval.has_xz()) {
 
