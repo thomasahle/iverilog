@@ -220,7 +220,12 @@ static int eval_object_property(ivl_expr_t expr)
       /* Check if this is a darray property with an index.
          For darray properties, we need to load the darray first,
          then access the element separately. */
-      ivl_type_t class_type = sig ? ivl_signal_net_type(sig) : NULL;
+      ivl_type_t class_type = NULL;
+      if (sig) {
+	    class_type = ivl_signal_net_type(sig);
+      } else if (base) {
+	    class_type = ivl_expr_net_type(base);
+      }
       ivl_type_t prop_type = class_type ? ivl_type_prop_type(class_type, pidx) : NULL;
 
       if (prop_type && ivl_type_base(prop_type) == IVL_VT_DARRAY && idx != 0) {

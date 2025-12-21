@@ -656,6 +656,12 @@ void dll_target::expr_sfunc(const NetESFunc*net)
 
 	/* make up the parameter expressions. */
       for (unsigned idx = 0 ;  idx < cnt ;  idx += 1) {
+	    if (net->parm(idx) == 0) {
+		  cerr << net->get_fileline() << ": internal error: "
+		       << "dll_target::expr_sfunc: "
+		       << "NULL parameter " << idx << " in system function " << net->name() << endl;
+	    }
+	    assert(net->parm(idx));
 	    net->parm(idx)->expr_scan(this);
 	    assert(expr_);
 	    expr->u_.sfunc_.parm[idx] = expr_;
@@ -765,6 +771,13 @@ void dll_target::expr_ufunc(const NetEUFunc*net)
 
 	/* make up the parameter expressions. */
       for (unsigned idx = 0 ;  idx < cnt ;  idx += 1) {
+	    if (net->parm(idx) == 0) {
+		  cerr << net->get_fileline() << ": internal error: "
+		       << "dll_target::expr_ufunc: "
+		       << "NULL parameter " << idx << " in function "
+		       << scope_path(net->func()) << endl;
+	    }
+	    assert(net->parm(idx));
 	    net->parm(idx)->expr_scan(this);
 	    assert(expr_);
 	    expr->u_.ufunc_.parm[idx] = expr_;

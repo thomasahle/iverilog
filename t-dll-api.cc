@@ -1785,7 +1785,10 @@ extern "C" ivl_expr_t ivl_lval_idx(ivl_lval_t net)
 {
       assert(net);
 
-      if (net->type_ == IVL_LVAL_ARR)
+      /* Return index for both ARR (direct signal) and LVAL (nested) types.
+         For nested lvals with array indexing (e.g., obj.darray[i].prop),
+         the idx is set but type remains LVAL. */
+      if (net->type_ == IVL_LVAL_ARR || net->type_ == IVL_LVAL_LVAL)
 	    return net->idx;
       return 0x0;
 }

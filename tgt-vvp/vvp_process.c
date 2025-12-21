@@ -214,7 +214,12 @@ static void assign_to_array_word(ivl_signal_t lsig, ivl_expr_t word_ix,
  * property object before we can store to it.
  * Returns the type of the loaded object.
  */
-static ivl_type_t load_lval_object_chain(ivl_lval_t lval)
+/*
+ * Helper function that does the actual recursive traversal.
+ * access_base_prop: true if we should access the property at the base level
+ * skip_current_prop: true if we should NOT access this lval's property
+ */
+static ivl_type_t load_lval_object_chain_r(ivl_lval_t lval, int access_base_prop, int skip_current_prop)
 {
       ivl_lval_t lval_nest = ivl_lval_nest(lval);
       ivl_signal_t lval_sig = ivl_lval_sig(lval);
@@ -222,21 +227,94 @@ static ivl_type_t load_lval_object_chain(ivl_lval_t lval)
       /* Base case: signal variable */
       if (lval_sig) {
 	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", lval_sig);
-	    return ivl_signal_net_type(lval_sig);
+	    ivl_type_t sig_type = ivl_signal_net_type(lval_sig);
+
+	    /* If access_base_prop is false, this is the initial call and
+	       the caller will handle property access. Just return sig_type. */
+	    if (!access_base_prop) {
+		  return sig_type;
+	    }
+
+	    /* This is a recursive call - access property for chain continuation */
+	    int prop_idx = ivl_lval_property_idx(lval);
+	    if (prop_idx >= 0) {
+		  ivl_type_t prop_type = ivl_type_prop_type(sig_type, prop_idx);
+		  ivl_expr_t idx_expr = ivl_lval_idx(lval);
+
+		  if (idx_expr && ivl_type_base(prop_type) == IVL_VT_DARRAY) {
+			/* Indexed darray property at base level */
+			ivl_type_t element_type = ivl_type_element(prop_type);
+			int idx_reg = allocate_word();
+			draw_eval_expr_into_integer(idx_expr, idx_reg);
+			fprintf(vvp_out, "    %%prop/obj %d, 0; Load darray property\n", prop_idx);
+			fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+			fprintf(vvp_out, "    %%get/dar/obj/o %d; Load darray element\n", idx_reg);
+			clr_word(idx_reg);
+			return element_type;
+		  }
+
+		  fprintf(vvp_out, "    %%prop/obj %d, 0; Load property from base\n", prop_idx);
+		  fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+		  return prop_type;
+	    }
+	    return sig_type;
       }
 
       /* Recursive case: nested l-value */
       assert(lval_nest);
-      ivl_type_t sub_type = load_lval_object_chain(lval_nest);
+      /* Recursive call - access property at base level */
+      ivl_type_t sub_type = load_lval_object_chain_r(lval_nest, 1, 0);
       assert(ivl_type_base(sub_type) == IVL_VT_CLASS);
 
-      int prop_idx = ivl_lval_property_idx(lval_nest);
+      /* If skip_current_prop is true, just return the containing type */
+      if (skip_current_prop) {
+	    return sub_type;
+      }
+
+      /* Get property index and array index from CURRENT lval (not nested).
+         The nested lval was already processed by the recursive call above.
+         Now we need to access this lval's property from the type returned. */
+      int prop_idx = ivl_lval_property_idx(lval);
+      ivl_type_t prop_type = ivl_type_prop_type(sub_type, prop_idx);
+      ivl_expr_t idx_expr = ivl_lval_idx(lval);
+
+      if (idx_expr && ivl_type_base(prop_type) == IVL_VT_DARRAY) {
+	    /* Property is a dynamic array with an index - access the element */
+	    ivl_type_t element_type = ivl_type_element(prop_type);
+
+	    /* Load the array index into a register */
+	    int idx_reg = allocate_word();
+	    draw_eval_expr_into_integer(idx_expr, idx_reg);
+
+	    /* Load the darray property */
+	    fprintf(vvp_out, "    %%prop/obj %d, 0; Load darray property %s\n", prop_idx,
+		    ivl_type_prop_name(sub_type, prop_idx));
+	    fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+
+	    /* Access the element at the index - pops darray, pushes element */
+	    fprintf(vvp_out, "    %%get/dar/obj/o %d; Load darray element\n", idx_reg);
+	    clr_word(idx_reg);
+
+	    return element_type;
+      }
 
       fprintf(vvp_out, "    %%prop/obj %d, 0; Load property %s\n", prop_idx,
 	      ivl_type_prop_name(sub_type, prop_idx));
       fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
 
-      return ivl_type_prop_type(sub_type, prop_idx);
+      return prop_type;
+}
+
+/*
+ * Public entry point for load_lval_object_chain.
+ * This loads the l-value object chain and returns the type.
+ * The caller is responsible for the final property/array access.
+ */
+static ivl_type_t load_lval_object_chain(ivl_lval_t lval)
+{
+      /* Initial call - don't access property at base level, and skip
+         the current (outermost) lval's property (caller will handle it) */
+      return load_lval_object_chain_r(lval, 0, 1);
 }
 
 /*
