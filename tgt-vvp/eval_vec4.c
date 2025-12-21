@@ -1310,7 +1310,7 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    } else if (ivl_expr_type(dst_expr) == IVL_EX_PROPERTY) {
 		  /* Cast to property - need to:
 		     1. Load the object containing the property
-		     2. Evaluate source onto object stack
+		     2. Evaluate source (as object for class, as vec4 for non-class)
 		     3. Check compatibility and store to property
 		  */
 		  dst_type = ivl_expr_net_type(dst_expr);
@@ -1328,10 +1328,58 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
 			return;
 		  }
-		  /* Evaluate source onto object stack */
-		  draw_eval_object(src_expr);
-		  /* Use %cast/prop opcode: checks type, stores if compatible */
-		  fprintf(vvp_out, "    %%cast/prop %d, C%p;\n", prop_idx, dst_type);
+
+		  /* Check if source is a class object or a vector type */
+		  ivl_variable_type_t src_vt = ivl_expr_value(src_expr);
+		  if (src_vt == IVL_VT_CLASS) {
+			/* Source is a class object - use object cast */
+			draw_eval_object(src_expr);
+			/* Use %cast/prop opcode: checks type, stores if compatible */
+			fprintf(vvp_out, "    %%cast/prop %d, C%p;\n", prop_idx, dst_type);
+		  } else {
+			/* Source is a vector/enum - use simple property store */
+			draw_eval_vec4(src_expr);
+			/* Store to property directly */
+			fprintf(vvp_out, "    %%store/prop/v %d, 0, %u;\n", prop_idx, ivl_expr_width(src_expr));
+			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			/* Push 1 (success) */
+			fprintf(vvp_out, "    %%pushi/vec4 1, 0, 32;\n");
+		  }
+		  return;
+	    } else if (ivl_expr_type(dst_expr) == IVL_EX_SELECT) {
+		  /* Cast to struct member or bit/part select.
+		   * For enum-to-bits cast (common in UVM), just copy the value.
+		   * This is used for patterns like: if ($cast(struct_var.member, enum_prop))
+		   */
+		  ivl_expr_t base_expr = ivl_expr_oper1(dst_expr);
+		  ivl_expr_t off_expr = ivl_expr_oper2(dst_expr);
+		  unsigned wid = ivl_expr_width(dst_expr);
+
+		  /* Get the underlying signal */
+		  ivl_signal_t sig = NULL;
+		  if (ivl_expr_type(base_expr) == IVL_EX_SIGNAL) {
+			sig = ivl_expr_signal(base_expr);
+		  }
+
+		  if (sig) {
+			/* Evaluate source expression to vec4 */
+			draw_eval_vec4(src_expr);
+
+			/* Store to signal at offset */
+			int off_idx = allocate_word();
+			if (off_expr) {
+			      draw_eval_expr_into_integer(off_expr, off_idx);
+			} else {
+			      fprintf(vvp_out, "    %%ix/load %d, 0, 0;\n", off_idx);
+			}
+			fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n", sig, off_idx, wid);
+			clr_word(off_idx);
+			/* Push 1 (success) */
+			fprintf(vvp_out, "    %%pushi/vec4 1, 0, 32;\n");
+		  } else {
+			fprintf(vvp_out, "; ERROR: $cast to select - base is not a signal\n");
+			fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
+		  }
 		  return;
 	    } else {
 		  fprintf(vvp_out, "; ERROR: $cast destination must be signal or property (got type %d)\n", ivl_expr_type(dst_expr));

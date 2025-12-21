@@ -4063,6 +4063,14 @@ unsigned PECallFunction::elaborate_arguments_(Design*des, NetScope*scope,
 		  parms[pidx] = def->port_defe(pidx)->dup_expr();
 
 	    } else {
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": DEBUG: Missing arg idx=" << idx
+			     << " pidx=" << pidx
+			     << " parm_off=" << parm_off
+			     << " port_count=" << def->port_count()
+			     << " port_name=" << (def->port(pidx) ? def->port(pidx)->name().str() : "NULL")
+			     << endl;
+		  }
 		  missing_parms += 1;
 		  parms[pidx] = 0;
 	    }
@@ -4395,9 +4403,19 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 					  unsigned first_arg = use_this ? 1 : 0;
 					  vector<NetExpr*> argv(parm_count);
 					  if (use_this) argv[0] = use_this;
+
+					  // Fill in explicit arguments
 					  for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
 						const named_pexpr_t& parm = parms_[idx];
 						if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+					  }
+
+					  // Fill in default arguments for any remaining parameters
+					  for (unsigned idx = parms_.size(); (idx + first_arg) < parm_count; idx++) {
+						unsigned pidx = idx + first_arg;
+						if (func_def->port_defe(pidx)) {
+						      argv[pidx] = func_def->port_defe(pidx)->dup_expr();
+						}
 					  }
 
 					  NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
@@ -4470,9 +4488,19 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      unsigned first_arg = use_this ? 1 : 0;
 			      vector<NetExpr*> argv(parm_count);
 			      if (use_this) argv[0] = use_this;
+
+			      // Fill in explicit arguments
 			      for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
 				    const named_pexpr_t& parm = parms_[idx];
 				    if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+			      }
+
+			      // Fill in default arguments for any remaining parameters
+			      for (unsigned idx = parms_.size(); (idx + first_arg) < parm_count; idx++) {
+				    unsigned pidx = idx + first_arg;
+				    if (func_def->port_defe(pidx)) {
+					  argv[pidx] = func_def->port_defe(pidx)->dup_expr();
+				    }
 			      }
 
 			      NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
@@ -4508,9 +4536,19 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      unsigned first_arg = use_this ? 1 : 0;
 			      vector<NetExpr*> argv(parm_count);
 			      if (use_this) argv[0] = use_this;
+
+			      // Fill in explicit arguments
 			      for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
 				    const named_pexpr_t& parm = parms_[idx];
 				    if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+			      }
+
+			      // Fill in default arguments for any remaining parameters
+			      for (unsigned idx = parms_.size(); (idx + first_arg) < parm_count; idx++) {
+				    unsigned pidx = idx + first_arg;
+				    if (func_def->port_defe(pidx)) {
+					  argv[pidx] = func_def->port_defe(pidx)->dup_expr();
+				    }
 			      }
 
 			      NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
@@ -4683,9 +4721,19 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      unsigned first_arg = use_this ? 1 : 0;
 			      vector<NetExpr*> argv(parm_count);
 			      if (use_this) argv[0] = use_this;
+
+			      // Fill in explicit arguments
 			      for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
 				    const named_pexpr_t& parm = parms_[idx];
 				    if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+			      }
+
+			      // Fill in default arguments for any remaining parameters
+			      for (unsigned idx = parms_.size(); (idx + first_arg) < parm_count; idx++) {
+				    unsigned pidx = idx + first_arg;
+				    if (func_def->port_defe(pidx)) {
+					  argv[pidx] = func_def->port_defe(pidx)->dup_expr();
+				    }
 			      }
 
 			      NetNet* ret_sig = const_cast<NetNet*>(func_def->return_sig());
@@ -4751,9 +4799,19 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    unsigned first_arg = use_this ? 1 : 0;
 				    vector<NetExpr*> argv(parm_count);
 				    if (use_this) argv[0] = use_this;
+
+				    // Fill in explicit arguments
 				    for (unsigned idx = 0; idx < parms_.size() && (idx + first_arg) < parm_count; idx++) {
 					  const named_pexpr_t& parm = parms_[idx];
 					  if (parm.parm) argv[idx + first_arg] = elab_and_eval(des, scope, parm.parm, -1);
+				    }
+
+				    // Fill in default arguments for any remaining parameters
+				    for (unsigned idx = parms_.size(); (idx + first_arg) < parm_count; idx++) {
+					  unsigned pidx = idx + first_arg;
+					  if (func_def->port_defe(pidx)) {
+						argv[pidx] = func_def->port_defe(pidx)->dup_expr();
+					  }
 				    }
 
 				    NetNet*ret_sig = const_cast<NetNet*>(func_def->return_sig());
