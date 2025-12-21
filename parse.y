@@ -788,8 +788,8 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <exprs> constraint_block_item_list constraint_block_item_list_opt
 %type <expr>  constraint_block_item constraint_expression
 
-%type <decl_assignment> variable_decl_assignment
-%type <decl_assignments> list_of_variable_decl_assignments
+%type <decl_assignment> variable_decl_assignment for_variable_decl_assignment
+%type <decl_assignments> list_of_variable_decl_assignments for_variable_decl_list
 
 %type <data_type>  data_type data_type_opt data_type_or_implicit data_type_or_implicit_or_void
 %type <data_type>  data_type_or_implicit_no_opt
@@ -2172,6 +2172,32 @@ for_step_opt
   | { $$ = nullptr; }
   ;
 
+  /* IEEE1800-2017 A.6.8: for_variable_declaration
+     Support for multiple variable declarations in for loop init:
+     for (int i = 0, j = 10; ...) */
+for_variable_decl_assignment
+  : IDENTIFIER '=' expression
+      { decl_assignment_t*tmp = new decl_assignment_t;
+	tmp->name = { lex_strings.make($1), @1.lexical_pos };
+	tmp->expr.reset($3);
+	delete[]$1;
+	$$ = tmp;
+      }
+  ;
+
+for_variable_decl_list
+  : for_variable_decl_assignment
+      { std::list<decl_assignment_t*>*tmp = new std::list<decl_assignment_t*>;
+	tmp->push_back($1);
+	$$ = tmp;
+      }
+  | for_variable_decl_list ',' for_variable_decl_assignment
+      { std::list<decl_assignment_t*>*tmp = $1;
+	tmp->push_back($3);
+	$$ = tmp;
+      }
+  ;
+
   /* The function declaration rule matches the function declaration
      header, then pushes the function scope. This causes the
      definitions in the func_body to take on the scope of the function
@@ -2490,7 +2516,9 @@ loop_statement /* IEEE1800-2005: A.6.8 */
       // statement in a synthetic named block. We can name the block
       // after the variable that we are creating, that identifier is
       // safe in the controlling scope.
-  | K_for '(' K_var_opt data_type IDENTIFIER '=' expression ';' expression_opt ';' for_step_opt ')'
+      // IEEE1800-2017: Supports multiple variable declarations:
+      // for (int i = 0, j = 10; i < 10; i++, j--)
+  | K_for '(' K_var_opt data_type for_variable_decl_list ';' expression_opt ';' for_step_opt ')'
       { static unsigned for_counter = 0;
 	char for_block_name [64];
 	snprintf(for_block_name, sizeof for_block_name, "$ivl_for_loop%u", for_counter);
@@ -2498,31 +2526,52 @@ loop_statement /* IEEE1800-2005: A.6.8 */
 	PBlock*tmp = pform_push_block_scope(@1, for_block_name, PBlock::BL_SEQ);
 	current_block_stack.push(tmp);
 
-	list<decl_assignment_t*>assign_list;
-	decl_assignment_t*tmp_assign = new decl_assignment_t;
-	tmp_assign->name = { lex_strings.make($5), @5.lexical_pos };
-	assign_list.push_back(tmp_assign);
-	pform_make_var(@5, &assign_list, $4);
+	// Declare all variables from the list (without initialization)
+	list<decl_assignment_t*>decl_list;
+	for (decl_assignment_t*item : *$5) {
+	      decl_assignment_t*decl = new decl_assignment_t;
+	      decl->name = item->name;
+	      decl_list.push_back(decl);
+	}
+	pform_make_var(@5, &decl_list, $4);
       }
     statement_or_null
-      { pform_name_t tmp_hident;
-	tmp_hident.push_back(name_component_t(lex_strings.make($5)));
+      { // Get the declaration list from $5
+	std::list<decl_assignment_t*>*decl_list = $5;
 
-	PEIdent*tmp_ident = pform_new_ident(@5, tmp_hident);
-	FILE_NAME(tmp_ident, @5);
+	// Create initialization assignments for all variables, then the for loop
+	vector<Statement*>stmt_list;
 
-	check_for_loop(@1, $7, $9, $11);
-	PForStatement*tmp_for = new PForStatement(tmp_ident, $7, $9, $11, $14);
+	// Create initialization statements for all variables
+	for (decl_assignment_t*item : *decl_list) {
+	      pform_name_t hident;
+	      hident.push_back(name_component_t(item->name.first));
+	      // Use item's lexical_pos for correct declaration/use ordering
+	      PEIdent*ident = new PEIdent(hident, item->name.second);
+	      FILE_NAME(ident, @5);
+
+	      PAssign*init_assign = new PAssign(ident, item->expr.release());
+	      FILE_NAME(init_assign, @5);
+	      stmt_list.push_back(init_assign);
+	}
+
+	// Create the for loop with null initialization (inits are in stmt_list)
+	check_for_loop(@1, nullptr, $7, $9);
+	PForStatement*tmp_for = new PForStatement(nullptr, nullptr, $7, $9, $12);
 	FILE_NAME(tmp_for, @1);
+	stmt_list.push_back(tmp_for);
 
 	pform_pop_scope();
-	vector<Statement*>tmp_for_list (1);
-	tmp_for_list[0] = tmp_for;
 	PBlock*tmp_blk = current_block_stack.top();
 	current_block_stack.pop();
-	tmp_blk->set_statement(tmp_for_list);
+	tmp_blk->set_statement(stmt_list);
 	$$ = tmp_blk;
-	delete[]$5;
+
+	// Clean up the declaration list
+	for (decl_assignment_t*item : *decl_list) {
+	      delete item;
+	}
+	delete decl_list;
       }
 
   | K_forever statement_or_null
