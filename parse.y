@@ -756,6 +756,9 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <named_pexprs> argument_list
 %type <named_pexprs> argument_list_parens argument_list_parens_opt
 
+%type <named_pexpr> assignment_pattern_member
+%type <named_pexprs> assignment_pattern_member_list
+
 %type <citem>  case_item
 %type <citems> case_items
 
@@ -928,6 +931,47 @@ assignment_pattern /* IEEE1800-2005: A.6.7.1 */
   | K_LP '}'
       { PEAssignPattern*tmp = new PEAssignPattern;
 	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+    /* IEEE1800-2017: Named struct aggregate assignment pattern
+       '{member_name: expr, member_name: expr, ...} */
+  | K_LP assignment_pattern_member_list '}'
+      { yyerror(@1, "sorry: Named struct aggregate assignment patterns not yet supported.");
+	delete $2;
+	$$ = 0;
+      }
+  ;
+
+  /* IEEE1800-2017: structure_pattern_key : expression */
+assignment_pattern_member
+  : IDENTIFIER ':' expression
+      { named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = lex_strings.make($1);
+	tmp->parm = $3;
+	delete[]$1;
+	$$ = tmp;
+      }
+  | K_default ':' expression
+      { named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("default");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  ;
+
+assignment_pattern_member_list
+  : assignment_pattern_member
+      { std::list<named_pexpr_t>*tmp = new std::list<named_pexpr_t>;
+	tmp->push_back(*$1);
+	delete $1;
+	$$ = tmp;
+      }
+  | assignment_pattern_member_list ',' assignment_pattern_member
+      { std::list<named_pexpr_t>*tmp = $1;
+	tmp->push_back(*$3);
+	delete $3;
 	$$ = tmp;
       }
   ;
