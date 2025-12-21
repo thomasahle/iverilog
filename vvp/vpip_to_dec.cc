@@ -143,7 +143,18 @@ unsigned vpip_vec4_to_dec_str(const vvp_vector4_t&vec4,
 	    }
 	    mbits -= 1;
       }
-      assert(mbits<(UINT_MAX-92)/28);
+      // Check if vector is too large for decimal conversion
+      // This can happen with corrupted/uninitialized vectors
+      if (mbits >= (UINT_MAX-92)/28) {
+            const char* msg = "<OVERFLOW>";
+            unsigned len = strlen(msg);
+            if (len < nbuf) {
+                  strcpy(buf, msg);
+            } else if (nbuf > 0) {
+                  buf[0] = 0;
+            }
+            return len;
+      }
       vlen = ((mbits*28+92)/93+BDIGITS-1)/BDIGITS;
 	/* printf("vlen=%d\n",vlen); */
 
