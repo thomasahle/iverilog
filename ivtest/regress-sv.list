@@ -1172,3 +1172,7 @@ sv_decimal_overflow	normal,-g2012	ivltests	gold=sv_decimal_overflow.gold
 sv_compare_width_mismatch	normal,-g2012	ivltests gold=sv_compare_width_mismatch.gold
 sv_config_db_glob	normal,-g2012,-I../lib/ivl/uvm	ivltests	gold=sv_config_db_glob.gold
 sv_for_multi_decl	normal,-g2012	ivltests	gold=sv_for_multi_decl.gold
+sv_extern_this_test	normal,-g2012	ivltests
+sv_fork_virt_nested_this	normal,-g2012	ivltests
+sv_uvm_phase_test	normal,-g2012	ivltests
+sv_class_prop_assign	normal,-g2012	ivltests

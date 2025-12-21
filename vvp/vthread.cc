@@ -4903,6 +4903,26 @@ bool of_LOAD_DAR_O(vthread_t thr, vvp_code_t cp)
 /*
  * %load/obj <var-label>
  */
+// Helper function to check if a net belongs to an '@' (this) variable
+static bool net_is_this_variable(vvp_net_t*net, __vpiScope*scope)
+{
+      if (!net || !scope) return false;
+      for (unsigned idx = 0; idx < scope->intern.size(); ++idx) {
+	    vpiHandle item = scope->intern[idx];
+	    if (!item) continue;
+	    if (item->get_type_code() == vpiClassVar) {
+		  const char* name = item->vpi_get_str(vpiName);
+		  if (name && strcmp(name, "@") == 0) {
+			__vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
+			if (var && var->get_net() == net) {
+			      return true;
+			}
+		  }
+	    }
+      }
+      return false;
+}
+
 bool of_LOAD_OBJ(vthread_t thr, vvp_code_t cp)
 {
       vvp_net_t*net = cp->net;
@@ -4910,8 +4930,19 @@ bool of_LOAD_OBJ(vthread_t thr, vvp_code_t cp)
       // Check if we're loading '@' (implicit this) and have a stored value.
       // This handles forked tasks and functions called by forked tasks where
       // context swaps would otherwise cause '@' to be inaccessible.
-      if (net == thr->fork_this_net_) {
-	    if (!thr->fork_this_obj_.test_nil()) {
+      //
+      // We check two conditions:
+      // 1. The net matches fork_this_net_ (same scope as original fork)
+      // 2. The net is an '@' variable in the current scope (nested function call)
+      //    and we have a valid fork_this_obj_
+      if (thr->fork_this_net_ != 0 && !thr->fork_this_obj_.test_nil()) {
+	    if (net == thr->fork_this_net_) {
+		  thr->push_object(thr->fork_this_obj_);
+		  return true;
+	    }
+	    // Check if we're loading an '@' variable from a different scope
+	    __vpiScope*scope = vthread_scope(thr);
+	    if (scope && net_is_this_variable(net, scope)) {
 		  thr->push_object(thr->fork_this_obj_);
 		  return true;
 	    }
@@ -4920,7 +4951,31 @@ bool of_LOAD_OBJ(vthread_t thr, vvp_code_t cp)
       vvp_fun_signal_object*fun = dynamic_cast<vvp_fun_signal_object*> (net->fun);
       assert(fun);
 
+      // Check if this is an automatic variable being loaded with null rd_context
+      vvp_fun_signal_object_aa*fun_aa = dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
+      if (fun_aa && !thr->rd_context) {
+	    // For automatic variables, if rd_context is null, try wt_context
+	    // This can happen when reading return values after %callf/obj
+	    if (thr->wt_context) {
+		  vvp_object_t val = fun_aa->get_object_from_context(thr->wt_context);
+		  thr->push_object(val);
+		  return true;
+	    }
+      }
+
       vvp_object_t val = fun->get_object();
+
+      // For automatic variables, if value is nil and wt_context is different,
+      // try loading from wt_context. This handles reading return values after
+      // %callf/obj where the value was stored using wt_context but rd_context
+      // points to the caller's context.
+      if (val.test_nil() && fun_aa && thr->wt_context && thr->wt_context != thr->rd_context) {
+	    vvp_object_t alt_val = fun_aa->get_object_from_context(thr->wt_context);
+	    if (!alt_val.test_nil()) {
+		  val = alt_val;
+	    }
+      }
+
       thr->push_object(val);
 
       return true;
