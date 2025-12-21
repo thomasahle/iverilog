@@ -1164,3 +1164,5 @@ sv_cast_method_arg	normal,-g2012	ivltests
 sv_vif_class_assign	normal,-g2012	ivltests
 sv_vif_class_member	normal,-g2012	ivltests
 sv_class_darray_prop_lval	normal,-g2012	ivltests
+sv_nested_darray_prop	normal,-g2012	ivltests	gold=sv_nested_darray_prop.gold
+sv_nested_darray_varindex	normal,-g2012	ivltests	gold=sv_nested_darray_varindex.gold
