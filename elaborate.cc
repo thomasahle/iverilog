@@ -54,6 +54,7 @@
 # include  "netqueue.h"
 # include  "netscalar.h"
 # include  "netclass.h"
+# include  "netstruct.h"
 # include  "netmisc.h"
 # include  "util.h"
 # include  "parse_api.h"
@@ -6686,6 +6687,52 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 		 << " as a foreach loop." << endl;
 	    des->errors += 1;
 	    return 0;
+      }
+
+      // Handle struct member arrays: foreach(struct_var.member[i])
+      // where struct_var is a signal of struct type and member is an array member
+      if (array_sig == 0 && class_scope == 0 && array_var_.size() == 2) {
+	    perm_string first_name = array_var_.front().name;
+	    pform_name_t struct_name;
+	    struct_name.push_back(name_component_t(first_name));
+	    NetNet*struct_sig = des->find_signal(scope, struct_name);
+
+	    if (struct_sig) {
+		  const netstruct_t*struct_type = struct_sig->struct_type();
+		  if (struct_type) {
+			pform_name_t::const_iterator it = array_var_.begin();
+			++it;  // Skip struct name
+			perm_string member_name = it->name;
+
+			// Look up the member in the struct
+			int member_idx = struct_type->member_idx_from_name(member_name);
+			if (member_idx >= 0) {
+			      const netstruct_t::member_t* member = struct_type->get_member(member_idx);
+			      if (member) {
+				    // Check if member type is a static array
+				    const netsarray_t*atype = dynamic_cast<const netsarray_t*>(member->net_type);
+				    if (atype) {
+					  const netranges_t&dims = atype->static_dimensions();
+					  if (dims.size() < index_vars_.size()) {
+						cerr << get_fileline() << ": error: "
+						     << "struct member " << array_var_
+						     << " has too few dimensions for foreach dimension list." << endl;
+						des->errors += 1;
+						return 0;
+					  }
+
+					  if (debug_elaborate) {
+						cerr << get_fileline() << ": PForeach::elaborate: "
+						     << "Using struct member array " << first_name << "." << member_name
+						     << " with " << dims.size() << " dimensions." << endl;
+					  }
+
+					  return elaborate_static_array_(des, scope, dims);
+				    }
+			      }
+			}
+		  }
+	    }
       }
 
       if (array_sig == 0) {
