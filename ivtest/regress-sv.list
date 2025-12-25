@@ -1132,6 +1132,8 @@ sv_uvm_macros_interface	normal,-g2012,-I../lib/ivl/uvm	ivltests gold=sv_uvm_macr
 sv_uvm_p_sequencer	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_test_done	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_tlm_fifo		normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_basic		normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_messages		normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_foreach_class_array	normal,-g2012		ivltests
 sv_foreach_darray_property	normal,-g2012		ivltests
 sv_foreach_darray_prop_int	normal,-g2012		ivltests
