@@ -1176,3 +1176,16 @@ sv_extern_this_test	normal,-g2012	ivltests
 sv_fork_virt_nested_this	normal,-g2012	ivltests
 sv_uvm_phase_test	normal,-g2012	ivltests
 sv_class_prop_assign	normal,-g2012	ivltests
+
+# SVA (SystemVerilog Assertions) parsing tests
+# These tests verify SVA syntax is parsed correctly (elaboration not yet supported)
+sva_property_basic	normal,-g2012,-gno-assertions	ivltests
+sva_property_ports	normal,-g2012,-gno-assertions	ivltests
+sva_sequence_basic	normal,-g2012,-gno-assertions	ivltests
+sva_sequence_ports	normal,-g2012,-gno-assertions	ivltests
+sva_implication		normal,-g2012,-gno-assertions	ivltests
+sva_delay		normal,-g2012,-gno-assertions	ivltests
+sva_first_match		normal,-g2012,-gno-assertions	ivltests
+sva_assert_cover	normal,-g2012,-gno-assertions	ivltests
+sva_comprehensive	normal,-g2012,-gno-assertions	ivltests
+sv_bind_parse		normal,-g2012,-gno-assertions	ivltests

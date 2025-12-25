@@ -474,6 +474,25 @@ bool pform_in_extern_declaration()
       return pform_in_extern_decl;
 }
 
+/* SVA (property/sequence) declaration flag - when true, tf_port_list
+   does not create PWire objects since we're just parsing syntax */
+static bool pform_in_sva_decl = false;
+
+void pform_begin_sva_declaration()
+{
+      pform_in_sva_decl = true;
+}
+
+void pform_end_sva_declaration()
+{
+      pform_in_sva_decl = false;
+}
+
+bool pform_in_sva_declaration()
+{
+      return pform_in_sva_decl;
+}
+
 void pform_set_method_static(bool is_static)
 {
       pform_cur_method_is_static = is_static;

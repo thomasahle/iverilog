@@ -675,6 +675,9 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
  /* The new tokens from 1800-2012. */
 %token K_implements K_interconnect K_nettype K_soft
 
+ /* SVA (SystemVerilog Assertions) temporal operator tokens. */
+%token K_SEQ_DELAY K_IMPLIES_OV K_IMPLIES_NOV K_REP_STAR K_REP_GOTO K_REP_PLUS
+
  /* The new tokens for Verilog-AMS 2.3. */
 %token K_above K_abs K_absdelay K_abstol K_access K_acos K_acosh
  /* 1800-2005 has defined "assert" above! */
@@ -3244,6 +3247,84 @@ port_direction_opt
   |                { $$ = NetNet::PIMPLICIT; }
   ;
 
+  /* Property declaration - IEEE1800-2012 A.2.10 */
+property_declaration
+  : K_property IDENTIFIER ';' property_spec semicolon_opt K_endproperty label_opt
+      { /* Property declaration parsed but not elaborated */
+        if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: property declarations are parsed but not yet elaborated."
+                      " Try -gno-assertions or -gsupported-assertions"
+                      " to turn this message off.");
+        }
+        delete[]$2;
+        delete[]$7;
+      }
+  | K_property IDENTIFIER '('
+      { /* Start SVA mode to prevent wire creation for property ports */
+        pform_begin_sva_declaration();
+      }
+    tf_port_list_opt ')'
+      { pform_end_sva_declaration(); }
+    ';' property_spec semicolon_opt K_endproperty label_opt
+      { /* Property declaration with ports */
+        if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: property declarations are parsed but not yet elaborated."
+                      " Try -gno-assertions or -gsupported-assertions"
+                      " to turn this message off.");
+        }
+        delete[]$2;
+        delete $5;
+        delete[]$12;
+      }
+  | K_property error K_endproperty
+      { yyerror(@1, "error: Syntax error in property declaration.");
+        yyerrok;
+      }
+  ;
+
+semicolon_opt
+  : ';'
+  |
+  ;
+
+  /* Sequence declaration - IEEE1800-2012 A.2.10
+     Sequences are like properties but without disable iff. They can have
+     clocking events, so we use property_spec which handles that. */
+sequence_declaration
+  : K_sequence IDENTIFIER ';' property_spec semicolon_opt K_endsequence label_opt
+      { /* Sequence declaration parsed but not elaborated */
+        if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: sequence declarations are parsed but not yet elaborated."
+                      " Try -gno-assertions or -gsupported-assertions"
+                      " to turn this message off.");
+        }
+        delete[]$2;
+        delete[]$7;
+      }
+  | K_sequence IDENTIFIER '('
+      { /* Start SVA mode to prevent wire creation for sequence ports */
+        pform_begin_sva_declaration();
+      }
+    tf_port_list_opt ')'
+      { pform_end_sva_declaration(); }
+    ';' property_spec semicolon_opt K_endsequence label_opt
+      { /* Sequence declaration with ports */
+        if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: sequence declarations are parsed but not yet elaborated."
+                      " Try -gno-assertions or -gsupported-assertions"
+                      " to turn this message off.");
+        }
+        delete[]$2;
+        delete $5;
+        delete[]$12;
+      }
+  | K_sequence error K_endsequence label_opt
+      { yyerror(@1, "error: Syntax error in sequence declaration.");
+        delete[]$4;
+        yyerrok;
+      }
+  ;
+
 procedural_assertion_statement /* IEEE1800-2012 A.6.10 */
   : block_identifier_opt concurrent_assertion_statement
       { $$ = $2; }
@@ -3255,6 +3336,42 @@ procedural_assertion_statement /* IEEE1800-2012 A.6.10 */
 
 property_expr /* IEEE1800-2012 A.2.10 */
   : expression
+  | expression K_IMPLIES_OV property_expr
+      { /* |-> overlapping implication - parsed but not elaborated */ }
+  | expression K_IMPLIES_NOV property_expr
+      { /* |=> non-overlapping implication - parsed but not elaborated */ }
+  | expression K_IMPLIES_OV K_SEQ_DELAY DEC_NUMBER property_expr
+      { /* |-> ##n sequence - parsed but not elaborated */ }
+  | expression K_IMPLIES_NOV K_SEQ_DELAY DEC_NUMBER property_expr
+      { /* |=> ##n sequence - parsed but not elaborated */ }
+  | expression K_IMPLIES_OV K_SEQ_DELAY '[' expression ':' expression ']' property_expr
+      { /* |-> ##[m:n] sequence - parsed but not elaborated */ }
+  | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' expression ']' property_expr
+      { /* |=> ##[m:n] sequence - parsed but not elaborated */ }
+  | expression K_IMPLIES_OV K_first_match '(' sequence_expr_in_parens ')'
+      { /* |-> first_match - parsed but not elaborated */ }
+  | expression K_IMPLIES_NOV K_first_match '(' sequence_expr_in_parens ')'
+      { /* |=> first_match - parsed but not elaborated */ }
+  | K_SEQ_DELAY DEC_NUMBER property_expr
+      { /* ##n sequence at start - parsed but not elaborated */ }
+  | K_SEQ_DELAY '[' expression ':' expression ']' property_expr
+      { /* ##[m:n] sequence at start - parsed but not elaborated */ }
+  | K_if '(' expression ')' property_expr %prec less_than_K_else
+      { /* if-then property - not elaborated */ }
+  | K_if '(' expression ')' property_expr K_else property_expr
+      { /* if-then-else property - not elaborated */ }
+  ;
+
+  /* Sequence expression for use inside first_match, etc.
+     This is a limited form that handles ## delays. */
+sequence_expr_in_parens
+  : expression
+  | '(' K_SEQ_DELAY '[' expression ':' expression ']' expression ')'
+      { /* (##[m:n] expr) - parenthesized sequence delay range */ }
+  | '(' K_SEQ_DELAY DEC_NUMBER expression ')'
+      { /* (##n expr) - parenthesized sequence delay */ }
+  | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')'
+      { /* (expr ##[m:n] expr) - sequence with delay range */ }
   ;
 
   /* The property_qualifier rule is as literally described in the LRM,
@@ -6939,6 +7056,10 @@ module_item
 
   | modport_declaration
 
+  /* SVA property and sequence declarations */
+  | property_declaration
+  | sequence_declaration
+
   /* 1364-2001 and later allow specparam declarations outside specify blocks. */
 
   | attribute_list_opt K_specparam
@@ -7015,8 +7136,12 @@ module_item
      The simple form: bind target_module instance_type instance_name(.connections);
      binds instance_type to all instances of target_module. */
 
+  /* Bind with module target (IDENTIFIER) */
   | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
-      { yyerror(@1, "sorry: bind directive not yet supported.");
+      { if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: bind directive not yet supported."
+                      " Try -gno-assertions to turn this message off.");
+        }
 	delete[]$2;
 	delete[]$3;
 	delete[]$4;
@@ -7024,7 +7149,10 @@ module_item
       }
 
   | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
-      { yyerror(@1, "sorry: bind directive not yet supported.");
+      { if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: bind directive not yet supported."
+                      " Try -gno-assertions to turn this message off.");
+        }
 	delete[]$2;
 	delete[]$3;
 	delete[]$4;
@@ -7032,17 +7160,40 @@ module_item
       }
 
   | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' ')' ';'
-      { yyerror(@1, "sorry: bind directive not yet supported.");
+      { if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: bind directive not yet supported."
+                      " Try -gno-assertions to turn this message off.");
+        }
 	delete[]$2;
 	delete[]$3;
 	delete[]$4;
       }
 
   | K_bind IDENTIFIER IDENTIFIER IDENTIFIER ';'
-      { yyerror(@1, "sorry: bind directive not yet supported.");
+      { if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: bind directive not yet supported."
+                      " Try -gno-assertions to turn this message off.");
+        }
 	delete[]$2;
 	delete[]$3;
 	delete[]$4;
+      }
+
+  /* Bind with interface target (TYPE_IDENTIFIER) */
+  | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
+      { if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: bind directive not yet supported."
+                      " Try -gno-assertions to turn this message off.");
+        }
+	delete $6;
+      }
+
+  | K_bind TYPE_IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
+      { if (gn_unsupported_assertions_flag) {
+              yyerror(@1, "sorry: bind directive not yet supported."
+                      " Try -gno-assertions to turn this message off.");
+        }
+	delete $6;
       }
 
   | ';'

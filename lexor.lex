@@ -279,6 +279,14 @@ TU [munpf]
      with "*" and return that. */
 "("{W}*"*"{W}*")" { return '*'; }
 
+  /* SVA (SystemVerilog Assertions) temporal operators */
+"##" { return K_SEQ_DELAY; }
+"|->" { return K_IMPLIES_OV; }
+"|=>" { return K_IMPLIES_NOV; }
+"[*" { return K_REP_STAR; }
+"[=" { return K_REP_GOTO; }
+"[+]" { return K_REP_PLUS; }
+
 <EDGES>"]" { BEGIN(0); return yytext[0]; }
 [}{;:\[\],()#=.@&!?<>%|^~+*/-] { return yytext[0]; }
 
