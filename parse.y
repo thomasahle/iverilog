@@ -3735,6 +3735,47 @@ tf_port_item /* IEEE1800-2005: A.2.7 */
 	}
       }
 
+    /* Allow TYPE_IDENTIFIER as the variable name when it shadows the type name.
+       This handles cases like "MyClass MyClass" where the parameter name matches the type. */
+  | port_direction_opt K_var_opt data_type_or_implicit TYPE_IDENTIFIER dimensions_opt initializer_opt
+      { std::vector<pform_tf_port_t>*tmp;
+	NetNet::PortType use_port_type = $1;
+        if ((use_port_type == NetNet::PIMPLICIT) && (gn_system_verilog() || ($3 == 0)))
+              use_port_type = port_declaration_context.port_type;
+	list<pform_port_t>* port_list = make_port_list($4.text, @4.lexical_pos, $5, 0);
+
+	if (use_port_type == NetNet::PIMPLICIT) {
+	      yyerror(@1, "error: Missing task/function port direction.");
+	      use_port_type = NetNet::PINPUT; // for error recovery
+	}
+	if (($3 == 0) && ($1==NetNet::PIMPLICIT)) {
+	      if ($5 != 0) {
+		    yyerror(@5, "internal error: How can there be an unpacked range here?\n");
+	      }
+	      tmp = pform_make_task_ports(@4, use_port_type,
+					  port_declaration_context.data_type,
+					  port_list);
+
+	} else {
+	      port_declaration_context.port_type = use_port_type;
+	      if ($3 == 0) {
+		    $3 = new vector_type_t(IVL_VT_LOGIC, false, 0);
+		    FILE_NAME($3, @4);
+	      }
+	      port_declaration_context.data_type = $3;
+	      tmp = pform_make_task_ports(@3, use_port_type, $3, port_list);
+	}
+
+	$$ = tmp;
+	if ($6) {
+	      pform_requires_sv(@6, "Task/function default argument");
+	      if (!pform_in_extern_declaration()) {
+		  assert(tmp->size()==1);
+		  tmp->front().defe = $6;
+	      }
+	}
+      }
+
     /* IEEE1800-2005: const ref is a special port direction */
   | K_const K_ref K_var_opt data_type_or_implicit IDENTIFIER dimensions_opt initializer_opt
       { std::vector<pform_tf_port_t>*tmp;
