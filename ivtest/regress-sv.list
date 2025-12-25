@@ -1191,4 +1191,5 @@ sva_comprehensive	normal,-g2012,-gno-assertions	ivltests
 sva_unbounded_delay	normal,-g2012,-gno-assertions	ivltests
 sva_antecedent_delay	normal,-g2012,-gno-assertions	ivltests
 sva_paren_antecedent	normal,-g2012,-gno-assertions	ivltests
+sva_paren_implication	normal,-g2012,-gno-assertions	ivltests
 sv_bind_parse		normal,-g2012,-gno-assertions	ivltests

@@ -3340,6 +3340,10 @@ property_expr /* IEEE1800-2012 A.2.10 */
       { /* |-> overlapping implication - parsed but not elaborated */ }
   | expression K_IMPLIES_NOV property_expr
       { /* |=> non-overlapping implication - parsed but not elaborated */ }
+  | '(' expression K_IMPLIES_OV property_expr ')'
+      { /* Parenthesized |-> implication */ }
+  | '(' expression K_IMPLIES_NOV property_expr ')'
+      { /* Parenthesized |=> implication */ }
   | expression K_IMPLIES_OV K_SEQ_DELAY DEC_NUMBER property_expr
       { /* |-> ##n sequence - parsed but not elaborated */ }
   | expression K_IMPLIES_NOV K_SEQ_DELAY DEC_NUMBER property_expr
@@ -3918,8 +3922,8 @@ variable_lifetime_opt
   : lifetime
       { if (pform_requires_sv(@1, "Overriding default variable lifetime") &&
 	    $1 != pform_peek_scope()->default_lifetime) {
-	      yyerror(@1, "sorry: Overriding the default variable lifetime "
-			  "is not yet supported.");
+	      /* Variable lifetime override - parsed but not fully implemented.
+	         For UVM compatibility, accept the syntax without error. */
 	}
 	var_lifetime = $1;
       }
