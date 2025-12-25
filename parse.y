@@ -3348,14 +3348,44 @@ property_expr /* IEEE1800-2012 A.2.10 */
       { /* |-> ##[m:n] sequence - parsed but not elaborated */ }
   | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' expression ']' property_expr
       { /* |=> ##[m:n] sequence - parsed but not elaborated */ }
+  | expression K_IMPLIES_OV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
+      { /* |-> ##[m:$] unbounded sequence - parsed but not elaborated */ }
+  | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
+      { /* |=> ##[m:$] unbounded sequence - parsed but not elaborated */ }
   | expression K_IMPLIES_OV K_first_match '(' sequence_expr_in_parens ')'
       { /* |-> first_match - parsed but not elaborated */ }
   | expression K_IMPLIES_NOV K_first_match '(' sequence_expr_in_parens ')'
       { /* |=> first_match - parsed but not elaborated */ }
+  | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_OV property_expr
+      { /* seq ##n seq |-> prop - delay in antecedent - parsed but not elaborated */ }
+  | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_NOV property_expr
+      { /* seq ##n seq |=> prop - delay in antecedent - parsed but not elaborated */ }
+  | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_OV property_expr
+      { /* seq ##[m:n] seq |-> prop - range delay in antecedent */ }
+  | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_NOV property_expr
+      { /* seq ##[m:n] seq |=> prop - range delay in antecedent */ }
+  | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression K_IMPLIES_OV property_expr
+      { /* seq ##[m:$] seq |-> prop - unbounded delay in antecedent */ }
+  | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression K_IMPLIES_NOV property_expr
+      { /* seq ##[m:$] seq |=> prop - unbounded delay in antecedent */ }
+  | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')' K_IMPLIES_OV property_expr
+      { /* (seq ##n seq) |-> prop - parenthesized antecedent */ }
+  | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')' K_IMPLIES_NOV property_expr
+      { /* (seq ##n seq) |=> prop - parenthesized antecedent */ }
+  | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')' K_IMPLIES_OV property_expr
+      { /* (seq ##[m:n] seq) |-> prop - parenthesized antecedent with range */ }
+  | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')' K_IMPLIES_NOV property_expr
+      { /* (seq ##[m:n] seq) |=> prop - parenthesized antecedent with range */ }
+  | '(' expression K_SEQ_DELAY '[' expression ':' '$' ']' expression ')' K_IMPLIES_OV property_expr
+      { /* (seq ##[m:$] seq) |-> prop - parenthesized antecedent unbounded */ }
+  | '(' expression K_SEQ_DELAY '[' expression ':' '$' ']' expression ')' K_IMPLIES_NOV property_expr
+      { /* (seq ##[m:$] seq) |=> prop - parenthesized antecedent unbounded */ }
   | K_SEQ_DELAY DEC_NUMBER property_expr
       { /* ##n sequence at start - parsed but not elaborated */ }
   | K_SEQ_DELAY '[' expression ':' expression ']' property_expr
       { /* ##[m:n] sequence at start - parsed but not elaborated */ }
+  | K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
+      { /* ##[m:$] unbounded sequence at start - parsed but not elaborated */ }
   | K_if '(' expression ')' property_expr %prec less_than_K_else
       { /* if-then property - not elaborated */ }
   | K_if '(' expression ')' property_expr K_else property_expr
