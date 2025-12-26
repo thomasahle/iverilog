@@ -4511,8 +4511,28 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      call->set_line(*this);
 			      return call;
 			}
+
+			// Check for built-in randomize() method on the class element
+			if (method_name == "randomize") {
+			      // Generate a system function call to $ivl_randomize
+			      NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+							   &netvector_t::atom2s32, 1);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, base_expr);
+			      return sys_expr;
+			}
 		  } else if (current_class) {
 			// Simple case: arr[i].func()
+			// First, check for built-in randomize() method
+			if (method_name == "randomize") {
+			      // Generate a system function call to $ivl_randomize
+			      NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+							   &netvector_t::atom2s32, 1);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, base_expr);
+			      return sys_expr;
+			}
+
 			NetScope* func = current_class->method_from_name(method_name);
 			if (func && func->type() == NetScope::FUNC) {
 			      NetFuncDef* func_def = func->func_def();

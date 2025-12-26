@@ -6439,6 +6439,41 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 						      this_scope = this_scope->parent();
 					  }
 				    }
+			      } else {
+				    // Check if first property is a struct type
+				    const netstruct_t*struct_type = dynamic_cast<const netstruct_t*>(first_prop_type);
+				    if (struct_type) {
+					  // First property is a struct - look up second component as struct member
+					  pform_name_t::const_iterator it = array_var_.begin();
+					  ++it;  // Skip first property name
+					  perm_string member_name = it->name;
+					  int member_idx = struct_type->member_idx_from_name(member_name);
+					  if (member_idx >= 0) {
+						const netstruct_t::member_t* member = struct_type->get_member(member_idx);
+						if (member) {
+						      // Check if member type is a static array
+						      const netsarray_t*atype = dynamic_cast<const netsarray_t*>(member->net_type);
+						      if (atype) {
+							    const netranges_t&dims = atype->static_dimensions();
+							    if (dims.size() < index_vars_.size()) {
+								  cerr << get_fileline() << ": error: "
+								       << "struct member " << array_var_
+								       << " has too few dimensions for foreach dimension list." << endl;
+								  des->errors += 1;
+								  return 0;
+							    }
+
+							    if (debug_elaborate) {
+								  cerr << get_fileline() << ": PForeach::elaborate: "
+								       << "Using struct property member array " << first_name << "." << member_name
+								       << " with " << dims.size() << " dimensions." << endl;
+							    }
+
+							    return elaborate_static_array_(des, scope, dims);
+						      }
+						}
+					  }
+				    }
 			      }
 			}
 		  }
