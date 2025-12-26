@@ -713,7 +713,11 @@ sv_foreach_hier1	normal,-g2012		ivltests
 sv_foreach_hier2	normal,-g2012		ivltests
 sv_foreach_array	normal,-g2012		ivltests
 sv_foreach_class_struct	normal,-g2012		ivltests
+sv_foreach_class_array	normal,-g2012		ivltests
 sv_randomize_array	normal,-g2012		ivltests
+sv_randomize_basic	normal,-g2012		ivltests
+sv_randomize_property	normal,-g2012		ivltests
+sv_randomize_inherit	normal,-g2012		ivltests
 sv_immediate_assert	normal,-g2009		ivltests gold=sv_immediate_assert.gold
 sv_immediate_assume	normal,-g2009		ivltests gold=sv_immediate_assume.gold
 sv_import_hier_fail1	CE,-g2005-sv		ivltests
