@@ -4903,49 +4903,26 @@ bool of_LOAD_DAR_O(vthread_t thr, vvp_code_t cp)
 /*
  * %load/obj <var-label>
  */
-// Helper function to check if a net belongs to an '@' (this) variable
-static bool net_is_this_variable(vvp_net_t*net, __vpiScope*scope)
-{
-      if (!net || !scope) return false;
-      for (unsigned idx = 0; idx < scope->intern.size(); ++idx) {
-	    vpiHandle item = scope->intern[idx];
-	    if (!item) continue;
-	    if (item->get_type_code() == vpiClassVar) {
-		  const char* name = item->vpi_get_str(vpiName);
-		  if (name && strcmp(name, "@") == 0) {
-			__vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
-			if (var && var->get_net() == net) {
-			      return true;
-			}
-		  }
-	    }
-      }
-      return false;
-}
-
 bool of_LOAD_OBJ(vthread_t thr, vvp_code_t cp)
 {
       vvp_net_t*net = cp->net;
 
       // Check if we're loading '@' (implicit this) and have a stored value.
-      // This handles forked tasks and functions called by forked tasks where
-      // context swaps would otherwise cause '@' to be inaccessible.
+      // This handles forked tasks where context swaps would otherwise cause
+      // '@' to be inaccessible.
       //
-      // We check two conditions:
-      // 1. The net matches fork_this_net_ (same scope as original fork)
-      // 2. The net is an '@' variable in the current scope (nested function call)
-      //    and we have a valid fork_this_obj_
+      // IMPORTANT: Only use fork_this_obj_ when the net matches fork_this_net_
+      // exactly. Do NOT use fork_this_obj_ for any '@' variable because nested
+      // function calls (like constructors) have their own '@' which should be
+      // loaded from the context, not from the forked task's '@'.
       if (thr->fork_this_net_ != 0 && !thr->fork_this_obj_.test_nil()) {
 	    if (net == thr->fork_this_net_) {
 		  thr->push_object(thr->fork_this_obj_);
 		  return true;
 	    }
-	    // Check if we're loading an '@' variable from a different scope
-	    __vpiScope*scope = vthread_scope(thr);
-	    if (scope && net_is_this_variable(net, scope)) {
-		  thr->push_object(thr->fork_this_obj_);
-		  return true;
-	    }
+	    // Note: Removed the overly broad net_is_this_variable check here.
+	    // That check would incorrectly return fork_this_obj_ for a constructor's
+	    // own '@' variable, causing the wrong class instance to be used.
       }
 
       vvp_fun_signal_object*fun = dynamic_cast<vvp_fun_signal_object*> (net->fun);
