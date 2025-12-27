@@ -2293,8 +2293,9 @@ bool of_CONFIG_DB_SET_O(vthread_t thr, vvp_code_t)
 /*
  * %config_db/get/dar <index_register>
  * Pop field_name and inst_name from string stack.
- * Pop darray from object stack.
+ * Pop darray from object stack, peek base object for context.
  * Look up object value in config_db, store to darray element at index.
+ * Pop base object when done.
  * Push 1 to vec4 stack if found, 0 if not found.
  */
 bool of_CONFIG_DB_GET_DAR(vthread_t thr, vvp_code_t cp)
@@ -2306,14 +2307,37 @@ bool of_CONFIG_DB_GET_DAR(vthread_t thr, vvp_code_t cp)
       std::string field_name = thr->pop_str();
       std::string inst_name = thr->pop_str();
 
-      // Pop darray from object stack
+      // Pop darray from object stack (was pushed by %prop/obj)
       vvp_object_t darray_obj;
       thr->pop_object(darray_obj);
       vvp_darray*darray = darray_obj.peek<vvp_darray>();
 
-      // Look up in config_db (context path is empty for now)
+      // Peek base object (still on stack from before %prop/obj)
+      vvp_object_t&base_obj = thr->peek_object();
+
+      // Get context from base object's m_full_name property if available
+      std::string context_path = "";
+      vvp_cobject*cobj = base_obj.peek<vvp_cobject>();
+      if (cobj && inst_name.empty()) {
+            // Look up m_full_name property (property index 3 in uvm_component)
+            // Property layout: 0=m_name, 1=m_verbosity, 2=m_parent, 3=m_full_name, ...
+            // Only access if the class has at least 4 properties (is a uvm_component or derived)
+            const class_type* ct = cobj->get_class_type();
+            if (ct->property_count() > 3) {
+                  std::string full_name = cobj->get_string(3);
+                  if (!full_name.empty()) {
+                        context_path = full_name;
+                  }
+            }
+      }
+
+      // Pop base object now that we've extracted context
+      vvp_object_t base_tmp;
+      thr->pop_object(base_tmp);
+
+      // Look up in config_db using context from base object
       vvp_object_t value;
-      bool found = vvp_config_db::instance().get_object("", inst_name, field_name, value);
+      bool found = vvp_config_db::instance().get_object(context_path, inst_name, field_name, value);
 
       if (found && darray) {
             // Store value to darray element
