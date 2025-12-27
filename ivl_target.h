@@ -1601,6 +1601,9 @@ extern ivl_signal_t ivl_lval_vif_sig(ivl_lval_t net);
  * These return the base signal or nested lval for VIF. */
 extern ivl_signal_t ivl_lval_vif_base_sig(ivl_lval_t net);
 extern ivl_lval_t ivl_lval_vif_nest(ivl_lval_t net);
+/* Returns 1 if VIF was accessed via nested lval path (use n.nest),
+ * 0 if accessed via signal path (use n.sig) */
+extern int ivl_lval_vif_has_nest(ivl_lval_t net);
 
 /* Unpacked struct member l-value access.
  * ivl_lval_struct_member_idx returns the member index, or -1 if not a

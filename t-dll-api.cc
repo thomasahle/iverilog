@@ -1886,6 +1886,13 @@ extern "C" ivl_signal_t ivl_lval_vif_sig(ivl_lval_t net)
       return net->vif_member_sig;
 }
 
+extern "C" int ivl_lval_vif_has_nest(ivl_lval_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_LVAL_VIF);
+      return net->vif_has_nest;
+}
+
 extern "C" int ivl_lval_struct_member_idx(ivl_lval_t net)
 {
       assert(net);

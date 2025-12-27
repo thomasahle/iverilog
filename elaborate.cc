@@ -2814,7 +2814,8 @@ NetProc* PAssign::elaborate(Design*des, NetScope*scope) const
 	/* If the l-value is a compound type of some sort, then use
 	   the newer net_type form of the elaborate_rval_ method to
 	   handle the new types. */
-      if (dynamic_cast<const netclass_t*> (lv_net_type)) {
+      const netclass_t* lv_class_type = dynamic_cast<const netclass_t*> (lv_net_type);
+      if (lv_class_type) {
 	    ivl_assert(*this, lv->more==0);
 	    rv = elaborate_rval_(des, scope, lv_net_type);
 

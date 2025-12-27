@@ -318,6 +318,16 @@ static ivl_type_t load_lval_object_chain(ivl_lval_t lval)
 }
 
 /*
+ * Like load_lval_object_chain but processes ALL properties in the chain.
+ * Used for VIF access where we need the complete object chain.
+ */
+static ivl_type_t load_lval_object_chain_full(ivl_lval_t lval)
+{
+      /* Access property at base level, and DON'T skip current property */
+      return load_lval_object_chain_r(lval, 1, 0);
+}
+
+/*
  * The code to generate here assumes that a vec4 vector of the right
  * width is top of the vec4 stack. Arrange for it to be popped and
  * assigned to the given l-value.
@@ -339,24 +349,32 @@ static void assign_to_lvector(ivl_lval_t lval,
 	    int vif_loaded = 0;
 
 	    /* VIF can be accessed via base signal (this.vif) or nested path.
-	     * Use VIF-specific functions to get the right access path. */
-	    ivl_signal_t base_sig = ivl_lval_vif_base_sig(lval);
-	    ivl_lval_t nest = ivl_lval_vif_nest(lval);
+	     * Use the vif_has_nest flag to determine which path was used. */
+	    int has_nest = ivl_lval_vif_has_nest(lval);
 	    int prop_idx = ivl_lval_property_idx(lval);
 
-	    /* Check if we have a valid base signal (this.vif access pattern) */
-	    if (base_sig) {
-		  /* VIF accessed via base signal (this.vif) */
+	    if (has_nest) {
+		  /* VIF accessed via nested lval path (e.g., d.cfg.vif.signal)
+		   * Use load_lval_object_chain_full to process the complete property chain. */
+		  ivl_lval_t nest = ivl_lval_vif_nest(lval);
+		  ivl_type_t sig_type = load_lval_object_chain_full(nest);
+		  /* Now load the VIF property from the class object on stack */
+		  if (prop_idx >= 0) {
+			const char* prop_name = sig_type ? ivl_type_prop_name(sig_type, prop_idx) : "(null)";
+			fprintf(vvp_out, "    %%prop/obj %d, 0; Load vif property %s\n",
+				prop_idx, prop_name ? prop_name : "(null)");
+			fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+		  }
+		  vif_loaded = 1;
+	    } else {
+		  /* VIF accessed via base signal (this.vif.signal) */
+		  ivl_signal_t base_sig = ivl_lval_vif_base_sig(lval);
 		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", base_sig);
 		  ivl_type_t sig_type = ivl_signal_net_type(base_sig);
 		  const char* prop_name = sig_type ? ivl_type_prop_name(sig_type, prop_idx) : "(null)";
 		  fprintf(vvp_out, "    %%prop/obj %d, 0; Load vif property %s\n",
 			  prop_idx, prop_name ? prop_name : "(null)");
 		  fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
-		  vif_loaded = 1;
-	    } else if (nest) {
-		  /* VIF accessed via nested lval path */
-		  load_lval_object_chain(nest);
 		  vif_loaded = 1;
 	    }
 

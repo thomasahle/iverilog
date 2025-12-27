@@ -517,6 +517,7 @@ struct ivl_lval_s {
       // For IVL_LVAL_VIF: virtual interface member access
       const char* vif_member_name;
       ivl_signal_t vif_member_sig;
+      unsigned vif_has_nest : 1;  // True if VIF accessed via n.nest (not n.sig)
       // For unpacked struct member access
       int struct_member_idx;
       const char* struct_member_name;

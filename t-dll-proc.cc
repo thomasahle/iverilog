@@ -180,6 +180,7 @@ bool dll_target::make_single_lval_(const LineInfo*li, struct ivl_lval_s*cur, con
       // Initialize vif member fields
       cur->vif_member_name = 0;
       cur->vif_member_sig = 0;
+      cur->vif_has_nest = 0;
 
       // Initialize unpacked struct member fields
       cur->struct_member_idx = asn->get_struct_member_idx();
@@ -221,6 +222,8 @@ bool dll_target::make_single_lval_(const LineInfo*li, struct ivl_lval_s*cur, con
 
       // Check for virtual interface member access
       if (asn->is_vif_member()) {
+	    // Record if we came from nested path before changing type to VIF
+	    cur->vif_has_nest = (cur->type_ == IVL_LVAL_LVAL);
 	    cur->type_ = IVL_LVAL_VIF;
 	    cur->vif_member_name = asn->get_vif_member_name();
 	    // Note: vif member signal is in interface scope, not DLL hierarchy.

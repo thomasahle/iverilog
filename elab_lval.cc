@@ -1321,7 +1321,19 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 	    if (debug_elaborate) {
 		  cerr << get_fileline() << ": PEIdent::elaborate_lval_net_class_member_: "
 		       << "Processing member_cur=" << member_cur
+		       << ", class_type=" << (class_type ? class_type->get_name().str() : "NULL")
 		       << endl;
+	    }
+
+	      // If class_type is null at this point, something went wrong in a previous
+	      // iteration. This can happen if we failed to handle a non-class property
+	      // type (like virtual interface) that still has more path components.
+	    if (!class_type) {
+		  cerr << get_fileline() << ": error: "
+		       << "Cannot access property " << method_name
+		       << " - parent is not a class type." << endl;
+		  des->errors += 1;
+		  return 0;
 	    }
 
 	      // Make sure the property is really present in the class. If
@@ -1569,7 +1581,8 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 			// If not available from type, try to find it by searching scopes
 			if (!iface_def) {
 			      // Search through all root scopes and their children
-			      for (NetScope* root : des->find_root_scopes()) {
+			      auto root_scopes = des->find_root_scopes();
+			      for (NetScope* root : root_scopes) {
 				    iface_def = find_interface_scope_recursive(root, iface_name);
 				    if (iface_def) break;
 			      }

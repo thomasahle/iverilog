@@ -1211,3 +1211,4 @@ sv_class_array_prop_assign	normal,-g2012	ivltests
 sv_config_db_vif	normal,-g2012	ivltests
 sv_nested_class_vif	normal,-g2012	ivltests
 sv_nested_task_call	normal,-g2012	ivltests
+sv_class_vif_three_level		normal,-g2012		ivltests
