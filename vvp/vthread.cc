@@ -8861,8 +8861,13 @@ bool of_STORE_VEC4(vthread_t thr, vvp_code_t cp)
 	    cerr << thr->get_fileline()
 	         << "XXXX Internal error: val.size()=" << val_size
 		 << ", expecting >= " << wid << endl;
+	    // Pad with X values to prevent crash
+	    vvp_vector4_t padded(wid, BIT4_X);
+	    for (unsigned i = 0; i < val_size; i++)
+		  padded.set_bit(i, val.value(i));
+	    val = padded;
+	    val_size = wid;
       }
-      assert(val_size >= wid);
       if (val_size > wid) {
 	    val.resize(wid);
       }

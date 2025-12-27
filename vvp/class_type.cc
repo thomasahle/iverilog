@@ -553,7 +553,11 @@ void class_type::set_vec4(class_type::inst_t obj, size_t pid,
 			  const vvp_vector4_t&val, uint64_t idx) const
 {
       char*buf = reinterpret_cast<char*> (obj);
-      assert(pid < properties_.size());
+      if (pid >= properties_.size()) {
+            fprintf(stderr, "ERROR class_type::set_vec4: pid=%lu >= properties_.size()=%lu, class=%s\n",
+                    (unsigned long)pid, (unsigned long)properties_.size(), class_name_.c_str());
+            return;
+      }
       properties_[pid].type->set_vec4(buf, val, idx);
 }
 
@@ -561,7 +565,12 @@ void class_type::get_vec4(class_type::inst_t obj, size_t pid,
 			  vvp_vector4_t&val, uint64_t idx) const
 {
       char*buf = reinterpret_cast<char*> (obj);
-      assert(pid < properties_.size());
+      if (pid >= properties_.size()) {
+            fprintf(stderr, "ERROR class_type::get_vec4: pid=%lu >= properties_.size()=%lu, class=%s\n",
+                    (unsigned long)pid, (unsigned long)properties_.size(), class_name_.c_str());
+            val = vvp_vector4_t(0);
+            return;
+      }
       properties_[pid].type->get_vec4(buf, val, idx);
 }
 
