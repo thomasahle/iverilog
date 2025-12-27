@@ -370,6 +370,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%test_nul/a",   of_TEST_NUL_A,   2,{OA_ARR_PTR, OA_BIT1,    OA_NONE} },
       { "%test_nul/obj", of_TEST_NUL_OBJ, 0,{OA_NONE,    OA_NONE,    OA_NONE} },
       { "%test_nul/prop",of_TEST_NUL_PROP,2,{OA_NUMBER,  OA_BIT1,    OA_NONE} },
+      { "%vif/load/obj",of_VIF_LOAD_OBJ,1, {OA_STRING,  OA_NONE,    OA_NONE} },
       { "%vif/load/v",  of_VIF_LOAD_V,  2, {OA_STRING,  OA_BIT1,    OA_NONE} },
       { "%vif/store/obj",of_VIF_STORE_OBJ,1,{OA_STRING,  OA_NONE,    OA_NONE} },
       { "%vif/store/v", of_VIF_STORE_V, 2, {OA_STRING,  OA_BIT1,    OA_NONE} },

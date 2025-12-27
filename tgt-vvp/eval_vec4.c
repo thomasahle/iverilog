@@ -328,6 +328,29 @@ static void draw_binary_vec4_compare_class(ivl_expr_t expr)
 	    return;
       }
 
+	/* Compare virtual interface property (class member through vif) to null. */
+      if (ivl_expr_type(re)==IVL_EX_NULL && ivl_expr_type(le)==IVL_EX_VIFPROP) {
+	    ivl_expr_t vif_expr = ivl_expr_vifprop_base(le);
+	    const char* member_name = ivl_expr_vifprop_member(le);
+
+	    /* Evaluate the vif expression to get scope on object stack */
+	    draw_eval_object(vif_expr);
+
+	    /* Load the object from the vif member */
+	    fprintf(vvp_out, "    %%vif/load/obj \"%s\";\n", member_name);
+
+	    /* Test if the loaded object is null */
+	    fprintf(vvp_out, "    %%test_nul/obj;\n");
+
+	    /* Pop both the loaded object and the vif scope */
+	    fprintf(vvp_out, "    %%pop/obj 2, 0;\n");
+
+	    if (ivl_expr_opcode(expr) == 'n')
+		  fprintf(vvp_out, "    %%flag_inv 4;\n");
+	    fprintf(vvp_out, "    %%flag_get/vec4 4;\n");
+	    return;
+      }
+
       fprintf(stderr, "SORRY: Compare class handles not implemented\n");
       fprintf(vvp_out, " ; XXXX compare class handles. re-type=%d, le-type=%d\n",
 	      ivl_expr_type(re), ivl_expr_type(le));

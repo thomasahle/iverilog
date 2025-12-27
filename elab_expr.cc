@@ -3240,8 +3240,17 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 				    vif_prop_expr, vif_member_comp.name, vif_type, member_sig);
 			      vif_expr->set_line(*this);
 
-			      // If there are still more path components, error - nested vif member access not supported
+			      // If there are still more path components, check if we can continue
 			      if (!member_path.empty()) {
+				    // If the member is a class type, continue processing
+				    const netclass_t* member_class = dynamic_cast<const netclass_t*>(member_sig->net_type());
+				    if (member_class) {
+					  // Set up for continued traversal of class members
+					  current_expr = vif_expr;
+					  current_class = member_class;
+					  // Continue the loop to process remaining path components
+					  continue;
+				    }
 				    cerr << get_fileline() << ": sorry: "
 					 << "Nested virtual interface member access is not yet supported." << endl;
 				    des->errors += 1;
@@ -6305,6 +6314,32 @@ ivl_type_t PEIdent::resolve_type_(Design *des, const symbol_search_results &sr,
 			type = netenum;
 		  else
 			return nullptr;
+	    } else if (auto vif_type = dynamic_cast<const netvirtual_interface_t*>(type)) {
+		  // If the type is a virtual interface, look up the member in the interface scope
+		  const NetScope* iface_def = vif_type->interface_def();
+
+		  // If interface_def is null, try to find it by searching root scopes
+		  if (!iface_def) {
+			perm_string iface_name = vif_type->interface_name();
+			for (NetScope* root : des->find_root_scopes()) {
+			      const NetScope* found = root->child_by_module_name(iface_name);
+			      if (found && found->is_interface()) {
+				    iface_def = found;
+				    break;
+			      }
+			}
+		  }
+
+		  if (!iface_def)
+			return nullptr;
+
+		  // Look up the member signal in the interface scope
+		  NetNet* member_sig = const_cast<NetScope*>(iface_def)->find_signal(name);
+		  if (!member_sig)
+			return nullptr;
+
+		  // Return the type of the member signal
+		  type = member_sig->net_type();
 	    } else {
 		  // Type has no members, properties or functions. Path is
 		  // invalid.

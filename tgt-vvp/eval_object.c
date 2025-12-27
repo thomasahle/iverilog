@@ -192,6 +192,27 @@ static int eval_object_null(ivl_expr_t ex)
       return 0;
 }
 
+/*
+ * Evaluate a virtual interface property access as an object.
+ * This loads the class object stored in a virtual interface member.
+ */
+static int eval_object_vifprop(ivl_expr_t expr)
+{
+      ivl_expr_t vif_expr = ivl_expr_vifprop_base(expr);
+      const char* member_name = ivl_expr_vifprop_member(expr);
+
+      /* Evaluate the virtual interface expression to get scope on object stack */
+      draw_eval_object(vif_expr);
+
+      /* Load the object from the vif member */
+      fprintf(vvp_out, "    %%vif/load/obj \"%s\";\n", member_name);
+
+      /* Pop the vif scope but keep the loaded object */
+      fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+
+      return 0;
+}
+
 static int eval_object_property(ivl_expr_t expr)
 {
       ivl_signal_t sig = ivl_expr_signal(expr);
@@ -359,6 +380,9 @@ int draw_eval_object(ivl_expr_t ex)
 
 	  case IVL_EX_PROPERTY:
 	    return eval_object_property(ex);
+
+	  case IVL_EX_VIFPROP:
+	    return eval_object_vifprop(ex);
 
 	  case IVL_EX_SHALLOWCOPY:
 	    return eval_object_shallowcopy(ex);

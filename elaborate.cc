@@ -4756,7 +4756,75 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 				    return 0;
 			      }
 
-			      // Find the task/function in the interface scope
+			      // Check if there are more path components after the VIF property
+			      // (e.g., vif_h.class_member.method())
+			      pform_name_t remaining_tail = sr.path_tail;
+			      remaining_tail.pop_front(); // Remove the VIF property
+
+			      if (!remaining_tail.empty()) {
+				    // There's more path - look up the member in the interface
+				    perm_string vif_member_name = remaining_tail.front().name;
+				    NetNet* vif_member = const_cast<NetScope*>(iface_def)->find_signal(vif_member_name);
+
+				    if (vif_member) {
+					  // Check if the member is a class
+					  const netclass_t* member_class = dynamic_cast<const netclass_t*>(vif_member->net_type());
+					  if (member_class) {
+						// Continue traversing through the class chain
+						remaining_tail.pop_front();
+						const netclass_t* current_class = member_class;
+
+						while (!remaining_tail.empty()) {
+						      perm_string next_name = remaining_tail.front().name;
+						      remaining_tail.pop_front();
+
+						      int next_pidx = current_class->property_idx_from_name(next_name);
+						      if (next_pidx < 0) break;
+
+						      ivl_type_t next_type = current_class->get_prop_type(next_pidx);
+						      const netclass_t* next_class = dynamic_cast<const netclass_t*>(next_type);
+						      if (!next_class) break;
+
+						      current_class = next_class;
+						}
+
+						// Look for the method in the final class
+						NetScope* task = current_class->method_from_name(method_name);
+						if (task) {
+						      if (debug_elaborate) {
+							    cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+								 << "Found method " << method_name
+								 << " in class " << current_class->get_name()
+								 << " (via vif member)" << endl;
+						      }
+						      // Build the 'this' expression for the vif member access
+						      NetEProperty* vif_prop_expr = new NetEProperty(net, pidx, nullptr);
+						      vif_prop_expr->set_line(*this);
+						      NetEVirtualProperty* vif_member_expr = new NetEVirtualProperty(
+							    vif_prop_expr, vif_member_name, vif_type, vif_member);
+						      vif_member_expr->set_line(*this);
+
+						      // Check if method needs 'this' parameter
+						      const NetBaseDef* def = 0;
+						      if (task->type() == NetScope::TASK)
+							    def = task->task_def();
+						      else if (task->type() == NetScope::FUNC)
+							    def = task->func_def();
+
+						      NetExpr* use_this = 0;
+						      if (def && def->port_count() > 0) {
+							    NetNet* first_port = def->port(0);
+							    if (first_port && first_port->name() == perm_string::literal(THIS_TOKEN)) {
+								  use_this = vif_member_expr;
+							    }
+						      }
+						      return elaborate_build_call_(des, scope, task, use_this);
+						}
+					  }
+				    }
+			      }
+
+			      // No more path or member not a class - look for method in interface
 			      std::list<hname_t> method_path;
 			      method_path.push_back(hname_t(method_name));
 			      NetScope* task = des->find_scope(const_cast<NetScope*>(iface_def),

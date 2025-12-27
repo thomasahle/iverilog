@@ -8372,6 +8372,58 @@ bool of_VIF_LOAD_V(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %vif/load/obj "member_name"
+ *
+ * Load a class object from a virtual interface member.
+ * The virtual interface (scope pointer) is on the top of the object stack.
+ * The loaded object is pushed onto the object stack.
+ */
+bool of_VIF_LOAD_OBJ(vthread_t thr, vvp_code_t cp)
+{
+      const char*member_name = cp->text;
+
+      // Peek at the VIF scope reference from the object stack
+      vvp_object_t& vif_obj = thr->peek_object();
+      vvp_scope_ref* scope_ref = vif_obj.peek<vvp_scope_ref>();
+
+      if (!scope_ref) {
+            // Push null if VIF is null
+            vvp_object_t null_obj;
+            thr->push_object(null_obj);
+            return true;
+      }
+
+      __vpiScope* vif_scope = scope_ref->get_scope();
+      if (!vif_scope) {
+            vvp_object_t null_obj;
+            thr->push_object(null_obj);
+            return true;
+      }
+
+      // Find the signal by name in the VIF scope
+      vvp_net_t* net = find_signal_in_scope(vif_scope, member_name);
+      if (!net) {
+            vvp_object_t null_obj;
+            thr->push_object(null_obj);
+            fprintf(stderr, "RUNTIME ERROR: Signal '%s' not found in virtual interface scope\n", member_name);
+            return true;
+      }
+
+      // Read the object value from the signal's fun
+      vvp_fun_signal_object* sig = dynamic_cast<vvp_fun_signal_object*>(net->fun);
+      if (!sig) {
+            vvp_object_t null_obj;
+            thr->push_object(null_obj);
+            return true;
+      }
+
+      // Get the object value and push onto stack
+      vvp_object_t val = sig->get_object();
+      thr->push_object(val);
+      return true;
+}
+
+/*
  * %vif/store/obj "member_name"
  *
  * Store an object value to a class-typed variable inside a virtual interface.

@@ -281,6 +281,7 @@ extern bool of_STORE_PROP_VA(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_PROP_VS(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_VA(vthread_t thr, vvp_code_t code);
 extern bool of_VIF_LOAD_V(vthread_t thr, vvp_code_t code);
+extern bool of_VIF_LOAD_OBJ(vthread_t thr, vvp_code_t code);
 extern bool of_VIF_STORE_OBJ(vthread_t thr, vvp_code_t code);
 extern bool of_VIF_STORE_V(vthread_t thr, vvp_code_t code);
 /* Queue property method stubs (not yet implemented) */
