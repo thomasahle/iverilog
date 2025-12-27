@@ -309,10 +309,11 @@ static void draw_binary_vec4_compare_class(ivl_expr_t expr)
 	    ivl_expr_t base = ivl_expr_property_base(le);
 	    unsigned pidx = ivl_expr_property_idx(le);
 	    ivl_expr_t idx_expr = ivl_expr_oper1(le);
+	    ivl_expr_t arr_idx = ivl_expr_property_array_idx(le);
 	    int idx = 0;
 
-	      /* If the property has an array index, then evaluate it
-		 into an index register. */
+	      /* If the property has an array index (for property arrays),
+		 then evaluate it into an index register. */
 	    if ( idx_expr ) {
 		  idx = allocate_word();
 		  draw_eval_expr_into_integer(idx_expr, idx);
@@ -325,8 +326,22 @@ static void draw_binary_vec4_compare_class(ivl_expr_t expr)
 		  /* Direct property access - load signal */
 		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
 	    }
-	    fprintf(vvp_out, "    %%test_nul/prop %u, %d;\n", pidx, idx);
-	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+
+	    if (arr_idx) {
+		  /* Darray element null test: property[arr_idx] == null
+		     Load the darray property (using 0 as prop array index since
+		     a darray property is scalar), then test element at arr_idx */
+		  fprintf(vvp_out, "    %%prop/obj %u, 0; Load darray property\n", pidx);
+		  fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+		  int arr_reg = allocate_word();
+		  draw_eval_expr_into_integer(arr_idx, arr_reg);
+		  fprintf(vvp_out, "    %%test_nul/dar %d;\n", arr_reg);
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  clr_word(arr_reg);
+	    } else {
+		  fprintf(vvp_out, "    %%test_nul/prop %u, %d;\n", pidx, idx);
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    }
 	    if (ivl_expr_opcode(expr) == 'n')
 		  fprintf(vvp_out, "    %%flag_inv 4;\n");
 	    fprintf(vvp_out, "    %%flag_get/vec4 4;\n");
@@ -1462,6 +1477,7 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 		  ivl_signal_t sig = ivl_expr_signal(dest_expr);
 		  unsigned pidx = ivl_expr_property_idx(dest_expr);
 		  ivl_expr_t base = ivl_expr_property_base(dest_expr);
+		  ivl_expr_t arr_idx = ivl_expr_property_array_idx(dest_expr);
 
 		  /* Load the base object (the 'this' object containing the property) */
 		  if (base) {
@@ -1470,13 +1486,29 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
 		  }
 
-		  /* Use %config_db/get/prop which:
-		   * - Pops inst_name, field_name strings
-		   * - Pops base object from object stack
-		   * - Looks up value in config_db
-		   * - Stores to property pidx of base object
-		   * - Pushes 1/0 to vec4 stack */
-		  fprintf(vvp_out, "    %%config_db/get/prop %u;\n", pidx);
+		  if (arr_idx) {
+			/* This is a darray element destination: prop[index]
+			 * Stack at this point: [base object]
+			 * Need to:
+			 * 1. Load the darray property (without popping base)
+			 * 2. Evaluate index
+			 * 3. Use %config_db/get/dar to lookup and store to element
+			 * Stack for opcode: [base object, darray] */
+			fprintf(vvp_out, "    %%prop/obj %u, 0; Load darray property\n", pidx);
+			/* Don't pop - keep both base and darray on stack */
+			int idx_reg = allocate_word();
+			draw_eval_expr_into_integer(arr_idx, idx_reg);
+			fprintf(vvp_out, "    %%config_db/get/dar %d;\n", idx_reg);
+			clr_word(idx_reg);
+		  } else {
+			/* Use %config_db/get/prop which:
+			 * - Pops inst_name, field_name strings
+			 * - Pops base object from object stack
+			 * - Looks up value in config_db
+			 * - Stores to property pidx of base object
+			 * - Pushes 1/0 to vec4 stack */
+			fprintf(vvp_out, "    %%config_db/get/prop %u;\n", pidx);
+		  }
 	    } else {
 		  fprintf(vvp_out, "; ERROR: $ivl_config_db_get dest must be signal or property (got type %d)\n",
 			  ivl_expr_type(dest_expr));

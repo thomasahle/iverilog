@@ -1028,6 +1028,7 @@ sv_vif_shared		normal,-g2012		ivltests
 uvm_config_db_int	normal,-g2012,-I../lib/ivl/uvm		ivltests
 uvm_config_db_vif	normal,-g2012,-I../lib/ivl/uvm		ivltests
 uvm_config_db_block	normal,-g2012,-I../lib/ivl/uvm		ivltests
+uvm_config_db_darray	normal,-g2012		ivltests
 
 # UVM factory pattern test
 uvm_factory_create	normal,-g2012,-I../lib/ivl/uvm		ivltests

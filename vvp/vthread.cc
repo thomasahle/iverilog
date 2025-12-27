@@ -2291,6 +2291,45 @@ bool of_CONFIG_DB_SET_O(vthread_t thr, vvp_code_t)
 }
 
 /*
+ * %config_db/get/dar <index_register>
+ * Pop field_name and inst_name from string stack.
+ * Pop darray from object stack.
+ * Look up object value in config_db, store to darray element at index.
+ * Push 1 to vec4 stack if found, 0 if not found.
+ */
+bool of_CONFIG_DB_GET_DAR(vthread_t thr, vvp_code_t cp)
+{
+      int idx_reg = cp->number;
+      long idx = thr->words[idx_reg].w_int;
+
+      // Pop field_name and inst_name from string stack
+      std::string field_name = thr->pop_str();
+      std::string inst_name = thr->pop_str();
+
+      // Pop darray from object stack
+      vvp_object_t darray_obj;
+      thr->pop_object(darray_obj);
+      vvp_darray*darray = darray_obj.peek<vvp_darray>();
+
+      // Look up in config_db (context path is empty for now)
+      vvp_object_t value;
+      bool found = vvp_config_db::instance().get_object("", inst_name, field_name, value);
+
+      if (found && darray) {
+            // Store value to darray element
+            darray->set_word(idx, value);
+            vvp_vector4_t res(32, BIT4_0);
+            res.set_bit(0, BIT4_1);
+            thr->push_vec4(res);
+      } else {
+            // Not found OR couldn't store (darray is null)
+            thr->push_vec4(vvp_vector4_t(32, BIT4_0));
+      }
+
+      return true;
+}
+
+/*
  * %config_db/get/prop <property_index>
  * Pop field_name and inst_name from string stack.
  * Pop base object from object stack.
@@ -9018,6 +9057,37 @@ bool of_TEST_NUL_OBJ(vthread_t thr, vvp_code_t)
 	    thr->flags[4] = BIT4_1;
       else
 	    thr->flags[4] = BIT4_0;
+      return true;
+}
+
+/*
+ * %test_nul/dar <idx_register>
+ * Peek at the darray on the object stack.
+ * Test if the element at the given index is null.
+ * Set flag 4 to 1 if null, 0 if not null.
+ */
+bool of_TEST_NUL_DAR(vthread_t thr, vvp_code_t cp)
+{
+      unsigned idx_reg = cp->number;
+      unsigned idx = thr->words[idx_reg].w_uint;
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_darray*darray = obj.peek<vvp_darray>();
+
+      // If the darray is null, the element is also null
+      if (!darray) {
+	    thr->flags[4] = BIT4_1;
+	    return true;
+      }
+
+      vvp_object_t val;
+      darray->get_word(idx, val);
+
+      if (val.test_nil())
+	    thr->flags[4] = BIT4_1;
+      else
+	    thr->flags[4] = BIT4_0;
+
       return true;
 }
 
