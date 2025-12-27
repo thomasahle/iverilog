@@ -1,0 +1,2 @@
+PASSED
+uvm_config_db_wildcard.v:65: $finish called at 0 (1s)
