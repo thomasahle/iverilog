@@ -1,0 +1,5 @@
+Config vif retrieved successfully
+Agent drv_vif retrieved successfully
+Interface access through config works
+Agent interface access through config works
+PASSED

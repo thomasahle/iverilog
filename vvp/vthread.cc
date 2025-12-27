@@ -4185,47 +4185,54 @@ bool of_FORK_VIRT(vthread_t thr, vvp_code_t cp)
       vvp_object_t obj;
       bool found_this = false;
 
-      // First check if the current thread has fork_this set - this takes priority
-      // because it means we're in a forked task chain and @ was passed via thread struct
-      if (thr->fork_this_net_ != 0 && !thr->fork_this_obj_.test_nil()) {
-	    obj = thr->fork_this_obj_;
-	    found_this = true;
-      }
-
       // Get the write context - this is where the '@' parameter was stored
+      // by %store/obj before this %fork/virt call. The context-based lookup
+      // takes priority because for nested calls like child.run(), the @ was
+      // explicitly set up in the context.
       vvp_context_t wt_ctx = vthread_get_wt_context();
 
-      // If we didn't get @ from fork_this, try to get it from the context
-      if (!found_this) {
-	    for (unsigned idx = 0; idx < base_scope->intern.size(); ++idx) {
-		  vpiHandle item = base_scope->intern[idx];
-		  if (!item) continue;
-		  if (item->get_type_code() == vpiClassVar) {
-			const char* name = item->vpi_get_str(vpiName);
-			if (name && strcmp(name, "@") == 0) {
-			      __vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
-			      if (var) {
-				    vvp_net_t*net = var->get_net();
-				    if (net && net->fun) {
-					  vvp_fun_signal_object_aa*fun_aa =
-						dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
-					  if (fun_aa && wt_ctx) {
-						obj = fun_aa->get_object_from_context(wt_ctx);
+      // First try to get @ from the context (this handles nested task calls
+      // where the target object was explicitly stored before the fork)
+      for (unsigned idx = 0; idx < base_scope->intern.size(); ++idx) {
+	    vpiHandle item = base_scope->intern[idx];
+	    if (!item) continue;
+	    if (item->get_type_code() == vpiClassVar) {
+		  const char* name = item->vpi_get_str(vpiName);
+		  if (name && strcmp(name, "@") == 0) {
+			__vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
+			if (var) {
+			      vvp_net_t*net = var->get_net();
+			      if (net && net->fun) {
+				    vvp_fun_signal_object_aa*fun_aa =
+					  dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
+				    if (fun_aa && wt_ctx) {
+					  obj = fun_aa->get_object_from_context(wt_ctx);
+					  if (!obj.test_nil()) {
 						found_this = true;
-					  } else {
-						vvp_fun_signal_object*fun =
-						      dynamic_cast<vvp_fun_signal_object*>(net->fun);
-						if (fun) {
-						      obj = fun->get_object();
+					  }
+				    }
+				    if (!found_this) {
+					  vvp_fun_signal_object*fun =
+						dynamic_cast<vvp_fun_signal_object*>(net->fun);
+					  if (fun) {
+						obj = fun->get_object();
+						if (!obj.test_nil()) {
 						      found_this = true;
 						}
 					  }
 				    }
 			      }
-			      break;
 			}
+			break;
 		  }
 	    }
+      }
+
+      // Fall back to fork_this if we didn't find @ in the context
+      // (this handles the case where we're in a forked task chain)
+      if (!found_this && thr->fork_this_net_ != 0 && !thr->fork_this_obj_.test_nil()) {
+	    obj = thr->fork_this_obj_;
+	    found_this = true;
       }
 
       // Get target code and scope for the method call
@@ -4375,10 +4382,6 @@ bool of_FORK_VIRT(vthread_t thr, vvp_code_t cp)
 
       child->parent = thr;
       thr->children.insert(child);
-
-      // Debug: verify child context before execution
-      // fprintf(stderr, "DEBUG FORK_VIRT launch: child wt_ctx=%p rd_ctx=%p scope=%s\n",
-      // (debug removed)
 
       if (thr->i_am_in_function) {
 	    child->is_scheduled = 1;
