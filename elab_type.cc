@@ -595,9 +595,10 @@ ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
                               return type->elaborate_type(des, s);
                         }
 
-                        // Create a new specialized class
-                        // Note: The specialized class inherits from the base class (the template)
-                        // so that methods defined in the template are inherited
+                        // Create a new specialized class that inherits from the template.
+                        // This preserves method accessibility through the class hierarchy.
+                        // Properties with the same name as parent properties will have their
+                        // types overridden in set_property() without changing indices.
                         netclass_t* spec_class = new netclass_t(spec_name, base_class);
 
                         // Create a new scope for the specialization
@@ -656,10 +657,14 @@ ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
                               ++spec_it;
                         }
 
-                        // Elaborate properties using the specialized scope
+                        // Store specialized property types for the template's properties.
+                        // We use set_property_type_override() to store the specialized types
+                        // without adding duplicate properties. The template's properties will
+                        // be inherited with the correct indices, and get_prop_type() will
+                        // return the overridden specialized type when accessed through this class.
                         for (const auto& prop : class_def->properties) {
                               ivl_type_t prop_type = prop.second.type->elaborate_type(des, spec_scope);
-                              spec_class->set_property(prop.first, prop.second.qual, prop_type);
+                              spec_class->set_property_type_override(prop.first, prop_type);
                         }
 
                         // Add the specialized class to the definition scope

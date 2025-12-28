@@ -43,6 +43,12 @@ class netclass_t : public ivl_type_s {
 	// present, then return false.
       bool set_property(perm_string pname, property_qualifier_t qual, ivl_type_t ptype);
 
+	// Set a property type override for parameterized class specializations.
+	// This stores a specialized type for a property that will be inherited
+	// from the parent class, preserving property indices while allowing
+	// different types.
+      void set_property_type_override(perm_string pname, ivl_type_t ptype);
+
 	// Set the scope for the class. The scope has no parents and
 	// is used for the elaboration of methods
 	// (tasks/functions). In other words, this is the class itself.
@@ -145,6 +151,13 @@ class netclass_t : public ivl_type_s {
 	    mutable bool initialized_flag;
       };
       std::vector<prop_t> property_table_;
+
+	// For parameterized class specializations: override parent property
+	// types without changing indices. When a specialized class inherits
+	// from a template, the template's properties have generic types (T).
+	// This map stores specialized types for those properties while keeping
+	// the same property indices for method compatibility.
+      std::map<perm_string, ivl_type_t> overridden_prop_types_;
 
 	// Constraint storage for randomize() support.
 	// Each constraint has a name and an elaborated expression.

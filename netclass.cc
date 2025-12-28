@@ -51,6 +51,14 @@ bool netclass_t::set_property(perm_string pname, property_qualifier_t qual,
       return true;
 }
 
+void netclass_t::set_property_type_override(perm_string pname, ivl_type_t ptype)
+{
+      // Store a specialized type for a property that will exist in the parent.
+      // This is used by parameterized class specializations to provide
+      // specialized types while keeping the same property indices.
+      overridden_prop_types_[pname] = ptype;
+}
+
 void netclass_t::set_class_scope(NetScope*class_scope__)
 {
       assert(class_scope_ == 0);
@@ -136,10 +144,20 @@ ivl_type_t netclass_t::get_prop_type(size_t idx) const
       if (super_) super_size = super_->get_properties();
 
       assert(idx < (super_size+property_table_.size()));
-      if (idx < super_size)
+      if (idx < super_size) {
+	    // Check if we have an overridden type for this parent property.
+	    // This is used by parameterized class specializations to provide
+	    // specialized types while keeping the same property indices.
+	    const char* pname = super_->get_prop_name(idx);
+	    if (pname) {
+		  auto it = overridden_prop_types_.find(perm_string::literal(pname));
+		  if (it != overridden_prop_types_.end())
+			return it->second;
+	    }
 	    return super_->get_prop_type(idx);
-      else
+      } else {
 	    return property_table_[idx-super_size].type;
+      }
 }
 
 bool netclass_t::get_prop_initialized(size_t idx) const
