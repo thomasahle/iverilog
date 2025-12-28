@@ -4709,6 +4709,25 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    return 0;
 			      }
 
+			      // Check for built-in randomize() method
+			      if (final_method == "randomize") {
+				    // Create expression to load the first property
+				    NetNet* this_net = search_results.net;
+				    NetEProperty* first_prop = new NetEProperty(this_net, prop_idx);
+				    first_prop->set_line(*this);
+
+				    // Create expression to load the darray property and index it
+				    NetEProperty* indexed_prop = new NetEProperty(first_prop, next_prop_idx, darray_index);
+				    indexed_prop->set_line(*this);
+
+				    // Generate a system function call to $ivl_randomize
+				    NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+								       &netvector_t::atom2s32, 1);
+				    sys_expr->set_line(*this);
+				    sys_expr->parm(0, indexed_prop);
+				    return sys_expr;
+			      }
+
 			      // Find the method in the element class
 			      NetScope* method_scope = element_class->method_from_name(final_method);
 			      if (!method_scope || method_scope->type() != NetScope::FUNC) {

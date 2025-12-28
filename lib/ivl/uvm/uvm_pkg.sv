@@ -643,7 +643,7 @@ package uvm_pkg;
   // ============================================================================
   // UVM Sequence - Parameterized sequence class
   // ============================================================================
-  class uvm_sequence #(type REQ = uvm_sequence_item, type RSP = REQ) extends uvm_sequence_base;
+  class uvm_sequence #(type REQ = uvm_sequence_item, type RSP = uvm_sequence_item) extends uvm_sequence_base;
     REQ req;
     RSP rsp;
 
@@ -751,7 +751,7 @@ package uvm_pkg;
   // ============================================================================
   // UVM Sequencer - Parameterized sequencer class
   // ============================================================================
-  class uvm_sequencer #(type REQ = uvm_sequence_item, type RSP = REQ) extends uvm_sequencer_base;
+  class uvm_sequencer #(type REQ = uvm_sequence_item, type RSP = uvm_sequence_item) extends uvm_sequencer_base;
     // Note: Factory registration (type_id) handled by parser at ClassName::type_id::create()
     // which transforms into direct new() call
 
@@ -771,7 +771,7 @@ package uvm_pkg;
   // ============================================================================
   // UVM Driver - Base class for drivers
   // ============================================================================
-  class uvm_driver #(type REQ = uvm_sequence_item, type RSP = REQ) extends uvm_component;
+  class uvm_driver #(type REQ = uvm_sequence_item, type RSP = uvm_sequence_item) extends uvm_component;
     // Note: Factory registration (type_id) handled by parser at ClassName::type_id::create()
     // which transforms into direct new() call
 
@@ -1462,7 +1462,7 @@ package uvm_pkg;
   //
   // Note: This is a stub implementation that provides the interface needed for
   // compilation. Full sequencer functionality requires additional infrastructure.
-  class uvm_seq_item_pull_port #(type REQ = uvm_sequence_item, type RSP = REQ) extends uvm_object;
+  class uvm_seq_item_pull_port #(type REQ = uvm_sequence_item, type RSP = uvm_sequence_item) extends uvm_object;
 
     // Connected sequencer (set during connect_phase)
     uvm_sequencer_base m_sequencer;
