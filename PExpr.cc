@@ -103,6 +103,11 @@ PEAssignPattern::PEAssignPattern(const list<PExpr*>&p)
 {
 }
 
+PEAssignPattern::PEAssignPattern(const list<named_pexpr_t>&p)
+: named_parms_(p.begin(), p.end())
+{
+}
+
 PEAssignPattern::~PEAssignPattern()
 {
 }

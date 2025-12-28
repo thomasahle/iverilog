@@ -939,9 +939,10 @@ assignment_pattern /* IEEE1800-2005: A.6.7.1 */
     /* IEEE1800-2017: Named struct aggregate assignment pattern
        '{member_name: expr, member_name: expr, ...} */
   | K_LP assignment_pattern_member_list '}'
-      { yyerror(@1, "sorry: Named struct aggregate assignment patterns not yet supported.");
+      { PEAssignPattern*tmp = new PEAssignPattern(*$2);
+	FILE_NAME(tmp, @1);
 	delete $2;
-	$$ = 0;
+	$$ = tmp;
       }
   ;
 

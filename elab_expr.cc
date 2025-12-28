@@ -448,6 +448,56 @@ NetExpr* PEAssignPattern::elaborate_expr_struct_(Design *des, NetScope *scope,
 {
       auto &members = struct_type->members();
 
+      // Handle named struct aggregate patterns
+      if (!named_parms_.empty()) {
+	    NetEConcat *neconcat = new NetEConcat(members.size(), 1, struct_type->base_type());
+	    std::vector<bool> member_assigned(members.size(), false);
+
+	    // Process each named parameter
+	    for (const auto& np : named_parms_) {
+		  // Find the struct member with this name
+		  bool found = false;
+		  for (size_t idx = 0; idx < members.size(); idx++) {
+			if (members[idx].name == np.name) {
+			      if (member_assigned[idx]) {
+				    cerr << get_fileline() << ": error: Member '"
+					 << np.name << "' assigned multiple times in struct pattern."
+					 << endl;
+				    des->errors++;
+			      }
+			      auto expr = elaborate_rval_expr(des, scope,
+							      members[idx].net_type,
+							      np.parm, need_const);
+			      if (expr)
+				    neconcat->set(idx, expr);
+			      member_assigned[idx] = true;
+			      found = true;
+			      break;
+			}
+		  }
+		  if (!found) {
+			cerr << get_fileline() << ": error: No member named '"
+			     << np.name << "' in struct type." << endl;
+			des->errors++;
+		  }
+	    }
+
+	    // Check for missing members (optional: could allow default values)
+	    for (size_t idx = 0; idx < members.size(); idx++) {
+		  if (!member_assigned[idx]) {
+			cerr << get_fileline() << ": warning: Member '"
+			     << members[idx].name << "' not assigned in named struct pattern."
+			     << endl;
+			// Set to 0/default for missing members
+			NetEConst*zero = new NetEConst(verinum(verinum::V0, members[idx].net_type->packed_width()));
+			neconcat->set(idx, zero);
+		  }
+	    }
+
+	    return neconcat;
+      }
+
+      // Handle positional patterns (existing logic)
       if (members.size() != parms_.size()) {
 	    cerr << get_fileline() << ": error: Struct assignment pattern expects "
 	         << members.size() << " element(s) in this context.\n"

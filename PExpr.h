@@ -204,9 +204,11 @@ class PEAssignPattern : public PExpr {
     public:
       explicit PEAssignPattern();
       explicit PEAssignPattern(const std::list<PExpr*>&p);
+      explicit PEAssignPattern(const std::list<named_pexpr_t>&p); // Named pattern
       ~PEAssignPattern() override;
 
       void dump(std::ostream&) const override;
+      bool is_named_pattern() const { return !named_parms_.empty(); }
 
       virtual unsigned test_width(Design*des, NetScope*scope, width_mode_t&mode) override;
       virtual NetExpr*elaborate_expr(Design*des, NetScope*scope,
@@ -236,6 +238,7 @@ class PEAssignPattern : public PExpr {
 
     private:
       std::vector<PExpr*>parms_;
+      std::vector<named_pexpr_t>named_parms_; // For named struct aggregates
 };
 
 class PEConcat : public PExpr {
