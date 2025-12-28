@@ -1821,7 +1821,10 @@ bool PEIdent::elaborate_lval_net_packed_member_(Design*des, NetScope*scope,
 			  // Evaluate all but the last index expression, into prefix_indices.
 			list<long>prefix_indices;
 			bool rc = evaluate_index_prefix(des, scope, prefix_indices, member_comp.index);
-			ivl_assert(*this, rc);
+			if (!rc) {
+			      // Error already reported by evaluate_index_prefix
+			      return false;
+			}
 
 			if (debug_elaborate) {
 			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_packed_member_: "
@@ -1895,7 +1898,10 @@ bool PEIdent::elaborate_lval_net_packed_member_(Design*des, NetScope*scope,
 		    // Evaluate all but the last index expression, into prefix_indices.
 		  list<long>prefix_indices;
 		  bool rc = evaluate_index_prefix(des, scope, prefix_indices, member_comp.index);
-		  ivl_assert(*this, rc);
+		  if (!rc) {
+			// Error already reported by evaluate_index_prefix
+			return false;
+		  }
 
 		  if (debug_elaborate) {
 			cerr << get_fileline() << ": PEIdent::elaborate_lval_net_packed_member_: "

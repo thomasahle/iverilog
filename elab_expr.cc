@@ -2860,7 +2860,10 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 			  // Evaluate all but the last index expression, into prefix_indices.
 			list<long>prefix_indices;
 			bool rc = evaluate_index_prefix(des, scope, prefix_indices, member_comp.index);
-			ivl_assert(*li, rc);
+			if (!rc) {
+			      // Error already reported by evaluate_index_prefix
+			      return 0;
+			}
 
 			if (debug_elaborate) {
 			      cerr << li->get_fileline() << ": check_for_struct_members: "
@@ -3001,7 +3004,10 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 		    // Evaluate all but the last index expression, into prefix_indices.
 		  list<long>prefix_indices;
 		  bool rc = evaluate_index_prefix(des, scope, prefix_indices, member_comp.index);
-		  ivl_assert(*li, rc);
+		  if (!rc) {
+			// Error already reported by evaluate_index_prefix
+			return 0;
+		  }
 
 		    // Evaluate the last index expression into a constant long.
 		  NetExpr*texpr = elab_and_eval(des, scope, member_comp.index.back().msb, -1, true);
