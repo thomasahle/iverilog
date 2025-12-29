@@ -6510,6 +6510,20 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 
 						      return elaborate_static_array_(des, scope, dims);
 						}
+						// Check for packed vector with multiple dimensions
+						const netvector_t*vtype = dynamic_cast<const netvector_t*>(member->net_type);
+						if (vtype) {
+						      const netranges_t&dims = vtype->packed_dims();
+						      if (dims.size() > 1 && dims.size() >= index_vars_.size()) {
+							    if (debug_elaborate) {
+								  cerr << get_fileline() << ": PForeach::elaborate: "
+								       << "Using packed vector struct variable member " << first_name << "." << member_name
+								       << " with " << dims.size() << " packed dimensions." << endl;
+							    }
+							    // Use packed dimensions for foreach iteration
+							    return elaborate_static_array_(des, scope, dims);
+						      }
+						}
 					  }
 				    }
 			      }
@@ -6573,6 +6587,20 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 							    }
 
 							    return elaborate_static_array_(des, scope, dims);
+						      }
+						      // Check for packed vector with multiple dimensions
+						      const netvector_t*vtype = dynamic_cast<const netvector_t*>(member->net_type);
+						      if (vtype) {
+							    const netranges_t&dims = vtype->packed_dims();
+							    if (dims.size() > 1 && dims.size() >= index_vars_.size()) {
+								  if (debug_elaborate) {
+									cerr << get_fileline() << ": PForeach::elaborate: "
+									     << "Using packed vector struct member " << first_name << "." << member_name
+									     << " with " << dims.size() << " packed dimensions." << endl;
+								  }
+								  // Use packed dimensions for foreach iteration
+								  return elaborate_static_array_(des, scope, dims);
+							    }
 						      }
 						}
 					  }

@@ -1522,9 +1522,53 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 				    return 0;
 			      }
 
-			      // Set part select for the member
+			      // Calculate part select width and offset
 			      long member_wid = member->net_type->packed_width();
-			      lv->set_part(new NetEConst(verinum(off)), member_wid);
+			      NetExpr* off_expr = new NetEConst(verinum(off));
+
+			      // Handle index on packed array member (e.g., pkt.data[i])
+			      if (!member_comp.index.empty()) {
+				    const netvector_t* mem_vec = dynamic_cast<const netvector_t*>(member->net_type);
+				    if (mem_vec && !mem_vec->packed_dims().empty()) {
+					  const netranges_t& dims = mem_vec->packed_dims();
+					  // Calculate element width (innermost dimension)
+					  long elem_wid = 1;
+					  if (dims.size() > 1) {
+						// Multi-dimensional: element is all but first dimension
+						for (size_t d = 1; d < dims.size(); d++) {
+						      elem_wid *= dims[d].width();
+						}
+					  } else {
+						elem_wid = 1; // Single dimension means bit select
+					  }
+					  member_wid = elem_wid;
+
+					  // Get the index expression
+					  const index_component_t& idx_comp = member_comp.index.back();
+					  NetExpr* idx_expr = elab_and_eval(des, scope, idx_comp.msb, -1, false);
+					  if (idx_expr) {
+						// Calculate: off + idx * elem_wid
+						NetExpr* scaled_idx;
+						if (elem_wid == 1) {
+						      scaled_idx = idx_expr;
+						} else {
+						      scaled_idx = new NetEBMult('*', idx_expr,
+							    new NetEConst(verinum(elem_wid)),
+							    idx_expr->expr_width() + 8, false);
+						}
+						off_expr = new NetEBAdd('+', off_expr, scaled_idx,
+						      off_expr->expr_width() + 8, false);
+					  }
+
+					  if (debug_elaborate) {
+						cerr << get_fileline() << ": PEIdent::elaborate_lval_net_class_member_: "
+						     << "Packed array member indexed access, elem_wid=" << elem_wid << endl;
+					  }
+				    }
+			      }
+
+			      // Set part select for the member
+			      lv->set_part(off_expr, member_wid);
 
 			      if (debug_elaborate) {
 				    cerr << get_fileline() << ": PEIdent::elaborate_lval_net_class_member_: "

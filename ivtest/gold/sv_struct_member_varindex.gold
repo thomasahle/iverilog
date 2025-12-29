@@ -1,0 +1,2 @@
+sv_struct_member_varindex.sv:19: error: A reference to a net or variable (`i') is not allowed in a constant expression.
+sv_struct_member_varindex.sv:19: error: Array index expressions must be constant here.
