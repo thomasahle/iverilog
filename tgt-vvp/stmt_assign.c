@@ -1583,11 +1583,10 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			        prop_idx, lwid, prop_name);
 		  } else if (part_off_ex) {
 			/* Part select store (for struct member writes)
-			   Use the rval width as the part width, since lwid may be
-			   the whole property width for struct member accesses. */
-			unsigned part_wid = ivl_expr_width(rval);
+			   Use the lvalue width (lwid) for the part width, which is
+			   the width of the target element/slice being written. */
 			fprintf(vvp_out, "    %%store/prop/v/s %d, %d, %u; Store in logic property %s (part select)\n",
-			        prop_idx, part_off_idx, part_wid, prop_name);
+			        prop_idx, part_off_idx, lwid, prop_name);
 			clr_word(part_off_idx);
 		  } else {
 			fprintf(vvp_out, "    %%store/prop/v %d, %u; Store in logic property %s\n",

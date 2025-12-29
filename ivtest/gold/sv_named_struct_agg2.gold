@@ -1,1 +1,5 @@
+PASSED: Test 1 - Named pattern with reordering
+PASSED: Test 2 - Named pattern all members
+PASSED: Test 3 - Nested named pattern
+PASSED: Test 4 - Array member named pattern
 PASSED

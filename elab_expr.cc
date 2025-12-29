@@ -3412,12 +3412,72 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 					  }
 
 					  long member_wid = member->net_type->packed_width();
-					  // Create a part select expression for the struct member
-					  NetESelect* sel = new NetESelect(current_expr,
-									   new NetEConst(verinum(off)),
-									   member_wid, IVL_SEL_OTHER);
-					  sel->set_line(*this);
-					  current_expr = sel;
+
+					  // Check if the struct member has an index (e.g., pkt.data[i])
+					  if (!struct_member_comp.index.empty()) {
+						const netvector_t* mem_vec = dynamic_cast<const netvector_t*>(member->net_type);
+						if (mem_vec && !mem_vec->packed_dims().empty()) {
+						      const netranges_t& dims = mem_vec->packed_dims();
+						      // For multi-dimensional packed array like logic [3:0][7:0],
+						      // the element width is the product of all but the first dimension
+						      long elem_wid = dims.back().width();
+						      member_wid = elem_wid;
+
+						      // Get the index expression
+						      const index_component_t& idx_comp = struct_member_comp.index.back();
+						      NetExpr* idx_expr = elab_and_eval(des, scope, idx_comp.msb, -1, false);
+						      if (idx_expr) {
+							    // Try to evaluate the index as a constant
+							    NetEConst* idx_const = dynamic_cast<NetEConst*>(idx_expr);
+							    if (idx_const) {
+								  // Constant index - calculate static offset
+								  long idx_val = idx_const->value().as_long();
+								  long total_off = off + idx_val * elem_wid;
+								  NetESelect* sel = new NetESelect(current_expr,
+										  new NetEConst(verinum(total_off)),
+										  member_wid, IVL_SEL_OTHER);
+								  sel->set_line(*this);
+								  current_expr = sel;
+						      	    } else {
+								  // Dynamic index - create offset expression
+								  // Ensure widths are consistent
+								  unsigned expr_w = idx_expr->expr_width();
+								  if (expr_w < 32) expr_w = 32;
+
+								  NetExpr* elem_wid_const = new NetEConst(verinum((uint64_t)elem_wid, expr_w));
+								  elem_wid_const->set_line(*this);
+
+								  NetExpr* scaled_idx = new NetEBMult('*',
+										pad_to_width(idx_expr, expr_w, *this),
+										elem_wid_const,
+										expr_w, false);
+								  scaled_idx->set_line(*this);
+
+								  NetExpr* base_off_const = new NetEConst(verinum((uint64_t)off, expr_w));
+								  base_off_const->set_line(*this);
+
+								  NetExpr* off_expr = new NetEBAdd('+',
+										base_off_const,
+										scaled_idx,
+										expr_w, false);
+								  off_expr->set_line(*this);
+
+								  // Create part select with dynamic offset
+								  NetESelect* sel = new NetESelect(current_expr,
+										off_expr, member_wid, IVL_SEL_OTHER);
+								  sel->set_line(*this);
+								  current_expr = sel;
+								}
+						      }
+						}
+					  } else {
+						// No index - create a part select for the full member
+						NetESelect* sel = new NetESelect(current_expr,
+										 new NetEConst(verinum(off)),
+										 member_wid, IVL_SEL_OTHER);
+						sel->set_line(*this);
+						current_expr = sel;
+					  }
 				    } else {
 					  // For unpacked struct with packed members, we can still
 					  // use the same approach - members are stored contiguously

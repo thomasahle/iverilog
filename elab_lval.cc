@@ -1881,7 +1881,10 @@ bool PEIdent::elaborate_lval_net_packed_member_(Design*des, NetScope*scope,
 			long tail_off = 0;
 			unsigned long tail_wid = 0;
 			rc = calculate_part(this, des, scope, member_comp.index.back(), tail_off, tail_wid);
-			ivl_assert(*this, rc);
+			if (!rc) {
+			      // Error already reported by calculate_part
+			      return 0;
+			}
 
 			if (debug_elaborate) {
 			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_packed_member_: "
