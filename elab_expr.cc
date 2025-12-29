@@ -3223,7 +3223,9 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 				    NetESignal* ret_expr = new NetESignal(ret_sig);
 				    ret_expr->set_line(*this);
 
-				    NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+				    // Use virtual dispatch if method is virtual
+				    bool is_virtual = func->is_virtual();
+				    NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false, is_virtual);
 				    call->set_line(*this);
 				    return call;
 			      }
@@ -3642,7 +3644,9 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 		  NetESignal* ret_expr = new NetESignal(ret_sig);
 		  ret_expr->set_line(*this);
 
-		  NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+		  // Use virtual dispatch if method is virtual
+		  bool is_virtual = func->is_virtual();
+		  NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false, is_virtual);
 		  call->set_line(*this);
 		  return call;
 	    }
@@ -4547,7 +4551,9 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 					  NetESignal* ret_expr = new NetESignal(ret_sig);
 					  ret_expr->set_line(*this);
 
-					  NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+					  // Use virtual dispatch if method is virtual
+					  bool is_virtual = func->is_virtual();
+					  NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false, is_virtual);
 					  call->set_line(*this);
 					  return call;
 				    }
@@ -4632,7 +4638,9 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      NetESignal* ret_expr = new NetESignal(ret_sig);
 			      ret_expr->set_line(*this);
 
-			      NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+			      // Use virtual dispatch if method is virtual
+			      bool is_virtual = func->is_virtual();
+			      NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false, is_virtual);
 			      call->set_line(*this);
 			      return call;
 			}
@@ -4700,7 +4708,9 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      NetESignal* ret_expr = new NetESignal(ret_sig);
 			      ret_expr->set_line(*this);
 
-			      NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false);
+			      // Use virtual dispatch if method is virtual
+			      bool is_virtual = func->is_virtual();
+			      NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false, is_virtual);
 			      call->set_line(*this);
 			      return call;
 			}
@@ -4904,7 +4914,9 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      NetESignal* ret_expr = new NetESignal(ret_sig);
 			      ret_expr->set_line(*this);
 
-			      NetEUFunc* call = new NetEUFunc(scope, method_scope, ret_expr, argv, false);
+			      // Use virtual dispatch if method is virtual
+			      bool is_virtual = method_scope->is_virtual();
+			      NetEUFunc* call = new NetEUFunc(scope, method_scope, ret_expr, argv, false, is_virtual);
 			      call->set_line(*this);
 			      return call;
 			}
@@ -4982,7 +4994,9 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    NetESignal*ret_expr = new NetESignal(ret_sig);
 				    ret_expr->set_line(*this);
 
-				    NetEUFunc*call = new NetEUFunc(scope, method_scope, ret_expr, argv, false);
+				    // Use virtual dispatch if method is virtual
+				    bool is_virtual = method_scope->is_virtual();
+				    NetEUFunc*call = new NetEUFunc(scope, method_scope, ret_expr, argv, false, is_virtual);
 				    call->set_line(*this);
 				    return call;
 			      }
@@ -5098,8 +5112,10 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    elaborate_arguments_(des, scope, def, false, parms, args_offset);
 
 	    // Create the function call
+	    // Use virtual dispatch if the method is marked virtual
+	    bool is_virtual_call = method->is_virtual();
 	    NetESignal*eres = new NetESignal(res);
-	    NetEUFunc*call = new NetEUFunc(scope, method, eres, parms, false);
+	    NetEUFunc*call = new NetEUFunc(scope, method, eres, parms, false, is_virtual_call);
 	    call->set_line(*this);
 
 	    if (debug_elaborate) {

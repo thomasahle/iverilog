@@ -1632,9 +1632,6 @@ bool of_CALLF_VIRT_VOID(vthread_t thr, vvp_code_t cp)
       // Get the write context - this is where the '@' parameter was stored
       vvp_context_t wt_ctx = vthread_get_wt_context();
 
-      // Debug only for specific methods if needed
-      // // fprintf(stderr, "DEBUG CALLF_VIRT_VOID: method=%s\n", method_name);
-
       for (unsigned idx = 0; idx < base_scope->intern.size(); ++idx) {
 	    vpiHandle item = base_scope->intern[idx];
 	    if (item->get_type_code() == vpiClassVar) {
@@ -6289,6 +6286,16 @@ bool of_PROP_OBJ(vthread_t thr, vvp_code_t cp)
       vvp_object_t&obj = thr->peek_object();
       vvp_cobject*cobj = obj.peek<vvp_cobject>();
 
+      if (!cobj) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "ERROR of_PROP_OBJ: cobj null at pid=%u idx=%u scope=%s obj.nil=%d\n",
+	            pid, idx, scope ? scope->scope_name() : "(null)", obj.test_nil());
+	    // Push a null object and continue
+	    vvp_object_t val;
+	    thr->push_object(val);
+	    return true;
+      }
+
       vvp_object_t val;
       cobj->get_object(pid, val, idx);
 
@@ -7775,6 +7782,7 @@ bool of_STORE_OBJ(vthread_t thr, vvp_code_t cp)
                   fprintf(stderr, "  ctx=%p\n", thr->wt_context);
             }
       }
+
 
       vvp_send_object(ptr, val, thr->wt_context);
 

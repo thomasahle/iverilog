@@ -1065,8 +1065,12 @@ sv_std_randomize2	normal,-g2012		ivltests
 # uvm_tlm_analysis_fifo tests
 sv_uvm_tlm_fifo2	normal,-g2012,-I../lib/ivl/uvm		ivltests
 
-# Virtual method dispatch through wrapper
+# Virtual method dispatch tests
 sv_virtual_method_wrapper	normal,-g2012		ivltests
+sv_virtual_method_param		normal,-g2012		ivltests
+sv_virtual_direct_vs_prop	normal,-g2012		ivltests
+sv_virtual_property_dispatch	normal,-g2012		ivltests
+sv_virtual_converter		normal,-g2012		ivltests
 sv_class_prop_array1	normal,-g2012	ivltests
 
 # Function declarations in package scope (implicit return type)
