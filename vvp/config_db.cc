@@ -141,6 +141,25 @@ const config_db_entry* vvp_config_db_find_entry(
             }
       }
 
+      // Final fallback: Try prefix matching on field names
+      // This handles cases where $sformatf produces truncated field names
+      // (e.g., "apb_slave_monitor_bfm_" instead of "apb_slave_monitor_bfm_0")
+      for (auto& entry : db) {
+            size_t field_pos = entry.first.rfind("::");
+            if (field_pos != std::string::npos) {
+                  std::string stored_field = entry.first.substr(field_pos + 2);
+                  // Check if field_name is a prefix of stored_field or vice versa
+                  bool is_prefix = (stored_field.find(field_name) == 0 ||
+                                    field_name.find(stored_field) == 0);
+                  if (is_prefix && !field_name.empty() && !stored_field.empty()) {
+                        std::string stored_path = entry.first.substr(0, field_pos);
+                        if (stored_path.find('*') != std::string::npos) {
+                              return &entry.second;
+                        }
+                  }
+            }
+      }
+
       return nullptr;
 }
 
