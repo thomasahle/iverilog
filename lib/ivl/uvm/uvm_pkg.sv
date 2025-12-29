@@ -636,13 +636,9 @@ package uvm_pkg;
     virtual task start(uvm_sequencer_base sequencer, uvm_sequence_base parent_sequence = null);
       m_sequencer = sequencer;
       m_parent_sequence = parent_sequence;
-      $display("UVM_DEBUG: sequence.start() - calling pre_body()");
       pre_body();
-      $display("UVM_DEBUG: sequence.start() - calling body()");
       body();
-      $display("UVM_DEBUG: sequence.start() - calling post_body()");
       post_body();
-      $display("UVM_DEBUG: sequence.start() - complete");
     endtask
 
     function uvm_sequencer_base get_sequencer();
@@ -675,10 +671,8 @@ package uvm_pkg;
     // Note: Using base class type since Icarus doesn't fully support
     // type parameter coercion in method calls
     virtual task finish_item(uvm_sequence_item item, int set_priority = -1);
-      uvm_sequencer_base sqr;
-      sqr = m_sequencer;
-      if (sqr != null)
-        sqr.send_request(item);
+      if (m_sequencer != null)
+        m_sequencer.send_request(item);
     endtask
   endclass
 
@@ -724,22 +718,42 @@ package uvm_pkg;
     int queue_tail;
     int queue_count;
 
+    // Blocking handshake support
+    bit item_done_flag;
+    uvm_sequence_item current_item;
+
     function new(string name = "", uvm_component parent = null);
       super.new(name, parent);
       queue_head = 0;
       queue_tail = 0;
       queue_count = 0;
+      item_done_flag = 0;
+      current_item = null;
     endfunction
 
     virtual function string get_type_name();
       return "uvm_sequencer_base";
     endfunction
 
+    // Send request and block until driver consumes it (proper handshake)
     virtual task send_request(uvm_sequence_item item);
-      if (queue_count < 64) begin
-        request_queue[queue_tail] = item;
-        queue_tail = (queue_tail + 1) % 64;
-        queue_count++;
+      // Wait if queue is full
+      while (queue_count >= 64) begin
+        #1;
+      end
+
+      // Add to queue
+      request_queue[queue_tail] = item;
+      queue_tail = (queue_tail + 1) % 64;
+      queue_count++;
+
+      // Store current item for tracking
+      current_item = item;
+      item_done_flag = 0;
+
+      // Block until driver calls item_done()
+      while (!item_done_flag) begin
+        #1;
       end
     endtask
 
@@ -751,10 +765,17 @@ package uvm_pkg;
       item = request_queue[queue_head];
       queue_head = (queue_head + 1) % 64;
       queue_count--;
+      current_item = item;
     endtask
 
     virtual function void item_done(uvm_sequence_item item = null);
       // Signal that item processing is complete
+      item_done_flag = 1;
+    endfunction
+
+    // Check if there are items in the queue
+    virtual function bit has_item();
+      return queue_count > 0;
     endfunction
   endclass
 
@@ -1489,12 +1510,12 @@ package uvm_pkg;
     endfunction
 
     // Get the next item from the sequencer (blocking)
-    // Stub: Returns null - real implementation needs sequencer integration
     virtual task get_next_item(output REQ t);
+      uvm_sequence_item base_item;
       if (m_sequencer != null) begin
         // Wait for item from sequencer's queue
-        // For now, just set to null - driver must handle this
-        t = null;
+        m_sequencer.get_next_item(base_item);
+        t = base_item;
       end else begin
         $display("UVM_ERROR [SEQ_ITEM_PULL]: No sequencer connected to pull port");
         t = null;
@@ -1504,8 +1525,15 @@ package uvm_pkg;
     // Try to get next item without blocking
     // Note: Changed from function with output to task per SV rules
     virtual task try_next_item(output REQ t, output bit success);
-      t = null;
-      success = 0;  // No item available (stub)
+      uvm_sequence_item base_item;
+      if (m_sequencer != null && m_sequencer.has_item()) begin
+        m_sequencer.get_next_item(base_item);
+        t = base_item;
+        success = 1;
+      end else begin
+        t = null;
+        success = 0;
+      end
     endtask
 
     // Signal that processing of the current item is complete
