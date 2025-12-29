@@ -1123,18 +1123,17 @@ package uvm_pkg;
   class uvm_factory_proxy;
   endclass
 
-  // Factory wrapper for components - simplified version
+  // Factory wrapper for components - creates objects using direct instantiation
   class uvm_component_registry #(type T = uvm_component, string Tname = "");
     // get() returns null (factory proxy not fully supported)
     static function uvm_factory_proxy get();
       return null;
     endfunction
 
-    // Static create - note: type_id::create() is not fully supported
-    // For now, users should use direct instantiation: obj = new(name, parent);
+    // Static create - creates the component directly
     static function T create(string name, uvm_component parent);
-      $display("UVM_WARNING: type_id::create() not fully supported. Use direct 'new()' instead.");
-      return null;
+      T obj = new(name, parent);
+      return obj;
     endfunction
   endclass
 
