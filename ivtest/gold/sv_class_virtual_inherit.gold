@@ -1,0 +1,24 @@
+Test 1: Base class methods
+PASSED: base inherited_method
+PASSED: base overridden_method
+PASSED: base non_virtual_method
+
+Test 2: Middle class methods
+PASSED: middle inherited_method (from base)
+PASSED: middle overridden_method
+
+Test 3: Derived class methods (no overrides)
+PASSED: derived inherited_method (from base via middle)
+PASSED: derived overridden_method (from middle)
+
+Test 4: Derived class with override
+PASSED: derived_override inherited_method (overridden)
+PASSED: derived_override overridden_method (from middle)
+
+Test 5: Direct call on derived object
+PASSED: direct inherited_method call
+PASSED: direct overridden_method call
+PASSED: direct middle_only_method call
+
+============================================
+PASSED
