@@ -2199,9 +2199,19 @@ bool of_CONFIG_DB_GET_V(vthread_t thr, vvp_code_t cp)
       std::string field_name = thr->pop_str();
       std::string inst_name = thr->pop_str();
 
+      // Get context path from thread's scope
+      std::string context_path;
+      __vpiScope*scope = vthread_scope(thr);
+      if (scope) {
+            const char*full_name = scope->vpi_get_str(vpiFullName);
+            if (full_name) {
+                  context_path = full_name;
+            }
+      }
+
       // Look up in config_db
       vvp_vector4_t value;
-      bool found = vvp_config_db::instance().get_vec4("", inst_name, field_name, value);
+      bool found = vvp_config_db::instance().get_vec4(context_path, inst_name, field_name, value);
 
       if (found) {
             // Store value to destination signal
@@ -2231,9 +2241,19 @@ bool of_CONFIG_DB_GET_O(vthread_t thr, vvp_code_t cp)
       std::string field_name = thr->pop_str();
       std::string inst_name = thr->pop_str();
 
+      // Get context path from thread's scope
+      std::string context_path;
+      __vpiScope*scope = vthread_scope(thr);
+      if (scope) {
+            const char*full_name = scope->vpi_get_str(vpiFullName);
+            if (full_name) {
+                  context_path = full_name;
+            }
+      }
+
       // Look up in config_db
       vvp_object_t value;
-      bool found = vvp_config_db::instance().get_object("", inst_name, field_name, value);
+      bool found = vvp_config_db::instance().get_object(context_path, inst_name, field_name, value);
 
       if (found) {
             // Store value to destination signal
@@ -2260,11 +2280,21 @@ bool of_CONFIG_DB_SET_V(vthread_t thr, vvp_code_t)
       std::string field_name = thr->pop_str();
       std::string inst_name = thr->pop_str();
 
+      // Get context path from thread's scope
+      std::string context_path;
+      __vpiScope*scope = vthread_scope(thr);
+      if (scope) {
+            const char*full_name = scope->vpi_get_str(vpiFullName);
+            if (full_name) {
+                  context_path = full_name;
+            }
+      }
+
       // Pop vec4 from vec4 stack
       vvp_vector4_t value = thr->pop_vec4();
 
       // Store in config_db
-      vvp_config_db::instance().set_vec4("", inst_name, field_name, value);
+      vvp_config_db::instance().set_vec4(context_path, inst_name, field_name, value);
 
       return true;
 }
@@ -2280,12 +2310,22 @@ bool of_CONFIG_DB_SET_O(vthread_t thr, vvp_code_t)
       std::string field_name = thr->pop_str();
       std::string inst_name = thr->pop_str();
 
+      // Get context path from thread's scope
+      std::string context_path;
+      __vpiScope*scope = vthread_scope(thr);
+      if (scope) {
+            const char*full_name = scope->vpi_get_str(vpiFullName);
+            if (full_name) {
+                  context_path = full_name;
+            }
+      }
+
       // Pop object from object stack
       vvp_object_t value;
       thr->pop_object(value);
 
       // Store in config_db
-      vvp_config_db::instance().set_object("", inst_name, field_name, value);
+      vvp_config_db::instance().set_object(context_path, inst_name, field_name, value);
 
       return true;
 }
@@ -2372,11 +2412,10 @@ bool of_CONFIG_DB_GET_PROP(vthread_t thr, vvp_code_t cp)
       vvp_object_t base_obj;
       thr->pop_object(base_obj);
 
-      // If inst_name is empty and we have a component, use its m_full_name
-      // This implements UVM's context-aware lookup
-      std::string context_path = "";
+      // Try to get context from base object's m_full_name, fall back to thread scope
+      std::string context_path;
       vvp_cobject*cobj = base_obj.peek<vvp_cobject>();
-      if (cobj && inst_name.empty()) {
+      if (cobj) {
             // Look up m_full_name property (property index 3 in uvm_component)
             // Property layout: 0=m_name, 1=m_verbosity, 2=m_parent, 3=m_full_name, ...
             // Only access if the class has at least 4 properties (is a uvm_component or derived)
@@ -2384,6 +2423,17 @@ bool of_CONFIG_DB_GET_PROP(vthread_t thr, vvp_code_t cp)
             if (ct->property_count() > 3) {
                   std::string full_name = cobj->get_string(3);
                   if (!full_name.empty()) {
+                        context_path = full_name;
+                  }
+            }
+      }
+
+      // Fall back to thread scope if no context from object
+      if (context_path.empty()) {
+            __vpiScope*scope = vthread_scope(thr);
+            if (scope) {
+                  const char*full_name = scope->vpi_get_str(vpiFullName);
+                  if (full_name) {
                         context_path = full_name;
                   }
             }

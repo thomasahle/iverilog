@@ -124,6 +124,23 @@ const config_db_entry* vvp_config_db_find_entry(
             }
       }
 
+      // Fallback: If field names match and the stored inst_name contains "*",
+      // treat it as a global match. This simplifies UVM config_db behavior
+      // for cases where context hierarchies don't match exactly.
+      for (auto& entry : db) {
+            size_t field_pos = entry.first.rfind("::");
+            if (field_pos != std::string::npos) {
+                  std::string stored_field = entry.first.substr(field_pos + 2);
+                  if (stored_field == field_name) {
+                        std::string stored_path = entry.first.substr(0, field_pos);
+                        // If the stored path contains "*", consider it a global pattern
+                        if (stored_path.find('*') != std::string::npos) {
+                              return &entry.second;
+                        }
+                  }
+            }
+      }
+
       return nullptr;
 }
 
