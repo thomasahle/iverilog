@@ -1,0 +1,5 @@
+=== TLM Handshake Test Results ===
+Items sent by sequence: 3
+Items received by driver: 3
+
+PASSED

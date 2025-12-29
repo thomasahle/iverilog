@@ -1106,6 +1106,7 @@ sv_std_randomize_with1	normal,-g2012		ivltests
 sv_std_randomize_with2	normal,-g2012		ivltests
 sv_foreach_this3	normal,-g2012		ivltests
 sv_uvm_tlm_fifo3	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_tlm_handshake	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_uvm_tlm_handshake.gold
 sv_class_extern_virtual2	normal,-g2012		ivltests
 sv_class_prop_array2	normal,-g2012		ivltests
 sv_uvm_config_db1	normal,-g2012,-I../lib/ivl/uvm		ivltests
