@@ -1,0 +1,3 @@
+PASSED: Test 1 - Wildcard pattern match
+PASSED: Test 2 - Pattern *env* matches my_env
+PASSED
