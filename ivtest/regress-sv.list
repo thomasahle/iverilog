@@ -1235,3 +1235,6 @@ sv_fork_join_none_parallel	normal,-g2012		ivltests
 
 # Virtual method dispatch inheritance tests
 sv_class_virtual_inherit	normal,-g2012		ivltests gold=sv_class_virtual_inherit.gold
+
+# Constraint randomization tests
+sv_constraint_soft		normal,-g2012		ivltests gold=sv_constraint_soft.gold

@@ -1,0 +1,11 @@
+=== Test 1: Simple soft constraints ===
+simple_constrained: 5/5 randomize calls succeeded
+
+=== Test 2: Tricky soft constraints ===
+tricky_constrained: 5/5 randomize calls succeeded
+
+=== Test 3: Enum soft constraints ===
+enum_constrained: 5/5 randomize calls succeeded
+
+============================================
+PASSED
