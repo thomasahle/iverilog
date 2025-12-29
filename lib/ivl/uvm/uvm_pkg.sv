@@ -453,8 +453,7 @@ package uvm_pkg;
     endfunction
 
     virtual task run_phase(uvm_phase phase);
-      // Base class run_phase - should be overridden by test
-      $display("UVM_DEBUG: uvm_component::run_phase base class called for %s (SHOULD BE OVERRIDDEN!)", get_full_name());
+      // Base class run_phase - should be overridden by derived classes
     endtask
 
     virtual function void extract_phase(uvm_phase phase);
@@ -502,18 +501,29 @@ package uvm_pkg;
       end
     endfunction
 
+    // Helper task with automatic storage for proper variable capture in fork
+    task automatic fork_child_do_run_phase(uvm_component c, uvm_phase phase);
+      fork
+        c.do_run_phase(phase);
+      join_none
+    endtask
+
     virtual task do_run_phase(uvm_phase phase);
-      // Run parent's run_phase first (starts sequences), then children (drivers)
-      // This is a simplified approach - not true parallel execution
-      $display("UVM_DEBUG: do_run_phase for %s (type=%s)", get_full_name(), get_type_name());
-      // NOTE: Call through 'this' to attempt virtual dispatch
-      this.run_phase(phase);
-      $display("UVM_DEBUG: do_run_phase %s - starting children", get_full_name());
+      // Fork this component's run_phase and all children's run_phases in parallel
+      // All run_phases execute concurrently as required by UVM semantics
+
+      // Fork this component's run_phase
+      fork
+        this.run_phase(phase);
+      join_none
+
+      // Fork all children's do_run_phase using automatic helper task
       for (int i = 0; i < m_num_children; i++) begin
         uvm_component child = m_children[i];
-        if (child != null) child.do_run_phase(phase);
+        if (child != null) begin
+          fork_child_do_run_phase(child, phase);
+        end
       end
-      $display("UVM_DEBUG: do_run_phase %s - complete", get_full_name());
     endtask
 
     virtual function void do_extract_phase(uvm_phase phase);
@@ -1011,11 +1021,13 @@ package uvm_pkg;
       phase.name = "run";
       if (m_test != null) begin
         $display("UVM_INFO: Running run_phase...");
-        // Start test's run_phase - it will run sequences that feed items to drivers
-        // Run phases execute in parent->child order, but since each may block,
-        // we need to handle this specially
+        // Fork all component run_phases (they use fork/join_none internally)
+        // This returns quickly after forking all tasks
         m_test.do_run_phase(phase);
-        // Wait for all objections to be dropped (in case any phases raise them)
+        // Yield to let forked processes start and raise objections
+        #0;
+        // Wait for all objections to be dropped
+        $display("UVM_INFO: Waiting for all objections to drop...");
         while (!phase.is_done()) begin
           #1;
         end
@@ -2171,6 +2183,9 @@ package uvm_pkg;
     uvm_object test_obj;
 
     root = uvm_root::get();
+
+    // Note: +UVM_TESTNAME command line parsing disabled due to vvp bug
+    // To run a specific test, modify hvl_top.sv to call run_test with desired name
 
     $display("UVM_INFO: run_test called with test_name='%s'", test_name);
 
