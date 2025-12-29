@@ -5749,6 +5749,7 @@ bool of_FACTORY_CREATE(vthread_t thr, vvp_code_t)
 
       // Look up the "new" method (constructor) for this class
       const class_type::method_info* ctor = defn->get_method("new");
+
       if (ctor == nullptr || ctor->entry == nullptr || ctor->scope == nullptr) {
 	    // No constructor - just return the uninitialized object
 	    thr->push_object(tmp);

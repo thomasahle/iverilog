@@ -1220,3 +1220,9 @@ sv_config_db_vif	normal,-g2012	ivltests
 sv_nested_class_vif	normal,-g2012	ivltests
 sv_nested_task_call	normal,-g2012	ivltests
 sv_class_vif_three_level		normal,-g2012		ivltests
+
+# Factory create and parallel execution tests (UVM support)
+sv_factory_create1		normal,-g2012		ivltests
+sv_factory_create2		normal,-g2012		ivltests
+sv_factory_create3		normal,-g2012		ivltests
+sv_fork_join_none_parallel	normal,-g2012		ivltests

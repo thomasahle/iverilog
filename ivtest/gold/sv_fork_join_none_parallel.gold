@@ -1,0 +1,7 @@
+worker2: starting at 0
+worker1: starting at 0
+worker0: starting at 0
+worker2: done at 10
+worker1: done at 10
+worker0: done at 10
+PASSED
