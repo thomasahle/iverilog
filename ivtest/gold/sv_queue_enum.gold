@@ -1,0 +1,7 @@
+PASS: Queue size is correct
+PASS: Queue element [0] is correct
+PASS: Queue element [1] is correct
+PASS: pop_front returned correct value
+PASS: Queue size after pop is correct
+
+PASSED

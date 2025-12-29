@@ -1121,6 +1121,26 @@ static char *get_display(unsigned int *rtnsz, const struct strobe_cb_info *info)
         }
         break;
 
+      case vpiRegArray:
+        /* Check if this is actually a queue (vpiArrayType == vpiQueueArray) */
+        if (vpi_get(vpiArrayType, item) == vpiQueueArray) {
+          cresult = "'<queue>";
+        } else {
+          cresult = "'<array>";
+        }
+        width = strlen(cresult);
+        rtn = realloc(rtn, (size+width)*sizeof(char));
+        memcpy(rtn+size-1, cresult, width);
+        break;
+
+      case vpiClassVar:
+        /* For class objects, output a placeholder string */
+        cresult = "'<object>";
+        width = strlen(cresult);
+        rtn = realloc(rtn, (size+width)*sizeof(char));
+        memcpy(rtn+size-1, cresult, width);
+        break;
+
       default:
         vpi_printf("WARNING: %s:%d: unknown argument type (%s) given to %s!\n",
                    info->filename, info->lineno, vpi_get_str(vpiType, item),
@@ -1215,6 +1235,7 @@ static int sys_check_args(vpiHandle callh, vpiHandle argv, const PLI_BYTE8*name,
 #endif
 	      case vpiClassVar:
 	      case vpiSysFuncCall:
+	      case vpiRegArray:  /* Allow array variables (includes queues) */
 		  break;
 
 	      default:

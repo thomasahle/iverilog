@@ -377,12 +377,6 @@ static void draw_vpi_taskfunc_args(const char*call_string,
 
 		case IVL_EX_SIGNAL:
 		case IVL_EX_SELECT:
-		    /* Check for queue/darray signal types first - these need
-		       special handling and can't go through get_vpi_taskfunc_signal_arg */
-		  if (ivl_expr_value(expr) == IVL_VT_QUEUE ||
-		      ivl_expr_value(expr) == IVL_VT_DARRAY) {
-			break;  /* Fall through to ivl_expr_value switch below */
-		  }
 		  args[idx].stack = vec4_stack_need;
 		  if (get_vpi_taskfunc_signal_arg(&args[idx], expr)) {
 			if (args[idx].vec_flag) {
@@ -440,9 +434,16 @@ static void draw_vpi_taskfunc_args(const char*call_string,
 		  break;
 		case IVL_VT_QUEUE:
 		case IVL_VT_DARRAY:
-		    /* For queues and dynamic arrays, push a placeholder string
-		       that describes the type. Full %p formatting of queues
-		       is not yet supported. */
+		    /* For queue/darray signals, try to pass as VPI signal reference.
+		       If it's a simple signal, we can pass the reference.
+		       Otherwise use a placeholder string for functions like $display. */
+		  if (ivl_expr_type(expr) == IVL_EX_SIGNAL) {
+			ivl_signal_t sig = ivl_expr_signal(expr);
+			snprintf(buffer, sizeof buffer, "v%p_0", sig);
+			args[idx].text = strdup(buffer);
+			continue;
+		  }
+		  /* Fallback: push placeholder for complex expressions */
 		  fprintf(vvp_out, "    %%pushi/str \"'<queue>\";\n");
 		  args[idx].vec_flag = 0;
 		  args[idx].str_flag = 1;

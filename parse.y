@@ -815,7 +815,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <property_qualifier> class_item_qualifier_list property_qualifier_list
 %type <property_qualifier> class_item_qualifier_opt property_qualifier_opt
 %type <property_qualifier> random_qualifier
-%type <property_qualifier> method_qualifier method_qualifier_opt
+%type <property_qualifier> method_qualifier method_qualifier_list method_qualifier_opt
 
 %type <ranges> variable_dimension
 %type <ranges> dimensions_opt dimensions
@@ -2816,8 +2816,14 @@ method_qualifier /* IEEE1800-2005: A.1.8 */
       { $$ = $1; }
   ;
 
+  /* Allow combinations of method qualifiers like "virtual local" */
+method_qualifier_list
+  : method_qualifier_list method_qualifier { $$ = $1 | $2; }
+  | method_qualifier { $$ = $1; }
+  ;
+
 method_qualifier_opt
-  : method_qualifier
+  : method_qualifier_list
       { $$ = $1;
         pform_set_method_static($1.test_static());
         pform_set_method_virtual($1.test_virtual());

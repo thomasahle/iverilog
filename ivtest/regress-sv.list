@@ -825,6 +825,7 @@ sv_queue_last_offset1	normal,-g2012		ivltests
 sv_queue_last_offset2	normal,-g2012		ivltests
 sv_queue_compare	normal,-g2012		ivltests gold=sv_queue_compare.gold
 sv_queue_print		normal,-g2012		ivltests gold=sv_queue_print.gold
+sv_queue_enum		normal,-g2012		ivltests gold=sv_queue_enum.gold
 sv_array_locator_with1	normal,-g2012		ivltests
 sv_root_class		normal,-g2009		ivltests gold=sv_root_class.gold
 sv_root_func		normal,-g2009		ivltests gold=sv_root_func.gold
