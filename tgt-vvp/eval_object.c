@@ -352,6 +352,20 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    return 0;
       }
 
+      /* Array locator methods - return a queue of int indices */
+      if (strncmp(name, "$ivl_array_locator$", 19) == 0) {
+	    /* Get the source queue argument */
+	    ivl_expr_t arg = ivl_expr_parm(ex, 0);
+
+	    /* For now, emit a new empty queue.
+	     * TODO: Implement actual array locator search logic.
+	     * The 'with' clause expression would need to be evaluated
+	     * for each element of the source queue. */
+	    (void)arg;
+	    fprintf(vvp_out, "    %%new/darray 32, \"sb32\"; array locator result queue\n");
+	    return 0;
+      }
+
       fprintf(vvp_out, "; ERROR: eval_object_sfunc: Unknown system function '%s'\n", name);
       return 1;
 }

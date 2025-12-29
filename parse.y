@@ -5375,11 +5375,10 @@ expr_primary
        etc. */
   | hierarchy_identifier K_with '(' expression ')'
       { pform_requires_sv(@2, "Array locator method with clause");
-	/* For now, parse but emit sorry message - call without args */
-	yywarn(@2, "sorry: Array locator method with 'with' clause not yet implemented.");
-	/* Create function call without with clause (stub behavior) */
+	/* Create function call and store the 'with' expression */
 	list<named_pexpr_t>*empty_args = new list<named_pexpr_t>;
 	PECallFunction*tmp = pform_make_call_function(@1, *$1, *empty_args);
+	tmp->set_with_expr($4);
 	delete $1;
 	delete empty_args;
 	$$ = tmp;
@@ -5388,9 +5387,9 @@ expr_primary
        array.find_last_index() with (item.field == value) */
   | hierarchy_identifier attribute_list_opt argument_list_parens K_with '(' expression ')'
       { pform_requires_sv(@4, "Array locator method with clause");
-	/* For now, parse but emit sorry message - call without with clause */
-	yywarn(@4, "sorry: Array locator method with 'with' clause not yet implemented.");
+	/* Create function call and store the 'with' expression */
 	PECallFunction*tmp = pform_make_call_function(@1, *$1, *$3);
+	tmp->set_with_expr($6);
 	delete $1;
 	delete $2;
 	delete $3;

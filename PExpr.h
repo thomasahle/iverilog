@@ -938,6 +938,10 @@ class PECallFunction : public PExpr {
 
       ~PECallFunction() override;
 
+	// Set the 'with' clause expression for array locator methods
+      void set_with_expr(PExpr*with) { with_expr_ = with; }
+      PExpr* get_with_expr() const { return with_expr_; }
+
       virtual void dump(std::ostream &) const override;
 
       virtual void declare_implicit_nets(LexicalScope*scope, NetNet::Type type) override;
@@ -956,6 +960,9 @@ class PECallFunction : public PExpr {
     private:
       pform_scoped_name_t path_;
       std::vector<named_pexpr_t> parms_;
+
+        // For array locator methods with 'with' clause
+      PExpr* with_expr_ = nullptr;
 
         // For system functions.
       bool is_overridden_;
