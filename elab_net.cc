@@ -26,6 +26,7 @@
 # include  "netmisc.h"
 # include  "netstruct.h"
 # include  "netvector.h"
+# include  "netscalar.h"
 # include  "compiler.h"
 
 # include  <cstdlib>
@@ -749,6 +750,99 @@ NetNet* PEIdent::elaborate_lnet_common_(Design*des, NetScope*scope,
 			     << "packed_base=" << *packed_base
 			     << ", member_off=" << member_off << endl;
 		  }
+	    }
+
+      } else if (!member_path.empty()) {
+	    // Check for interface port member access: intf.signal
+	    // Interface ports are compile-time bindings. We need to find
+	    // the bound interface instance and access its member directly.
+	    const netvirtual_interface_t*vif_type =
+		  dynamic_cast<const netvirtual_interface_t*>(sig->net_type());
+	    if (vif_type) {
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": " << __func__ << ": "
+			     << "Interface port " << sig->name()
+			     << " member access: " << member_path << endl;
+		  }
+
+		  // Find the bound interface instance
+		  const NetScope* iface_inst = nullptr;
+		  perm_string iface_name = vif_type->interface_name();
+
+		  // Get the port name from the signal
+		  perm_string port_name = sig->name();
+
+		  // First, check for stored interface port binding
+		  iface_inst = scope->get_interface_port_binding(port_name);
+
+		  // If no explicit binding, look in parent scope
+		  if (!iface_inst) {
+			NetScope* parent = scope->parent();
+			if (parent) {
+			      iface_inst = parent->child_by_module_name(iface_name);
+			}
+		  }
+
+		  // Fallback: search root scopes for interface definition
+		  if (!iface_inst) {
+			for (NetScope* root : des->find_root_scopes()) {
+			      const NetScope* found = root->child_by_module_name(iface_name);
+			      if (found && found->is_interface()) {
+				    iface_inst = found;
+				    break;
+			      }
+			}
+		  }
+
+		  if (!iface_inst) {
+			cerr << get_fileline() << ": error: "
+			     << "Interface instance of type `" << iface_name
+			     << "` not found for interface port `" << sig->name()
+			     << "`." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Get the member name from the path
+		  ivl_assert(*this, member_path.size() >= 1);
+		  name_component_t member_comp = member_path.front();
+
+		  // Look up the member signal in the interface instance
+		  NetNet* member_sig = const_cast<NetScope*>(iface_inst)->find_signal(member_comp.name);
+		  if (!member_sig) {
+			cerr << get_fileline() << ": error: "
+			     << "Interface `" << iface_name
+			     << "` has no member `" << member_comp.name << "`." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": " << __func__ << ": "
+			     << "Found interface instance " << iface_inst->fullname()
+			     << ", member signal " << member_sig->name() << endl;
+		  }
+
+		  // Convert REG to UNRESOLVED_WIRE for SystemVerilog continuous assignment
+		  if (gn_var_can_be_uwire() && var_allowed_in_sv
+		      && (member_sig->type() == NetNet::REG)
+		      && (member_sig->peek_lref() == 0) ) {
+			member_sig->type(NetNet::UNRESOLVED_WIRE);
+		  }
+
+		  // Don't allow registers as assign l-values
+		  if (member_sig->type() == NetNet::REG) {
+			cerr << get_fileline() << ": error: Interface member '"
+			     << member_comp.name << "' cannot be driven by a ";
+			if (var_allowed_in_sv) cerr << "continuous assignment/module";
+			else cerr << "primitive";
+			cerr << "." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Return the actual member signal from the interface instance
+		  return member_sig;
 	    }
 
       } else if (gn_system_verilog() && sig->unpacked_dimensions() > 0 && path_tail.index.empty()) {

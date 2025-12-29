@@ -1109,6 +1109,7 @@ sv_uvm_factory1	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_include_semicolon1	normal,-g2012,-Iivltests		ivltests
 sv_interface_port1	normal,-g2012		ivltests gold=sv_interface_port1.gold
 sv_interface_port_member	normal,-g2012		ivltests gold=sv_interface_port_member.gold
+sv_interface_cont_assign	normal,-g2012		ivltests
 sv_interface_task	normal,-g2012		ivltests
 sv_vif_method_dispatch	normal,-g2012		ivltests
 sv_unpacked_struct_member	normal,-g2012		ivltests gold=sv_unpacked_struct_member.gold
