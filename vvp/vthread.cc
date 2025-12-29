@@ -2277,15 +2277,11 @@ bool of_CONFIG_DB_SET_V(vthread_t thr, vvp_code_t)
       std::string field_name = thr->pop_str();
       std::string inst_name = thr->pop_str();
 
-      // Get context path from thread's scope
-      std::string context_path;
-      __vpiScope*scope = vthread_scope(thr);
-      if (scope) {
-            const char*full_name = scope->vpi_get_str(vpiFullName);
-            if (full_name) {
-                  context_path = full_name;
-            }
-      }
+      // Note: UVM's set(null, inst_name, field, value) means the context is null
+      // (i.e., use inst_name as the absolute path). The parser skips the context
+      // argument, so we should NOT add the calling scope's path. Just use "null"
+      // as context_path which make_key will handle correctly.
+      std::string context_path = "null";
 
       // Pop vec4 from vec4 stack
       vvp_vector4_t value = thr->pop_vec4();
@@ -2307,15 +2303,11 @@ bool of_CONFIG_DB_SET_O(vthread_t thr, vvp_code_t)
       std::string field_name = thr->pop_str();
       std::string inst_name = thr->pop_str();
 
-      // Get context path from thread's scope
-      std::string context_path;
-      __vpiScope*scope = vthread_scope(thr);
-      if (scope) {
-            const char*full_name = scope->vpi_get_str(vpiFullName);
-            if (full_name) {
-                  context_path = full_name;
-            }
-      }
+      // Note: UVM's set(null, inst_name, field, value) means the context is null
+      // (i.e., use inst_name as the absolute path). The parser skips the context
+      // argument, so we should NOT add the calling scope's path. Just use "null"
+      // as context_path which make_key will handle correctly.
+      std::string context_path = "null";
 
       // Pop object from object stack
       vvp_object_t value;

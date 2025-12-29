@@ -75,9 +75,29 @@ static bool uvm_pattern_match(const std::string& pattern, const std::string& pat
             return path.empty();
       }
 
+      // Exact match
+      if (pattern == path) {
+            return true;
+      }
+
       // Use fnmatch for glob-style matching
       // FNM_PATHNAME is not set so * matches /
-      return fnmatch(pattern.c_str(), path.c_str(), 0) == 0;
+      if (fnmatch(pattern.c_str(), path.c_str(), 0) == 0) {
+            return true;
+      }
+
+      // UVM-style suffix matching: "env" matches "uvm_test_top.env"
+      // Check if pattern is a suffix of path after a '.'
+      if (pattern.size() < path.size()) {
+            size_t suffix_start = path.size() - pattern.size();
+            if (suffix_start > 0 && path[suffix_start - 1] == '.') {
+                  if (path.substr(suffix_start) == pattern) {
+                        return true;
+                  }
+            }
+      }
+
+      return false;
 }
 
 // Helper to find an entry with wildcard matching
