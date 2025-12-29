@@ -2831,6 +2831,63 @@ bool of_CMPSTR(vthread_t thr, vvp_code_t)
       return true;
 }
 
+/*
+ * %cmp/obj
+ *    Compare two objects (queues, dynamic arrays, etc.) for equality.
+ *    Pops two objects from the object stack and compares them.
+ *    Sets flag 4 to 1 if equal, 0 otherwise.
+ */
+bool of_CMPOBJ(vthread_t thr, vvp_code_t)
+{
+      vvp_object_t re;
+      vvp_object_t le;
+      thr->pop_object(re);
+      thr->pop_object(le);
+
+      vvp_bit4_t eq = BIT4_0;
+
+      /* If both are null/empty, they're equal */
+      if (le.test_nil() && re.test_nil()) {
+	    eq = BIT4_1;
+      }
+      /* If one is null and other isn't, not equal */
+      else if (le.test_nil() || re.test_nil()) {
+	    eq = BIT4_0;
+      }
+      /* For queues and dynamic arrays, compare element by element */
+      else {
+	    vvp_darray*le_arr = le.peek<vvp_darray>();
+	    vvp_darray*re_arr = re.peek<vvp_darray>();
+
+	    if (le_arr && re_arr) {
+		  /* Both are arrays - compare sizes first */
+		  size_t le_size = le_arr->get_size();
+		  size_t re_size = re_arr->get_size();
+
+		  if (le_size == re_size) {
+			eq = BIT4_1;
+			/* Compare elements */
+			for (size_t i = 0; i < le_size && eq == BIT4_1; i++) {
+			      vvp_vector4_t le_val;
+			      vvp_vector4_t re_val;
+			      le_arr->get_word(i, le_val);
+			      re_arr->get_word(i, re_val);
+			      if (!le_val.eeq(re_val))
+				    eq = BIT4_0;
+			}
+		  }
+	    } else {
+		  /* For non-array objects, assume not equal */
+		  eq = BIT4_0;
+	    }
+      }
+
+      thr->flags[4] = eq;
+      thr->flags[5] = BIT4_0; /* lt flag not meaningful for object comparison */
+
+      return true;
+}
+
 static void of_CMPU_the_hard_way(vthread_t thr, unsigned wid,
 				 const vvp_vector4_t&lval,
 				 const vvp_vector4_t&rval)

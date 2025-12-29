@@ -67,6 +67,19 @@ static int draw_condition_binary_compare(ivl_expr_t expr)
 	    return draw_condition_fallback(expr);
       }
 
+	/* Handle queue comparison - use fallback which routes through
+	   draw_binary_vec4_compare where queue comparisons are handled. */
+      if ((ivl_expr_value(le)==IVL_VT_QUEUE)
+	  || (ivl_expr_value(re)==IVL_VT_QUEUE)) {
+	    return draw_condition_fallback(expr);
+      }
+
+	/* Handle dynamic array comparison similarly. */
+      if ((ivl_expr_value(le)==IVL_VT_DARRAY)
+	  || (ivl_expr_value(re)==IVL_VT_DARRAY)) {
+	    return draw_condition_fallback(expr);
+      }
+
       unsigned use_wid = ivl_expr_width(le);
       if (ivl_expr_width(re) > use_wid)
 	    use_wid = ivl_expr_width(re);
@@ -183,6 +196,14 @@ static int draw_condition_binary_le(ivl_expr_t expr)
 
       if ((ivl_expr_type(le)==IVL_EX_STRING)
 	  && (ivl_expr_value(re)==IVL_VT_STRING)) {
+	    return draw_condition_fallback(expr);
+      }
+
+	/* Queue and dynamic array ordering comparisons not supported. */
+      if ((ivl_expr_value(le)==IVL_VT_QUEUE)
+	  || (ivl_expr_value(re)==IVL_VT_QUEUE)
+	  || (ivl_expr_value(le)==IVL_VT_DARRAY)
+	  || (ivl_expr_value(re)==IVL_VT_DARRAY)) {
 	    return draw_condition_fallback(expr);
       }
 

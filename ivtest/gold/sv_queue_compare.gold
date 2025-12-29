@@ -1,0 +1,9 @@
+PASS: q1 == q2 (identical queues)
+PASS: q1 != q3 (different last element)
+PASS: q1 == q1 (same variable)
+PASS: empty queues compare equal
+PASS: non-empty != empty queue
+PASS: different size queues are not equal
+PASS: queue comparison works in if condition
+
+PASSED

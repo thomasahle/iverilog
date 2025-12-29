@@ -432,6 +432,30 @@ static void draw_vpi_taskfunc_args(const char*call_string,
 		  str_stack_need += 1;
 		  buffer[0] = 0;
 		  break;
+		case IVL_VT_QUEUE:
+		case IVL_VT_DARRAY:
+		    /* For queues and dynamic arrays, push a placeholder string
+		       that describes the type. Full %p formatting of queues
+		       is not yet supported. */
+		  fprintf(vvp_out, "    %%pushi/str \"'<queue>\";\n");
+		  args[idx].vec_flag = 0;
+		  args[idx].str_flag = 1;
+		  args[idx].real_flag = 0;
+		  args[idx].stack = str_stack_need;
+		  str_stack_need += 1;
+		  buffer[0] = 0;
+		  break;
+		case IVL_VT_CLASS:
+		    /* For class objects, push a placeholder string.
+		       Full %p formatting of class objects is not yet supported. */
+		  fprintf(vvp_out, "    %%pushi/str \"'<object>\";\n");
+		  args[idx].vec_flag = 0;
+		  args[idx].str_flag = 1;
+		  args[idx].real_flag = 0;
+		  args[idx].stack = str_stack_need;
+		  str_stack_need += 1;
+		  buffer[0] = 0;
+		  break;
 		default:
 		  fprintf(stderr, "%s:%u: Sorry, cannot generate code for argument %u.\n",
 		                  ivl_expr_file(expr), ivl_expr_lineno(expr), idx+1);

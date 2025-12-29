@@ -414,6 +414,32 @@ static void draw_binary_vec4_compare(ivl_expr_t expr)
 	    return;
       }
 
+	/* Handle queue comparison - compare sizes and elements */
+      if ((ivl_expr_value(le)==IVL_VT_QUEUE)
+	  || (ivl_expr_value(re)==IVL_VT_QUEUE)) {
+	    /* For now, emit a runtime comparison using object stack.
+	       Push both queues, then compare them. */
+	    draw_eval_object(le);
+	    draw_eval_object(re);
+	    fprintf(vvp_out, "    %%cmp/obj;\n");
+	    if (ivl_expr_opcode(expr) == 'n')
+		  fprintf(vvp_out, "    %%flag_inv 4;\n");
+	    fprintf(vvp_out, "    %%flag_get/vec4 4;\n");
+	    return;
+      }
+
+	/* Handle dynamic array comparison similarly */
+      if ((ivl_expr_value(le)==IVL_VT_DARRAY)
+	  || (ivl_expr_value(re)==IVL_VT_DARRAY)) {
+	    draw_eval_object(le);
+	    draw_eval_object(re);
+	    fprintf(vvp_out, "    %%cmp/obj;\n");
+	    if (ivl_expr_opcode(expr) == 'n')
+		  fprintf(vvp_out, "    %%flag_inv 4;\n");
+	    fprintf(vvp_out, "    %%flag_get/vec4 4;\n");
+	    return;
+      }
+
       unsigned use_wid = ivl_expr_width(le);
       if (ivl_expr_width(re) > use_wid)
 	    use_wid = ivl_expr_width(re);

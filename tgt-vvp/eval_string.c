@@ -115,9 +115,29 @@ static void string_ex_select(ivl_expr_t expr)
 	/* This is the select expression */
       ivl_expr_t shift= ivl_expr_oper2(expr);
 
+	/* Handle nested select expressions (e.g., property access) */
+      if (ivl_expr_type(sube) == IVL_EX_PROPERTY) {
+	    /* For property access with select, we need to evaluate the
+	       property as an object first, then index into it. */
+	    draw_eval_object(sube);
+	    draw_eval_expr_into_integer(shift, 3);
+	    fprintf(vvp_out, "    %%qpop/dar 3; Load darray element as string\n");
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    fprintf(vvp_out, "    %%cast/str/vec4 1;\n");
+	    return;
+      }
+
 	/* Assume the sub-expression is a signal */
       ivl_signal_t sig = ivl_expr_signal(sube);
-      assert(ivl_signal_data_type(sig) == IVL_VT_DARRAY || ivl_signal_data_type(sig) == IVL_VT_QUEUE);
+      if (sig == 0 || (ivl_signal_data_type(sig) != IVL_VT_DARRAY
+                       && ivl_signal_data_type(sig) != IVL_VT_QUEUE)) {
+	    /* For unsupported types, push a placeholder string */
+	    fprintf(stderr, "%s:%u: Sorry: string select from this expression type not fully supported.\n",
+		    ivl_expr_file(expr), ivl_expr_lineno(expr));
+	    fprintf(vvp_out, "    %%pushi/str \"<select>\";\n");
+	    vvp_errors += 1;
+	    return;
+      }
 
       draw_eval_expr_into_integer(shift, 3);
       fprintf(vvp_out, "    %%load/dar/str v%p_0;\n", sig);

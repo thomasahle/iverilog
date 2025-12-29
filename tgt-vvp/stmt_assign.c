@@ -1686,6 +1686,43 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 		  }
 
+	    } else if (ivl_type_base(prop_type) == IVL_VT_QUEUE) {
+		    /* Queue property assignment - similar to DARRAY */
+		  ivl_expr_t idx_expr = ivl_lval_idx(lval);
+		  if (idx_expr) {
+			/* Indexed assignment to queue element: q[i] = value */
+			ivl_type_t element_type = ivl_type_element(prop_type);
+
+			/* Load the queue property onto stack */
+			if (ivl_type_base(sig_type) == IVL_VT_CLASS) {
+			      fprintf(vvp_out, "    %%prop/obj %d, 0; Load queue property for indexed store\n", prop_idx);
+			      fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+			}
+
+			if (element_type && ivl_type_base(element_type) == IVL_VT_CLASS) {
+			      /* Queue of class objects */
+			      int idx = allocate_word();
+			      draw_eval_expr_into_integer(idx_expr, idx);
+			      errors += draw_eval_object(rval);
+			      fprintf(vvp_out, "    %%set/dar/obj/o %d; IVL_VT_QUEUE element (class)\n", idx);
+			      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			      clr_word(idx);
+			} else {
+			      /* Queue of primitive types */
+			      int idx = allocate_word();
+			      draw_eval_expr_into_integer(idx_expr, idx);
+			      draw_eval_vec4(rval);
+			      fprintf(vvp_out, "    %%set/dar/obj/vec4 %d; IVL_VT_QUEUE element (vec4)\n", idx);
+			      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			      clr_word(idx);
+			}
+		  } else {
+			/* Whole queue assignment */
+			errors += draw_eval_object(rval);
+			fprintf(vvp_out, "    %%store/prop/obj %d, 0; IVL_VT_QUEUE (whole queue)\n", prop_idx);
+			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  }
+
 	    } else if (ivl_type_base(prop_type) == IVL_VT_CLASS) {
 
 		  int idx = 0;
