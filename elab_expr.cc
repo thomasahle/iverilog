@@ -5386,18 +5386,16 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
-	    // Array locator methods - stub implementations that return 0
-	    // TODO: Implement actual locator logic
+	    // Array locator methods - stub implementations
+	    // TODO: Implement actual locator logic with 'with' clause support
 	    if (method_name == "find_last_index" || method_name == "find_first_index"
 		|| method_name == "find_index") {
 		  // These methods return queue of int (indices)
-		  // For now, return constant 0 as stub
+		  // For now, emit error - returning wrong type causes crashes
 		  cerr << get_fileline() << ": sorry: '" << method_name << "()' "
-		       << "array locator method returns 0 (not yet implemented)." << endl;
-		  verinum zero ((uint64_t)0, 32);
-		  NetEConst*result = new NetEConst(zero);
-		  result->set_line(*this);
-		  return result;
+		       << "array locator method is not yet implemented." << endl;
+		  des->errors += 1;
+		  return 0;
 	    }
 
 	    if (method_name == "find" || method_name == "find_first" || method_name == "find_last") {
