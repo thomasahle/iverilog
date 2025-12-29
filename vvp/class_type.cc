@@ -879,9 +879,15 @@ void class_type::set_method_entry(const string& name, struct vvp_code_s* entry)
 
 const class_type::method_info* class_type::get_method(const string& name) const
 {
+      // First check this class's methods
       auto it = methods_.find(name);
       if (it != methods_.end())
 	    return &it->second;
+
+      // If not found and we have a parent, check the parent class (inheritance)
+      if (parent_)
+	    return parent_->get_method(name);
+
       return 0;
 }
 

@@ -6375,7 +6375,6 @@ bool of_PROP_OBJ(vthread_t thr, vvp_code_t cp)
 
       vvp_object_t val;
       cobj->get_object(pid, val, idx);
-
       thr->push_object(val);
 
       return true;
