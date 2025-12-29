@@ -377,6 +377,12 @@ static void draw_vpi_taskfunc_args(const char*call_string,
 
 		case IVL_EX_SIGNAL:
 		case IVL_EX_SELECT:
+		    /* Check for queue/darray signal types first - these need
+		       special handling and can't go through get_vpi_taskfunc_signal_arg */
+		  if (ivl_expr_value(expr) == IVL_VT_QUEUE ||
+		      ivl_expr_value(expr) == IVL_VT_DARRAY) {
+			break;  /* Fall through to ivl_expr_value switch below */
+		  }
 		  args[idx].stack = vec4_stack_need;
 		  if (get_vpi_taskfunc_signal_arg(&args[idx], expr)) {
 			if (args[idx].vec_flag) {

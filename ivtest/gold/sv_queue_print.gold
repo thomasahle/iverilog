@@ -1,0 +1,6 @@
+Test 1 result: Queue value: <%p>'<queue>
+PASS: Queue can be passed to $sformatf
+Test 2 result: Object value: <%p><?>
+PASS: Object can be passed to $sformatf
+
+PASSED
