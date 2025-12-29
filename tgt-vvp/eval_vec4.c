@@ -1242,6 +1242,30 @@ static void draw_darray_pop(ivl_expr_t expr)
 	    fb = "f";
 
       ivl_expr_t arg = ivl_expr_parm(expr, 0);
+
+      /* Handle property expressions - load the containing object and
+         use %prop/q/popf or %prop/q/popb to pop from the queue property. */
+      if (ivl_expr_type(arg) == IVL_EX_PROPERTY) {
+	    ivl_signal_t sig = ivl_expr_signal(arg);
+	    ivl_expr_t base = ivl_expr_property_base(arg);
+	    unsigned prop_idx = ivl_expr_property_idx(arg);
+
+	    if (base) {
+		  /* Nested property access - evaluate base expression */
+		  draw_eval_object(base);
+	    } else {
+		  /* Direct property access - load the 'this' signal */
+		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+	    }
+
+	    /* Pop from the queue property and push result to vec4 stack */
+	    fprintf(vvp_out, "    %%prop/q/pop%s %u, %u;\n", fb, prop_idx,
+	            ivl_expr_width(expr));
+	    /* Pop the object from the object stack */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return;
+      }
+
       assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
 
       fprintf(vvp_out, "    %%qpop/%s/v v%p_0, %u;\n", fb, ivl_expr_signal(arg),

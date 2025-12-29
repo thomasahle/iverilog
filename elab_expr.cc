@@ -4459,6 +4459,46 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			return sys_expr;
 		  }
 
+		  // Handle pop_front and pop_back for queue properties
+		  if (method_name == "pop_front" || method_name == "pop_back") {
+			// Create expression to load the property from 'this'
+			NetNet*this_net = search_results.net;
+			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+			prop_expr->set_line(*this);
+
+			ivl_type_t element_type = darray_type->element_type();
+			perm_string func_name = method_name == "pop_front"
+			      ? perm_string::literal("$ivl_queue_method$pop_front")
+			      : perm_string::literal("$ivl_queue_method$pop_back");
+			NetESFunc*sys_expr = new NetESFunc(func_name, element_type, 1);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			return sys_expr;
+		  }
+
+		  // Handle push_back and push_front for queue properties
+		  if (method_name == "push_back" || method_name == "push_front") {
+			// Create expression to load the property from 'this'
+			NetNet*this_net = search_results.net;
+			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+			prop_expr->set_line(*this);
+
+			// Elaborate the argument
+			NetExpr*arg_expr = 0;
+			if (parms_.size() > 0 && parms_[0].parm) {
+			      arg_expr = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+			}
+
+			perm_string func_name = method_name == "push_back"
+			      ? perm_string::literal("$ivl_queue_method$push_back")
+			      : perm_string::literal("$ivl_queue_method$push_front");
+			NetESFunc*sys_expr = new NetESFunc(func_name, IVL_VT_VOID, 1, 2);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			sys_expr->parm(1, arg_expr);
+			return sys_expr;
+		  }
+
 		  // General handling for chained property/function access on darray properties
 		  // Handles patterns like: arr[i].func(), arr[i].member.func(), etc.
 		  // Build the initial property expression

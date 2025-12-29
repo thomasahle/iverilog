@@ -6269,6 +6269,91 @@ bool of_PROP_DAR_SIZE(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %prop/q/popf <pid>, <wid>
+ *
+ * Pop front element from a queue property and push to vec4 stack.
+ * The cobject is on the object stack (peeked, not popped).
+ */
+bool of_PROP_Q_POPF(vthread_t thr, vvp_code_t cp)
+{
+      unsigned pid = cp->number;
+      unsigned wid = cp->bit_idx[0];
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+
+      if (cobj == 0) {
+	    cerr << thr->get_fileline()
+	         << "Error: %prop/q/popf on null object." << endl;
+	    thr->push_vec4(vvp_vector4_t(wid, BIT4_X));
+	    return true;
+      }
+
+      // Get the queue property value
+      vvp_object_t queue_obj;
+      cobj->get_object(pid, queue_obj, 0);
+
+      vvp_queue_vec4*queue = queue_obj.peek<vvp_queue_vec4>();
+      if (queue && queue->get_size() > 0) {
+	    vvp_vector4_t value;
+	    queue->get_word(0, value);
+	    queue->pop_front();
+	    // Pad or truncate to requested width
+	    value.resize(wid);
+	    thr->push_vec4(value);
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Warning: %prop/q/popf on empty or null queue." << endl;
+	    thr->push_vec4(vvp_vector4_t(wid, BIT4_X));
+      }
+
+      return true;
+}
+
+/*
+ * %prop/q/popb <pid>, <wid>
+ *
+ * Pop back element from a queue property and push to vec4 stack.
+ * The cobject is on the object stack (peeked, not popped).
+ */
+bool of_PROP_Q_POPB(vthread_t thr, vvp_code_t cp)
+{
+      unsigned pid = cp->number;
+      unsigned wid = cp->bit_idx[0];
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+
+      if (cobj == 0) {
+	    cerr << thr->get_fileline()
+	         << "Error: %prop/q/popb on null object." << endl;
+	    thr->push_vec4(vvp_vector4_t(wid, BIT4_X));
+	    return true;
+      }
+
+      // Get the queue property value
+      vvp_object_t queue_obj;
+      cobj->get_object(pid, queue_obj, 0);
+
+      vvp_queue_vec4*queue = queue_obj.peek<vvp_queue_vec4>();
+      if (queue && queue->get_size() > 0) {
+	    size_t last_idx = queue->get_size() - 1;
+	    vvp_vector4_t value;
+	    queue->get_word(last_idx, value);
+	    queue->pop_back();
+	    // Pad or truncate to requested width
+	    value.resize(wid);
+	    thr->push_vec4(value);
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Warning: %prop/q/popb on empty or null queue." << endl;
+	    thr->push_vec4(vvp_vector4_t(wid, BIT4_X));
+      }
+
+      return true;
+}
+
+/*
  * %prop/obj <pid>, <idx>
  *
  * Load an object value from the cobject and push it onto the object stack.

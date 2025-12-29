@@ -278,6 +278,8 @@ static const struct opcode_table_s opcode_table[] = {
       { "%prop/assoc/vec4",of_PROP_ASSOC_VEC4,1, {OA_NUMBER,  OA_NONE, OA_NONE} },
       { "%prop/dar/size",of_PROP_DAR_SIZE,1, {OA_NUMBER,  OA_NONE, OA_NONE} },
       { "%prop/obj",of_PROP_OBJ,2,  {OA_NUMBER,   OA_BIT1,     OA_NONE} },
+      { "%prop/q/popb",of_PROP_Q_POPB,2, {OA_NUMBER,  OA_BIT1, OA_NONE} },
+      { "%prop/q/popf",of_PROP_Q_POPF,2, {OA_NUMBER,  OA_BIT1, OA_NONE} },
       { "%prop/r",  of_PROP_R,  1,  {OA_NUMBER,   OA_NONE,     OA_NONE} },
       { "%prop/str",of_PROP_STR,1,  {OA_NUMBER,   OA_NONE,     OA_NONE} },
       { "%prop/v",  of_PROP_V,  1,  {OA_NUMBER,   OA_NONE,     OA_NONE} },

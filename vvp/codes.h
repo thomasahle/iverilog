@@ -214,6 +214,8 @@ extern bool of_QPOP_F_REAL(vthread_t thr, vvp_code_t code);
 extern bool of_QPOP_F_STR(vthread_t thr, vvp_code_t code);
 extern bool of_QPOP_F_V(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_DAR_SIZE(vthread_t thr, vvp_code_t code);
+extern bool of_PROP_Q_POPB(vthread_t thr, vvp_code_t code);
+extern bool of_PROP_Q_POPF(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_OBJ(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_R(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_STR(vthread_t thr, vvp_code_t code);
