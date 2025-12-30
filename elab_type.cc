@@ -585,16 +585,8 @@ ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
             // Try to cast directly since basic_type may not be set for class types
             const class_type_t* class_def = dynamic_cast<const class_type_t*>(type->get_data_type());
             if (class_def && !class_def->parameters.empty()) {
-                        // Generate a unique name for this specialization
-                        perm_string spec_name = make_specialization_name(class_def->name, spec_params, des, s);
-
-                        // Check if this specialization already exists
-                        netclass_t* existing = s->find_class(des, spec_name);
-                        if (existing) {
-                              return existing;
-                        }
-
-                        // Get the unspecialized base class
+                        // Get the unspecialized base class first - we need it to find
+                        // the definition scope where specializations are stored.
                         netclass_t* base_class = s->find_class(des, class_def->name);
                         if (!base_class) {
                               cerr << get_fileline() << ": error: "
@@ -602,6 +594,22 @@ ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
                                    << " for specialization." << endl;
                               des->errors++;
                               return type->elaborate_type(des, s);
+                        }
+
+                        // Get the definition scope - this is where specializations
+                        // are stored and should be looked up.
+                        NetScope* definition_scope = base_class->definition_scope();
+                        if (!definition_scope) definition_scope = s;
+
+                        // Generate a unique name for this specialization
+                        perm_string spec_name = make_specialization_name(class_def->name, spec_params, des, s);
+
+                        // Check if this specialization already exists in the definition
+                        // scope. We must check there because that's where we add new
+                        // specializations, regardless of which scope is elaborating them.
+                        netclass_t* existing = definition_scope->find_class(des, spec_name);
+                        if (existing) {
+                              return existing;
                         }
 
                         // Create a new specialized class that inherits from the template.
@@ -613,8 +621,6 @@ ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
                         // Create a new scope for the specialization
                         // Use the base class scope as parent so that type parameters can be found
                         const NetScope* base_class_scope = base_class->class_scope();
-                        NetScope* definition_scope = base_class->definition_scope();
-                        if (!definition_scope) definition_scope = s;
 
                         // Note: We make spec_scope a child of the base class scope
                         // so that type parameter typedefs can be found during elaboration
