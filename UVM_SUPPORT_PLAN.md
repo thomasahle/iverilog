@@ -10,7 +10,7 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 | APB | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | AXI4 | ✅ | ❌ | Segfault in elaboration (complex interface/class/struct) |
 | SPI | ⚠️ | ❌ | Needs multi-dimensional struct array indexing |
-| UART | ✅ | ⚠️ | Unresolved VPI names (parameterized class types) |
+| UART | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | I2S | ⚠️ | ❌ | Constructor argument mismatch, nested .size() issue |
 | AHB | ⚠️ | ❌ | String select expression not fully supported |
 | I3C | 🔄 | 🔄 | Needs IVL-specific compile file |
@@ -118,14 +118,16 @@ These warnings appear during compilation but don't prevent operation:
 - Use -gno-assertions flag until SVA support is complete
 
 ## Recent Changes
+- 2025-12-30: Fixed parameterized class specialization scope lookup (UART now runs)
 - 2025-12-30: Added bind directive parsing for module+interface combinations
 - 2025-12-30: Added %p format specifier for $sformatf/$display
 - 2025-12-30: All 7 main AVIPs compile successfully
-- 2025-12-30: APB AVIP runs full UVM testbench
+- 2025-12-30: APB and UART AVIPs run full UVM testbenches
 - 2025-12-30: Added covergroup sample() typed argument support
 - 2025-12-30: Fixed event class property resolution
 
 ## Next Priority
-1. Investigate AXI4 elaboration segfault (complex interface/class/struct)
-2. Implement multi-dimensional struct member indexing
-3. Test remaining AVIPs at runtime
+1. Investigate AXI4/I2S elaboration segfault (complex interface/class/struct)
+2. Implement multi-dimensional struct member indexing for SPI
+3. Implement extern function out-of-body definitions
+4. Test remaining AVIPs at runtime
