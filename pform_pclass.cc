@@ -392,12 +392,13 @@ void pform_covergroup_declaration(const struct vlltype&loc,
       (void)sample_ports;  // TODO: Use sample ports to generate proper method signature
 
       if (!pform_cur_class) {
-	    yywarn(loc, "warning: Covergroup declarations parsed but not yet functional.");
+	    // Covergroups outside classes not yet supported
+	    yywarn(loc, "warning: Covergroup outside class context not yet supported.");
 	    return;
       }
 
       // Create a covergroup_type_t that will be elaborated to the __ivl_covergroup
-      // stub class from uvm_pkg or a placeholder type.
+      // class from uvm_pkg which provides sample tracking.
       perm_string cg_name = lex_strings.make(covergroup_name);
 
       // Create a covergroup type that will be resolved during elaboration.
@@ -409,7 +410,8 @@ void pform_covergroup_declaration(const struct vlltype&loc,
 	    = class_type_t::prop_info_t(property_qualifier_t::make_none(), cg_type);
       FILE_NAME(&pform_cur_class->type->properties[cg_name], loc);
 
-      yywarn(loc, "warning: Covergroup declarations parsed but not yet functional.");
+      // Note: Coverpoints/bins are parsed but not individually tracked.
+      // __ivl_covergroup provides sample() counting and basic coverage reporting.
 }
 
 /*

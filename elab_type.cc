@@ -255,13 +255,16 @@ ivl_type_t virtual_interface_type_t::elaborate_type_raw(Design*des, NetScope*) c
 
 /*
  * Covergroup type elaboration.
- * Since covergroups are parsed but not fully functional, we try to look up
- * the __ivl_covergroup stub class from the UVM library. If not found, we
- * return a simple type that allows the code to compile.
+ * Covergroups are implemented via the __ivl_covergroup class from the UVM
+ * library. This class provides sample() and get_coverage() methods that
+ * track sampling activity and report coverage percentages.
+ *
+ * If __ivl_covergroup is not found (e.g., UVM package not included),
+ * we return a simple type that allows the code to compile.
  */
 ivl_type_t covergroup_type_t::elaborate_type_raw(Design*des, NetScope*scope) const
 {
-      // Try to find the __ivl_covergroup stub class
+      // Try to find the __ivl_covergroup class
       perm_string stub_name = perm_string::literal("__ivl_covergroup");
 
       // First try in current scope
@@ -282,10 +285,10 @@ ivl_type_t covergroup_type_t::elaborate_type_raw(Design*des, NetScope*scope) con
       }
 
       // If not found, emit a warning and return a simple integer type
-      // This allows the code to at least compile
+      // This allows the code to at least compile but coverage won't work
       cerr << get_fileline() << ": warning: "
-           << "Covergroup '" << covergroup_name << "' elaborated as stub. "
-           << "Covergroups are parsed but not yet functional." << endl;
+           << "Covergroup '" << covergroup_name << "' requires __ivl_covergroup class. "
+           << "Include uvm_pkg.sv for coverage support." << endl;
 
       // Return a simple vector type as placeholder
       return new netvector_t(IVL_VT_LOGIC, 31, 0);

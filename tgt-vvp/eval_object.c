@@ -333,6 +333,49 @@ static int eval_object_scope(ivl_expr_t ex)
 }
 
 /*
+ * Handle pop_back/pop_front for queues of objects.
+ */
+static int draw_darray_pop_object(ivl_expr_t expr)
+{
+      const char*fb;
+
+      if (strcmp(ivl_expr_name(expr), "$ivl_queue_method$pop_back")==0)
+	    fb = "b";
+      else
+	    fb = "f";
+
+      ivl_expr_t arg = ivl_expr_parm(expr, 0);
+
+      /* Handle property expressions - load the containing object and
+         use a property queue pop opcode. For objects, this returns the
+         object on the object stack. */
+      if (ivl_expr_type(arg) == IVL_EX_PROPERTY) {
+	    ivl_signal_t sig = ivl_expr_signal(arg);
+	    ivl_expr_t base = ivl_expr_property_base(arg);
+	    unsigned prop_idx = ivl_expr_property_idx(arg);
+
+	    if (base) {
+		  /* Nested property access - evaluate base expression */
+		  draw_eval_object(base);
+	    } else {
+		  /* Direct property access - load the 'this' signal */
+		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+	    }
+
+	    /* Pop from the queue property and push result to object stack */
+	    fprintf(vvp_out, "    %%prop/q/pop%s/o %u;\n", fb, prop_idx);
+	    /* Pop the base object but keep the popped element */
+	    fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+	    return 0;
+      }
+
+      /* Simple signal case - the signal is a queue variable */
+      assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+      fprintf(vvp_out, "    %%qpop/%s/obj v%p_0;\n", fb, ivl_expr_signal(arg));
+      return 0;
+}
+
+/*
  * Handle $ivl_factory_create system function.
  * This creates a class object by looking up the class type name in the
  * UVM factory registry at runtime.
@@ -340,6 +383,12 @@ static int eval_object_scope(ivl_expr_t ex)
 static int eval_object_sfunc(ivl_expr_t ex)
 {
       const char*name = ivl_expr_name(ex);
+
+      /* Handle queue pop methods for object queues */
+      if (strcmp(name, "$ivl_queue_method$pop_back") == 0 ||
+          strcmp(name, "$ivl_queue_method$pop_front") == 0) {
+	    return draw_darray_pop_object(ex);
+      }
 
       if (strcmp(name, "$ivl_factory_create") == 0) {
 	    /* $ivl_factory_create(type_name)

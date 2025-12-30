@@ -602,6 +602,11 @@ inline static void dq_default(vvp_vector4_t&value, unsigned wid)
       value = vvp_vector4_t(wid);
 }
 
+inline static void dq_default(vvp_object_t&value, unsigned)
+{
+      value = vvp_object_t();  // null object
+}
+
 
 template <class T> T coerce_to_width(const T&that, unsigned width)
 {
@@ -6403,6 +6408,85 @@ bool of_PROP_Q_POPB(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %prop/q/popf/o <pid>
+ *
+ * Pop front element from a queue property of objects and push to object stack.
+ * The cobject is on the object stack (peeked, not popped).
+ */
+bool of_PROP_Q_POPF_O(vthread_t thr, vvp_code_t cp)
+{
+      unsigned pid = cp->number;
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+
+      if (cobj == 0) {
+	    cerr << thr->get_fileline()
+	         << "Error: %prop/q/popf/o on null object." << endl;
+	    thr->push_object(vvp_object_t());  // push null
+	    return true;
+      }
+
+      // Get the queue property value
+      vvp_object_t queue_obj;
+      cobj->get_object(pid, queue_obj, 0);
+
+      vvp_queue_object*queue = queue_obj.peek<vvp_queue_object>();
+      if (queue && queue->get_size() > 0) {
+	    vvp_object_t value;
+	    queue->get_word(0, value);
+	    queue->pop_front();
+	    thr->push_object(value);
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Warning: %prop/q/popf/o on empty or null queue." << endl;
+	    thr->push_object(vvp_object_t());  // push null
+      }
+
+      return true;
+}
+
+/*
+ * %prop/q/popb/o <pid>
+ *
+ * Pop back element from a queue property of objects and push to object stack.
+ * The cobject is on the object stack (peeked, not popped).
+ */
+bool of_PROP_Q_POPB_O(vthread_t thr, vvp_code_t cp)
+{
+      unsigned pid = cp->number;
+
+      vvp_object_t&obj = thr->peek_object();
+      vvp_cobject*cobj = obj.peek<vvp_cobject>();
+
+      if (cobj == 0) {
+	    cerr << thr->get_fileline()
+	         << "Error: %prop/q/popb/o on null object." << endl;
+	    thr->push_object(vvp_object_t());  // push null
+	    return true;
+      }
+
+      // Get the queue property value
+      vvp_object_t queue_obj;
+      cobj->get_object(pid, queue_obj, 0);
+
+      vvp_queue_object*queue = queue_obj.peek<vvp_queue_object>();
+      if (queue && queue->get_size() > 0) {
+	    size_t last_idx = queue->get_size() - 1;
+	    vvp_object_t value;
+	    queue->get_word(last_idx, value);
+	    queue->pop_back();
+	    thr->push_object(value);
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Warning: %prop/q/popb/o on empty or null queue." << endl;
+	    thr->push_object(vvp_object_t());  // push null
+      }
+
+      return true;
+}
+
+/*
  * %prop/obj <pid>, <idx>
  *
  * Load an object value from the cobject and push it onto the object stack.
@@ -6699,6 +6783,15 @@ bool of_QINSERT_V(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qinsert/obj <var-label>
+ * Insert object into queue at index (from word register 3).
+ */
+bool of_QINSERT_OBJ(vthread_t thr, vvp_code_t cp)
+{
+      return qinsert<vvp_object_t, vvp_queue_object>(thr, cp);
+}
+
+/*
  * Helper functions used in the queue pop templates
  */
 inline void push_value(vthread_t thr, double value, unsigned)
@@ -6715,6 +6808,11 @@ inline void push_value(vthread_t thr, const vvp_vector4_t&value, unsigned wid)
 {
       assert(wid == value.size());
       thr->push_vec4(value);
+}
+
+inline void push_value(vthread_t thr, const vvp_object_t&value, unsigned)
+{
+      thr->push_object(value);
 }
 
 template <typename ELEM, class QTYPE>
@@ -6816,6 +6914,24 @@ bool of_QPOP_F_STR(vthread_t thr, vvp_code_t cp)
 bool of_QPOP_F_V(vthread_t thr, vvp_code_t cp)
 {
       return qpop_f<vvp_vector4_t, vvp_queue_vec4>(thr, cp, cp->bit_idx[0]);
+}
+
+/*
+ * %qpop/b/obj <var-label>
+ * Pop object from back of queue and push to object stack.
+ */
+bool of_QPOP_B_OBJ(vthread_t thr, vvp_code_t cp)
+{
+      return qpop_b<vvp_object_t, vvp_queue_object>(thr, cp);
+}
+
+/*
+ * %qpop/f/obj <var-label>
+ * Pop object from front of queue and push to object stack.
+ */
+bool of_QPOP_F_OBJ(vthread_t thr, vvp_code_t cp)
+{
+      return qpop_f<vvp_object_t, vvp_queue_object>(thr, cp);
 }
 
 /*
@@ -9630,17 +9746,22 @@ bool of_QPROP_QB_V(vthread_t thr, vvp_code_t)
 
 /*
  * %qprop/qb/o - push_back object value to queue property
- * Note: Object queues (queues of structs/classes) are complex and not yet
- * fully implemented. This is a stub that cleans up the stack.
+ * Pushes a class/struct object onto the back of a queue property.
  */
 bool of_QPROP_QB_O(vthread_t thr, vvp_code_t)
 {
       // Pop the value object (top of stack)
-      thr->pop_object(1);
-      // Queue object remains on stack for subsequent %pop/obj
+      vvp_object_t value;
+      thr->pop_object(value);
 
-      cerr << thr->get_fileline()
-           << "Warning: queue of objects push_back not yet fully implemented." << endl;
+      // Get queue from object stack (don't pop - %pop/obj will handle it)
+      vvp_queue*queue = get_qprop_queue<vvp_queue_object>(thr);
+      if (queue) {
+	    queue->push_back(value, 0); // 0 = unlimited size
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Error: queue property push_back on non-queue object." << endl;
+      }
       return true;
 }
 
@@ -9665,16 +9786,22 @@ bool of_QPROP_QF_V(vthread_t thr, vvp_code_t)
 
 /*
  * %qprop/qf/o - push_front object value to queue property
- * Note: Object queues not yet fully implemented.
+ * Pushes a class/struct object onto the front of a queue property.
  */
 bool of_QPROP_QF_O(vthread_t thr, vvp_code_t)
 {
       // Pop the value object (top of stack)
-      thr->pop_object(1);
-      // Queue object remains on stack for subsequent %pop/obj
+      vvp_object_t value;
+      thr->pop_object(value);
 
-      cerr << thr->get_fileline()
-           << "Warning: queue of objects push_front not yet fully implemented." << endl;
+      // Get queue from object stack
+      vvp_queue*queue = get_qprop_queue<vvp_queue_object>(thr);
+      if (queue) {
+	    queue->push_front(value, 0); // 0 = unlimited size
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Error: queue property push_front on non-queue object." << endl;
+      }
       return true;
 }
 
@@ -9708,16 +9835,31 @@ bool of_QPROP_INSERT_V(vthread_t thr, vvp_code_t)
 
 /*
  * %qprop/insert/o - insert object value into queue property at index
- * Note: Object queues not yet fully implemented.
+ * Inserts a class/struct object into a queue property at the specified index.
+ * Index is in word register 3.
  */
 bool of_QPROP_INSERT_O(vthread_t thr, vvp_code_t)
 {
       // Pop the value object (top of stack)
-      thr->pop_object(1);
-      // Queue object remains on stack for subsequent %pop/obj
+      vvp_object_t value;
+      thr->pop_object(value);
 
-      cerr << thr->get_fileline()
-           << "Warning: queue of objects insert not yet fully implemented." << endl;
+      // Get index from word register 3
+      int64_t idx = thr->words[3].w_int;
+
+      // Get queue from object stack
+      vvp_queue*queue = get_qprop_queue<vvp_queue_object>(thr);
+      if (queue) {
+	    if (idx < 0) {
+		  cerr << thr->get_fileline()
+		       << "Warning: cannot insert at negative index (" << idx << ")." << endl;
+	    } else {
+		  queue->insert(idx, value, 0);
+	    }
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Error: queue property insert on non-queue object." << endl;
+      }
       return true;
 }
 
