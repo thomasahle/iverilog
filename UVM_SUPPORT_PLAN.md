@@ -11,7 +11,7 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 | UART | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | AHB | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | AXI4 | ❌ | ❌ | Uses unsupported assoc array patterns (see Known Issues) |
-| SPI | ❌ | ❌ | Needs multi-dimensional struct array indexing + variable index |
+| SPI | 🔄 | 🔄 | Compiles with warnings, needs nested .size() support |
 | I2S | ❌ | ❌ | Multiple issues: unpacked array struct members, nested .size(), constructor args |
 | I3C | ❌ | ❌ | Same unpacked array struct issues as I2S |
 | JTAG | ❌ | ❌ | Syntax error with inline randomize() constraints |
@@ -72,6 +72,12 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 ### Phase 9: Display Formatting ✅
 - [x] %p format specifier for $sformatf/$display
 
+### Phase 10: Multi-Dimensional Indexing ✅
+- [x] Variable prefix indices in packed arrays (data[i][j] where i is variable)
+- [x] Variable indices in struct member access (struct.member[i][j])
+- [x] Multi-dimensional lvalue struct member access
+- [x] Part-select with variable prefix (data[i][3:0])
+
 ## Current Warnings (Non-Blocking)
 
 These warnings appear during compilation but don't prevent operation:
@@ -87,10 +93,7 @@ These warnings appear during compilation but don't prevent operation:
    - Associative arrays with additional unpacked dimensions: `bit [W-1:0] data[int][1]`
    - Bit selects into associative array elements: `data[key][idx][bit] = 1'b1`
    - These patterns cause compile-time assertion failures in dimension handling
-3. **SPI multi-dimensional indexing** - `data[i][j:k]` where `i` is variable requires workaround:
-   - Iverilog requires all but the last index to be constant
-   - **Workaround**: Extract to temp first: `temp = data[i]; result = temp[j:k];`
-4. **I2S unpacked struct member access** - Indexed access to unpacked array struct members with variable index not supported
+3. **I2S unpacked struct member access** - Indexed access to unpacked array struct members with variable index not supported
 5. **Dynamic array .size() on nested properties** - `obj.prop.arr.size()` returns 0 (deferred elaboration)
 
 ## Pending Features
@@ -124,6 +127,7 @@ These warnings appear during compilation but don't prevent operation:
 - Use -gno-assertions flag until SVA support is complete
 
 ## Recent Changes
+- 2025-12-30: Added multi-dimensional variable indexing for packed arrays and struct members (SPI now compiles)
 - 2025-12-30: Fixed string select for struct member access in associative array keys (AHB now works)
 - 2025-12-30: Tested all AVIPs - APB, UART, AHB working, others need specific features
 - 2025-12-30: Identified specific blockers for AXI4, SPI, I2S AVIPs
