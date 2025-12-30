@@ -566,8 +566,8 @@ void pform_declare_extern_function(const struct vlltype&loc,
 	    pform_cur_class->type->extern_method_quals[pname] = quals;
       }
 
-      // Warn that out-of-body definition is expected.
-      yywarn(loc, "extern function declaration - out-of-body definition expected.");
+      // Note: extern functions work - out-of-body definition should follow.
+      // No warning needed since the feature is fully supported.
 }
 
 /*
@@ -587,8 +587,8 @@ void pform_declare_extern_task(const struct vlltype&loc,
 	    pform_cur_class->type->extern_method_quals[pname] = quals;
       }
 
-      // Warn that out-of-body definition is expected.
-      yywarn(loc, "extern task declaration - out-of-body definition expected.");
+      // Note: extern tasks work - out-of-body definition should follow.
+      // No warning needed since the feature is fully supported.
 }
 
 /*
