@@ -1361,7 +1361,10 @@ class_item /* IEEE1800-2005: A.1.8 */
       { if ($3) {
 	      // Add events as class properties for property access (obj.event)
 	      pform_class_event_property(@2, $1, $3);
-	      // Also add to scope events for trigger/wait handling
+	      // Also create standalone events for -> and @ operations
+	      // NOTE: This creates a duplicate that prevents proper class property
+	      // access. Full event property support needs rework of symbol_search
+	      // and code generation to handle events as class properties properly.
 	      pform_make_events(@2, $3);
 	}
       }
