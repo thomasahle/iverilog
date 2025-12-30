@@ -8,12 +8,12 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 | AVIP | Compiles | Runs | Notes |
 |------|----------|------|-------|
 | APB | ✅ | ✅ | Full testbench runs, UVM phases execute |
-| AXI4 | ✅ | ⚠️ | Packages compile, full TB has segfault (bind directive) |
+| AXI4 | ✅ | ❌ | Segfault in elaboration (complex interface/class/struct) |
 | SPI | ⚠️ | ❌ | Needs multi-dimensional struct array indexing |
-| UART | ✅ | 🔄 | Pending runtime test |
-| I2S | ✅ | 🔄 | Pending runtime test |
-| AHB | ✅ | 🔄 | Pending runtime test |
-| I3C | ✅ | 🔄 | Pending runtime test |
+| UART | ✅ | ⚠️ | Unresolved VPI names (parameterized class types) |
+| I2S | ⚠️ | ❌ | Constructor argument mismatch, nested .size() issue |
+| AHB | ⚠️ | ❌ | String select expression not fully supported |
+| I3C | 🔄 | 🔄 | Needs IVL-specific compile file |
 | JTAG | 🔄 | 🔄 | Pending test |
 | AXI4-Lite | 🔄 | 🔄 | Pending test |
 
