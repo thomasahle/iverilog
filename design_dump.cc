@@ -25,6 +25,7 @@
 # include  <typeinfo>
 # include  <iostream>
 # include  <iomanip>
+# include  <set>
 # include  "netlist.h"
 # include  "compiler.h"
 # include  "discipline.h"
@@ -229,7 +230,23 @@ ostream& ivl_type_s::debug_dump(ostream&o) const
 
 ostream& netclass_t::debug_dump(ostream&fd) const
 {
-      fd << "class " << name_ << "{";
+      // Use a thread-local set to track classes being dumped, to prevent
+      // infinite recursion when there are circular class references (common
+      // in UVM where classes reference each other).
+      static thread_local std::set<const netclass_t*> in_progress;
+
+      fd << "class " << name_;
+
+      // If we're already dumping this class (recursion), just print the name
+      if (in_progress.count(this) > 0) {
+	    fd << "{...}";
+	    return fd;
+      }
+
+      // Mark this class as being dumped
+      in_progress.insert(this);
+
+      fd << "{";
       for (size_t idx = 0 ; idx < property_table_.size() ; idx += 1) {
 	    if (idx != 0) fd << "; ";
 	    if (property_table_[idx].type)
@@ -239,6 +256,10 @@ ostream& netclass_t::debug_dump(ostream&fd) const
 	    fd << " " << property_table_[idx].name;
       }
       fd << "}";
+
+      // Remove this class from the in-progress set
+      in_progress.erase(this);
+
       return fd;
 }
 

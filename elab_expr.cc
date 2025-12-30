@@ -7180,7 +7180,7 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
       // to a scalar (like int) from a type parameter, but the actual argument
       // is a class. Allow this case since it's likely a type parameter mismatch.
       bool type_mismatch_ok = false;
-      if (! check_type->type_compatible(net->net_type())) {
+      if (check_type && ! check_type->type_compatible(net->net_type())) {
 	    // If context is scalar and expression is class, might be type parameter
 	    if (net->data_type() == IVL_VT_CLASS &&
 	        (check_type->base_type() == IVL_VT_BOOL ||
@@ -7188,7 +7188,7 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 	          type_mismatch_ok = true;
 	    }
       }
-      if (! check_type->type_compatible(net->net_type()) && !type_mismatch_ok) {
+      if (check_type && ! check_type->type_compatible(net->net_type()) && !type_mismatch_ok) {
 	    cerr << get_fileline() << ": error: the type of the variable '"
 		 << path_ << "' doesn't match the context type." << endl;
 
