@@ -7268,6 +7268,27 @@ module_item
 	delete[]$4;
       }
 
+  /* Bind with module target (IDENTIFIER) and interface instance type (TYPE_IDENTIFIER) */
+  | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
+      { if (gn_unsupported_assertions_flag) {
+              yywarn(@1, "sorry: bind directive not yet supported."
+                     " Bound module instance will be ignored.");
+        }
+	delete[]$2;
+	delete[]$4;
+	delete $6;
+      }
+
+  | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { if (gn_unsupported_assertions_flag) {
+              yywarn(@1, "sorry: bind directive not yet supported."
+                     " Bound module instance will be ignored.");
+        }
+	delete[]$2;
+	delete[]$4;
+	delete $6;
+      }
+
   /* Bind with interface target (TYPE_IDENTIFIER) */
   | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
       { if (gn_unsupported_assertions_flag) {
