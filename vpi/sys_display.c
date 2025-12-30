@@ -867,6 +867,51 @@ static unsigned int get_format_char(char **rtn, int ljust, int plus,
        * be a binary string (can contain NULLs). */
       break;
 
+    case 'p':
+    case 'P':
+      /* %p format - print value in assignment pattern format.
+       * This is a simplified implementation that prints numeric values
+       * in decimal format. Full SystemVerilog %p would print aggregates
+       * like arrays and structs in '{...} format. */
+      *idx += 1;
+      if (*idx >= info->nitems) {
+        vpi_printf("WARNING: %s:%d: missing argument for %s%s.\n",
+                   info->filename, info->lineno, info->name, fmtb);
+      } else {
+        /* Try to get a decimal string representation first. */
+        value.format = vpiDecStrVal;
+        vpi_get_value(info->items[*idx], &value);
+
+        if (value.format == vpiSuppressVal) {
+          /* If decimal doesn't work, try hex format. */
+          value.format = vpiHexStrVal;
+          vpi_get_value(info->items[*idx], &value);
+        }
+
+        if (value.format == vpiSuppressVal) {
+          /* Last resort - just print the type name. */
+          const char *type_str = vpi_get_str(vpiType, info->items[*idx]);
+          if (type_str) {
+            size = strlen(type_str) + 3;
+            if (size > ini_size) result = realloc(result, size*sizeof(char));
+            sprintf(result, "<%s>", type_str);
+          } else {
+            strcpy(result, "<unknown>");
+          }
+          size = strlen(result) + 1;
+        } else {
+          /* Print with optional width. */
+          if (width == -1) width = 0;
+          size = strlen(value.value.str) + 1;
+          if ((signed)size < (width+1)) size = width+1;
+          if (size > ini_size) result = realloc(result, size*sizeof(char));
+          if (ljust == 0) sprintf(result, "%*s", width, value.value.str);
+          else sprintf(result, "%-*s", width, value.value.str);
+          size = strlen(result) + 1;
+        }
+      }
+      break;
+
     default:
       vpi_printf("WARNING: %s:%d: unknown format %s%s.\n",
                  info->filename, info->lineno, info->name, fmtb);
