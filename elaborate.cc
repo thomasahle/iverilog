@@ -4563,6 +4563,26 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			      // pop_front/pop_back are functions, not tasks - handled elsewhere
 			}
 
+			// Check for covergroup property sample() method
+			// Covergroups are elaborated as __ivl_covergroup class instances
+			// The sample() method has custom typed arguments defined by the
+			// covergroup, but since we use a stub class, we just generate a no-op.
+			const netclass_t* cg_class = dynamic_cast<const netclass_t*>(prop_type);
+			if (cg_class && cg_class->get_name() &&
+			    strcmp(cg_class->get_name(), "__ivl_covergroup") == 0) {
+			      if (method_name == "sample") {
+				    if (debug_elaborate) {
+					  cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+					       << "Detected covergroup sample() call - generating no-op" << endl;
+				    }
+				    // Generate a no-op for covergroup sample()
+				    // The arguments are ignored since we don't track coverage
+				    NetBlock*block = new NetBlock(NetBlock::SEQU, 0);
+				    block->set_line(*this);
+				    return block;
+			      }
+			}
+
 			// General handling for chained property/method access on class properties
 			// Handles patterns like: arr[i].method(), arr[i].member.method(),
 			// arr[i].member1.member2.method(), etc.
