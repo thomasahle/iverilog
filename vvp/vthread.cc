@@ -2558,14 +2558,16 @@ bool of_CAST_VEC4_STR(vthread_t thr, vvp_code_t cp)
 
 static void do_CMPE(vthread_t thr, const vvp_vector4_t&lval, const vvp_vector4_t&rval)
 {
-      // Operands should have equal size, but handle mismatch gracefully
+      // Operands may have different sizes - extend the smaller to match the larger
       if (rval.size() != lval.size()) {
-	    fprintf(stderr, "VVP WARNING: %cmp operand width mismatch: lval=%u bits, rval=%u bits\n",
-		    (unsigned)lval.size(), (unsigned)rval.size());
-	    // Treat mismatched widths as not equal
-	    thr->flags[4] = BIT4_0;  // eq = 0
-	    thr->flags[6] = BIT4_0;  // eeq = 0
-	    return;
+	    unsigned wid = (lval.size() > rval.size()) ? lval.size() : rval.size();
+	    // Zero-extend both operands to the larger width and compare
+	    vvp_vector4_t lval_ext = lval;
+	    vvp_vector4_t rval_ext = rval;
+	    lval_ext.resize(wid, BIT4_0);
+	    rval_ext.resize(wid, BIT4_0);
+	    // Recursively call with extended operands
+	    return do_CMPE(thr, lval_ext, rval_ext);
       }
 
       if (lval.has_xz() || rval.has_xz()) {
@@ -2691,14 +2693,20 @@ bool of_CMPINE(vthread_t thr, vvp_code_t cp)
 
 static void do_CMPS(vthread_t thr, const vvp_vector4_t&lval, const vvp_vector4_t&rval)
 {
-      // Operands should have equal size, but handle mismatch gracefully
+      // Operands may have different sizes - sign-extend the smaller to match the larger
       if (rval.size() != lval.size()) {
-	    fprintf(stderr, "VVP WARNING: %cmps operand width mismatch: lval=%u bits, rval=%u bits\n",
-		    (unsigned)lval.size(), (unsigned)rval.size());
-	    thr->flags[4] = BIT4_0;  // eq = 0
-	    thr->flags[5] = BIT4_X;  // lt = X (unknown)
-	    thr->flags[6] = BIT4_0;  // eeq = 0
-	    return;
+	    unsigned wid = (lval.size() > rval.size()) ? lval.size() : rval.size();
+	    // Sign-extend both operands to the larger width
+	    vvp_vector4_t lval_ext = lval;
+	    vvp_vector4_t rval_ext = rval;
+	    // Get sign bits before resize
+	    vvp_bit4_t lval_sign = lval.size() > 0 ? lval.value(lval.size()-1) : BIT4_0;
+	    vvp_bit4_t rval_sign = rval.size() > 0 ? rval.value(rval.size()-1) : BIT4_0;
+	    // Resize with sign bit
+	    lval_ext.resize(wid, lval_sign);
+	    rval_ext.resize(wid, rval_sign);
+	    // Recursively call with extended operands
+	    return do_CMPS(thr, lval_ext, rval_ext);
       }
 
 	// If either value has XZ bits, then the eq and lt values are
@@ -2929,16 +2937,18 @@ static void do_CMPU(vthread_t thr, const vvp_vector4_t&lval, const vvp_vector4_t
       vvp_bit4_t eq = BIT4_1;
       vvp_bit4_t lt = BIT4_0;
 
-      // Operands should have equal size, but handle mismatch gracefully
-      if (rval.size() != lval.size()) {
-	    fprintf(stderr, "VVP WARNING: %cmpu operand width mismatch: lval=%u bits, rval=%u bits\n",
-		    (unsigned)lval.size(), (unsigned)rval.size());
-	    thr->flags[4] = BIT4_0;  // eq = 0
-	    thr->flags[5] = BIT4_X;  // lt = X (unknown)
-	    thr->flags[6] = BIT4_0;  // eeq = 0
-	    return;
-      }
+      // Operands may have different sizes - extend the smaller to match the larger
       unsigned wid = lval.size();
+      if (rval.size() != lval.size()) {
+	    wid = (lval.size() > rval.size()) ? lval.size() : rval.size();
+	    // Zero-extend both operands to the larger width and compare
+	    vvp_vector4_t lval_ext = lval;
+	    vvp_vector4_t rval_ext = rval;
+	    lval_ext.resize(wid, BIT4_0);
+	    rval_ext.resize(wid, BIT4_0);
+	    // Recursively call with extended operands
+	    return do_CMPU(thr, lval_ext, rval_ext);
+      }
 
       unsigned long*larray = lval.subarray(0,wid);
       if (larray == 0) return of_CMPU_the_hard_way(thr, wid, lval, rval);
@@ -3033,12 +3043,16 @@ bool of_CMPX(vthread_t thr, vvp_code_t)
 
 static void do_CMPWE(vthread_t thr, const vvp_vector4_t&lval, const vvp_vector4_t&rval)
 {
-      // Operands should have equal size, but handle mismatch gracefully
+      // Operands may have different sizes - extend the smaller to match the larger
       if (rval.size() != lval.size()) {
-	    fprintf(stderr, "VVP WARNING: %cmpwe operand width mismatch: lval=%u bits, rval=%u bits\n",
-		    (unsigned)lval.size(), (unsigned)rval.size());
-	    thr->flags[4] = BIT4_0;  // eq = 0
-	    return;
+	    unsigned wid = (lval.size() > rval.size()) ? lval.size() : rval.size();
+	    // Zero-extend both operands to the larger width
+	    vvp_vector4_t lval_ext = lval;
+	    vvp_vector4_t rval_ext = rval;
+	    lval_ext.resize(wid, BIT4_0);
+	    rval_ext.resize(wid, BIT4_0);
+	    // Recursively call with extended operands
+	    return do_CMPWE(thr, lval_ext, rval_ext);
       }
 
       if (lval.has_xz() || rval.has_xz()) {
