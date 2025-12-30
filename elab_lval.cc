@@ -2221,21 +2221,84 @@ bool PEIdent::elaborate_lval_net_unpacked_member_(Design*des, NetScope*scope,
 
 	// Handle indexed access to packed member of unpacked struct
 	// e.g., my_struct.packed_member[bit_idx] = value
+	// or my_struct.packed_2d_member[i][j] = value
       if (!member_comp.index.empty()) {
 	    const netvector_t* vec_type = dynamic_cast<const netvector_t*>(member->net_type);
 	    if (vec_type && vec_type->packed()) {
 		    // Member is a packed vector - handle bit/part select
-		  if (member_comp.index.size() != 1) {
-			cerr << get_fileline() << ": sorry: Multi-dimensional indexed "
-			     << "access to struct members not yet supported." << endl;
-			des->errors += 1;
-			return false;
-		  }
-
 		  const index_component_t& idx_comp = member_comp.index.back();
 
-		  if (idx_comp.sel == index_component_t::SEL_BIT) {
-			  // Bit-select: member[bit_idx]
+		    // Handle multi-dimensional indexed access to packed struct members
+		  if (member_comp.index.size() > 1 && idx_comp.sel == index_component_t::SEL_BIT) {
+			  // Multi-dimensional bit select: member[i][j]
+			  // Compute the canonical offset for all indices
+			const netranges_t& pdims = vec_type->packed_dims();
+			if (member_comp.index.size() != pdims.size()) {
+			      cerr << get_fileline() << ": error: "
+				   << "Number of indices doesn't match packed dimensions." << endl;
+			      des->errors += 1;
+			      return false;
+			}
+
+			  // Build the base expression: sum of (normalized_index * stride)
+			NetExpr* base_expr = 0;
+			auto pdim_it = pdims.begin();
+			auto idx_it = member_comp.index.begin();
+			unsigned long stride = vec_type->packed_width();
+
+			for (size_t i = 0; i < member_comp.index.size(); ++i, ++pdim_it, ++idx_it) {
+			      stride /= pdim_it->width();
+			      NetExpr* idx_expr = elab_and_eval(des, scope, idx_it->msb, -1, false);
+			      if (idx_expr == 0) {
+				    cerr << get_fileline() << ": error: "
+					 << "Failed to elaborate index expression." << endl;
+				    des->errors += 1;
+				    return false;
+			      }
+
+				// Normalize index by subtracting lsb
+			      long lsb = pdim_it->get_lsb();
+			      if (lsb != 0) {
+				    NetEConst* lsb_c = new NetEConst(verinum(-lsb));
+				    lsb_c->set_line(*this);
+				    idx_expr = new NetEBAdd('+', idx_expr, lsb_c,
+				                            idx_expr->expr_width(), true);
+				    idx_expr->set_line(*this);
+			      }
+
+				// Multiply by stride
+			      if (stride > 1) {
+				    NetEConst* stride_c = new NetEConst(verinum((long)stride));
+				    stride_c->set_line(*this);
+				    idx_expr = new NetEBMult('*', idx_expr, stride_c,
+				                             idx_expr->expr_width() + 16, false);
+				    idx_expr->set_line(*this);
+			      }
+
+				// Add to accumulated base
+			      if (base_expr) {
+				    base_expr = new NetEBAdd('+', base_expr, idx_expr,
+				                             base_expr->expr_width(), false);
+				    base_expr->set_line(*this);
+			      } else {
+				    base_expr = idx_expr;
+			      }
+			}
+
+			if (!base_expr) {
+			      base_expr = new NetEConst(verinum(0L));
+			      base_expr->set_line(*this);
+			}
+
+			lv->set_part(base_expr, 1);
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+				   << "Added multi-dimensional bit-select to member '" << member_name << "'"
+				   << endl;
+			}
+		  } else if (member_comp.index.size() == 1 && idx_comp.sel == index_component_t::SEL_BIT) {
+			  // Single-dimensional bit-select: member[bit_idx]
 			NetExpr* idx_expr = elab_and_eval(des, scope, idx_comp.msb, -1, false);
 			if (idx_expr == 0) {
 			      cerr << get_fileline() << ": error: Failed to elaborate "
@@ -2250,7 +2313,107 @@ bool PEIdent::elaborate_lval_net_unpacked_member_(Design*des, NetScope*scope,
 				   << "Added bit-select to member '" << member_name << "'"
 				   << endl;
 			}
-		  } else if (idx_comp.sel == index_component_t::SEL_PART) {
+		  } else if (member_comp.index.size() > 1 && idx_comp.sel == index_component_t::SEL_PART) {
+			  // Multi-dimensional with part select: member[i][3:0]
+			  // Compute the base for prefix indices, then add part select offset
+			const netranges_t& pdims = vec_type->packed_dims();
+			if (member_comp.index.size() > pdims.size()) {
+			      cerr << get_fileline() << ": error: "
+				   << "Too many indices for packed dimensions." << endl;
+			      des->errors += 1;
+			      return false;
+			}
+
+			  // Build the base expression for prefix indices
+			NetExpr* base_expr = 0;
+			auto pdim_it = pdims.begin();
+			auto idx_it = member_comp.index.begin();
+			unsigned long stride = vec_type->packed_width();
+			size_t prefix_count = member_comp.index.size() - 1;
+
+			for (size_t i = 0; i < prefix_count; ++i, ++pdim_it, ++idx_it) {
+			      stride /= pdim_it->width();
+			      NetExpr* idx_expr = elab_and_eval(des, scope, idx_it->msb, -1, false);
+			      if (idx_expr == 0) {
+				    cerr << get_fileline() << ": error: "
+					 << "Failed to elaborate index expression." << endl;
+				    des->errors += 1;
+				    return false;
+			      }
+
+				// Normalize index by subtracting lsb
+			      long lsb = pdim_it->get_lsb();
+			      if (lsb != 0) {
+				    NetEConst* lsb_c = new NetEConst(verinum(-lsb));
+				    lsb_c->set_line(*this);
+				    idx_expr = new NetEBAdd('+', idx_expr, lsb_c,
+				                            idx_expr->expr_width(), true);
+				    idx_expr->set_line(*this);
+			      }
+
+				// Multiply by stride
+			      if (stride > 1) {
+				    NetEConst* stride_c = new NetEConst(verinum((long)stride));
+				    stride_c->set_line(*this);
+				    idx_expr = new NetEBMult('*', idx_expr, stride_c,
+				                             idx_expr->expr_width() + 16, false);
+				    idx_expr->set_line(*this);
+			      }
+
+				// Add to accumulated base
+			      if (base_expr) {
+				    base_expr = new NetEBAdd('+', base_expr, idx_expr,
+				                             base_expr->expr_width(), false);
+				    base_expr->set_line(*this);
+			      } else {
+				    base_expr = idx_expr;
+			      }
+			}
+
+			if (!base_expr) {
+			      base_expr = new NetEConst(verinum(0L));
+			      base_expr->set_line(*this);
+			}
+
+			  // Get the part select range
+			NetExpr* msb_expr = elab_and_eval(des, scope, idx_comp.msb, -1, true);
+			NetExpr* lsb_expr = elab_and_eval(des, scope, idx_comp.lsb, -1, true);
+			if (msb_expr == 0 || lsb_expr == 0) {
+			      cerr << get_fileline() << ": error: Failed to elaborate "
+				   << "part-select bounds." << endl;
+			      des->errors += 1;
+			      return false;
+			}
+			const NetEConst* msb_const = dynamic_cast<const NetEConst*>(msb_expr);
+			const NetEConst* lsb_const = dynamic_cast<const NetEConst*>(lsb_expr);
+			if (msb_const == 0 || lsb_const == 0) {
+			      cerr << get_fileline() << ": error: Part-select bounds must "
+				   << "be constant." << endl;
+			      des->errors += 1;
+			      return false;
+			}
+			long msb_val = msb_const->value().as_long();
+			long lsb_val = lsb_const->value().as_long();
+			unsigned long wid = (msb_val >= lsb_val) ? msb_val - lsb_val + 1 : lsb_val - msb_val + 1;
+			long base_off = (msb_val >= lsb_val) ? lsb_val : msb_val;
+
+			  // Add part select offset to base expression
+			if (base_off != 0) {
+			      NetEConst* off_c = new NetEConst(verinum(base_off));
+			      off_c->set_line(*this);
+			      base_expr = new NetEBAdd('+', base_expr, off_c,
+			                               base_expr->expr_width(), false);
+			      base_expr->set_line(*this);
+			}
+
+			lv->set_part(base_expr, wid);
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+				   << "Added multi-dimensional part-select to member '" << member_name << "'"
+				   << endl;
+			}
+		  } else if (member_comp.index.size() == 1 && idx_comp.sel == index_component_t::SEL_PART) {
 			  // Constant part-select: member[msb:lsb]
 			NetExpr* msb_expr = elab_and_eval(des, scope, idx_comp.msb, -1, true);
 			NetExpr* lsb_expr = elab_and_eval(des, scope, idx_comp.lsb, -1, true);

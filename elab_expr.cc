@@ -2858,11 +2858,85 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 			      return 0;
 			}
 
-			  // Evaluate all but the last index expression, into prefix_indices.
+			  // Try to evaluate all but the last index expression as constants.
 			list<long>prefix_indices;
-			bool rc = evaluate_index_prefix(des, scope, prefix_indices, member_comp.index);
+			bool is_variable_prefix = false;
+			bool rc = try_evaluate_index_prefix(des, scope, prefix_indices,
+			                                    member_comp.index, is_variable_prefix);
+
+			  // If prefix indices are variable, use collapse approach
+			if (!rc && is_variable_prefix && member_comp.index.size() == mem_packed_dims.size()) {
+			      const index_component_t& last_idx = member_comp.index.back();
+			      if (last_idx.sel == index_component_t::SEL_BIT) {
+				      // All indices variable (bit select): member[i][j]
+				    NetExpr* base_expr = 0;
+				    auto pdim_it = mem_packed_dims.begin();
+				    auto idx_it = member_comp.index.begin();
+				    unsigned long stride = mem_vec->packed_width();
+
+				    for (size_t i = 0; i < member_comp.index.size(); ++i, ++pdim_it, ++idx_it) {
+					  stride /= pdim_it->width();
+					  NetExpr* idx_expr = elab_and_eval(des, scope, idx_it->msb, -1, false);
+					  if (idx_expr == 0) {
+						cerr << li->get_fileline() << ": error: "
+						     << "Failed to elaborate index expression." << endl;
+						des->errors += 1;
+						return 0;
+					  }
+
+					    // Normalize index by subtracting lsb
+					  long lsb = pdim_it->get_lsb();
+					  if (lsb != 0) {
+						NetEConst* lsb_c = new NetEConst(verinum(-lsb));
+						lsb_c->set_line(*li);
+						idx_expr = new NetEBAdd('+', idx_expr, lsb_c,
+						                        idx_expr->expr_width(), true);
+						idx_expr->set_line(*li);
+					  }
+
+					    // Multiply by stride
+					  if (stride > 1) {
+						NetEConst* stride_c = new NetEConst(verinum((long)stride));
+						stride_c->set_line(*li);
+						idx_expr = new NetEBMult('*', idx_expr, stride_c,
+						                         idx_expr->expr_width() + 16, false);
+						idx_expr->set_line(*li);
+					  }
+
+					    // Add to accumulated base
+					  if (base_expr) {
+						base_expr = new NetEBAdd('+', base_expr, idx_expr,
+						                         base_expr->expr_width(), false);
+						base_expr->set_line(*li);
+					  } else {
+						base_expr = idx_expr;
+					  }
+				    }
+
+				    if (!base_expr) {
+					  base_expr = new NetEConst(verinum(0L));
+					  base_expr->set_line(*li);
+				    }
+
+				      // Add member offset
+				    if (off != 0) {
+					  NetEConst* off_c = new NetEConst(verinum(off));
+					  off_c->set_line(*li);
+					  base_expr = new NetEBAdd('+', base_expr, off_c,
+					                           base_expr->expr_width(), false);
+					  base_expr->set_line(*li);
+				    }
+
+				      // Create select from struct signal
+				    NetESignal* sig = new NetESignal(net);
+				    NetESelect* sel = new NetESelect(sig, base_expr, 1, member_type);
+				    sel->set_line(*li);
+				    return sel;
+			      }
+			}
+
 			if (!rc) {
-			      // Error already reported by evaluate_index_prefix
+			      // Error already reported or cannot handle
 			      return 0;
 			}
 
@@ -9238,7 +9312,160 @@ NetExpr* PEIdent::elaborate_expr_net(Design*des, NetScope*scope,
       }
 
       list<long> prefix_indices;
-      bool rc = evaluate_index_prefix(des, scope, prefix_indices, path_.back().index);
+      bool is_variable = false;
+      bool rc = try_evaluate_index_prefix(des, scope, prefix_indices,
+                                          path_.back().index, is_variable);
+
+	// If prefix indices are variable and this is a bit select on a
+	// packed multi-dimensional array, use collapse_array_exprs to
+	// compute the canonical offset for all indices.
+      if (!rc && is_variable && use_sel == index_component_t::SEL_BIT &&
+          path_.back().index.size() == net->packed_dimensions()) {
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": PEIdent::elaborate_expr_net: "
+		       << "Using collapse_array_exprs for variable prefix indices"
+		       << endl;
+	    }
+	    NetExpr*base = collapse_array_exprs(des, scope, this, net,
+						path_.back().index);
+	    if (base) {
+		  NetESelect*ss = new NetESelect(node, base, 1);
+		  ss->set_line(*this);
+		  return ss;
+	    }
+      }
+
+	// If prefix indices are variable and this is a slice select on a
+	// packed multi-dimensional array, compute the base using variable
+	// indices and create a slice select.
+      if (!rc && is_variable && use_sel == index_component_t::SEL_BIT &&
+          path_.back().index.size() < net->packed_dimensions()) {
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": PEIdent::elaborate_expr_net: "
+		       << "Using collapse_array_exprs for variable slice select"
+		       << endl;
+	    }
+	    NetExpr*base = collapse_array_exprs(des, scope, this, net,
+						path_.back().index);
+	    if (base) {
+		  unsigned long lwid = net->slice_width(path_.back().index.size());
+		  NetESelect*ss = new NetESelect(node, base, lwid);
+		  ss->set_line(*this);
+		  return ss;
+	    }
+      }
+
+	// If prefix indices are variable and this is a part select,
+	// compute the base using variable slice calculation.
+      if (!rc && is_variable && use_sel == index_component_t::SEL_PART &&
+          path_.back().index.size() >= 2) {
+	    if (debug_elaborate) {
+		  cerr << get_fileline() << ": PEIdent::elaborate_expr_net: "
+		       << "Using variable slice for part select"
+		       << endl;
+	    }
+	      // Get the prefix indices (all but the part select)
+	    list<index_component_t> prefix_index;
+	    auto it = path_.back().index.begin();
+	    for (size_t i = 0; i + 1 < path_.back().index.size(); ++i, ++it) {
+		  prefix_index.push_back(*it);
+	    }
+
+	      // Compute base for the prefix using variable expressions
+	    list<NetExpr*> prefix_exprs;
+	    list<long> prefix_const;
+	    indices_flags idx_flags;
+	    indices_to_expressions(des, scope, this, prefix_index,
+	                           prefix_index.size(), false,
+	                           idx_flags, prefix_exprs, prefix_const);
+	    if (idx_flags.invalid) return 0;
+
+	      // Compute the base offset for the slice
+	    unsigned long slice_wid = net->slice_width(prefix_index.size());
+	    const netranges_t& pdims = net->packed_dims();
+
+	      // Build the base expression: multiply each index by its stride
+	    NetExpr* prefix_base = 0;
+	    auto pdim_it = pdims.begin();
+	    auto expr_it = prefix_exprs.begin();
+	    unsigned long stride = net->vector_width();
+
+	    for (size_t idx = 0; idx < prefix_index.size(); ++idx, ++pdim_it, ++expr_it) {
+		  stride /= pdim_it->width();
+		  NetExpr* idx_expr = *expr_it;
+
+		    // Normalize index by subtracting lsb
+		  long lsb = pdim_it->get_lsb();
+		  if (lsb != 0) {
+			NetEConst* lsb_c = new NetEConst(verinum(-lsb));
+			lsb_c->set_line(*this);
+			idx_expr = new NetEBAdd('+', idx_expr, lsb_c,
+			                        idx_expr->expr_width(), true);
+			idx_expr->set_line(*this);
+		  }
+
+		    // Multiply by stride
+		  if (stride > 1) {
+			NetEConst* stride_c = new NetEConst(verinum((long)stride));
+			stride_c->set_line(*this);
+			idx_expr = new NetEBMult('*', idx_expr, stride_c,
+			                         idx_expr->expr_width() + 16, false);
+			idx_expr->set_line(*this);
+		  }
+
+		    // Add to accumulated base
+		  if (prefix_base) {
+			prefix_base = new NetEBAdd('+', prefix_base, idx_expr,
+			                           prefix_base->expr_width(), false);
+			prefix_base->set_line(*this);
+		  } else {
+			prefix_base = idx_expr;
+		  }
+	    }
+
+	    if (!prefix_base) {
+		  prefix_base = new NetEConst(verinum(0L));
+		  prefix_base->set_line(*this);
+	    }
+
+	      // Get the part select range
+	    const index_component_t& index_tail = path_.back().index.back();
+	    ivl_assert(*this, index_tail.msb != 0);
+	    ivl_assert(*this, index_tail.lsb != 0);
+
+	    NetExpr* msb_ex = elab_and_eval(des, scope, index_tail.msb, -1);
+	    NetExpr* lsb_ex = elab_and_eval(des, scope, index_tail.lsb, -1);
+	    if (!msb_ex || !lsb_ex) return 0;
+
+	    long msb_val, lsb_val;
+	    if (!eval_as_long(msb_val, msb_ex) || !eval_as_long(lsb_val, lsb_ex)) {
+		  cerr << get_fileline() << ": error: "
+		       << "Part select range must be constant." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    unsigned long lwid = (msb_val >= lsb_val)
+	                         ? (msb_val - lsb_val + 1)
+	                         : (lsb_val - msb_val + 1);
+	    long base_off = (msb_val >= lsb_val) ? lsb_val : msb_val;
+
+	      // Add part select offset to prefix_base
+	    if (base_off != 0) {
+		  NetEConst* off_c = new NetEConst(verinum(base_off));
+		  off_c->set_line(*this);
+		  prefix_base = new NetEBAdd('+', prefix_base, off_c,
+		                             prefix_base->expr_width(), false);
+		  prefix_base->set_line(*this);
+	    }
+
+	    NetESelect* ss = new NetESelect(node, prefix_base, lwid);
+	    ss->set_line(*this);
+	    delete msb_ex;
+	    delete lsb_ex;
+	    return ss;
+      }
+
       if (!rc) return 0;
 
 	// If this is a part select of a signal, then make a new

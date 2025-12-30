@@ -1555,6 +1555,51 @@ bool evaluate_index_prefix(Design*des, NetScope*scope,
 }
 
 /*
+ * Try to evaluate prefix indices as constants, but don't emit errors
+ * if they're variable. Returns true if all prefix indices are constant,
+ * false otherwise (either error or variable indices).
+ * If is_variable is set to true on return, the indices are variable
+ * but not an error condition.
+ */
+bool try_evaluate_index_prefix(Design*des, NetScope*scope,
+			       list<long>&prefix_indices,
+			       const list<index_component_t>&indices,
+			       bool&is_variable)
+{
+      is_variable = false;
+      list<index_component_t>::const_iterator icur = indices.begin();
+      for (size_t idx = 0 ; (idx+1) < indices.size() ; idx += 1, ++icur) {
+	    assert(icur != indices.end());
+	    if (icur->sel != index_component_t::SEL_BIT) {
+		    // This is a real error - range select in middle
+		  cerr << icur->msb->get_fileline() << ": error: "
+			"All but the final index in a chain of indices must be "
+			"a single value, not a range." << endl;
+		  des->errors += 1;
+		  return false;
+	    }
+	      // Don't use need_const=true so we can detect variable indices
+	    NetExpr*texpr = elab_and_eval(des, scope, icur->msb, -1, false);
+
+	    long tmp;
+	    if (texpr == 0) {
+		  return false;
+	    }
+	    if (!eval_as_long(tmp, texpr)) {
+		    // Variable index - not an error, just can't use constant path
+		  is_variable = true;
+		  delete texpr;
+		  return false;
+	    }
+
+	    prefix_indices.push_back(tmp);
+	    delete texpr;
+      }
+
+      return true;
+}
+
+/*
  * Evaluate the indices. The chain of indices are applied to the
  * packed indices of a NetNet to generate a canonical expression to
  * replace the exprs.

@@ -468,6 +468,11 @@ extern bool evaluate_index_prefix(Design*des, NetScope*scope,
 				  std::list<long>&prefix_indices,
 				  const std::list<index_component_t>&indices);
 
+extern bool try_evaluate_index_prefix(Design*des, NetScope*scope,
+				      std::list<long>&prefix_indices,
+				      const std::list<index_component_t>&indices,
+				      bool&is_variable);
+
 extern NetExpr*collapse_array_indices(Design*des, NetScope*scope, const NetNet*net,
 				      const std::list<index_component_t>&indices);
 
