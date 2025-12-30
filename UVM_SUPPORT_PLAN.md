@@ -1,15 +1,21 @@
 # UVM Support Plan for Icarus Verilog
 
 ## Goal
-Enable full UVM testbench support for the mbits-mirafra verification IP blocks:
-- APB AVIP ✅ (compiles and runs)
-- UART AVIP (in progress - compiles with -gno-assertions)
-- I2S AVIP (pending)
-- AXI4 AVIP (pending)
-- AXI4-Lite AVIP (pending)
-- SPI AVIP (pending)
-- JTAG AVIP (pending)
-- I3C AVIP (pending)
+Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
+
+## AVIP Compilation & Runtime Status
+
+| AVIP | Compiles | Runs | Notes |
+|------|----------|------|-------|
+| APB | ✅ | ✅ | Full testbench runs, UVM phases execute |
+| AXI4 | ✅ | 🔄 | Pending runtime test |
+| SPI | ✅ | 🔄 | Pending runtime test |
+| UART | ✅ | 🔄 | Pending runtime test |
+| I2S | ✅ | 🔄 | Pending runtime test |
+| AHB | ✅ | 🔄 | Pending runtime test |
+| I3C | ✅ | 🔄 | Pending runtime test |
+| JTAG | 🔄 | 🔄 | Pending test |
+| AXI4-Lite | 🔄 | 🔄 | Pending test |
 
 ## Completed Features
 
@@ -34,7 +40,7 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks:
 
 ### Phase 4: Coverage ✅
 - [x] Basic covergroup declarations
-- [x] sample() method
+- [x] sample() method with typed arguments (generates no-op)
 - [x] get_coverage() method returning coverage percentage
 
 ### Phase 5: Interface Support ✅
@@ -48,43 +54,53 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks:
 - [x] foreach on queue class properties
 - [x] Support for this.property and property syntax
 
-## In Progress
+### Phase 7: Event and Struct Support ✅
+- [x] Event class property access and assignment
+- [x] Symbol resolution priority (class properties before standalone events)
+- [x] Dynamic bit-select on packed struct members
+- [x] Struct element access from queue class properties
 
-### Phase 7: Struct and Property Access
-- [ ] Dynamic bit-select on struct members (struct.member[i] where i is variable)
-- [ ] Inherited class property visibility in subclass methods
-- [ ] Property bit-select expressions in class methods (this.data[i])
+### Phase 8: UVM Infrastructure ✅
+- [x] uvm_pkg stub with core UVM classes
+- [x] Factory pattern (uvm_factory, create_by_name)
+- [x] UVM phases (build, connect, run, etc.)
+- [x] Configuration database (uvm_config_db)
+- [x] Analysis ports and FIFOs
+- [x] Sequence/sequencer infrastructure
+- [x] run_test() implementation
 
-### Phase 8: Constraint Support
-- [ ] Inline constraints with randomize() { ... }
-- [ ] Soft constraints
-- [ ] Constraint blocks in classes
-- [ ] dist constraints for weighted distributions
+## Current Warnings (Non-Blocking)
 
-## Known UART AVIP Errors (with -gno-assertions)
-1. `Class UartTxMonitorProxy does not have a property monitorSynchronizer` - inherited property visibility
-2. `A reference to a net or variable ('i') is not allowed in a constant expression` - dynamic struct indexing
-3. `Too many arguments (2, expecting 1) in call to function` - function signature mismatch
-4. `The expression 'data' cannot be implicitly cast to the target type` - type conversion issue
+These warnings appear during compilation but don't prevent operation:
+
+1. **Extern function declarations** - Parsed but out-of-body definitions not linked
+2. **Constraint declarations** - Parsed but randomization constraints not enforced
+3. **Unpacked structs** - Parsed but not fully supported in all contexts
+4. **`%p` format specifier** - Not supported in $sformatf (prints literal <%p>)
 
 ## Pending Features
 
-### Phase 9: Additional UVM Infrastructure
-- [ ] TLM port/export connections
-- [ ] uvm_analysis_port write() method
-- [ ] Sequence/sequencer handshake improvements
-- [ ] Configuration database hierarchical paths
+### Phase 9: Enhanced Randomization
+- [ ] Constraint solver for class constraints
+- [ ] Inline constraints with randomize() { ... }
+- [ ] Soft constraints
+- [ ] dist constraints for weighted distributions
 
-### Phase 10: SystemVerilog Assertions (SVA)
+### Phase 10: Extern Functions/Tasks
+- [ ] Out-of-body function definitions
+- [ ] Out-of-body task definitions
+- [ ] Method prototyping with extern keyword
+
+### Phase 11: SystemVerilog Assertions (SVA)
 - [ ] Property declarations (use -gno-assertions to disable)
 - [ ] Concurrent assertions
 - [ ] bind directive
 
-### Phase 11: Advanced Features
-- [ ] Coverpoints with bins
+### Phase 12: Advanced Features
+- [ ] Full unpacked struct support
+- [ ] `%p` format specifier for $sformatf
+- [ ] Coverpoints with full bins support
 - [ ] Cross coverage
-- [ ] Functional coverage models
-- [ ] Assertions in interfaces
 
 ## Testing Strategy
 - Unit tests for each feature in ivtest/ivltests/
@@ -92,7 +108,11 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks:
 - Regular commits after each feature implementation
 - Use -gno-assertions flag until SVA support is complete
 
-## Current Status
-Date: 2025-12-30
-Last completed: foreach on packed vector and queue class properties
-Next priority: Dynamic bit-select on struct members for UART AVIP
+## Recent Changes
+- 2025-12-30: All 7 main AVIPs compile successfully
+- 2025-12-30: APB AVIP runs full UVM testbench
+- 2025-12-30: Added covergroup sample() typed argument support
+- 2025-12-30: Fixed event class property resolution
+
+## Next Priority
+Test remaining AVIPs at runtime and address any blocking issues.
