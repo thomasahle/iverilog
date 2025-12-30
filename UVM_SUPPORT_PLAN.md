@@ -82,9 +82,10 @@ These warnings appear during compilation but don't prevent operation:
 
 ## Known Issues
 
-1. **bind directive** - Not yet supported, may cause segfault in elaborate
-2. **Multi-dimensional struct member indexing** - `struct.member[i][j]` with variable indices not supported
-3. **Dynamic array .size() on nested properties** - `obj.prop.arr.size()` deferred
+1. **bind directive** - Parses correctly but not implemented (shows warning, ignored)
+2. **AXI4 elaboration segfault** - Complex interface/class/struct interactions cause crash during elaboration
+3. **Multi-dimensional struct member indexing** - `struct.member[i][j]` with variable indices not supported
+4. **Dynamic array .size() on nested properties** - `obj.prop.arr.size()` deferred
 
 ## Pending Features
 
@@ -117,6 +118,7 @@ These warnings appear during compilation but don't prevent operation:
 - Use -gno-assertions flag until SVA support is complete
 
 ## Recent Changes
+- 2025-12-30: Added bind directive parsing for module+interface combinations
 - 2025-12-30: Added %p format specifier for $sformatf/$display
 - 2025-12-30: All 7 main AVIPs compile successfully
 - 2025-12-30: APB AVIP runs full UVM testbench
@@ -124,6 +126,6 @@ These warnings appear during compilation but don't prevent operation:
 - 2025-12-30: Fixed event class property resolution
 
 ## Next Priority
-1. Fix bind directive handling to prevent segfault
+1. Investigate AXI4 elaboration segfault (complex interface/class/struct)
 2. Implement multi-dimensional struct member indexing
 3. Test remaining AVIPs at runtime
