@@ -765,8 +765,11 @@ void NetNet::set_discipline(ivl_discipline_t dis)
 
 bool NetNet::sb_is_valid(const list<long>&indices, long sb) const
 {
-      ivl_assert(*this, indices.size()+1 == packed_dims().size());
-      ivl_assert(*this, packed_dims().size() == 1);
+      // Check for unsupported complex array types
+      if (indices.size()+1 != packed_dims().size() || packed_dims().size() != 1) {
+	    // Return false for unsupported cases - caller should handle error
+	    return false;
+      }
       const netrange_t&rng = packed_dims().back();
       if (rng.get_msb() >= rng.get_lsb())
 	    return (sb <= rng.get_msb()) && (sb >= rng.get_lsb());
@@ -776,7 +779,11 @@ bool NetNet::sb_is_valid(const list<long>&indices, long sb) const
 
 long NetNet::sb_to_idx(const list<long>&indices, long sb) const
 {
-      ivl_assert(*this, indices.size()+1 == packed_dims().size());
+      // Check for unsupported complex array types
+      if (indices.size()+1 != packed_dims().size()) {
+	    // Return -1 for unsupported cases - caller should handle error
+	    return -1;
+      }
 
       netranges_t::const_iterator pcur = packed_dims().end();
       -- pcur;

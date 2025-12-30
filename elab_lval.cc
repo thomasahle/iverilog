@@ -943,7 +943,14 @@ bool PEIdent::elaborate_lval_darray_bit_(Design*des,
       ivl_assert(*this, !name_tail.index.empty());
 
 	// For now, only support single-dimension dynamic arrays.
-      ivl_assert(*this, name_tail.index.size() == 1);
+      if (name_tail.index.size() != 1) {
+	    cerr << get_fileline() << ": sorry: "
+		 << "Associative/dynamic arrays with additional dimensions "
+		 << "are not yet supported. Found " << name_tail.index.size()
+		 << " indices." << endl;
+	    des->errors += 1;
+	    return false;
+      }
 
       if ((lv->sig()->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 	    ivl_assert(*this, lv->sig()->coerced_to_uwire());
