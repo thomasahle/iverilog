@@ -76,6 +76,15 @@ netuarray_t::~netuarray_t()
 {
 }
 
+/*
+ * Unpacked arrays are not packed, so return -1 to indicate
+ * that the type has no packed width.
+ */
+long netuarray_t::packed_width(void) const
+{
+      return -1;
+}
+
 netranges_t netuarray_t::slice_dimensions() const
 {
       return static_dimensions();

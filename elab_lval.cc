@@ -2478,10 +2478,52 @@ bool PEIdent::elaborate_lval_net_unpacked_member_(Design*des, NetScope*scope,
 			des->errors += 1;
 			return false;
 		  }
+	    } else if (const netuarray_t* uarray = dynamic_cast<const netuarray_t*>(member->net_type)) {
+		    // Member is an unpacked array - handle array indexing
+		    // e.g., my_struct.arr[i] where arr is bit[31:0] arr[4]
+		  const netranges_t& dims = uarray->static_dimensions();
+
+		  if (member_comp.index.size() > dims.size()) {
+			cerr << get_fileline() << ": error: "
+			     << "Too many indices for unpacked array member "
+			     << member_name << "." << endl;
+			des->errors += 1;
+			return false;
+		  }
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+			     << "Member '" << member_name << "' is netuarray_t with "
+			     << dims.size() << " dimensions, got " << member_comp.index.size()
+			     << " indices." << endl;
+		  }
+
+		    // Create canonical index for the unpacked array
+		  NetExpr* canon_index = make_canonical_index(des, scope, this,
+							      member_comp.index,
+							      uarray, false);
+		  if (canon_index == 0) {
+			cerr << get_fileline() << ": error: "
+			     << "Failed to elaborate array index for member "
+			     << member_name << "." << endl;
+			des->errors += 1;
+			return false;
+		  }
+
+		    // Set the word index for the array access
+		  lv->set_word(canon_index);
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
+			     << "Set word index=" << *canon_index
+			     << " for unpacked array member '" << member_name << "'" << endl;
+		  }
+
 	    } else {
-		    // Member is not a packed vector - can't do indexed access
+		    // Member is not a packed vector or unpacked array - can't do indexed access
 		  cerr << get_fileline() << ": sorry: Indexed access to non-packed "
-		       << "struct members not yet supported." << endl;
+		       << "struct members not yet supported (type: "
+		       << typeid(*(member->net_type)).name() << ")." << endl;
 		  des->errors += 1;
 		  return false;
 	    }

@@ -11,8 +11,8 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 | UART | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | AHB | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | AXI4 | ❌ | ❌ | Uses unsupported assoc array patterns (see Known Issues) |
-| SPI | 🔄 | 🔄 | Compiles with warnings, needs nested .size() support |
-| I2S | ❌ | ❌ | Multiple issues: unpacked array struct members, nested .size(), constructor args |
+| SPI | 🔄 | ❌ | 2 errors: $sformatf with empty params; many extern function warnings |
+| I2S | ❌ | ❌ | Unpacked struct member rvalue, constructor arg mismatch, segfault |
 | I3C | ❌ | ❌ | Same unpacked array struct issues as I2S |
 | JTAG | ❌ | ❌ | Syntax error with inline randomize() constraints |
 | AXI4-Lite | 🔄 | 🔄 | Complex project structure, needs dedicated compile setup |
@@ -93,8 +93,11 @@ These warnings appear during compilation but don't prevent operation:
    - Associative arrays with additional unpacked dimensions: `bit [W-1:0] data[int][1]`
    - Bit selects into associative array elements: `data[key][idx][bit] = 1'b1`
    - These patterns cause compile-time assertion failures in dimension handling
-3. **I2S unpacked struct member access** - Indexed access to unpacked array struct members with variable index not supported
-5. **Dynamic array .size() on nested properties** - `obj.prop.arr.size()` returns 0 (deferred elaboration)
+3. **I2S unpacked struct member access** - Unpacked array struct member rvalue access not yet supported:
+   - Writing to unpacked array struct members works: `s.arr[i] = val;`
+   - Reading from unpacked array struct members fails: `val = s.arr[i];`
+   - Workaround: Use a local array variable instead of struct members for values that need to be read
+4. **~~Dynamic array .size() on nested properties~~** - FIXED: `obj.prop.arr.size()` now works correctly
 
 ## Pending Features
 
@@ -137,9 +140,13 @@ These warnings appear during compilation but don't prevent operation:
 - 2025-12-30: APB, UART, and AHB AVIPs run full UVM testbenches
 - 2025-12-30: Added covergroup sample() typed argument support
 - 2025-12-30: Fixed event class property resolution
+- 2025-12-30: Made netuarray_t::packed_width() return -1 (proper unpacked type indication)
+- 2025-12-30: Added unpacked array member handling in struct lvalue elaboration
+- 2025-12-30: Added netuarray_t handler in check_for_struct_members (partial - VVP codegen needs work)
+- 2025-12-30: Fixed unpacked struct array member rvalue access - now shows clean error message
+- 2025-12-30: Implemented nested .size() method support for dynamic arrays (obj.prop.arr.size())
 
 ## Next Priority
-1. Test I2S AVIP and identify specific blockers
-2. Implement extern function out-of-body definitions
-3. Test remaining AVIPs (I3C, JTAG, AXI4-Lite)
-4. Add support for assoc arrays with unpacked dimensions (for AXI4)
+1. Implement extern function out-of-body definitions
+2. Add support for assoc arrays with unpacked dimensions (for AXI4)
+3. Full VVP code generation for unpacked struct array members (I2S blocker)

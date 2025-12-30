@@ -2315,7 +2315,17 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 
       unsigned nparms = parms_.size();
 
-      NetESFunc*fun = new NetESFunc(name, expr_type_, expr_width_, nparms, is_overridden_);
+      // Count trailing empty parameters (from trailing commas) to exclude them
+      unsigned trailing_empty = 0;
+      for (int idx = nparms - 1; idx >= 0; idx--) {
+	    if (parms_[idx].parm == 0)
+		  trailing_empty++;
+	    else
+		  break;
+      }
+      unsigned effective_nparms = nparms - trailing_empty;
+
+      NetESFunc*fun = new NetESFunc(name, expr_type_, expr_width_, effective_nparms, is_overridden_);
       fun->set_line(*this);
 
       bool need_const = NEED_CONST & flags;
@@ -2358,7 +2368,8 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 
       unsigned parm_errors = 0;
       unsigned missing_parms = 0;
-      for (unsigned idx = 0 ;  idx < nparms ;  idx += 1) {
+
+      for (unsigned idx = 0 ;  idx < effective_nparms ;  idx += 1) {
 	    PExpr *expr = parms_[idx].parm;
 	    if (expr) {
 		  NetExpr*tmp = elab_sys_task_arg(des, scope, name, idx,
@@ -2373,6 +2384,13 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 		  missing_parms += 1;
 		  fun->parm(idx, 0);
 	    }
+      }
+
+      // Warn about trailing empty parameters (likely typo with trailing comma)
+      if (trailing_empty > 0) {
+	    cerr << get_fileline() << ": warning: Ignoring " << trailing_empty
+		 << " trailing empty parameter(s) in call to " << name
+		 << " (possible trailing comma)." << endl;
       }
 
       if (missing_parms > 0) {
@@ -2687,24 +2705,29 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
       ivl_assert(*li, struct_type);
 
 	// Check if we can work with this struct. Packed structs are always
-	// supported. Unpacked structs are supported if all members have
-	// packed types (i.e., the struct has a valid packed_width).
+	// supported. Unpacked structs need special handling - we check the
+	// specific member being accessed.
       bool is_packed_struct = struct_type->packed();
+      bool has_unpacked_members = false;
       if (! is_packed_struct) {
 	    long pw = struct_type->packed_width();
 	    if (pw < 0) {
-		    // Truly unpacked - has unpacked members
-		  cerr << li->get_fileline() << ": sorry: "
-		       << "Unpacked structures with unpacked members not supported here."
-		       << endl;
-		  des->errors += 1;
-		  return 0;
-	    }
-	      // Unpacked struct but all members are packed - we can handle it
-	    if (debug_elaborate) {
-		  cerr << li->get_fileline() << ": check_for_struct_members: "
-		       << "Allowing unpacked struct with packed members, packed_width=" << pw
-		       << endl;
+		    // Struct has some unpacked members. We can still access
+		    // packed members of such structs, but unpacked array members
+		    // need special handling.
+		  has_unpacked_members = true;
+		  if (debug_elaborate) {
+			cerr << li->get_fileline() << ": check_for_struct_members: "
+			     << "Struct has unpacked members, will check specific member access."
+			     << endl;
+		  }
+	    } else {
+		    // Unpacked struct but all members are packed - we can handle it
+		  if (debug_elaborate) {
+			cerr << li->get_fileline() << ": check_for_struct_members: "
+			     << "Allowing unpacked struct with packed members, packed_width=" << pw
+			     << endl;
+		  }
 	    }
       }
 
@@ -2716,7 +2739,7 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 	// width. As we step through the member_path the off
 	// increases, and use_width shrinks.
       unsigned long off = 0;
-      unsigned long use_width = struct_type->packed_width();
+      unsigned long use_width = has_unpacked_members ? 0 : struct_type->packed_width();
 
       pform_name_t completed_path;
       ivl_type_t member_type = 0;
@@ -2776,11 +2799,77 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 		       << "Member type: " << *member_type
 		       << " (" << typeid(*member_type).name() << ")"
 		       << ", tmp_off=" << tmp_off
+		       << ", has_unpacked_members=" << has_unpacked_members
 		       << endl;
 	    }
 
+	      // Special handling for netuarray_t (unpacked array) members
+	    if (const netuarray_t* uarray = dynamic_cast<const netuarray_t*>(member_type)) {
+		  if (debug_elaborate) {
+			cerr << li->get_fileline() << ": check_for_struct_members: "
+			     << "Member is netuarray_t (unpacked array), "
+			     << "dimensions=" << uarray->static_dimensions().size()
+			     << endl;
+		  }
+		    // For unpacked array struct members, VVP code generation does not
+		    // currently support reading struct signals with unpacked array members
+		    // because the struct cannot be loaded as a contiguous bit vector.
+		    // Emit a "sorry" message until VVP support is implemented.
+		  cerr << li->get_fileline() << ": sorry: "
+		       << "Reading unpacked array member '" << member_name
+		       << "' from struct as rvalue is not yet supported." << endl;
+		  cerr << li->get_fileline() << ":      : "
+		       << "Consider using a workaround such as copying to a local variable." << endl;
+		  des->errors += 1;
+		  return 0;
+
+		    // NOTE: The code below is preserved for future implementation
+		    // when VVP code generation is extended to support unpacked struct
+		    // array member access.
+		  (void)uarray;  // Suppress unused variable warning
+#if 0
+		  if (member_comp.index.empty()) {
+			cerr << li->get_fileline() << ": sorry: "
+			     << "Cannot access entire unpacked array member '"
+			     << member_name << "' as rvalue without indices."
+			     << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetExpr* canon_index = make_canonical_index(des, scope, li,
+							      member_comp.index,
+							      uarray, false);
+		  if (canon_index == 0) {
+			cerr << li->get_fileline() << ": error: "
+			     << "Failed to elaborate array index for member "
+			     << member_name << "." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  ivl_type_t elem_type = uarray->element_type();
+		  unsigned elem_width = elem_type->packed_width();
+
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*li);
+
+		  NetESelect*sel = new NetESelect(sig, canon_index, elem_width, elem_type);
+		  sel->set_line(*li);
+
+		  if (debug_elaborate) {
+			cerr << li->get_fileline() << ": check_for_struct_members: "
+			     << "Created NetESelect for unpacked array member '"
+			     << member_name << "' with word index, width=" << elem_width
+			     << endl;
+		  }
+
+		  return sel;
+#endif
+	    }
+
 	    off += tmp_off;
-	    ivl_assert(*li, use_width >= (unsigned long)member_type->packed_width());
+	    if (!has_unpacked_members) {
+		  ivl_assert(*li, use_width >= (unsigned long)member_type->packed_width());
+	    }
 	    use_width = member_type->packed_width();
 
 	      // At this point, off and use_width are the part select
@@ -4927,7 +5016,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			}
 
 			// Handle dynamic array property followed by method
-			// e.g., obj.darray_prop[i].method()
+			// e.g., obj.darray_prop[i].method() or obj.darray_prop.size()
 			if (const netdarray_t*next_darray = dynamic_cast<const netdarray_t*>(next_prop_type)) {
 			      // Get the index from the darray property access
 			      NetExpr* darray_index = 0;
@@ -4938,8 +5027,36 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    }
 			      }
 
-			      // If no index, we can't call methods on the array itself
+			      // Handle dynamic array built-in methods that don't require an index
+			      // e.g., obj.prop.arr.size()
 			      if (!darray_index) {
+				    // Check if this is a built-in dynamic array method
+				    if (final_method == "size") {
+					  if (parms_.size() != 0) {
+						cerr << get_fileline() << ": error: size() method "
+						     << "takes no arguments" << endl;
+						des->errors += 1;
+						return 0;
+					  }
+
+					  // Create expression to access the nested property
+					  // First, create the base property expression
+					  NetNet* this_net = search_results.net;
+					  NetEProperty* first_prop = new NetEProperty(this_net, prop_idx);
+					  first_prop->set_line(*this);
+
+					  // Create expression for the darray property
+					  NetEProperty* darray_prop = new NetEProperty(first_prop, next_prop_idx);
+					  darray_prop->set_line(*this);
+
+					  // Create system function call to $size
+					  NetESFunc*sys_expr = new NetESFunc("$size", &netvector_t::atom2u32, 1);
+					  sys_expr->set_line(*this);
+					  sys_expr->parm(0, darray_prop);
+					  return sys_expr;
+				    }
+
+				    // Other methods require an index
 				    cerr << get_fileline() << ": sorry: "
 					 << "Dynamic array method '" << final_method
 					 << "' on nested property '" << prop_name << "." << method_name

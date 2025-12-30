@@ -86,6 +86,7 @@ class netuarray_t : public netsarray_t {
 
     public:
 	// Virtual methods from the ivl_type_s type...
+      long packed_width(void) const override;
       netranges_t slice_dimensions() const override;
 
     private:
