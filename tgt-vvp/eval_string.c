@@ -131,11 +131,10 @@ static void string_ex_select(ivl_expr_t expr)
       ivl_signal_t sig = ivl_expr_signal(sube);
       if (sig == 0 || (ivl_signal_data_type(sig) != IVL_VT_DARRAY
                        && ivl_signal_data_type(sig) != IVL_VT_QUEUE)) {
-	    /* For unsupported types, push a placeholder string */
-	    fprintf(stderr, "%s:%u: Sorry: string select from this expression type not fully supported.\n",
-		    ivl_expr_file(expr), ivl_expr_lineno(expr));
-	    fprintf(vvp_out, "    %%pushi/str \"<select>\";\n");
-	    vvp_errors += 1;
+	    /* For non-array types (e.g., LOGIC/BOOL from struct member access),
+	       evaluate as vec4 and convert to string. This handles cases like
+	       struct member access used as an associative array key. */
+	    fallback_eval(expr);
 	    return;
       }
 

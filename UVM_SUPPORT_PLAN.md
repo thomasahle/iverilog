@@ -9,7 +9,7 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 |------|----------|------|-------|
 | APB | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | UART | ✅ | ✅ | Full testbench runs, UVM phases execute |
-| AHB | ❌ | ❌ | String select expression not supported in code gen |
+| AHB | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | AXI4 | ❌ | ❌ | Uses unsupported assoc array patterns (see Known Issues) |
 | SPI | ❌ | ❌ | Needs multi-dimensional struct array indexing + variable index |
 | I2S | ❌ | ❌ | Unpacked struct member access, nested .size(), constructor issues |
@@ -89,8 +89,7 @@ These warnings appear during compilation but don't prevent operation:
    - These patterns cause compile-time assertion failures in dimension handling
 3. **SPI multi-dimensional struct member indexing** - `struct.member[i][j]` with variable indices on 2D packed array struct members
 4. **I2S unpacked struct member access** - Indexed access to unpacked array struct members with variable index not supported
-5. **AHB string select** - String select expressions not fully supported during code generation
-6. **Dynamic array .size() on nested properties** - `obj.prop.arr.size()` returns 0 (deferred elaboration)
+5. **Dynamic array .size() on nested properties** - `obj.prop.arr.size()` returns 0 (deferred elaboration)
 
 ## Pending Features
 
@@ -123,17 +122,18 @@ These warnings appear during compilation but don't prevent operation:
 - Use -gno-assertions flag until SVA support is complete
 
 ## Recent Changes
-- 2025-12-30: Tested all AVIPs - APB and UART working, others need specific features
-- 2025-12-30: Identified specific blockers for AXI4, SPI, I2S, AHB AVIPs
+- 2025-12-30: Fixed string select for struct member access in associative array keys (AHB now works)
+- 2025-12-30: Tested all AVIPs - APB, UART, AHB working, others need specific features
+- 2025-12-30: Identified specific blockers for AXI4, SPI, I2S AVIPs
 - 2025-12-30: Fixed parameterized class specialization scope lookup (UART now runs)
 - 2025-12-30: Added bind directive parsing for module+interface combinations
 - 2025-12-30: Added %p format specifier for $sformatf/$display
-- 2025-12-30: APB and UART AVIPs run full UVM testbenches
+- 2025-12-30: APB, UART, and AHB AVIPs run full UVM testbenches
 - 2025-12-30: Added covergroup sample() typed argument support
 - 2025-12-30: Fixed event class property resolution
 
 ## Next Priority
 1. Implement multi-dimensional struct member indexing for SPI
-2. Implement extern function out-of-body definitions
-3. Add support for assoc arrays with unpacked dimensions (for AXI4)
-4. Test remaining AVIPs at runtime (I2S, AHB)
+2. Fix I2S unpacked struct member access
+3. Implement extern function out-of-body definitions
+4. Add support for assoc arrays with unpacked dimensions (for AXI4)
