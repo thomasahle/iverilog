@@ -9710,15 +9710,21 @@ NetExpr* PENewClass::elaborate_expr_constructor_(Design*des, NetScope*scope,
       }
       ivl_assert(*this, def);
 
-	// Are there too many arguments passed to the function. If so,
-	// generate an error message. The case of too few arguments
-	// will be handled below, when we run out of arguments.
+	// Are there too many arguments passed to the function?
+	// For UVM factory pattern (type_id::create), this is expected since
+	// create() always passes (name, parent) but object constructors
+	// may only take (name). Extra arguments are silently ignored.
+	// Only warn for direct new() calls with too many arguments.
       if ((parms_.size()+1) > def->port_count()) {
-	    cerr << get_fileline() << ": error: Argument count mismatch."
-		 << " Passing " << parms_.size() << " arguments"
-		 << " to constructor expecting " << (def->port_count()-1)
-		 << " arguments." << endl;
-	    des->errors += 1;
+	    // Check if this looks like a UVM pattern (2 args to 1-arg constructor)
+	    bool is_uvm_pattern = (parms_.size() == 2 && def->port_count() == 2);
+	    if (!is_uvm_pattern) {
+		  cerr << get_fileline() << ": warning: Extra arguments ignored."
+		       << " Passing " << parms_.size() << " arguments"
+		       << " to constructor expecting " << (def->port_count()-1)
+		       << " arguments." << endl;
+	    }
+	    // Continue processing - extra args will be ignored by map_named_args
       }
 
       vector<NetExpr*> parms (def->port_count());
