@@ -12,7 +12,7 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 | AHB | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | AXI4 | ❌ | ❌ | Uses unsupported assoc array patterns (see Known Issues) |
 | SPI | ❌ | ❌ | Needs multi-dimensional struct array indexing + variable index |
-| I2S | ❌ | ❌ | Unpacked struct member access, nested .size(), constructor issues |
+| I2S | ❌ | ❌ | Multiple issues: unpacked array struct members, nested .size(), constructor args |
 | I3C | 🔄 | 🔄 | Needs IVL-specific compile file |
 | JTAG | 🔄 | 🔄 | Pending test |
 | AXI4-Lite | 🔄 | 🔄 | Pending test |
@@ -87,7 +87,9 @@ These warnings appear during compilation but don't prevent operation:
    - Associative arrays with additional unpacked dimensions: `bit [W-1:0] data[int][1]`
    - Bit selects into associative array elements: `data[key][idx][bit] = 1'b1`
    - These patterns cause compile-time assertion failures in dimension handling
-3. **SPI multi-dimensional struct member indexing** - `struct.member[i][j]` with variable indices on 2D packed array struct members
+3. **SPI multi-dimensional indexing** - `data[i][j:k]` where `i` is variable requires workaround:
+   - Iverilog requires all but the last index to be constant
+   - **Workaround**: Extract to temp first: `temp = data[i]; result = temp[j:k];`
 4. **I2S unpacked struct member access** - Indexed access to unpacked array struct members with variable index not supported
 5. **Dynamic array .size() on nested properties** - `obj.prop.arr.size()` returns 0 (deferred elaboration)
 
@@ -133,7 +135,7 @@ These warnings appear during compilation but don't prevent operation:
 - 2025-12-30: Fixed event class property resolution
 
 ## Next Priority
-1. Implement multi-dimensional struct member indexing for SPI
-2. Fix I2S unpacked struct member access
-3. Implement extern function out-of-body definitions
+1. Test I2S AVIP and identify specific blockers
+2. Implement extern function out-of-body definitions
+3. Test remaining AVIPs (I3C, JTAG, AXI4-Lite)
 4. Add support for assoc arrays with unpacked dimensions (for AXI4)
