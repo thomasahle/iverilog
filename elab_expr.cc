@@ -3380,16 +3380,24 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 		  // If there are more path components, the current property must be a class or struct type
 		  if (!member_path.empty()) {
 			// For indexed arrays, get the element type
+			ivl_type_t element_or_prop_type = mem_ptype;
 			if (darray_type && prop_index) {
 			      current_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+			      element_or_prop_type = darray_type->element_type();
 			} else if (assoc_type && prop_index) {
 			      current_class = dynamic_cast<const netclass_t*>(assoc_type->element_type());
+			      element_or_prop_type = assoc_type->element_type();
+			} else if (const netqueue_t* queue_type = dynamic_cast<const netqueue_t*>(mem_ptype)) {
+			      if (prop_index) {
+				    current_class = dynamic_cast<const netclass_t*>(queue_type->element_type());
+				    element_or_prop_type = queue_type->element_type();
+			      }
 			} else {
 			      current_class = dynamic_cast<const netclass_t*>(mem_ptype);
 			}
 			if (!current_class) {
-			      // Check if it's a struct type
-			      const netstruct_t* struct_type = dynamic_cast<const netstruct_t*>(mem_ptype);
+			      // Check if it's a struct type (use element type for indexed arrays)
+			      const netstruct_t* struct_type = dynamic_cast<const netstruct_t*>(element_or_prop_type);
 			      if (struct_type) {
 				    // Handle struct member access through class property
 				    // Get the struct member from the remaining path
