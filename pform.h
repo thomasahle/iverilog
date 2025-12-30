@@ -191,6 +191,9 @@ extern void pform_covergroup_declaration(const struct vlltype&loc,
 extern void pform_class_constraint(const struct vlltype&loc,
 				 bool is_static, const char* name,
 				 std::list<PExpr*>* expressions);
+extern void pform_class_event_property(const struct vlltype&loc,
+				 property_qualifier_t pq,
+				 const std::list<pform_ident_t>*names);
 extern void pform_set_this_class(const struct vlltype&loc, PTaskFunc*net);
 extern void pform_set_constructor_return(PFunction*net);
 

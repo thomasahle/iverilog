@@ -141,8 +141,9 @@ NetExpr* elaborate_rval_expr(Design*des, NetScope*scope, ivl_type_t lv_net_type,
 	    break;
 	  case IVL_VT_VOID:
 	  case IVL_VT_NO_TYPE:
-	      // Struct types return IVL_VT_NO_TYPE, use typed elaboration
-	    if (lv_net_type && dynamic_cast<const netstruct_t*>(lv_net_type)) {
+	      // Struct types and event types return IVL_VT_NO_TYPE, use typed elaboration
+	    if (lv_net_type && (dynamic_cast<const netstruct_t*>(lv_net_type) ||
+	                        dynamic_cast<const netevent_type_t*>(lv_net_type))) {
 		  typed_elab = true;
 	    } else {
 		  ivl_assert(*expr, 0);

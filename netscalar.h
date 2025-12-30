@@ -56,6 +56,25 @@ class netstring_t : public ivl_type_s {
 class NetScope;  // Forward declaration
 
 /*
+ * The netevent_type_t represents an event type as a class property.
+ * Events in classes can be triggered and waited on. This type is used
+ * during elaboration to represent event class properties.
+ */
+class netevent_type_t : public ivl_type_s {
+
+    public:
+      inline explicit netevent_type_t() { }
+      ~netevent_type_t() override;
+
+      ivl_variable_type_t base_type() const override;
+
+      std::ostream& debug_dump(std::ostream&) const override;
+
+    public:
+      static netevent_type_t type_event;
+};
+
+/*
  * The netvirtual_interface_t represents an elaborated virtual interface.
  * Virtual interfaces are class properties that reference interface instances.
  * The interface binding happens at runtime, but we store a pointer to the

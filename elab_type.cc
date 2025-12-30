@@ -200,6 +200,11 @@ ivl_type_t string_type_t::elaborate_type_raw(Design*, NetScope*) const
       return &netstring_t::type_string;
 }
 
+ivl_type_t event_type_t::elaborate_type_raw(Design*, NetScope*) const
+{
+      return &netevent_type_t::type_event;
+}
+
 // Helper to find the Module definition for an interface by name
 static Module* find_interface_module(perm_string name)
 {

@@ -415,6 +415,34 @@ void pform_covergroup_declaration(const struct vlltype&loc,
 }
 
 /*
+ * Handle event declarations inside a class.
+ * Events in classes are stored as properties with event_type_t.
+ * The scope event creation is handled by the caller (parse.y).
+ */
+void pform_class_event_property(const struct vlltype&loc,
+			        property_qualifier_t property_qual,
+			        const list<pform_ident_t>*names)
+{
+      if (!pform_cur_class) {
+	    // Not in a class context - shouldn't happen but handle gracefully
+	    return;
+      }
+
+      for (auto cur = names->begin(); cur != names->end(); ++cur) {
+	    perm_string event_name = cur->first;
+
+	    // Create an event type for this property
+	    event_type_t* ev_type = new event_type_t();
+	    FILE_NAME(ev_type, loc);
+
+	    // Add the event as a property of the class
+	    pform_cur_class->type->properties[event_name]
+		  = class_type_t::prop_info_t(property_qual, ev_type);
+	    FILE_NAME(&pform_cur_class->type->properties[event_name], loc);
+      }
+}
+
+/*
  * Handle constraint declarations inside a class.
  * Constraints are stored for later use during randomize() calls.
  * For now, constraints are parsed and stored but not enforced.

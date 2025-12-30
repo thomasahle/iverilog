@@ -1358,7 +1358,12 @@ class_item /* IEEE1800-2005: A.1.8 */
 
     /* Event declaration as class property */
   | property_qualifier_opt K_event event_variable_list ';'
-      { if ($3) pform_make_events(@2, $3);
+      { if ($3) {
+	      // Add events as class properties for property access (obj.event)
+	      pform_class_event_property(@2, $1, $3);
+	      // Also add to scope events for trigger/wait handling
+	      pform_make_events(@2, $3);
+	}
       }
 
     /* IEEE1800-1017: A.1.9 Class items: Class methods... */

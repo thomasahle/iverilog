@@ -403,6 +403,19 @@ struct string_type_t : public data_type_t {
 };
 
 /*
+ * The event_type_t represents an event type for class properties.
+ * Events in classes are stored as properties that can be triggered
+ * and waited on.
+ */
+struct event_type_t : public data_type_t {
+      inline explicit event_type_t() { }
+      ~event_type_t() override;
+
+      ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
+      void pform_dump(std::ostream&out, unsigned indent) const override;
+};
+
+/*
  * The virtual_interface_type_t represents a virtual interface property.
  * It stores the name of the interface type for later elaboration.
  */

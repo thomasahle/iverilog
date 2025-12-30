@@ -24,6 +24,7 @@ using namespace std;
 netreal_t netreal_t::type_real;
 netreal_t netreal_t::type_shortreal;
 netstring_t netstring_t::type_string;
+netevent_type_t netevent_type_t::type_event;
 
 netreal_t::~netreal_t()
 {
@@ -65,5 +66,23 @@ bool netvirtual_interface_t::test_equivalence(ivl_type_t that) const
 ostream& netvirtual_interface_t::debug_dump(ostream&out) const
 {
       out << "virtual interface " << interface_name_;
+      return out;
+}
+
+netevent_type_t::~netevent_type_t()
+{
+}
+
+ivl_variable_type_t netevent_type_t::base_type() const
+{
+      // Events are special synchronization primitives. Use IVL_VT_NO_TYPE
+      // as a placeholder since there's no dedicated event type in ivl_variable_type_t.
+      // The VVP code generator handles events separately from normal variables.
+      return IVL_VT_NO_TYPE;
+}
+
+ostream& netevent_type_t::debug_dump(ostream&out) const
+{
+      out << "event";
       return out;
 }

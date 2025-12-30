@@ -33,6 +33,10 @@ string_type_t::~string_type_t()
 {
 }
 
+event_type_t::~event_type_t()
+{
+}
+
 virtual_interface_type_t::~virtual_interface_type_t()
 {
 }
