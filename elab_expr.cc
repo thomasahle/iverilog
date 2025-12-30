@@ -4983,6 +4983,33 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 
 			// Handle class property followed by method (e.g., obj.inner_class_prop.method())
 			if (const netclass_t*next_class = dynamic_cast<const netclass_t*>(next_prop_type)) {
+			      // Handle built-in randomize() method on nested class property
+			      if (final_method == "randomize") {
+				    NetNet*this_net = search_results.net;
+				    if (!this_net) {
+					  cerr << get_fileline() << ": error: "
+					       << "Cannot find 'this' for randomize call on nested property."
+					       << endl;
+					  des->errors += 1;
+					  return 0;
+				    }
+
+				    // Create expression to load the first property
+				    NetEProperty*first_prop = new NetEProperty(this_net, prop_idx);
+				    first_prop->set_line(*this);
+
+				    // Create expression to load the nested class property
+				    NetEProperty*nested_prop = new NetEProperty(first_prop, next_prop_idx);
+				    nested_prop->set_line(*this);
+
+				    // Generate a system function call to $ivl_randomize
+				    NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+								       &netvector_t::atom2s32, 1);
+				    sys_expr->set_line(*this);
+				    sys_expr->parm(0, nested_prop);
+				    return sys_expr;
+			      }
+
 			      // Find the method in the nested class
 			      NetScope*method_scope = next_class->method_from_name(final_method);
 			      if (method_scope && method_scope->type() == NetScope::FUNC) {
