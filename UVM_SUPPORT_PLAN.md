@@ -13,9 +13,9 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 | AXI4 | ❌ | ❌ | Uses unsupported assoc array patterns (see Known Issues) |
 | SPI | ❌ | ❌ | Needs multi-dimensional struct array indexing + variable index |
 | I2S | ❌ | ❌ | Multiple issues: unpacked array struct members, nested .size(), constructor args |
-| I3C | 🔄 | 🔄 | Needs IVL-specific compile file |
-| JTAG | 🔄 | 🔄 | Pending test |
-| AXI4-Lite | 🔄 | 🔄 | Pending test |
+| I3C | ❌ | ❌ | Same unpacked array struct issues as I2S |
+| JTAG | ❌ | ❌ | Syntax error with inline randomize() constraints |
+| AXI4-Lite | 🔄 | 🔄 | Complex project structure, needs dedicated compile setup |
 
 ## Completed Features
 
