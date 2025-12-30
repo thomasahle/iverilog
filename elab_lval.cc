@@ -1878,17 +1878,77 @@ bool PEIdent::elaborate_lval_net_packed_member_(Design*des, NetScope*scope,
 				   << endl;
 			}
 
+			  // Try to evaluate the tail index expression.
+			  // If it's constant, we can calculate offsets statically.
+			  // If not, we need to generate dynamic bit-select code.
+			const index_component_t& tail_idx = member_comp.index.back();
+			NetExpr* tail_mux = elab_and_eval(des, scope, tail_idx.msb, -1);
 			long tail_off = 0;
-			unsigned long tail_wid = 0;
-			rc = calculate_part(this, des, scope, member_comp.index.back(), tail_off, tail_wid);
-			if (!rc) {
-			      // Error already reported by calculate_part
-			      return 0;
+			unsigned long tail_wid = 1;  // Default for bit-select
+			bool tail_is_dynamic = true;
+
+			  // Check if the index is constant
+			if (const NetEConst* tail_const = dynamic_cast<NetEConst*>(tail_mux)) {
+			      if (tail_const->value().is_defined()) {
+				    tail_off = tail_const->value().as_long();
+				    tail_is_dynamic = false;
+				    delete tail_mux;
+				    tail_mux = 0;
+			      }
+			}
+
+			  // Handle part-select differently (need lsb too)
+			if (tail_idx.lsb) {
+			      NetExpr* lsb_expr = elab_and_eval(des, scope, tail_idx.lsb, -1);
+			      if (const NetEConst* lsb_const = dynamic_cast<NetEConst*>(lsb_expr)) {
+				    long lsb_val = lsb_const->value().as_long();
+				    if (!tail_is_dynamic) {
+					  // Both are constant - calculate width
+					  if (tail_off >= lsb_val)
+						tail_wid = tail_off - lsb_val + 1;
+					  else
+						tail_wid = lsb_val - tail_off + 1;
+					  tail_off = lsb_val;  // Use lsb as the offset
+				    }
+			      } else {
+				    tail_is_dynamic = true;
+			      }
+			      delete lsb_expr;
+			}
+
+			if (tail_is_dynamic) {
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_lval_net_packed_member_: "
+					 << "Dynamic bit-select on struct member, off=" << off
+					 << ", use_width=" << use_width
+					 << endl;
+			      }
+
+			        // Calculate prefix offset first
+			      long prefix_loff;
+			      unsigned long prefix_lwid;
+			      prefix_to_slice(mem_packed_dims, prefix_indices, 0, prefix_loff, prefix_lwid);
+
+			        // The member's base offset within the struct needs to be added to
+			        // the dynamic bit-select expression. Create an expression:
+			        // member_offset + dynamic_index
+			      long total_base = off + prefix_loff;
+
+			        // Create the combined dynamic offset expression
+			      NetExpr* base_expr = new NetEConst(verinum(total_base));
+			      NetExpr* combined = new NetEBAdd('+', base_expr, tail_mux, 32, true);
+
+			        // For packed struct member bit-select, set up the part with
+			        // the dynamic expression for a single bit
+			      lv->set_part(combined, tail_wid);
+
+			        // Signal that we've fully handled this member access
+			      return true;
 			}
 
 			if (debug_elaborate) {
 			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_packed_member_: "
-				   << "calculate_part for tail returns tail_off=" << tail_off
+				   << "Constant bit-select on struct member, tail_off=" << tail_off
 				   << ", tail_wid=" << tail_wid
 				   << endl;
 			}
