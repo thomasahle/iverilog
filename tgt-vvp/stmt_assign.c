@@ -1739,6 +1739,14 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 
 		  if (idx_expr) clr_word(idx);
 
+	    } else if (ivl_type_base(prop_type) == IVL_VT_NO_TYPE) {
+		    /* Event type property - treat as object assignment.
+		       In SystemVerilog, events can be assigned like object references.
+		       event1 = event2 makes event1 an alias to event2. */
+		  errors += draw_eval_object(rval);
+		  fprintf(vvp_out, "    %%store/prop/obj %d, 0; IVL_VT_NO_TYPE (event)\n", prop_idx);
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+
 	    } else {
 		  fprintf(vvp_out, " ; ERROR: ivl_type_base(prop_type) = %d\n",
 			  ivl_type_base(prop_type));

@@ -176,6 +176,38 @@ bool symbol_search(const LineInfo*li, Design*des, NetScope*scope,
 			}
 		  }
 
+		    // Check class properties BEFORE events because event properties
+		    // are also created as standalone events, and we want class
+		    // property access to take precedence when inside a class method.
+		  if (scope->type() == NetScope::CLASS) {
+			const netclass_t *clsnet = scope->class_def();
+			if (debug_scopes) {
+			      cerr << li->get_fileline() << ": symbol_search: "
+			           << "Checking class " << clsnet->get_name()
+			           << " for property " << path_tail.name << endl;
+			}
+			int pidx = clsnet->property_idx_from_name(path_tail.name);
+			if (debug_scopes) {
+			      cerr << li->get_fileline() << ": symbol_search: "
+			           << "property_idx_from_name returned " << pidx << endl;
+			}
+			if (pidx >= 0) {
+			      // This is a class property being accessed in a
+			      // class method. Return `this` for the net and the
+			      // property name for the path tail.
+			      NetScope *scope_method = find_method_containing_scope(*li, start_scope);
+			      ivl_assert(*li, scope_method);
+			      res->net = scope_method->find_signal(perm_string::literal(THIS_TOKEN));
+			      ivl_assert(*li, res->net);
+			      res->scope = scope;
+			      ivl_assert(*li, path.empty());
+			      res->path_head.push_back(name_component_t(perm_string::literal(THIS_TOKEN)));
+			      res->path_tail.push_front(path_tail);
+			      res->type = clsnet;
+			      return true;
+			}
+		  }
+
 		  if (NetEvent*eve = scope->find_event(path_tail.name)) {
 			if (prefix_scope || (eve->lexical_pos() <= lexical_pos)) {
 			      path.push_back(path_tail);
@@ -197,27 +229,6 @@ bool symbol_search(const LineInfo*li, Design*des, NetScope*scope,
 			      return true;
 			} else if (!res->decl_after_use) {
 			      res->decl_after_use = par;
-			}
-		  }
-
-		    // Static items are just normal signals and are found above.
-		  if (scope->type() == NetScope::CLASS) {
-			const netclass_t *clsnet = scope->class_def();
-			int pidx = clsnet->property_idx_from_name(path_tail.name);
-			if (pidx >= 0) {
-			      // This is a class property being accessed in a
-			      // class method. Return `this` for the net and the
-			      // property name for the path tail.
-			      NetScope *scope_method = find_method_containing_scope(*li, start_scope);
-			      ivl_assert(*li, scope_method);
-			      res->net = scope_method->find_signal(perm_string::literal(THIS_TOKEN));
-			      ivl_assert(*li, res->net);
-			      res->scope = scope;
-			      ivl_assert(*li, path.empty());
-			      res->path_head.push_back(name_component_t(perm_string::literal(THIS_TOKEN)));
-			      res->path_tail.push_front(path_tail);
-			      res->type = clsnet;
-			      return true;
 			}
 		  }
 
