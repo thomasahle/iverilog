@@ -8,8 +8,8 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 | AVIP | Compiles | Runs | Notes |
 |------|----------|------|-------|
 | APB | ✅ | ✅ | Full testbench runs, UVM phases execute |
-| AXI4 | ✅ | 🔄 | Pending runtime test |
-| SPI | ✅ | 🔄 | Pending runtime test |
+| AXI4 | ✅ | ⚠️ | Packages compile, full TB has segfault (bind directive) |
+| SPI | ⚠️ | ❌ | Needs multi-dimensional struct array indexing |
 | UART | ✅ | 🔄 | Pending runtime test |
 | I2S | ✅ | 🔄 | Pending runtime test |
 | AHB | ✅ | 🔄 | Pending runtime test |
@@ -69,6 +69,9 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 - [x] Sequence/sequencer infrastructure
 - [x] run_test() implementation
 
+### Phase 9: Display Formatting ✅
+- [x] %p format specifier for $sformatf/$display
+
 ## Current Warnings (Non-Blocking)
 
 These warnings appear during compilation but don't prevent operation:
@@ -76,29 +79,34 @@ These warnings appear during compilation but don't prevent operation:
 1. **Extern function declarations** - Parsed but out-of-body definitions not linked
 2. **Constraint declarations** - Parsed but randomization constraints not enforced
 3. **Unpacked structs** - Parsed but not fully supported in all contexts
-4. **`%p` format specifier** - Not supported in $sformatf (prints literal <%p>)
+
+## Known Issues
+
+1. **bind directive** - Not yet supported, may cause segfault in elaborate
+2. **Multi-dimensional struct member indexing** - `struct.member[i][j]` with variable indices not supported
+3. **Dynamic array .size() on nested properties** - `obj.prop.arr.size()` deferred
 
 ## Pending Features
 
-### Phase 9: Enhanced Randomization
+### Phase 10: Enhanced Randomization
 - [ ] Constraint solver for class constraints
 - [ ] Inline constraints with randomize() { ... }
 - [ ] Soft constraints
 - [ ] dist constraints for weighted distributions
 
-### Phase 10: Extern Functions/Tasks
+### Phase 11: Extern Functions/Tasks
 - [ ] Out-of-body function definitions
 - [ ] Out-of-body task definitions
 - [ ] Method prototyping with extern keyword
 
-### Phase 11: SystemVerilog Assertions (SVA)
+### Phase 12: SystemVerilog Assertions (SVA)
 - [ ] Property declarations (use -gno-assertions to disable)
 - [ ] Concurrent assertions
 - [ ] bind directive
 
-### Phase 12: Advanced Features
+### Phase 13: Advanced Features
 - [ ] Full unpacked struct support
-- [ ] `%p` format specifier for $sformatf
+- [ ] Multi-dimensional indexed struct member access
 - [ ] Coverpoints with full bins support
 - [ ] Cross coverage
 
@@ -109,10 +117,13 @@ These warnings appear during compilation but don't prevent operation:
 - Use -gno-assertions flag until SVA support is complete
 
 ## Recent Changes
+- 2025-12-30: Added %p format specifier for $sformatf/$display
 - 2025-12-30: All 7 main AVIPs compile successfully
 - 2025-12-30: APB AVIP runs full UVM testbench
 - 2025-12-30: Added covergroup sample() typed argument support
 - 2025-12-30: Fixed event class property resolution
 
 ## Next Priority
-Test remaining AVIPs at runtime and address any blocking issues.
+1. Fix bind directive handling to prevent segfault
+2. Implement multi-dimensional struct member indexing
+3. Test remaining AVIPs at runtime
