@@ -6848,6 +6848,124 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 		  return if_first;
 	    }
 
+	    // Check for packed vector property (e.g., logic [N-1:0] data)
+	    const netvector_t*vtype = dynamic_cast<const netvector_t*> (ptype);
+	    if (vtype != 0) {
+		  const netranges_t&dims = vtype->packed_dims();
+		  if (!dims.empty() && dims.size() >= index_vars_.size()) {
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PForeach::elaborate: "
+				   << "Using packed vector class property " << array_var_
+				   << " with " << dims.size() << " packed dimensions." << endl;
+			}
+			return elaborate_static_array_(des, scope, dims);
+		  }
+	    }
+
+	    // Check for queue property
+	    const netqueue_t*qtype = dynamic_cast<const netqueue_t*> (ptype);
+	    if (qtype != 0) {
+		  // Queue property foreach - generate for loop with .size()
+		  // for (idx = 0; idx < property.size(); idx += 1)
+
+		  if (index_vars_.size() != 1) {
+			cerr << get_fileline() << ": sorry: "
+			     << "Multi-index foreach loops on queue class properties not supported." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Find the object signal that owns this property
+		  NetNet*obj_net = 0;
+		  if (array_var_.size() == 1) {
+			// Simple name: property of 'this'
+			NetScope*this_scope = scope;
+			while (this_scope && obj_net == 0) {
+			      obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+			      if (obj_net == 0)
+				    this_scope = this_scope->parent();
+			}
+		  } else if (array_var_.size() >= 2) {
+			perm_string first_name = array_var_.front().name;
+			if (first_name == perm_string::literal(THIS_TOKEN)) {
+			      // Explicit this.property
+			      NetScope*this_scope = scope;
+			      while (this_scope && obj_net == 0) {
+				    obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+				    if (obj_net == 0)
+					  this_scope = this_scope->parent();
+			      }
+			} else {
+			      // obj.property - try as local variable first
+			      pform_name_t obj_name;
+			      obj_name.push_back(name_component_t(first_name));
+			      obj_net = des->find_signal(scope, obj_name);
+			      // If not found, use intermediate_obj_net for nested property case
+			      if (obj_net == 0 && intermediate_obj_net != 0) {
+				    obj_net = intermediate_obj_net;
+			      }
+			}
+		  }
+		  if (obj_net == 0) {
+			cerr << get_fileline() << ": internal error: "
+			     << "Unable to find object signal for foreach on queue property "
+			     << array_var_ << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Get the signal for the index variable.
+		  pform_name_t index_name;
+		  index_name.push_back(name_component_t(index_vars_[0]));
+		  NetNet*idx_sig = des->find_signal(scope, index_name);
+		  ivl_assert(*this, idx_sig);
+
+		  // Create property expression for the queue
+		  NetEProperty*prop_expr;
+		  if (intermediate_property >= 0 && intermediate_obj_net != 0) {
+			NetEProperty*intermediate_expr = new NetEProperty(obj_net, intermediate_property);
+			intermediate_expr->set_line(*this);
+			prop_expr = new NetEProperty(intermediate_expr, class_property);
+		  } else {
+			prop_expr = new NetEProperty(obj_net, class_property);
+		  }
+		  prop_expr->set_line(*this);
+
+		  // Create index variable expression for the condition
+		  NetESignal*idx_exp = new NetESignal(idx_sig);
+		  idx_exp->set_line(*this);
+
+		  // Make initialization expression: idx = 0
+		  NetEConst*init_expr = make_const_val(0);
+		  init_expr->set_line(*this);
+
+		  // Make condition expression: idx < $size(property)
+		  NetESFunc*size_exp = new NetESFunc("$size", &netvector_t::atom2u32, 1);
+		  size_exp->set_line(*this);
+		  size_exp->parm(0, prop_expr);
+
+		  NetEBComp*cond_expr = new NetEBComp('<', idx_exp, size_exp);
+		  cond_expr->set_line(*this);
+
+		  // Elaborate the statement that is contained in the foreach loop
+		  NetProc*sub;
+		  if (statement_)
+			sub = statement_->elaborate(des, scope);
+		  else
+			sub = new NetBlock(NetBlock::SEQU, 0);
+
+		  // Make step statement: idx += 1
+		  NetAssign_*idx_lv = new NetAssign_(idx_sig);
+		  NetEConst*step_val = make_const_val(1);
+		  NetAssign*step = new NetAssign(idx_lv, '+', step_val);
+		  step->set_line(*this);
+
+		  NetForLoop*stmt = new NetForLoop(idx_sig, init_expr, cond_expr, sub, step);
+		  stmt->set_line(*this);
+
+		  return stmt;
+	    }
+
 	    cerr << get_fileline() << ": error: "
 		 << "I can't handle the type of " << array_var_
 		 << " as a foreach loop." << endl;
