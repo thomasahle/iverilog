@@ -133,6 +133,31 @@ package uvm_pkg;
     UVM_HIER
   } uvm_hier_e;
 
+  // Phase state enumeration
+  typedef enum {
+    UVM_PHASE_UNINITIALIZED = 0,
+    UVM_PHASE_DORMANT = 1,
+    UVM_PHASE_SCHEDULED = 2,
+    UVM_PHASE_SYNCING = 3,
+    UVM_PHASE_STARTED = 4,
+    UVM_PHASE_EXECUTING = 5,
+    UVM_PHASE_READY_TO_END = 6,
+    UVM_PHASE_ENDED = 7,
+    UVM_PHASE_CLEANUP = 8,
+    UVM_PHASE_DONE = 9,
+    UVM_PHASE_JUMPING = 10
+  } uvm_phase_state;
+
+  // Phase wait operation
+  typedef enum {
+    UVM_LT,
+    UVM_LTE,
+    UVM_NE,
+    UVM_EQ,
+    UVM_GT,
+    UVM_GTE
+  } uvm_wait_op;
+
   // Prediction type
   typedef enum {
     UVM_PREDICT_DIRECT,
@@ -298,10 +323,12 @@ package uvm_pkg;
   class uvm_phase;
     string name;
     int objection_count;
+    uvm_phase_state m_state;
 
     function new(string name = "");
       this.name = name;
       this.objection_count = 0;
+      this.m_state = UVM_PHASE_DORMANT;
     endfunction
 
     function void raise_objection(uvm_object obj, string description = "", int count = 1);
@@ -316,6 +343,28 @@ package uvm_pkg;
     function bit is_done();
       return (objection_count == 0);
     endfunction
+
+    function uvm_phase_state get_state();
+      return m_state;
+    endfunction
+
+    function void set_state(uvm_phase_state state);
+      m_state = state;
+    endfunction
+
+    // Wait for the phase to reach a particular state
+    task wait_for_state(uvm_phase_state state, uvm_wait_op op = UVM_EQ);
+      // Simplified implementation - just wait a small amount of time
+      // In full UVM this would use events and proper synchronization
+      case (op)
+        UVM_EQ: while (m_state != state) #1;
+        UVM_NE: while (m_state == state) #1;
+        UVM_LT: while (m_state >= state) #1;
+        UVM_LTE: while (m_state > state) #1;
+        UVM_GT: while (m_state <= state) #1;
+        UVM_GTE: while (m_state < state) #1;
+      endcase
+    endtask
   endclass
 
   // ============================================================================
@@ -1013,34 +1062,43 @@ package uvm_pkg;
       $display("UVM_INFO: Starting UVM phases...");
 
       // Build phase
+      build_ph.set_state(UVM_PHASE_STARTED);
       if (m_test != null) begin
         $display("UVM_INFO: Running build_phase...");
         m_test.do_build_phase(phase);
       end
+      build_ph.set_state(UVM_PHASE_DONE);
 
       // Connect phase
       phase.name = "connect";
+      connect_ph.set_state(UVM_PHASE_STARTED);
       if (m_test != null) begin
         $display("UVM_INFO: Running connect_phase...");
         m_test.do_connect_phase(phase);
       end
+      connect_ph.set_state(UVM_PHASE_DONE);
 
       // End of elaboration phase
       phase.name = "end_of_elaboration";
+      end_of_elaboration_ph.set_state(UVM_PHASE_STARTED);
       if (m_test != null) begin
         $display("UVM_INFO: Running end_of_elaboration_phase...");
         m_test.do_end_of_elaboration_phase(phase);
       end
+      end_of_elaboration_ph.set_state(UVM_PHASE_DONE);
 
       // Start of simulation phase
       phase.name = "start_of_simulation";
+      start_of_simulation_ph.set_state(UVM_PHASE_STARTED);
       if (m_test != null) begin
         $display("UVM_INFO: Running start_of_simulation_phase...");
         m_test.do_start_of_simulation_phase(phase);
       end
+      start_of_simulation_ph.set_state(UVM_PHASE_DONE);
 
       // Run phase
       phase.name = "run";
+      run_ph.set_state(UVM_PHASE_STARTED);
       if (m_test != null) begin
         $display("UVM_INFO: Running run_phase...");
         // Fork all component run_phases (they use fork/join_none internally)
@@ -1055,34 +1113,43 @@ package uvm_pkg;
         end
         $display("UVM_INFO: All objections dropped, ending run_phase...");
       end
+      run_ph.set_state(UVM_PHASE_DONE);
 
       // Extract phase
       phase.name = "extract";
+      extract_ph.set_state(UVM_PHASE_STARTED);
       if (m_test != null) begin
         $display("UVM_INFO: Running extract_phase...");
         m_test.do_extract_phase(phase);
       end
+      extract_ph.set_state(UVM_PHASE_DONE);
 
       // Check phase
       phase.name = "check";
+      check_ph.set_state(UVM_PHASE_STARTED);
       if (m_test != null) begin
         $display("UVM_INFO: Running check_phase...");
         m_test.do_check_phase(phase);
       end
+      check_ph.set_state(UVM_PHASE_DONE);
 
       // Report phase
       phase.name = "report";
+      report_ph.set_state(UVM_PHASE_STARTED);
       if (m_test != null) begin
         $display("UVM_INFO: Running report_phase...");
         m_test.do_report_phase(phase);
       end
+      report_ph.set_state(UVM_PHASE_DONE);
 
       // Final phase
       phase.name = "final";
+      final_ph.set_state(UVM_PHASE_STARTED);
       if (m_test != null) begin
         $display("UVM_INFO: Running final_phase...");
         m_test.do_final_phase(phase);
       end
+      final_ph.set_state(UVM_PHASE_DONE);
 
       $display("UVM_INFO: UVM phases complete.");
       $finish;
@@ -1325,6 +1392,11 @@ package uvm_pkg;
     // Is empty check
     virtual function bit is_empty();
       return m_count == 0;
+    endfunction
+
+    // Is full check
+    virtual function bit is_full();
+      return m_count >= 64;
     endfunction
 
     // Flush - reset fifo
@@ -2249,5 +2321,19 @@ package uvm_pkg;
 
     root.run_test(test_name);
   endtask
+
+  // ============================================================================
+  // Global Phase Objects
+  // These are used for phase synchronization from non-component code
+  // ============================================================================
+  uvm_phase build_ph = new("build");
+  uvm_phase connect_ph = new("connect");
+  uvm_phase end_of_elaboration_ph = new("end_of_elaboration");
+  uvm_phase start_of_simulation_ph = new("start_of_simulation");
+  uvm_phase run_ph = new("run");
+  uvm_phase extract_ph = new("extract");
+  uvm_phase check_ph = new("check");
+  uvm_phase report_ph = new("report");
+  uvm_phase final_ph = new("final");
 
 endpackage
