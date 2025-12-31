@@ -67,6 +67,10 @@ bool ivl_type_s::type_compatible(ivl_type_t that) const
       if (this == that)
 	    return true;
 
+      // Guard against null pointer
+      if (that == nullptr)
+	    return false;
+
       return test_compatibility(that);
 }
 
@@ -79,6 +83,10 @@ bool ivl_type_s::type_equivalent(ivl_type_t that) const
 {
       if (this == that)
 	    return true;
+
+      // Guard against null pointer
+      if (that == nullptr)
+	    return false;
 
       return test_equivalence(that);
 }

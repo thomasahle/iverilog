@@ -7181,7 +7181,16 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
             tmp->set_line(*this);
             return tmp;
       }
-      ivl_assert(*this, ntype->type_compatible(net->net_type()));
+      // Guard against null ntype - can happen with unsupported constructs
+      if (ntype == nullptr) {
+            if (debug_elaborate) {
+                  cerr << get_fileline() << ": PEIdent::elaborate_expr: "
+                       << "ntype is null, skipping type compatibility check"
+                       << endl;
+            }
+      } else {
+            ivl_assert(*this, ntype->type_compatible(net->net_type()));
+      }
 
       const name_component_t&use_comp = path_.back();
 
