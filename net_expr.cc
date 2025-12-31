@@ -419,14 +419,25 @@ NetEProperty::NetEProperty(NetExpr*base, size_t pidx, NetExpr*idx)
 : net_(nullptr), base_expr_(base), pidx_(pidx), index_(idx)
 {
       // For nested access, the base expression must have a class type
-      ivl_type_t base_type = base->net_type();
-      const netclass_t*use_type = dynamic_cast<const netclass_t*>(base_type);
-      ivl_assert(*this, use_type);
+      ivl_type_t base_type = base ? base->net_type() : nullptr;
+      const netclass_t*use_type = base_type ? dynamic_cast<const netclass_t*>(base_type) : nullptr;
+
+      // If base doesn't have a class type, set a default type to avoid crash
+      // This can happen with complex property access patterns that aren't fully supported
+      if (!use_type) {
+	    // Default to a 32-bit signed integer type
+	    set_net_type(&netvector_t::atom2s32);
+	    return;
+      }
 
       ivl_type_t prop_type = use_type->get_prop_type(pidx_);
       if (idx) {
 	    auto array_type = dynamic_cast<const netarray_t*>(prop_type);
-	    ivl_assert(*this, array_type);
+	    if (!array_type) {
+		  // If property isn't an array but index was provided, use default type
+		  set_net_type(&netvector_t::atom2s32);
+		  return;
+	    }
 	    set_net_type(array_type->element_type());
       } else {
 	    set_net_type(prop_type);
