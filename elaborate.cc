@@ -6252,8 +6252,10 @@ NetProc* PEventStatement::elaborate_wait(Design*des, NetScope*scope,
       }
 
       if (wait_set->size() == 0) {
-	    cerr << get_fileline() << ": internal error: Empty NexusSet"
-		 << " from wait expression." << endl;
+	    cerr << get_fileline() << ": sorry: wait() on class property "
+		 << "expressions is not yet supported." << endl;
+	    cerr << get_fileline() << ":      : Consider using a polling "
+		 << "loop: while (!expr) #1;" << endl;
 	    des->errors += 1;
 	    return 0;
       }
