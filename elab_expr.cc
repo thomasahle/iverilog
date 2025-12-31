@@ -179,7 +179,7 @@ NetExpr* elaborate_rval_expr(Design*des, NetScope*scope, ivl_type_t lv_net_type,
       }
 
       const netenum_t *lval_enum = dynamic_cast<const netenum_t*>(lv_net_type);
-      if (lval_enum) {
+      if (lval_enum && rval) {
 	    const netenum_t *rval_enum = rval->enumeration();
 	    if (!rval_enum) {
 	      cerr << expr->get_fileline() << ": error: "
