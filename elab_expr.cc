@@ -2809,61 +2809,30 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 			cerr << li->get_fileline() << ": check_for_struct_members: "
 			     << "Member is netuarray_t (unpacked array), "
 			     << "dimensions=" << uarray->static_dimensions().size()
+			     << ", indices provided=" << member_comp.index.size()
 			     << endl;
 		  }
-		    // For unpacked array struct members, VVP code generation does not
-		    // currently support reading struct signals with unpacked array members
-		    // because the struct cannot be loaded as a contiguous bit vector.
-		    // Emit a "sorry" message until VVP support is implemented.
-		  cerr << li->get_fileline() << ": sorry: "
-		       << "Reading unpacked array member '" << member_name
-		       << "' from struct as rvalue is not yet supported." << endl;
-		  cerr << li->get_fileline() << ":      : "
-		       << "Consider using a workaround such as copying to a local variable." << endl;
+
+		    // Unpacked array members of structs currently require special handling
+		    // that isn't fully implemented. The VVP backend needs to support
+		    // word-level access to struct signals with unpacked array members.
+		  if (member_comp.index.empty()) {
+			  // No indices - trying to read the entire unpacked array
+			cerr << li->get_fileline() << ": sorry: "
+			     << "Reading entire unpacked array member '" << member_name
+			     << "' from struct as rvalue is not yet supported." << endl;
+			cerr << li->get_fileline() << ":      : "
+			     << "Consider copying elements individually in a loop." << endl;
+		  } else {
+			  // Have indices - trying to read a specific element
+			cerr << li->get_fileline() << ": sorry: "
+			     << "Reading unpacked array element '" << member_name
+			     << "[...]' from struct as rvalue is not yet supported." << endl;
+			cerr << li->get_fileline() << ":      : "
+			     << "Consider copying the struct member to a local array first." << endl;
+		  }
 		  des->errors += 1;
 		  return 0;
-
-		    // NOTE: The code below is preserved for future implementation
-		    // when VVP code generation is extended to support unpacked struct
-		    // array member access.
-		  (void)uarray;  // Suppress unused variable warning
-#if 0
-		  if (member_comp.index.empty()) {
-			cerr << li->get_fileline() << ": sorry: "
-			     << "Cannot access entire unpacked array member '"
-			     << member_name << "' as rvalue without indices."
-			     << endl;
-			des->errors += 1;
-			return 0;
-		  }
-		  NetExpr* canon_index = make_canonical_index(des, scope, li,
-							      member_comp.index,
-							      uarray, false);
-		  if (canon_index == 0) {
-			cerr << li->get_fileline() << ": error: "
-			     << "Failed to elaborate array index for member "
-			     << member_name << "." << endl;
-			des->errors += 1;
-			return 0;
-		  }
-		  ivl_type_t elem_type = uarray->element_type();
-		  unsigned elem_width = elem_type->packed_width();
-
-		  NetESignal*sig = new NetESignal(net);
-		  sig->set_line(*li);
-
-		  NetESelect*sel = new NetESelect(sig, canon_index, elem_width, elem_type);
-		  sel->set_line(*li);
-
-		  if (debug_elaborate) {
-			cerr << li->get_fileline() << ": check_for_struct_members: "
-			     << "Created NetESelect for unpacked array member '"
-			     << member_name << "' with word index, width=" << elem_width
-			     << endl;
-		  }
-
-		  return sel;
-#endif
 	    }
 
 	    off += tmp_off;
@@ -9474,8 +9443,9 @@ NetExpr* PEIdent::elaborate_expr_net(Design*des, NetScope*scope,
 
 	// If prefix indices are variable and this is a part select,
 	// compute the base using variable slice calculation.
+	// Skip this for associative arrays since the first index is the key, not a packed dim.
       if (!rc && is_variable && use_sel == index_component_t::SEL_PART &&
-          path_.back().index.size() >= 2) {
+          path_.back().index.size() >= 2 && net->data_type() != IVL_VT_ASSOC) {
 	    if (debug_elaborate) {
 		  cerr << get_fileline() << ": PEIdent::elaborate_expr_net: "
 		       << "Using variable slice for part select"
@@ -9500,6 +9470,22 @@ NetExpr* PEIdent::elaborate_expr_net(Design*des, NetScope*scope,
 	      // Compute the base offset for the slice
 	    unsigned long slice_wid = net->slice_width(prefix_index.size());
 	    const netranges_t& pdims = net->packed_dims();
+
+	      // Guard against insufficient packed dimensions
+	    if (pdims.size() < prefix_index.size()) {
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PEIdent::elaborate_expr_net: "
+			     << "Insufficient packed dimensions for variable index"
+			     << " (have " << pdims.size()
+			     << ", need " << prefix_index.size() << ")"
+			     << endl;
+		  }
+		  cerr << get_fileline() << ": sorry: "
+		       << "Variable indexed access with insufficient packed dimensions"
+		       << " is not yet supported." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
 
 	      // Build the base expression: multiply each index by its stride
 	    NetExpr* prefix_base = 0;
