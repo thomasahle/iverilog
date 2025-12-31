@@ -5409,6 +5409,19 @@ expr_primary
 	delete $2;
 	$$ = tmp;
       }
+    /* this.randomize() with { inline_constraints } or super.randomize() with { inline_constraints } as expression */
+  | class_hierarchy_identifier argument_list_parens K_with '{' constraint_block_item_list_opt '}'
+      { /* For now, parse but ignore inline constraints - just call randomize() */
+	if ($1 && peek_tail_name(*$1) == "randomize") {
+	      yywarn(@3, "warning: Inline constraints after randomize() parsed but not enforced.");
+	} else {
+	      yyerror(@3, "error: 'with' constraint block can only be used with randomize().");
+	}
+	PECallFunction*tmp = pform_make_call_function(@1, *$1, *$2);
+	delete $1;
+	delete $2;
+	$$ = tmp;
+      }
   | SYSTEM_IDENTIFIER argument_list_parens
       { perm_string tn = lex_strings.make($1);
 	PECallFunction *tmp = new PECallFunction(tn, *$2);
@@ -8644,8 +8657,35 @@ subroutine_call
 	delete $2;
 	$$ = tmp;
       }
+    /* randomize() with { <constraints> } as a statement */
+  | hierarchy_identifier argument_list_parens K_with '{' constraint_block_item_list_opt '}'
+      { /* Parse inline constraints but warn they're not enforced */
+	if ($1 && peek_tail_name(*$1) == "randomize") {
+	      yywarn(@3, "warning: Inline constraints after randomize() parsed but not enforced.");
+	} else {
+	      yyerror(@3, "error: Constraint block can only be applied to randomize method.");
+	}
+	PCallTask*tmp = pform_make_call_task(@1, *$1, *$2);
+	delete $1;
+	delete $2;
+	$$ = tmp;
+      }
   | class_hierarchy_identifier argument_list_parens_opt
       { PCallTask*tmp = new PCallTask(*$1, *$2);
+	FILE_NAME(tmp, @1);
+	delete $1;
+	delete $2;
+	$$ = tmp;
+      }
+    /* this.randomize() with { <constraints> } or super.randomize() with { <constraints> } */
+  | class_hierarchy_identifier argument_list_parens K_with '{' constraint_block_item_list_opt '}'
+      { /* Parse inline constraints but warn they're not enforced */
+	if ($1 && peek_tail_name(*$1) == "randomize") {
+	      yywarn(@3, "warning: Inline constraints after randomize() parsed but not enforced.");
+	} else {
+	      yyerror(@3, "error: Constraint block can only be applied to randomize method.");
+	}
+	PCallTask*tmp = new PCallTask(*$1, *$2);
 	FILE_NAME(tmp, @1);
 	delete $1;
 	delete $2;
