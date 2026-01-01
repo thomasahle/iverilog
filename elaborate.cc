@@ -2819,7 +2819,7 @@ NetProc* PAssign::elaborate(Design*des, NetScope*scope) const
 	    ivl_assert(*this, lv->more==0);
 	    rv = elaborate_rval_(des, scope, lv_net_type);
 
-      } else if (const netdarray_t*dtype = dynamic_cast<const netdarray_t*> (lv_net_type)) {
+      } else if (dynamic_cast<const netdarray_t*> (lv_net_type)) {
 	    ivl_assert(*this, lv->more==0);
 	    if (debug_elaborate) {
 		  if (lv->word())
@@ -2829,13 +2829,12 @@ NetProc* PAssign::elaborate(Design*des, NetScope*scope) const
 			cerr << get_fileline() << ": PAssign::elaborate: "
 			     << "lv->word() = <nil>" << endl;
 	    }
-	    ivl_type_t use_lv_type = lv_net_type;
-	    if (lv->word())
-		  use_lv_type = dtype->element_type();
+	    // Note: lv->net_type() already accounts for word indexing,
+	    // so we use lv_net_type directly (don't take element_type again).
+	    // This is important for nested dynamic arrays like int arr[][].
+	    rv = elaborate_rval_(des, scope, lv_net_type);
 
-	    rv = elaborate_rval_(des, scope, use_lv_type);
-
-      } else if (const netuarray_t*utype = dynamic_cast<const netuarray_t*>(lv_net_type)) {
+      } else if (dynamic_cast<const netuarray_t*>(lv_net_type)) {
 	    ivl_assert(*this, lv->more==0);
 	    if (debug_elaborate) {
 		  if (lv->word())
@@ -2845,12 +2844,11 @@ NetProc* PAssign::elaborate(Design*des, NetScope*scope) const
 			cerr << get_fileline() << ": PAssign::elaborate: "
 			     << "lv->word() = <nil>" << endl;
 	    }
-	    ivl_type_t use_lv_type = lv_net_type;
-	    if (lv->word())
-		  use_lv_type = utype->element_type();
-
-	    ivl_assert(*this, use_lv_type);
-	    rv = elaborate_rval_(des, scope, use_lv_type);
+	    // Note: lv->net_type() already accounts for word indexing,
+	    // so we use lv_net_type directly (don't take element_type again).
+	    // This is important for nested arrays.
+	    ivl_assert(*this, lv_net_type);
+	    rv = elaborate_rval_(des, scope, lv_net_type);
 
       } else {
 	      /* Elaborate the r-value expression, then try to evaluate it. */

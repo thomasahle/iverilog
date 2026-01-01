@@ -1177,6 +1177,9 @@ static void show_stmt_assign_sig_darray_queue_mux(ivl_statement_t net)
 	    draw_eval_expr_into_integer(mux, 3);
 	    break;
 	  case IVL_VT_CLASS:
+	  case IVL_VT_DARRAY:
+	  case IVL_VT_QUEUE:
+	    // Classes, dynamic arrays, and queues are all stored as objects
 	    assert(ivl_stmt_opcode(net) == 0);
 	    draw_eval_object(rval);
 	    draw_eval_expr_into_integer(mux, 3);
@@ -1303,6 +1306,9 @@ static int show_stmt_assign_sig_darray(ivl_statement_t net)
 		  fprintf(vvp_out, "    %%store/dar/vec4 v%p_0;\n", var);
 		  break;
 		case IVL_VT_CLASS:
+		case IVL_VT_DARRAY:
+		case IVL_VT_QUEUE:
+		  // Classes, dynamic arrays, and queues are stored as objects
 		  fprintf(vvp_out, "    %%store/dar/o v%p_0;\n", var);
 		  break;
 	    default:

@@ -1369,6 +1369,40 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 		  return;
 	    }
+
+	    /* Handle $size on indexed nested arrays (e.g., arr[i].size() where
+	       arr is int[][] - a darray of darray). */
+	    if (arg && ivl_expr_type(arg) == IVL_EX_SIGNAL) {
+		  ivl_signal_t sig = ivl_expr_signal(arg);
+		  ivl_expr_t word_idx = ivl_expr_oper1(arg);
+		  ivl_type_t sig_type = ivl_signal_net_type(sig);
+
+		  /* Check if this is a darray/queue with an element type of darray/queue */
+		  if (word_idx && sig_type) {
+			ivl_variable_type_t stype = ivl_type_base(sig_type);
+			if (stype == IVL_VT_DARRAY || stype == IVL_VT_QUEUE) {
+			      ivl_type_t elem_type = ivl_type_element(sig_type);
+			      if (elem_type) {
+				    ivl_variable_type_t etype = ivl_type_base(elem_type);
+				    if (etype == IVL_VT_DARRAY || etype == IVL_VT_QUEUE) {
+					  /* This is arr[i] where arr is darray of darray.
+					     Load the outer darray, get element at index i,
+					     then get size of that inner darray. */
+					  int idx_reg = allocate_word();
+					  draw_eval_expr_into_integer(word_idx, idx_reg);
+					  /* Load the outer darray onto object stack */
+					  fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+					  /* Get the inner darray at index[i] - pops outer, pushes inner */
+					  fprintf(vvp_out, "    %%get/dar/obj/o %d;\n", idx_reg);
+					  clr_word(idx_reg);
+					  /* Now get the size of the inner darray on the object stack */
+					  fprintf(vvp_out, "    %%obj/dar/size;\n");
+					  return;
+				    }
+			      }
+			}
+		  }
+	    }
 	    /* Fall through to generic VPI handling for signals */
       }
 

@@ -6296,6 +6296,34 @@ bool of_POW_WR(vthread_t thr, vvp_code_t)
 }
 
 /*
+ * %obj/dar/size
+ *
+ * Pop a darray object from the object stack and push its size onto
+ * the vec4 stack as a 32-bit unsigned integer.
+ * Used for getting size of nested dynamic array elements, e.g., arr[i].size()
+ */
+bool of_OBJ_DAR_SIZE(vthread_t thr, vvp_code_t)
+{
+      vvp_object_t obj;
+      thr->pop_object(obj);
+
+      vvp_darray*dar = obj.peek<vvp_darray>();
+      size_t size = 0;
+      if (dar) {
+	    size = dar->get_size();
+      }
+
+      // Push size as 32-bit unsigned
+      vvp_vector4_t result(32);
+      for (unsigned i = 0; i < 32; i++) {
+	    result.set_bit(i, (size >> i) & 1 ? BIT4_1 : BIT4_0);
+      }
+      thr->push_vec4(result);
+
+      return true;
+}
+
+/*
  * %prop/dar/size <pid>
  *
  * Get the size of a dynamic array property from the cobject on the object stack.

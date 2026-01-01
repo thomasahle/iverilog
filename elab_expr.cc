@@ -5617,6 +5617,55 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    sub_expr = tmp;
       }
 
+      // Dynamic array with index - element type is darray or queue (nested arrays)
+      // e.g., arr[0].size() where arr is int[][] (darray of darray)
+      if (search_results.net && search_results.net->data_type()==IVL_VT_DARRAY
+	  && search_results.path_head.back().index.size()==1) {
+
+	    NetNet*net = search_results.net;
+	    const netdarray_t*outer_darray = net->darray_type();
+	    ivl_type_t element_type = outer_darray->element_type();
+
+	    // Check if element type is darray or queue
+	    const netdarray_t*inner_darray = dynamic_cast<const netdarray_t*>(element_type);
+	    const netqueue_t*inner_queue = dynamic_cast<const netqueue_t*>(element_type);
+
+	    if (inner_darray || inner_queue) {
+		  // Elaborate the index expression
+		  const index_component_t&use_index = search_results.path_head.back().index.back();
+		  ivl_assert(*this, use_index.msb != 0);
+		  ivl_assert(*this, use_index.lsb == 0);
+
+		  NetExpr*mux = elab_and_eval(des, scope, use_index.msb, -1, false);
+		  if (!mux)
+			return 0;
+
+		  // Create expression for arr[i] using NetESignal with word index
+		  NetESignal*elem_expr = new NetESignal(net, mux);
+		  elem_expr->set_line(*this);
+
+		  // Get the method name
+		  perm_string method_name = search_results.path_tail.back().name;
+
+		  if (method_name == "size") {
+			if (parms_.size() != 0) {
+			      cerr << get_fileline() << ": error: size() method "
+				   << "takes no arguments" << endl;
+			      des->errors += 1;
+			}
+			NetESFunc*sys_expr = new NetESFunc("$size", &netvector_t::atom2u32, 1);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, elem_expr);
+			return sys_expr;
+		  }
+
+		  cerr << get_fileline() << ": error: Method " << method_name
+		       << " is not supported for nested dynamic array element." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+      }
+
       if (debug_elaborate && sub_expr) {
 	    cerr << get_fileline() << ": PECallFunction::elaborate_expr_method_: "
 		 << "sub_expr->expr_type: " << sub_expr->expr_type() << endl;

@@ -226,6 +226,7 @@ extern bool of_QSORT(vthread_t thr, vvp_code_t code);
 extern bool of_QRSORT(vthread_t thr, vvp_code_t code);
 extern bool of_QSUM(vthread_t thr, vvp_code_t code);
 extern bool of_QUNIQUE(vthread_t thr, vvp_code_t code);
+extern bool of_OBJ_DAR_SIZE(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_DAR_SIZE(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_Q_POPB(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_Q_POPB_O(vthread_t thr, vvp_code_t code);
