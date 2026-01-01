@@ -2805,34 +2805,116 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 
 	      // Special handling for netuarray_t (unpacked array) members
 	    if (const netuarray_t* uarray = dynamic_cast<const netuarray_t*>(member_type)) {
+		  const netranges_t& dims = uarray->static_dimensions();
+		  ivl_type_t elem_type = uarray->element_type();
+		  long elem_width = elem_type ? elem_type->packed_width() : 0;
+
 		  if (debug_elaborate) {
 			cerr << li->get_fileline() << ": check_for_struct_members: "
 			     << "Member is netuarray_t (unpacked array), "
-			     << "dimensions=" << uarray->static_dimensions().size()
+			     << "dimensions=" << dims.size()
 			     << ", indices provided=" << member_comp.index.size()
+			     << ", element_width=" << elem_width
 			     << endl;
 		  }
 
-		    // Unpacked array members of structs currently require special handling
-		    // that isn't fully implemented. The VVP backend needs to support
-		    // word-level access to struct signals with unpacked array members.
-		  if (member_comp.index.empty()) {
-			  // No indices - trying to read the entire unpacked array
+		  if (elem_width <= 0) {
 			cerr << li->get_fileline() << ": sorry: "
-			     << "Reading entire unpacked array member '" << member_name
-			     << "' from struct as rvalue is not yet supported." << endl;
-			cerr << li->get_fileline() << ":      : "
-			     << "Consider copying elements individually in a loop." << endl;
-		  } else {
-			  // Have indices - trying to read a specific element
-			cerr << li->get_fileline() << ": sorry: "
-			     << "Reading unpacked array element '" << member_name
-			     << "[...]' from struct as rvalue is not yet supported." << endl;
-			cerr << li->get_fileline() << ":      : "
-			     << "Consider copying the struct member to a local array first." << endl;
+			     << "Unpacked array member '" << member_name
+			     << "' has non-packed element type." << endl;
+			des->errors += 1;
+			return 0;
 		  }
-		  des->errors += 1;
-		  return 0;
+
+		  if (member_comp.index.empty()) {
+			  // No indices - read the entire unpacked array as a single bit vector
+			  // This enables bulk array assignment like: dst.arr = src.arr
+			long total_width = uarray->packed_width();
+			if (total_width <= 0) {
+			      cerr << li->get_fileline() << ": sorry: "
+				   << "Cannot read entire unpacked array member '" << member_name
+				   << "' with dynamic or unknown size." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			unsigned long base_offset = off + tmp_off;
+			NetExpr* offset_expr = make_const_val(base_offset);
+
+			NetESignal* sig = new NetESignal(net);
+			sig->set_line(*li);
+
+			if (debug_elaborate) {
+			      cerr << li->get_fileline() << ": check_for_struct_members: "
+				   << "Reading entire unpacked array member, "
+				   << "base_offset=" << base_offset
+				   << ", total_width=" << total_width
+				   << endl;
+			}
+
+			  // Use the unpacked array type so the result maintains its structure
+			NetESelect* sel = new NetESelect(sig, offset_expr, total_width, uarray);
+			sel->set_line(*li);
+			return sel;
+		  }
+
+		    // Have indices - create expression to access specific element
+		    // For struct.arr[i], we need: base_offset + i * elem_width
+		  NetExpr* canon_index = make_canonical_index(des, scope, li,
+							      member_comp.index,
+							      uarray, false);
+		  if (!canon_index) {
+			cerr << li->get_fileline() << ": error: "
+			     << "Failed to elaborate index for array member "
+			     << member_name << "." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		    // Calculate the offset expression: base_offset + canon_index * elem_width
+		    // base_offset is off + tmp_off at this point
+		  unsigned long base_offset = off + tmp_off;
+
+		  NetExpr* offset_expr;
+		  long const_idx;
+		  if (eval_as_long(const_idx, canon_index)) {
+			  // Constant index - compute offset directly
+			unsigned long final_offset = base_offset + const_idx * elem_width;
+			offset_expr = make_const_val(final_offset);
+			delete canon_index;
+		  } else {
+			  // Variable index - create expression: base_offset + index * elem_width
+			NetExpr* elem_wid_expr = make_const_val(elem_width);
+			NetEBinary* idx_times_width = new NetEBMult('*', canon_index, elem_wid_expr,
+								   canon_index->expr_width(), false);
+			idx_times_width->set_line(*li);
+
+			NetExpr* base_expr = make_const_val(base_offset);
+			NetEBinary* final_off = new NetEBAdd('+', base_expr, idx_times_width,
+							     idx_times_width->expr_width(), false);
+			final_off->set_line(*li);
+			offset_expr = final_off;
+		  }
+
+		    // Create the NetESelect to access the element
+		    // Pass the element type so the select knows its result type
+		  NetESignal* sig = new NetESignal(net);
+		  sig->set_line(*li);
+
+		  if (debug_elaborate) {
+			cerr << li->get_fileline() << ": check_for_struct_members: "
+			     << "Creating NetESelect for unpacked array element access, "
+			     << "base_offset=" << base_offset
+			     << ", elem_width=" << elem_width
+			     << ", elem_type=" << (elem_type ? typeid(*elem_type).name() : "null")
+			     << ", elem_type->base_type()=" << (elem_type ? elem_type->base_type() : -1)
+			     << endl;
+		  }
+
+		  NetESelect* sel = new NetESelect(sig, offset_expr, elem_width, elem_type);
+		  sel->set_line(*li);
+
+		  return sel;
 	    }
 
 	    off += tmp_off;

@@ -77,12 +77,33 @@ netuarray_t::~netuarray_t()
 }
 
 /*
- * Unpacked arrays are not packed, so return -1 to indicate
- * that the type has no packed width.
+ * For unpacked arrays, return the total storage width if the element
+ * type is packed. This allows struct members with unpacked array types
+ * to be accessed as part of a contiguous bit vector.
+ *
+ * For example, logic [31:0] data[4] has total width = 32 * 4 = 128 bits.
  */
 long netuarray_t::packed_width(void) const
 {
-      return -1;
+      ivl_type_t elem = element_type();
+      if (!elem)
+	    return -1;
+
+      long elem_width = elem->packed_width();
+      if (elem_width < 0)
+	    return -1;  // Element type has unpacked dimensions
+
+      // Calculate total array size
+      const netranges_t& dims = static_dimensions();
+      long total_elements = 1;
+      for (const auto& dim : dims) {
+	    long count = dim.width();
+	    if (count <= 0)
+		  return -1;  // Dynamic or invalid dimension
+	    total_elements *= count;
+      }
+
+      return elem_width * total_elements;
 }
 
 netranges_t netuarray_t::slice_dimensions() const

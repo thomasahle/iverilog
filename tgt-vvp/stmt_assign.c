@@ -1940,13 +1940,27 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
             return 1;
       }
 
+      /* Check if member is an array with an index expression */
+      ivl_expr_t array_idx_expr = ivl_lval_idx(lval);
+      unsigned element_wid = member_wid;
+      int has_array_index = 0;
+
+      if (array_idx_expr && member_type) {
+            /* Member is an unpacked array, get element type and width */
+            ivl_type_t elem_type = ivl_type_element(member_type);
+            if (elem_type) {
+                  element_wid = ivl_type_packed_width(elem_type);
+                  has_array_index = 1;
+            }
+      }
+
       /* Check if there's an additional part/bit select on the member */
       ivl_expr_t part_off_expr = ivl_lval_part_off(lval);
       unsigned part_wid = ivl_lval_width(lval);
-      int has_bit_select = (part_off_expr != 0 && part_wid < member_wid);
+      int has_bit_select = (part_off_expr != 0 && part_wid < element_wid);
 
-      fprintf(vvp_out, "    ; Struct member assignment: %s (idx=%d, off=%u, wid=%u, class_prop=%d, bit_sel=%d)\n",
-              member_name ? member_name : "?", member_idx, member_off, member_wid, is_class_prop, has_bit_select);
+      fprintf(vvp_out, "    ; Struct member assignment: %s (idx=%d, off=%u, wid=%u, arr_idx=%d, elem_wid=%u, class_prop=%d, bit_sel=%d)\n",
+              member_name ? member_name : "?", member_idx, member_off, member_wid, has_array_index, element_wid, is_class_prop, has_bit_select);
 
       /* Evaluate the r-value expression */
       draw_eval_vec4(rval);
@@ -1964,6 +1978,7 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
                           prop_idx, offset_index, part_wid);
             } else {
                   fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
+                  fprintf(vvp_out, "    %%flag_set/imm 4, 0;\n");
                   fprintf(vvp_out, "    %%store/prop/v/s %d, %d, %u; Store in struct property member\n",
                           prop_idx, offset_index, member_wid);
             }
@@ -1973,13 +1988,23 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
             /* Direct struct: load member offset and store directly */
             int offset_index = allocate_word();
 
-            if (has_bit_select) {
+            if (has_array_index) {
+                  /* Array member with index: offset = member_off + index * element_wid */
+                  draw_eval_expr_into_integer(array_idx_expr, offset_index);
+                  fprintf(vvp_out, "    %%ix/mul %d, %u, 0; Multiply index by element width\n",
+                          offset_index, element_wid);
+                  fprintf(vvp_out, "    %%ix/add %d, %u, 0; Add member base offset\n",
+                          offset_index, member_off);
+                  fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u; Store array element\n",
+                          sig, offset_index, element_wid);
+            } else if (has_bit_select) {
                   /* Member offset + bit-select index */
                   draw_eval_expr_into_integer(part_off_expr, offset_index);
                   fprintf(vvp_out, "    %%ix/add %d, %u, 0; Add member base offset\n", offset_index, member_off);
                   fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n", sig, offset_index, part_wid);
             } else {
                   fprintf(vvp_out, "    %%ix/load %d, %u, 0;\n", offset_index, member_off);
+                  fprintf(vvp_out, "    %%flag_set/imm 4, 0;\n");
                   fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n", sig, offset_index, member_wid);
             }
             clr_word(offset_index);
