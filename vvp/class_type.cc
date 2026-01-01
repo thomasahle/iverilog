@@ -287,7 +287,10 @@ template <class T> void property_atom<T>::set_vec4(char*buf, const vvp_vector4_t
       assert(idx < array_size_);
       T*tmp = reinterpret_cast<T*> (buf+offset_);
       bool flag = vector4_to_value(val, tmp[idx], true, false);
-      assert(flag);
+      // If conversion fails (e.g., due to X/Z values), store 0 as default
+      if (!flag) {
+	    tmp[idx] = 0;
+      }
 }
 
 template <class T> void property_atom<T>::get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx)
