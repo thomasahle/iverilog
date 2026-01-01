@@ -415,6 +415,25 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    return 0;
       }
 
+      /* Queue min/max methods - return a queue with min/max element(s) */
+      if (strcmp(name, "$ivl_queue_method$min") == 0 ||
+          strcmp(name, "$ivl_queue_method$max") == 0) {
+	    ivl_expr_t arg = ivl_expr_parm(ex, 0);
+	    const char* op = (strcmp(name, "$ivl_queue_method$min") == 0) ? "min" : "max";
+
+	    /* Handle property expressions (obj.queue_prop.min()) */
+	    if (ivl_expr_type(arg) == IVL_EX_PROPERTY) {
+		  draw_eval_object(arg);
+		  fprintf(vvp_out, "    %%qprop/%s; // Queue property %s\n", op, op);
+		  return 0;
+	    }
+
+	    /* Simple signal case - the signal is a queue variable */
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%q%s v%p_0;\n", op, ivl_expr_signal(arg));
+	    return 0;
+      }
+
       fprintf(vvp_out, "; ERROR: eval_object_sfunc: Unknown system function '%s'\n", name);
       return 1;
 }

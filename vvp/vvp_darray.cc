@@ -958,18 +958,18 @@ void vvp_queue_vec4::reverse(void)
       std::reverse(queue.begin(), queue.end());
 }
 
-// Compare function for sorting vvp_vector4_t in ascending order
+// Compare function for sorting vvp_vector4_t in ascending order (signed)
 static bool vec4_less(const vvp_vector4_t& a, const vvp_vector4_t& b)
 {
-      // compare_gtge returns BIT4_1 if first > second
+      // compare_gtge_signed returns BIT4_1 if first > second (signed)
       // So we check if b > a, meaning a < b
-      return compare_gtge(b, a, BIT4_0) == BIT4_1;
+      return compare_gtge_signed(b, a, BIT4_0) == BIT4_1;
 }
 
-// Compare function for sorting vvp_vector4_t in descending order
+// Compare function for sorting vvp_vector4_t in descending order (signed)
 static bool vec4_greater(const vvp_vector4_t& a, const vvp_vector4_t& b)
 {
-      return compare_gtge(a, b, BIT4_0) == BIT4_1;
+      return compare_gtge_signed(a, b, BIT4_0) == BIT4_1;
 }
 
 void vvp_queue_vec4::sort(void)
@@ -980,6 +980,64 @@ void vvp_queue_vec4::sort(void)
 void vvp_queue_vec4::rsort(void)
 {
       std::sort(queue.begin(), queue.end(), vec4_greater);
+}
+
+vvp_object_t vvp_queue_vec4::min_val(void)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+      vvp_vector4_t min_elem = queue[0];
+      for (size_t i = 1; i < queue.size(); i++) {
+	    if (vec4_less(queue[i], min_elem))
+		  min_elem = queue[i];
+      }
+      // Return a new queue containing just the min element
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      result->queue.push_back(min_elem);
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
+vvp_object_t vvp_queue_vec4::max_val(void)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+      vvp_vector4_t max_elem = queue[0];
+      for (size_t i = 1; i < queue.size(); i++) {
+	    if (vec4_greater(queue[i], max_elem))
+		  max_elem = queue[i];
+      }
+      // Return a new queue containing just the max element
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      result->queue.push_back(max_elem);
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
+vvp_vector4_t vvp_queue_vec4::sum_val(unsigned wid)
+{
+      vvp_vector4_t result(wid, BIT4_0);
+      for (const auto& elem : queue) {
+	    result.add(elem);
+      }
+      return result;
+}
+
+vvp_vector4_t vvp_queue_vec4::product_val(unsigned wid)
+{
+      if (queue.empty()) {
+	    return vvp_vector4_t(wid, BIT4_0);
+      }
+      vvp_vector4_t result(wid, BIT4_0);
+      result.set_bit(0, BIT4_1); // Start with 1
+      for (const auto& elem : queue) {
+	    result.mul(elem);
+      }
+      return result;
 }
 
 /*
@@ -1117,6 +1175,42 @@ void vvp_queue_object::rsort(void)
       // Objects have no natural ordering, so rsort is a no-op
       cerr << get_fileline()
            << "Warning: rsort() on queue of objects has no effect (objects have no natural ordering)." << endl;
+}
+
+/*
+ * Default implementations for reduction methods.
+ * These work for vec4 queues. Override in derived classes for other types.
+ */
+vvp_object_t vvp_queue::min_val(void)
+{
+      // Default: return empty object (not supported)
+      cerr << get_fileline()
+           << "Warning: min() not supported for this queue type." << endl;
+      return vvp_object_t();
+}
+
+vvp_object_t vvp_queue::max_val(void)
+{
+      // Default: return empty object (not supported)
+      cerr << get_fileline()
+           << "Warning: max() not supported for this queue type." << endl;
+      return vvp_object_t();
+}
+
+vvp_vector4_t vvp_queue::sum_val(unsigned wid)
+{
+      // Default: return 0 (not supported)
+      cerr << get_fileline()
+           << "Warning: sum() not supported for this queue type." << endl;
+      return vvp_vector4_t(wid, BIT4_0);
+}
+
+vvp_vector4_t vvp_queue::product_val(unsigned wid)
+{
+      // Default: return 0 (not supported)
+      cerr << get_fileline()
+           << "Warning: product() not supported for this queue type." << endl;
+      return vvp_vector4_t(wid, BIT4_0);
 }
 
 /*

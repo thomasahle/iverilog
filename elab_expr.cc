@@ -5752,6 +5752,43 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return 0;
 	    }
 
+	    // min() and max() methods - return queue with min/max element(s)
+	    if (method_name == "min" || method_name == "max") {
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: " << method_name
+			     << "() method takes no arguments" << endl;
+			des->errors += 1;
+		  }
+		  // Return type is same as source queue type
+		  const netqueue_t*queue_type = search_results.net->queue_type();
+		  perm_string fname = method_name == "min"
+			? perm_string::literal("$ivl_queue_method$min")
+			: perm_string::literal("$ivl_queue_method$max");
+		  NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
+	    // sum() and product() methods - return single element value
+	    if (method_name == "sum" || method_name == "product") {
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: " << method_name
+			     << "() method takes no arguments" << endl;
+			des->errors += 1;
+		  }
+		  // Return type is the element type of the queue
+		  const netqueue_t*queue_type = search_results.net->queue_type();
+		  ivl_type_t element_type = queue_type->element_type();
+		  perm_string fname = method_name == "sum"
+			? perm_string::literal("$ivl_queue_method$sum")
+			: perm_string::literal("$ivl_queue_method$product");
+		  NetESFunc*sys_expr = new NetESFunc(fname, element_type, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
 	    cerr << get_fileline() << ": error: Method " << method_name
 		 << " is not a queue method." << endl;
 	    des->errors += 1;

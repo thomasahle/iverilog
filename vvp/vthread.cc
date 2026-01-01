@@ -7037,6 +7037,104 @@ bool of_QRSORT(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qmin <var-label>
+ * Push a new queue containing the minimum element(s) to the object stack.
+ */
+bool of_QMIN(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue*queue = obj->get_object().peek<vvp_queue>();
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return an empty queue
+	    vvp_object_t result;
+	    thr->push_object(result);
+	    return true;
+      }
+
+      vvp_object_t result = queue->min_val();
+      thr->push_object(result);
+      return true;
+}
+
+/*
+ * %qmax <var-label>
+ * Push a new queue containing the maximum element(s) to the object stack.
+ */
+bool of_QMAX(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue*queue = obj->get_object().peek<vvp_queue>();
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return an empty queue
+	    vvp_object_t result;
+	    thr->push_object(result);
+	    return true;
+      }
+
+      vvp_object_t result = queue->max_val();
+      thr->push_object(result);
+      return true;
+}
+
+/*
+ * %qsum <var-label>, <width>
+ * Push the sum of all elements to the vec4 stack.
+ */
+bool of_QSUM(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned wid = cp->bit_idx[0];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue*queue = obj->get_object().peek<vvp_queue>();
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return 0
+	    vvp_vector4_t val(wid, BIT4_0);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      vvp_vector4_t result = queue->sum_val(wid);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %qproduct <var-label>, <width>
+ * Push the product of all elements to the vec4 stack.
+ */
+bool of_QPRODUCT(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned wid = cp->bit_idx[0];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue*queue = obj->get_object().peek<vvp_queue>();
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return 0 for empty queue (undefined behavior)
+	    vvp_vector4_t val(wid, BIT4_0);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      vvp_vector4_t result = queue->product_val(wid);
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
  * These implement the %release/net and %release/reg instructions. The
  * %release/net instruction applies to a net kind of functor by
  * sending the release/net command to the command port. (See vvp_net.h

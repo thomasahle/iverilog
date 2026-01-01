@@ -1324,6 +1324,27 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    return;
       }
 
+      if (strcmp(ivl_expr_name(expr),"$ivl_queue_method$sum")==0 ||
+          strcmp(ivl_expr_name(expr),"$ivl_queue_method$product")==0) {
+	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+	    const char* op = (strcmp(ivl_expr_name(expr),"$ivl_queue_method$sum")==0)
+		  ? "sum" : "product";
+	    unsigned wid = ivl_expr_width(expr);
+
+	    /* Handle property expressions (obj.queue_prop.sum()) */
+	    if (ivl_expr_type(arg) == IVL_EX_PROPERTY) {
+		  draw_eval_object(arg);
+		  fprintf(vvp_out, "    %%qprop/%s %u; // Queue property %s\n", op, wid, op);
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  return;
+	    }
+
+	    /* Simple signal case - the signal is a queue variable */
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%q%s v%p_0, %u;\n", op, ivl_expr_signal(arg), wid);
+	    return;
+      }
+
       if (strcmp(ivl_expr_name(expr),"$size")==0) {
 	    /* Special handling for $size on property expressions.
 	       For property expressions, we need to load the containing
