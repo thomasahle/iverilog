@@ -1040,6 +1040,33 @@ vvp_vector4_t vvp_queue_vec4::product_val(unsigned wid)
       return result;
 }
 
+vvp_object_t vvp_queue_vec4::unique_val(void)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+
+      // Create result queue with unique elements (preserving order of first occurrence)
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      for (const auto& elem : queue) {
+	    // Check if elem already exists in result
+	    bool found = false;
+	    for (const auto& existing : result->queue) {
+		  if (elem.eeq(existing)) {
+			found = true;
+			break;
+		  }
+	    }
+	    if (!found) {
+		  result->queue.push_back(elem);
+	    }
+      }
+
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
 /*
  * vvp_queue_object - Queue of class/object references
  */
@@ -1211,6 +1238,14 @@ vvp_vector4_t vvp_queue::product_val(unsigned wid)
       cerr << get_fileline()
            << "Warning: product() not supported for this queue type." << endl;
       return vvp_vector4_t(wid, BIT4_0);
+}
+
+vvp_object_t vvp_queue::unique_val(void)
+{
+      // Default: return empty (not supported)
+      cerr << get_fileline()
+           << "Warning: unique() not supported for this queue type." << endl;
+      return vvp_object_t();
 }
 
 /*

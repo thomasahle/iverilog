@@ -6249,6 +6249,12 @@ hierarchy_identifier
 	delete[]$3;
 	$$ = tmp;
       }
+  | hierarchy_identifier '.' K_unique
+      { /* Allow 'unique' keyword as a method name for array locator methods */
+        pform_name_t * tmp = $1;
+	tmp->push_back(name_component_t(lex_strings.make("unique")));
+	$$ = tmp;
+      }
   | hierarchy_identifier '[' expression ']'
       { pform_name_t * tmp = $1;
 	name_component_t&tail = tmp->back();

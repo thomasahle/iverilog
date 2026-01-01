@@ -197,6 +197,7 @@ class vvp_queue : public vvp_darray {
       virtual vvp_object_t max_val(void);
       virtual vvp_vector4_t sum_val(unsigned wid);
       virtual vvp_vector4_t product_val(unsigned wid);
+      virtual vvp_object_t unique_val(void);
 };
 
 class vvp_queue_real : public vvp_queue {
@@ -270,6 +271,7 @@ class vvp_queue_vec4 : public vvp_queue {
       vvp_object_t max_val(void) override;
       vvp_vector4_t sum_val(unsigned wid) override;
       vvp_vector4_t product_val(unsigned wid) override;
+      vvp_object_t unique_val(void) override;
 
     private:
       std::deque<vvp_vector4_t> queue;

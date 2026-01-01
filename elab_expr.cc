@@ -5789,6 +5789,22 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
+	    // unique() method - returns queue with unique elements
+	    if (method_name == "unique") {
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: " << method_name
+			     << "() method takes no arguments" << endl;
+			des->errors += 1;
+		  }
+		  // Return type is same as source queue type
+		  const netqueue_t*queue_type = search_results.net->queue_type();
+		  perm_string fname = perm_string::literal("$ivl_queue_method$unique");
+		  NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
 	    cerr << get_fileline() << ": error: Method " << method_name
 		 << " is not a queue method." << endl;
 	    des->errors += 1;
