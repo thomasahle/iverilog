@@ -7772,9 +7772,11 @@ static bool set_dar_obj(vthread_t thr, vvp_code_t cp)
 
       vvp_object_t&top = thr->peek_object();
       vvp_darray*darray = top.peek<vvp_darray>();
-      assert(darray);
 
-      darray->set_word(adr, value);
+      // Handle null or non-darray objects gracefully
+      if (darray && (thr->flags[4] == BIT4_0)) {
+	    darray->set_word(adr, value);
+      }
       return true;
 }
 
