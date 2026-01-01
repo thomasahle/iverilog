@@ -286,6 +286,13 @@ class PCallTask  : public Statement {
       pform_name_t path_;
       std::vector<named_pexpr_t> parms_;
       bool void_cast_ = false;
+
+        // For randomize() with { inline constraints }
+      std::list<PExpr*> inline_constraints_;
+
+    public:
+      void set_inline_constraints(std::list<PExpr*>* cons);
+      const std::list<PExpr*>& get_inline_constraints() const { return inline_constraints_; }
 };
 
 class PCase  : public Statement {

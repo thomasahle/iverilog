@@ -942,6 +942,10 @@ class PECallFunction : public PExpr {
       void set_with_expr(PExpr*with) { with_expr_ = with; }
       PExpr* get_with_expr() const { return with_expr_; }
 
+	// Set inline constraints for randomize() with { ... }
+      void set_inline_constraints(std::list<PExpr*>* cons);
+      const std::list<PExpr*>& get_inline_constraints() const { return inline_constraints_; }
+
       virtual void dump(std::ostream &) const override;
 
       virtual void declare_implicit_nets(LexicalScope*scope, NetNet::Type type) override;
@@ -963,6 +967,9 @@ class PECallFunction : public PExpr {
 
         // For array locator methods with 'with' clause
       PExpr* with_expr_ = nullptr;
+
+        // For randomize() with { inline constraints }
+      std::list<PExpr*> inline_constraints_;
 
         // For system functions.
       bool is_overridden_;

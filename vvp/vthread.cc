@@ -297,6 +297,21 @@ struct vthread_s {
 	/* These are used to pass non-blocking event control information. */
       vvp_net_t*event;
       uint64_t ecount;
+
+	/* Inline constraint bounds for randomize() with { ... }
+	 * These are pushed before %randomize and cleared after */
+      std::vector<class_type::simple_bound_t> inline_constraints_;
+
+      void push_inline_constraint(const class_type::simple_bound_t& bound) {
+	    inline_constraints_.push_back(bound);
+      }
+      void clear_inline_constraints() {
+	    inline_constraints_.clear();
+      }
+      const std::vector<class_type::simple_bound_t>& get_inline_constraints() const {
+	    return inline_constraints_;
+      }
+
 	/* Save the file/line information when available. */
     private:
       char *filenm_;
@@ -7256,7 +7271,10 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
       const class_type* defn = cobj->get_class_type();
       size_t nprop = defn->property_count();
-      bool has_constraints = (defn->constraint_bound_count() > 0);
+      bool has_class_constraints = (defn->constraint_bound_count() > 0);
+      const std::vector<class_type::simple_bound_t>& inline_constraints = thr->get_inline_constraints();
+      bool has_inline_constraints = !inline_constraints.empty();
+      bool has_constraints = has_class_constraints || has_inline_constraints;
 
       // Try to find values that satisfy constraints
       int tries = 0;
@@ -7284,9 +7302,89 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  if (wid > 0) {
 			vvp_vector4_t new_val (wid);
 
-			if (has_constraints) {
-			      // Use constraint-aware random generation
+			// Calculate bounds from inline constraints for this property
+			int64_t min_val = 0;
+			int64_t max_val = (1LL << wid) - 1;
+			if (wid >= 64) max_val = INT64_MAX;
+
+			// Apply inline constraint bounds
+			// Track excluded values for != constraints
+			std::vector<int64_t> excluded_values;
+
+			for (const auto& bound : inline_constraints) {
+			      if (bound.property_idx != i) continue;
+			      if (!bound.has_const_bound) continue;
+			      switch (bound.op) {
+				    case '>':  // value > const  =>  min = const+1
+					  if (bound.const_bound + 1 > min_val)
+						min_val = bound.const_bound + 1;
+					  break;
+				    case 'G':  // value >= const  =>  min = const
+					  if (bound.const_bound > min_val)
+						min_val = bound.const_bound;
+					  break;
+				    case '<':  // value < const  =>  max = const-1
+					  if (bound.const_bound - 1 < max_val)
+						max_val = bound.const_bound - 1;
+					  break;
+				    case 'L':  // value <= const  =>  max = const
+					  if (bound.const_bound < max_val)
+						max_val = bound.const_bound;
+					  break;
+				    case '=':  // value == const  =>  exact value
+					  min_val = bound.const_bound;
+					  max_val = bound.const_bound;
+					  break;
+				    case '!':  // value != const  =>  exclude value
+					  excluded_values.push_back(bound.const_bound);
+					  break;
+				    default:
+					  break;
+			      }
+			}
+
+			// Also apply class-level constraints
+			if (has_class_constraints) {
 			      int64_t rval = defn->generate_constrained_random(inst, i, wid);
+			      // Combine with inline bounds and excluded values
+			      bool valid = (rval >= min_val && rval <= max_val);
+			      if (valid) {
+				    for (auto excl : excluded_values) {
+					  if (rval == excl) { valid = false; break; }
+				    }
+			      }
+			      if (!valid && min_val <= max_val) {
+				    // Regenerate within inline bounds, avoiding excluded values
+				    int64_t range = max_val - min_val + 1;
+				    int avoid_tries = 0;
+				    do {
+					  rval = min_val + (rand() % range);
+					  bool is_excluded = false;
+					  for (auto excl : excluded_values) {
+						if (rval == excl) { is_excluded = true; break; }
+					  }
+					  if (!is_excluded) break;
+					  avoid_tries++;
+				    } while (avoid_tries < 100 && range > (int64_t)excluded_values.size());
+			      }
+			      for (unsigned b = 0; b < wid && b < 64; b++) {
+				    new_val.set_bit(b, (rval & (1LL << b)) ? BIT4_1 : BIT4_0);
+			      }
+			} else if (has_inline_constraints && min_val <= max_val) {
+			      // Generate within inline constraint bounds
+			      int64_t range = max_val - min_val + 1;
+			      int64_t rval;
+			      int avoid_tries = 0;
+			      do {
+				    rval = min_val + (rand() % range);
+				    // Check if rval is in excluded_values
+				    bool is_excluded = false;
+				    for (auto excl : excluded_values) {
+					  if (rval == excl) { is_excluded = true; break; }
+				    }
+				    if (!is_excluded) break;
+				    avoid_tries++;
+			      } while (avoid_tries < 100 && range > (int64_t)excluded_values.size());
 			      for (unsigned b = 0; b < wid && b < 64; b++) {
 				    new_val.set_bit(b, (rval & (1LL << b)) ? BIT4_1 : BIT4_0);
 			      }
@@ -7301,12 +7399,39 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    }
 
 	    // Check constraints (handles != and cross-property constraints)
-	    if (!has_constraints) {
-		  // No constraints to check - always succeed
-		  success = true;
-	    } else {
-		  // Check if generated values satisfy all hard constraints
+	    success = true;
+	    if (has_class_constraints) {
+		  // Check if generated values satisfy all class-level constraints
 		  success = defn->check_constraints(inst);
+	    }
+	    // Also check inline constraints
+	    if (success && has_inline_constraints) {
+		  for (const auto& bound : inline_constraints) {
+			if (bound.property_idx >= nprop) continue;
+			if (!bound.has_const_bound) continue;
+
+			vvp_vector4_t val;
+			cobj->get_vec4(bound.property_idx, val);
+			int64_t prop_val = 0;
+			for (unsigned b = 0; b < val.size() && b < 64; b++) {
+			      if (val.value(b) == BIT4_1)
+				    prop_val |= (1LL << b);
+			}
+
+			bool constraint_ok = true;
+			switch (bound.op) {
+			      case '>': constraint_ok = (prop_val > bound.const_bound); break;
+			      case 'G': constraint_ok = (prop_val >= bound.const_bound); break;
+			      case '<': constraint_ok = (prop_val < bound.const_bound); break;
+			      case 'L': constraint_ok = (prop_val <= bound.const_bound); break;
+			      case '=': constraint_ok = (prop_val == bound.const_bound); break;
+			      case '!': constraint_ok = (prop_val != bound.const_bound); break;
+			}
+			if (!constraint_ok && !bound.is_soft) {
+			      success = false;
+			      break;
+			}
+		  }
 	    }
 
 	    tries++;
@@ -7317,8 +7442,51 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       if (success) {
 	    res.set_bit(0, BIT4_1);
       }
+      // Clear inline constraints after use
+      thr->clear_inline_constraints();
+
       thr->push_vec4(res);
 
+      return true;
+}
+
+/*
+ * %push_rand_bound <prop_idx>, <op_encoded>, <bound_value>
+ *
+ * Push an inline constraint bound for the next randomize() call.
+ * op_encoded: 0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!'
+ */
+bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
+{
+      class_type::simple_bound_t bound;
+      bound.property_idx = cp->number;
+      int op_code = cp->bit_idx[0];
+      switch (op_code) {
+	    case 0: bound.op = '>'; break;
+	    case 1: bound.op = '<'; break;
+	    case 2: bound.op = 'G'; break;  // >=
+	    case 3: bound.op = 'L'; break;  // <=
+	    case 4: bound.op = '='; break;
+	    case 5: bound.op = '!'; break;
+	    default: bound.op = '='; break;
+      }
+      bound.is_soft = false;
+      bound.has_const_bound = true;
+      bound.const_bound = (int64_t)(int32_t)cp->bit_idx[1];  // Sign-extend
+      bound.bound_prop_idx = 0;
+
+      thr->push_inline_constraint(bound);
+      return true;
+}
+
+/*
+ * %clear_rand_bounds
+ *
+ * Clear all inline constraint bounds. Called after randomize() if needed.
+ */
+bool of_CLEAR_RAND_BOUNDS(vthread_t thr, vvp_code_t)
+{
+      thr->clear_inline_constraints();
       return true;
 }
 

@@ -1433,6 +1433,47 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	         stack, then call %randomize which will randomize its properties
 	         and push the result (1=success) to the vec4 stack. */
 	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+	    unsigned nparms = ivl_expr_parms(expr);
+
+	      /* Emit inline constraint bounds before %randomize
+	         Extra parameters come in triplets: prop_idx, op_code, value */
+	    for (unsigned idx = 1; idx + 2 < nparms; idx += 3) {
+		  ivl_expr_t prop_expr = ivl_expr_parm(expr, idx);
+		  ivl_expr_t op_expr = ivl_expr_parm(expr, idx+1);
+		  ivl_expr_t val_expr = ivl_expr_parm(expr, idx+2);
+
+		  /* Extract constant values */
+		  if (ivl_expr_type(prop_expr) == IVL_EX_NUMBER &&
+		      ivl_expr_type(op_expr) == IVL_EX_NUMBER &&
+		      ivl_expr_type(val_expr) == IVL_EX_NUMBER) {
+			const char *prop_bits = ivl_expr_bits(prop_expr);
+			const char *op_bits = ivl_expr_bits(op_expr);
+			const char *val_bits = ivl_expr_bits(val_expr);
+
+			unsigned prop_idx = 0, op_code = 0;
+			int64_t const_val = 0;
+
+			/* Decode property index */
+			for (unsigned b = 0; b < ivl_expr_width(prop_expr) && b < 32; b++) {
+			      if (prop_bits[b] == '1') prop_idx |= (1u << b);
+			}
+			/* Decode operator code */
+			for (unsigned b = 0; b < ivl_expr_width(op_expr) && b < 32; b++) {
+			      if (op_bits[b] == '1') op_code |= (1u << b);
+			}
+			/* Decode constant value (signed) */
+			for (unsigned b = 0; b < ivl_expr_width(val_expr) && b < 32; b++) {
+			      if (val_bits[b] == '1') const_val |= (1LL << b);
+			}
+			/* Sign extend if MSB is 1 */
+			if (ivl_expr_width(val_expr) > 0 && val_bits[ivl_expr_width(val_expr)-1] == '1') {
+			      const_val |= (-1LL << ivl_expr_width(val_expr));
+			}
+
+			fprintf(vvp_out, "    %%push_rand_bound %u, %u, %lld;\n",
+			        prop_idx, op_code, (long long)const_val);
+		  }
+	    }
 
 	      /* Use draw_eval_object to handle any object expression type,
 	         including signals and properties. */

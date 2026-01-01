@@ -42,8 +42,56 @@
 # include  "util.h"
 # include  "ivl_assert.h"
 # include  "map_named_args.h"
+# include  <tuple>
 
 using namespace std;
+
+/*
+ * Helper to analyze inline constraint expression and extract simple bounds.
+ * Returns true if expression is a simple comparison: property_name OP constant
+ * On success, fills in: property_name, op_code, const_value
+ * op_code: 0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!'
+ */
+static bool analyze_constraint_expr(const PExpr*expr,
+                                    perm_string& property_name,
+                                    int& op_code,
+                                    int64_t& const_value)
+{
+      // Check if it's a binary comparison expression
+      const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
+      if (!bin) return false;
+
+      // Get the operator
+      char op = bin->get_op();
+      switch (op) {
+            case '>': op_code = 0; break;
+            case '<': op_code = 1; break;
+            case 'G': op_code = 2; break;  // >=
+            case 'L': op_code = 3; break;  // <=
+            case 'e': op_code = 4; break;  // ==
+            case 'n': op_code = 5; break;  // !=
+            default: return false;
+      }
+
+      // Get the left operand (should be an identifier - property name)
+      const PExpr*lhs = bin->get_left();
+      const PEIdent*ident = dynamic_cast<const PEIdent*>(lhs);
+      if (!ident) return false;
+
+      const pform_scoped_name_t& scoped_path = ident->path();
+      if (scoped_path.size() != 1) return false;
+      property_name = scoped_path.name.front().name;
+
+      // Get the right operand (should be a constant)
+      const PExpr*rhs = bin->get_right();
+      const PENumber*num = dynamic_cast<const PENumber*>(rhs);
+      if (!num) return false;
+
+      const verinum& val = num->value();
+      const_value = val.as_long();
+
+      return true;
+}
 
 bool type_is_vectorable(ivl_variable_type_t type)
 {
@@ -5993,12 +6041,46 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 
 	    // Handle built-in randomize() method
 	    if (method_name == "randomize") {
+		  // Analyze inline constraints
+		  const std::list<PExpr*>& constraints = get_inline_constraints();
+		  std::vector<std::tuple<size_t, int, int64_t>> bounds;
+
+		  for (const PExpr* cons : constraints) {
+			perm_string prop_name;
+			int op_code;
+			int64_t const_val;
+			if (analyze_constraint_expr(cons, prop_name, op_code, const_val)) {
+			      // Look up property index
+			      int pidx = class_type->property_idx_from_name(prop_name);
+			      if (pidx >= 0) {
+				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val));
+			      }
+			}
+		  }
+
 		  // Generate a system function call to $ivl_randomize
-		  // which will randomize all rand-qualified properties.
+		  // with extra parameters for inline constraints
+		  unsigned num_parms = 1 + bounds.size() * 3;
 		  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
-						     &netvector_t::atom2s32, 1);
+						     &netvector_t::atom2s32, num_parms);
 		  sys_expr->set_line(*this);
 		  sys_expr->parm(0, sub_expr);
+
+		  // Add inline constraint bounds as constant integer parameters
+		  unsigned parm_idx = 1;
+		  for (const auto& bound : bounds) {
+			// Property index
+			NetEConst* prop_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
+			sys_expr->parm(parm_idx++, prop_const);
+			// Operator code
+			NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<1>(bound), 32));
+			sys_expr->parm(parm_idx++, op_const);
+			// Constant bound value - use signed constructor then cast to unsigned
+			int64_t val = std::get<2>(bound);
+			NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
+			sys_expr->parm(parm_idx++, val_const);
+		  }
+
 		  return sys_expr;
 	    }
 

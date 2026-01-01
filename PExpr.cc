@@ -268,6 +268,14 @@ PECallFunction::~PECallFunction()
 {
 }
 
+void PECallFunction::set_inline_constraints(std::list<PExpr*>* cons)
+{
+      if (cons) {
+	    inline_constraints_ = *cons;
+	    delete cons;
+      }
+}
+
 void PECallFunction::declare_implicit_nets(LexicalScope*scope, NetNet::Type type)
 {
       for (const auto &parm : parms_) {

@@ -5377,13 +5377,12 @@ expr_primary
       }
     /* randomize() with { inline_constraints } as expression */
   | hierarchy_identifier attribute_list_opt argument_list_parens K_with '{' constraint_block_item_list_opt '}'
-      { /* For now, parse but ignore inline constraints - just call randomize() */
-	if ($1 && peek_tail_name(*$1) == "randomize") {
-	      yywarn(@4, "warning: Inline constraints after randomize() parsed but not enforced.");
-	} else {
+      { /* Store inline constraints in PECallFunction for use during elaboration */
+	if (!($1 && peek_tail_name(*$1) == "randomize")) {
 	      yyerror(@4, "error: 'with' constraint block can only be used with randomize().");
 	}
 	PECallFunction*tmp = pform_make_call_function(@1, *$1, *$3);
+	tmp->set_inline_constraints($6);
 	delete $1;
 	delete $2;
 	delete $3;
@@ -5423,13 +5422,12 @@ expr_primary
       }
     /* this.randomize() with { inline_constraints } or super.randomize() with { inline_constraints } as expression */
   | class_hierarchy_identifier argument_list_parens K_with '{' constraint_block_item_list_opt '}'
-      { /* For now, parse but ignore inline constraints - just call randomize() */
-	if ($1 && peek_tail_name(*$1) == "randomize") {
-	      yywarn(@3, "warning: Inline constraints after randomize() parsed but not enforced.");
-	} else {
+      { /* Store inline constraints in PECallFunction for use during elaboration */
+	if (!($1 && peek_tail_name(*$1) == "randomize")) {
 	      yyerror(@3, "error: 'with' constraint block can only be used with randomize().");
 	}
 	PECallFunction*tmp = pform_make_call_function(@1, *$1, *$2);
+	tmp->set_inline_constraints($5);
 	delete $1;
 	delete $2;
 	$$ = tmp;
@@ -8677,13 +8675,12 @@ subroutine_call
       }
     /* randomize() with { <constraints> } as a statement */
   | hierarchy_identifier argument_list_parens K_with '{' constraint_block_item_list_opt '}'
-      { /* Parse inline constraints but warn they're not enforced */
-	if ($1 && peek_tail_name(*$1) == "randomize") {
-	      yywarn(@3, "warning: Inline constraints after randomize() parsed but not enforced.");
-	} else {
+      { /* Store inline constraints in PCallTask for use during elaboration */
+	if (!($1 && peek_tail_name(*$1) == "randomize")) {
 	      yyerror(@3, "error: Constraint block can only be applied to randomize method.");
 	}
 	PCallTask*tmp = pform_make_call_task(@1, *$1, *$2);
+	tmp->set_inline_constraints($5);
 	delete $1;
 	delete $2;
 	$$ = tmp;
@@ -8697,14 +8694,13 @@ subroutine_call
       }
     /* this.randomize() with { <constraints> } or super.randomize() with { <constraints> } */
   | class_hierarchy_identifier argument_list_parens K_with '{' constraint_block_item_list_opt '}'
-      { /* Parse inline constraints but warn they're not enforced */
-	if ($1 && peek_tail_name(*$1) == "randomize") {
-	      yywarn(@3, "warning: Inline constraints after randomize() parsed but not enforced.");
-	} else {
+      { /* Store inline constraints in PCallTask for use during elaboration */
+	if (!($1 && peek_tail_name(*$1) == "randomize")) {
 	      yyerror(@3, "error: Constraint block can only be applied to randomize method.");
 	}
 	PCallTask*tmp = new PCallTask(*$1, *$2);
 	FILE_NAME(tmp, @1);
+	tmp->set_inline_constraints($5);
 	delete $1;
 	delete $2;
 	$$ = tmp;

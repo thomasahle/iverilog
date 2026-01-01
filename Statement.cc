@@ -191,6 +191,14 @@ const pform_name_t& PCallTask::path() const
       return path_;
 }
 
+void PCallTask::set_inline_constraints(std::list<PExpr*>* cons)
+{
+      if (cons) {
+	    inline_constraints_ = *cons;
+	    delete cons;
+      }
+}
+
 PCase::PCase(ivl_case_quality_t q, NetCase::TYPE t, PExpr*ex, std::vector<PCase::Item*>*l)
 : quality_(q), type_(t), expr_(ex), items_(l)
 {
