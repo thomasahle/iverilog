@@ -4300,7 +4300,8 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		       << endl;
 		  des->errors += 1;
 		  return 0;
-	    } else if (method_name=="shuffle") {
+	    } else if (method_name=="shuffle" && !net->queue_type()) {
+		  // shuffle for queues is handled below
 		  cerr << get_fileline() << ": sorry: 'shuffle()' "
 		          "array sorting method is not currently supported."
 		       << endl;
@@ -4346,6 +4347,22 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		                                use_darray->element_type(),
 		                                method_name,
 		                                "$ivl_queue_method$pop_back");
+	    } else if (method_name == "shuffle") {
+		  // shuffle() takes no arguments
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: shuffle() "
+			     << "method takes no arguments." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+		  NetSTask*sys = new NetSTask("$ivl_queue_method$shuffle",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
 	    }
       }
 

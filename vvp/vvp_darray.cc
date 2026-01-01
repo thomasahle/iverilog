@@ -686,6 +686,13 @@ void vvp_queue_real::erase_tail(unsigned idx)
 	    queue.resize(idx);
 }
 
+void vvp_queue_real::shuffle(void)
+{
+      static std::random_device rd;
+      static std::mt19937 gen(rd());
+      std::shuffle(queue.begin(), queue.end(), gen);
+}
+
 void vvp_queue_string::copy_elems(vvp_object_t src, unsigned max_size)
 {
       if (vvp_queue*src_queue = src.peek<vvp_queue>())
@@ -794,6 +801,13 @@ void vvp_queue_string::erase_tail(unsigned idx)
 	    queue.resize(idx);
 }
 
+void vvp_queue_string::shuffle(void)
+{
+      static std::random_device rd;
+      static std::mt19937 gen(rd());
+      std::shuffle(queue.begin(), queue.end(), gen);
+}
+
 void vvp_queue_vec4::copy_elems(vvp_object_t src, unsigned max_size)
 {
       if (vvp_queue*src_queue = src.peek<vvp_queue>())
@@ -900,6 +914,13 @@ void vvp_queue_vec4::erase_tail(unsigned idx)
       assert(queue.size() >= idx);
       if (queue.size() > idx)
 	    queue.resize(idx);
+}
+
+void vvp_queue_vec4::shuffle(void)
+{
+      static std::random_device rd;
+      static std::mt19937 gen(rd());
+      std::shuffle(queue.begin(), queue.end(), gen);
 }
 
 /*
@@ -1011,6 +1032,13 @@ void vvp_queue_object::erase_tail(unsigned idx)
       assert(queue.size() >= idx);
       if (queue.size() > idx)
 	    queue.resize(idx);
+}
+
+void vvp_queue_object::shuffle(void)
+{
+      static std::random_device rd;
+      static std::mt19937 gen(rd());
+      std::shuffle(queue.begin(), queue.end(), gen);
 }
 
 /*

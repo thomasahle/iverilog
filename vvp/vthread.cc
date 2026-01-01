@@ -6949,6 +6949,28 @@ bool of_QPOP_F_OBJ(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qshuffle <var-label>
+ * Shuffle the queue in place.
+ */
+bool of_QSHUFFLE(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue*queue = obj->get_object().peek<vvp_queue>();
+      if (queue == 0) {
+	    cerr << thr->get_fileline()
+	         << "Warning: shuffle() on empty or nil queue." << endl;
+	    return true;
+      }
+
+      queue->shuffle();
+      return true;
+}
+
+/*
  * These implement the %release/net and %release/reg instructions. The
  * %release/net instruction applies to a net kind of functor by
  * sending the release/net command to the command port. (See vvp_net.h

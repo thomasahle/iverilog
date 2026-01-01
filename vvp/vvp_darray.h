@@ -21,8 +21,10 @@
 
 # include  "vvp_object.h"
 # include  "vvp_net.h"
+# include  <algorithm>
 # include  <deque>
 # include  <map>
+# include  <random>
 # include  <string>
 # include  <vector>
 
@@ -185,6 +187,7 @@ class vvp_queue : public vvp_darray {
       virtual void pop_front(void)=0;
       virtual void erase(unsigned idx)=0;
       virtual void erase_tail(unsigned idx)=0;
+      virtual void shuffle(void)=0;
 };
 
 class vvp_queue_real : public vvp_queue {
@@ -202,6 +205,7 @@ class vvp_queue_real : public vvp_queue {
       void pop_front(void) override { queue.pop_front(); };
       void erase(unsigned idx) override;
       void erase_tail(unsigned idx) override;
+      void shuffle(void) override;
 
     private:
       std::deque<double> queue;
@@ -222,6 +226,7 @@ class vvp_queue_string : public vvp_queue {
       void pop_front(void) override { queue.pop_front(); };
       void erase(unsigned idx) override;
       void erase_tail(unsigned idx) override;
+      void shuffle(void) override;
 
     private:
       std::deque<std::string> queue;
@@ -242,6 +247,7 @@ class vvp_queue_vec4 : public vvp_queue {
       void pop_front(void) override { queue.pop_front(); };
       void erase(unsigned idx) override;
       void erase_tail(unsigned idx) override;
+      void shuffle(void) override;
 
     private:
       std::deque<vvp_vector4_t> queue;
@@ -262,6 +268,7 @@ class vvp_queue_object : public vvp_queue {
       void pop_front(void) override { queue.pop_front(); };
       void erase(unsigned idx) override;
       void erase_tail(unsigned idx) override;
+      void shuffle(void) override;
 
     private:
       std::deque<vvp_object_t> queue;
