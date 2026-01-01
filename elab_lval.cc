@@ -2305,7 +2305,9 @@ bool PEIdent::elaborate_lval_net_unpacked_member_(Design*des, NetScope*scope,
 				   << endl;
 			}
 		  } else if (member_comp.index.size() == 1 && idx_comp.sel == index_component_t::SEL_BIT) {
-			  // Single-dimensional bit-select: member[bit_idx]
+			  // Single-dimensional select: member[idx]
+			  // For 2D+ packed arrays, this selects a slice (e.g., data[0] on bit [3:0][7:0])
+			const netranges_t& pdims = vec_type->packed_dims();
 			NetExpr* idx_expr = elab_and_eval(des, scope, idx_comp.msb, -1, false);
 			if (idx_expr == 0) {
 			      cerr << get_fileline() << ": error: Failed to elaborate "
@@ -2313,11 +2315,44 @@ bool PEIdent::elaborate_lval_net_unpacked_member_(Design*des, NetScope*scope,
 			      des->errors += 1;
 			      return false;
 			}
-			lv->set_part(idx_expr, 1);
+
+			  // Calculate width and stride based on remaining dimensions
+			unsigned long part_width = 1;
+			if (pdims.size() > 1) {
+			      // For multi-dimensional packed arrays, remaining dims contribute to width
+			      // e.g., for bit [3:0][7:0], accessing [i] gives width 8
+			      auto pdim_it = pdims.begin();
+			      ++pdim_it; // Skip first dimension (the one we're indexing)
+			      while (pdim_it != pdims.end()) {
+				    part_width *= pdim_it->width();
+				    ++pdim_it;
+			      }
+			}
+
+			  // Compute offset: index * part_width
+			if (part_width > 1) {
+			      // Normalize index by outer dimension lsb
+			      long lsb = pdims.front().get_lsb();
+			      if (lsb != 0) {
+				    NetEConst* lsb_c = new NetEConst(verinum(-lsb));
+				    lsb_c->set_line(*this);
+				    idx_expr = new NetEBAdd('+', idx_expr, lsb_c,
+				                            idx_expr->expr_width(), true);
+				    idx_expr->set_line(*this);
+			      }
+			      NetEConst* stride_c = new NetEConst(verinum((long)part_width));
+			      stride_c->set_line(*this);
+			      idx_expr = new NetEBMult('*', idx_expr, stride_c,
+			                              idx_expr->expr_width() + 16, false);
+			      idx_expr->set_line(*this);
+			}
+
+			lv->set_part(idx_expr, part_width);
 
 			if (debug_elaborate) {
 			      cerr << get_fileline() << ": PEIdent::elaborate_lval_net_unpacked_member_: "
-				   << "Added bit-select to member '" << member_name << "'"
+				   << "Added index-select to member '" << member_name << "'"
+				   << ", width=" << part_width
 				   << endl;
 			}
 		  } else if (member_comp.index.size() > 1 && idx_comp.sel == index_component_t::SEL_PART) {
