@@ -23,6 +23,7 @@
 # include  <climits>
 # include  "netlist.h"
 # include  "netparray.h"
+# include  "netdarray.h"
 # include  "netvector.h"
 # include  "netmisc.h"
 # include  "PExpr.h"
@@ -953,7 +954,10 @@ NetExpr* elab_and_eval(Design*des, NetScope*scope, PExpr*pe,
         // For arrays we need strict type checking here. Long term strict type
 	// checking should be used for all expressions, but at the moment not
 	// all expressions do have a ivl_type_t attached to it.
-      if (dynamic_cast<const netuarray_t*>(lv_net_type)) {
+	// Handle both fixed-size arrays (netuarray_t) and dynamic arrays
+	// (netdarray_t) as targets, using type_compatible for proper checking.
+      if (dynamic_cast<const netuarray_t*>(lv_net_type) ||
+          dynamic_cast<const netdarray_t*>(lv_net_type)) {
 	    if (tmp->net_type())
 		  compatible = lv_net_type->type_compatible(tmp->net_type());
 	    else

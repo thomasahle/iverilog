@@ -1730,10 +1730,99 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			      clr_word(idx);
 			}
 		  } else {
-			/* Whole array assignment: arr = new[n] or arr = other_arr */
-			errors += draw_eval_object(rval);
-			fprintf(vvp_out, "    %%store/prop/obj %d, 0; IVL_VT_DARRAY (whole array)\n", prop_idx);
-			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			/* Whole array assignment: arr = new[n] or arr = other_arr
+			   Check if source is a fixed-size array (unpacked array)
+			   that needs to be converted to a dynamic array. */
+			ivl_type_t rval_type = ivl_expr_net_type(rval);
+			ivl_expr_type_t rval_expr_type = ivl_expr_type(rval);
+
+			int is_uarray_select = 0;
+			unsigned uarray_size = 0;
+			ivl_signal_t src_sig = 0;
+
+			/* For IVL_EX_SELECT on a struct member that's an unpacked array,
+			   the oper2 is the bit offset into the struct (the member offset).
+			   We detect an array select by checking if total width > element width. */
+			if (rval_expr_type == IVL_EX_SELECT) {
+			      ivl_expr_t base_expr = ivl_expr_oper1(rval);
+			      if (base_expr && ivl_expr_type(base_expr) == IVL_EX_SIGNAL) {
+				    src_sig = ivl_expr_signal(base_expr);
+				    ivl_type_t sig_type = ivl_signal_net_type(src_sig);
+				    /* Use ivl_type_struct_members to check if it's a struct
+				       (ivl_type_properties requires netclass_t, not netstruct_t) */
+				    unsigned struct_members = sig_type ? ivl_type_struct_members(sig_type) : 0;
+				    if (sig_type && struct_members > 0) {
+					  /* It's a struct. Use the expression width to
+					     estimate array size from total width / element width. */
+					  unsigned elem_wid = ivl_type_packed_width(ivl_type_element(prop_type));
+					  unsigned total_wid = ivl_expr_width(rval);
+					  if (elem_wid > 0 && total_wid >= elem_wid) {
+						uarray_size = total_wid / elem_wid;
+						is_uarray_select = 1;
+					  }
+				    }
+			      }
+			}
+
+			if (is_uarray_select && uarray_size > 0 && src_sig) {
+			      /* Source is a fixed-size array (e.g., struct member).
+			         Generate code to create a new darray and copy elements.
+			         We already computed uarray_size from the expression width. */
+			      ivl_type_t element_type = ivl_type_element(prop_type);
+			      unsigned elem_wid = ivl_type_packed_width(element_type);
+
+			      /* Create new darray with the size of the source array */
+			      unsigned size_reg = allocate_word();
+			      fprintf(vvp_out, "    %%ix/load %u, %u, 0; size for uarray to darray copy\n", size_reg, uarray_size);
+			      fprintf(vvp_out, "    %%flag_set/imm 4, 0;\n");
+			      darray_new(element_type, size_reg);
+			      clr_word(size_reg);
+
+			      /* Store the new darray to the property */
+			      fprintf(vvp_out, "    %%store/prop/obj %d, 0; IVL_VT_DARRAY from uarray\n", prop_idx);
+
+			      /* Now copy elements from the source fixed-size array.
+			         Need to load the object again to access the darray property. */
+			      fprintf(vvp_out, "    %%prop/obj %d, 0; Re-load darray for element copy\n", prop_idx);
+			      fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+
+			      /* Loop to copy elements from source struct array.
+			         Use draw_eval_vec4 to load the source packed value,
+			         then use %part/u to extract each element. */
+			      unsigned idx_reg = allocate_word();
+
+			      for (unsigned i = 0; i < uarray_size; i++) {
+				    /* Evaluate the whole source expression for each element.
+				       This is less efficient than caching, but works reliably. */
+				    draw_eval_vec4(rval);
+
+				    /* Push the base bit index for element i */
+				    unsigned bit_base = i * elem_wid;
+				    fprintf(vvp_out, "    %%pushi/vec4 %u, 0, 32; Base index for element %u\n",
+				            bit_base, i);
+
+				    /* Part select: extract elem_wid bits starting at bit_base */
+				    fprintf(vvp_out, "    %%part/u %u;\n", elem_wid);
+
+				    /* Store to darray element */
+				    fprintf(vvp_out, "    %%ix/load %u, %u, 0;\n", idx_reg, i);
+				    fprintf(vvp_out, "    %%flag_set/imm 4, 0;\n");
+				    fprintf(vvp_out, "    %%set/dar/obj/vec4 %u;\n", idx_reg);
+			      }
+			      clr_word(idx_reg);
+
+			      /* Pop the darray from the object stack */
+			      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			} else if (rval_type && ivl_type_is_uarray(rval_type)) {
+			      /* Source is an unpacked array with valid type info (not from struct) */
+			      fprintf(vvp_out, "; ERROR: Unpacked array with type info - not yet supported\n");
+			      errors += 1;
+			} else {
+			      /* Normal case: source is already an object (darray, queue, etc.) */
+			      errors += draw_eval_object(rval);
+			      fprintf(vvp_out, "    %%store/prop/obj %d, 0; IVL_VT_DARRAY (whole array)\n", prop_idx);
+			      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			}
 		  }
 
 	    } else if (ivl_type_base(prop_type) == IVL_VT_ASSOC) {

@@ -19,6 +19,7 @@
 
 # include  "netdarray.h"
 # include  "netqueue.h"
+# include  "netparray.h"
 # include  <iostream>
 
 using namespace std;
@@ -51,8 +52,15 @@ bool netdarray_t::test_compatibility(ivl_type_t that) const
 {
       // This will match both queues and dynamic arrays
       const netdarray_t *that_da = dynamic_cast<const netdarray_t*>(that);
-      if (!that_da)
-	    return false;
+      if (that_da)
+	    return element_type()->type_equivalent(that_da->element_type());
 
-      return element_type()->type_equivalent(that_da->element_type());
+      // Also accept fixed-size arrays (netuarray_t/netsarray_t) with
+      // compatible element types. In SystemVerilog, a fixed-size array
+      // can be assigned to a dynamic array if element types match.
+      const netsarray_t *that_sa = dynamic_cast<const netsarray_t*>(that);
+      if (that_sa)
+	    return element_type()->type_equivalent(that_sa->element_type());
+
+      return false;
 }
