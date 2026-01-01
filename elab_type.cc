@@ -373,7 +373,9 @@ static ivl_type_t elaborate_darray_check_type(Design *des, const LineInfo &li,
 	  dynamic_cast<const netstring_t*>(type) ||
 	  dynamic_cast<const netstruct_t*>(type) ||
 	  dynamic_cast<const netclass_t*>(type) ||
-	  dynamic_cast<const netenum_t*>(type))
+	  dynamic_cast<const netenum_t*>(type) ||
+	  dynamic_cast<const netdarray_t*>(type) ||
+	  dynamic_cast<const netqueue_t*>(type))
 	    return type;
 
       cerr << li.get_fileline() << ": Sorry: "
@@ -433,21 +435,9 @@ static ivl_type_t elaborate_static_array_type(Design *des, const LineInfo &li,
       if (dims.empty())
 	    return base_type;
 
-      if (dynamic_cast<const netqueue_t*>(base_type)) {
-	    cerr << li.get_fileline() << ": sorry: "
-		 << "array of queue type is not yet supported."
-		 << endl;
-	    des->errors++;
-	    // Recover
-	    base_type = new netvector_t(IVL_VT_LOGIC);
-      } else if (dynamic_cast<const netdarray_t*>(base_type)) {
-	    cerr << li.get_fileline() << ": sorry: "
-		 << "array of dynamic array type is not yet supported."
-		 << endl;
-	    des->errors++;
-	    // Recover
-	    base_type = new netvector_t(IVL_VT_LOGIC);
-      }
+      // Note: queues and dynamic arrays are now supported as element types
+      // of static (unpacked) arrays. The VVP runtime handles nested arrays
+      // via vvp_darray_object which stores std::vector<vvp_object_t>.
 
       ivl_type_t type = new netuarray_t(dims, base_type);
       dims.clear();

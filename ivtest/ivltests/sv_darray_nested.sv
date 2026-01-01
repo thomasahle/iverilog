@@ -1,0 +1,35 @@
+// Test multi-dimensional dynamic arrays - basic declaration and outer allocation
+// Full nested access support is work in progress
+module test;
+  // Dynamic array of dynamic arrays
+  int arr[][];
+
+  initial begin
+    $display("Testing nested dynamic arrays (int arr[][])");
+
+    // Test 1: Basic declaration
+    $display("arr size before new: %0d", arr.size());
+    if (arr.size() != 0) begin
+      $display("FAILED: initial size should be 0");
+      $finish;
+    end
+
+    // Test 2: Allocate outer array
+    arr = new[3];
+    $display("arr size after new[3]: %0d", arr.size());
+    if (arr.size() != 3) begin
+      $display("FAILED: size after new[3] should be 3");
+      $finish;
+    end
+
+    // Test 3: Delete
+    arr.delete();
+    $display("arr size after delete: %0d", arr.size());
+    if (arr.size() != 0) begin
+      $display("FAILED: size after delete should be 0");
+      $finish;
+    end
+
+    $display("PASSED");
+  end
+endmodule
