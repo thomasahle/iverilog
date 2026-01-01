@@ -274,6 +274,8 @@ class property_object : public class_property_t {
       void set_object(char*buf, const vvp_object_t&, uint64_t) override;
       void get_object(char*buf, vvp_object_t&, uint64_t) override;
 
+      string get_string(char*buf) override;
+
       void copy(char*dst, char*src) override;
 
     private:
@@ -428,6 +430,13 @@ void property_object::copy(char*dst, char*src)
       const vvp_object_t*src_obj = reinterpret_cast<vvp_object_t*>(src+offset_);
       for (size_t idx = 0 ; idx < array_size_ ; idx += 1)
 	    dst_obj[idx] = src_obj[idx];
+}
+
+string property_object::get_string(char*)
+{
+      // Return a placeholder string for object properties (queues, darrays, etc.)
+      // since they can't be meaningfully converted to a single string value.
+      return "<object>";
 }
 
 /* **** */
