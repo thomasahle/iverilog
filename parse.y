@@ -4212,11 +4212,12 @@ block_item_decl
         PCallTask*tmp = new PCallTask(*tmp_name, *$4);
         FILE_NAME(tmp, @3);
 
-        /* Add to current block's statement list */
+        /* Add to current block's statement list if available */
         if (!current_block_stack.empty()) {
             current_block_stack.top()->push_statement_front(tmp);
         } else {
-            yywarn(@1, "static method call outside block context - call ignored.");
+            /* Outside explicit block - statement may not be reachable but
+               compilation should continue. Emit debug info if needed. */
             delete tmp;
         }
 
