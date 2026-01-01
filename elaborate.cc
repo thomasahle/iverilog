@@ -4925,8 +4925,64 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 				    // TODO: Properly handle deep nested property access
 				    return elaborate_build_call_(des, scope, task, prop_expr);
 			      }
+
+			      // Check for built-in randomize() on the class property
+			      if (method_name == "randomize") {
+				    if (debug_elaborate) {
+					  cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+					       << "Built-in randomize() for class property "
+					       << current_class->get_name() << endl;
+				    }
+
+				    // Generate call to $ivl_randomize system function with property expression
+				    NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+								       &netvector_t::atom2s32, 1);
+				    sys_expr->set_line(*this);
+				    sys_expr->parm(0, prop_expr);
+
+				    // Create a temporary variable to hold the return value
+				    NetNet*tmp = new NetNet(scope, scope->local_symbol(),
+							    NetNet::REG, &netvector_t::atom2s32);
+				    tmp->set_line(*this);
+				    NetAssign_*lv = new NetAssign_(tmp);
+
+				    // Generate an assign for the return value
+				    NetAssign*cur = new NetAssign(lv, sys_expr);
+				    cur->set_line(*this);
+				    return cur;
+			      }
 			}
 		  }
+	    }
+
+	    // Handle built-in randomize() method for classes
+	    if (method_name == "randomize") {
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+			     << "Built-in randomize() for class " << class_type->get_name()
+			     << endl;
+		  }
+
+		  // Create signal expression for the class object
+		  NetESignal*obj_expr = new NetESignal(net);
+		  obj_expr->set_line(*this);
+
+		  // Generate call to $ivl_randomize system function
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+						     &netvector_t::atom2s32, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, obj_expr);
+
+		  // Create a temporary variable to hold the return value
+		  NetNet*tmp = new NetNet(scope, scope->local_symbol(),
+					  NetNet::REG, &netvector_t::atom2s32);
+		  tmp->set_line(*this);
+		  NetAssign_*lv = new NetAssign_(tmp);
+
+		  // Generate an assign for the return value
+		  NetAssign*cur = new NetAssign(lv, sys_expr);
+		  cur->set_line(*this);
+		  return cur;
 	    }
 
 	    NetScope*task = class_type->method_from_name(method_name);
