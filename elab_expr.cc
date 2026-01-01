@@ -3444,6 +3444,23 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 				    call->set_line(*this);
 				    return call;
 			      }
+
+			      // Check for built-in randomize() method called without parentheses
+			      if (member_comp.name == "randomize") {
+				    // Get the object expression to pass to $ivl_randomize
+				    NetExpr* obj_expr = current_expr;
+				    if (!obj_expr && sr.net) {
+					  obj_expr = new NetESignal(sr.net);
+					  obj_expr->set_line(*this);
+				    }
+				    if (obj_expr) {
+					  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+					      IVL_VT_LOGIC, 32, 1);
+					  sys_expr->parm(0, obj_expr);
+					  sys_expr->set_line(*this);
+					  return sys_expr;
+				    }
+			      }
 			}
 
 			cerr << get_fileline() << ": error: "
@@ -3598,6 +3615,9 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			if (darray_type && prop_index) {
 			      current_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
 			      element_or_prop_type = darray_type->element_type();
+			} else if (darray_type && !prop_index) {
+			      // No index - next component must be an array method, not a class property
+			      current_class = nullptr;
 			} else if (assoc_type && prop_index) {
 			      current_class = dynamic_cast<const netclass_t*>(assoc_type->element_type());
 			      element_or_prop_type = assoc_type->element_type();
@@ -3605,6 +3625,9 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			      if (prop_index) {
 				    current_class = dynamic_cast<const netclass_t*>(queue_type->element_type());
 				    element_or_prop_type = queue_type->element_type();
+			      } else {
+				    // No index - next component must be a queue method, not a class property
+				    current_class = nullptr;
 			      }
 			} else {
 			      current_class = dynamic_cast<const netclass_t*>(mem_ptype);
@@ -3758,6 +3781,22 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 					  return nullptr;
 				    }
 			      } else {
+				    // Check if property is a queue/darray and the next
+				    // component is a built-in method like size()
+				    const netqueue_t* queue_type = dynamic_cast<const netqueue_t*>(mem_ptype);
+				    const netdarray_t* darray_type2 = dynamic_cast<const netdarray_t*>(mem_ptype);
+				    if ((queue_type || darray_type2) && !member_path.empty()) {
+					  name_component_t method_comp = member_path.front();
+					  // Check for size() method without parentheses
+					  if (method_comp.name == "size") {
+						// Generate call to $size (same as queue.size() with parens)
+						NetESFunc*sys_expr = new NetESFunc("$size",
+						    &netvector_t::atom2u32, 1);
+						sys_expr->parm(0, current_expr);
+						sys_expr->set_line(*this);
+						return sys_expr;
+					  }
+				    }
 				    cerr << get_fileline() << ": error: "
 					 << "Property " << member_comp.name
 					 << " is not a class type, cannot access members." << endl;
@@ -3872,6 +3911,17 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 		  NetEUFunc* call = new NetEUFunc(scope, func, ret_expr, argv, false, is_virtual);
 		  call->set_line(*this);
 		  return call;
+	    }
+
+	    // Check for built-in randomize() method called without parentheses
+	    if (comp.name == "randomize" && sr.net) {
+		  NetESignal* obj_expr = new NetESignal(sr.net);
+		  obj_expr->set_line(*this);
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+		      IVL_VT_LOGIC, 32, 1);
+		  sys_expr->parm(0, obj_expr);
+		  sys_expr->set_line(*this);
+		  return sys_expr;
 	    }
 
 	    // Not a property and not a method
