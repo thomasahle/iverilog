@@ -442,6 +442,12 @@ package uvm_pkg;
     function int get_report_verbosity_level();
       return m_verbosity;
     endfunction
+
+    // TLM write method - override in FIFO/subscriber/export classes
+    // Uses uvm_object as parameter type for base class compatibility
+    virtual function void tlm_write(uvm_object t);
+      // Base implementation does nothing - override in derived classes
+    endfunction
   endclass
 
   // ============================================================================
@@ -516,6 +522,12 @@ package uvm_pkg;
     endfunction
 
     virtual function void final_phase(uvm_phase phase);
+    endfunction
+
+    // TLM write method - override in FIFO/subscriber classes
+    // Uses uvm_object as parameter type for base class compatibility
+    virtual function void tlm_write(uvm_object t);
+      // Base implementation does nothing - FIFOs override this
     endfunction
 
     // Phase execution - iterate through children
@@ -899,39 +911,70 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
-  // UVM Analysis Port - TLM port for broadcasting (simplified)
+  // UVM Analysis Port - TLM port for broadcasting to connected subscribers
   // NOTE: Moved before uvm_subscriber so it can be used as a type
+  // NOTE: Uses uvm_object for write() to work around VVP parameterized method bug
   // ============================================================================
   class uvm_analysis_port #(type T = int) extends uvm_object;
+    // Store connected objects (max 8) - will call tlm_write on each
+    uvm_object m_subscribers[8];
+    int m_num_subscribers;
+
     function new(string name = "", uvm_component parent = null);
       super.new(name);
+      m_num_subscribers = 0;
     endfunction
 
+    // Connect to a subscriber (export or component)
+    // The export/component registers itself here
     virtual function void connect(uvm_object port);
-      // Simplified - no actual connection tracking
+      if (port != null && m_num_subscribers < 8) begin
+        m_subscribers[m_num_subscribers] = port;
+        m_num_subscribers++;
+      end
     endfunction
 
-    // Note: Using uvm_object instead of T due to Icarus limitation
-    // with type parameter resolution in method parameters
+    // Write using uvm_object to work around VVP bug with parameterized methods
+    // taking class objects. The original UVM API is write(T t), but VVP crashes
+    // when T is a class type due to how it handles parameterized methods.
     virtual function void write(uvm_object t);
-      // Simplified - override in subclass for actual functionality
+      uvm_object sub;
+      for (int i = 0; i < m_num_subscribers; i++) begin
+        sub = m_subscribers[i];
+        if (sub != null) begin
+          sub.tlm_write(t);
+        end
+      end
     endfunction
   endclass
 
   // ============================================================================
   // UVM Analysis Export - TLM export for receiving analysis transactions
+  // The export stores a reference to its parent component (FIFO).
+  // When analysis_port.write() calls tlm_write on this export, we forward
+  // to the parent FIFO's tlm_write method.
   // ============================================================================
   class uvm_analysis_export #(type T = int) extends uvm_object;
+    uvm_component m_parent;  // Track parent component (FIFO)
+
     function new(string name = "", uvm_component parent = null);
       super.new(name);
+      m_parent = parent;
     endfunction
 
     virtual function void connect(uvm_object port);
-      // Simplified - no actual connection tracking
+      // Exports don't initiate connections, they receive them
     endfunction
 
+    // Override tlm_write to forward to parent component's tlm_write
+    virtual function void tlm_write(uvm_object t);
+      if (m_parent != null) begin
+        m_parent.tlm_write(t);
+      end
+    endfunction
+
+    // Not typically called directly - analysis_port calls tlm_write
     virtual function void write(T t);
-      // Simplified - override in subclass for actual functionality
     endfunction
   endclass
 
@@ -1409,6 +1452,15 @@ package uvm_pkg;
     // Used returns count (compatible with real UVM API)
     virtual function int used();
       return m_count;
+    endfunction
+
+    // Override tlm_write from uvm_component - called by analysis_port
+    virtual function void tlm_write(uvm_object t);
+      T typed_t;
+      // Cast to the parameterized type and call write()
+      if ($cast(typed_t, t)) begin
+        write(typed_t);
+      end
     endfunction
 
   endclass

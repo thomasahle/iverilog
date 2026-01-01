@@ -838,6 +838,7 @@ sv_queue_prop_shuffle	normal,-g2012		ivltests
 sv_queue_size_no_paren	normal,-g2012		ivltests
 sv_for_multi_type	normal,-g2012		ivltests
 sv_for_multi_var	normal,-g2012		ivltests
+sv_uvm_tlm_analysis_port	normal,-g2012		ivltests gold=sv_uvm_tlm_analysis_port.gold
 sv_array_locator_with1	normal,-g2012		ivltests
 sv_root_class		normal,-g2009		ivltests gold=sv_root_class.gold
 sv_root_func		normal,-g2009		ivltests gold=sv_root_func.gold
