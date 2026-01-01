@@ -698,6 +698,16 @@ void vvp_queue_real::reverse(void)
       std::reverse(queue.begin(), queue.end());
 }
 
+void vvp_queue_real::sort(void)
+{
+      std::sort(queue.begin(), queue.end());
+}
+
+void vvp_queue_real::rsort(void)
+{
+      std::sort(queue.begin(), queue.end(), std::greater<double>());
+}
+
 void vvp_queue_string::copy_elems(vvp_object_t src, unsigned max_size)
 {
       if (vvp_queue*src_queue = src.peek<vvp_queue>())
@@ -818,6 +828,16 @@ void vvp_queue_string::reverse(void)
       std::reverse(queue.begin(), queue.end());
 }
 
+void vvp_queue_string::sort(void)
+{
+      std::sort(queue.begin(), queue.end());
+}
+
+void vvp_queue_string::rsort(void)
+{
+      std::sort(queue.begin(), queue.end(), std::greater<string>());
+}
+
 void vvp_queue_vec4::copy_elems(vvp_object_t src, unsigned max_size)
 {
       if (vvp_queue*src_queue = src.peek<vvp_queue>())
@@ -936,6 +956,30 @@ void vvp_queue_vec4::shuffle(void)
 void vvp_queue_vec4::reverse(void)
 {
       std::reverse(queue.begin(), queue.end());
+}
+
+// Compare function for sorting vvp_vector4_t in ascending order
+static bool vec4_less(const vvp_vector4_t& a, const vvp_vector4_t& b)
+{
+      // compare_gtge returns BIT4_1 if first > second
+      // So we check if b > a, meaning a < b
+      return compare_gtge(b, a, BIT4_0) == BIT4_1;
+}
+
+// Compare function for sorting vvp_vector4_t in descending order
+static bool vec4_greater(const vvp_vector4_t& a, const vvp_vector4_t& b)
+{
+      return compare_gtge(a, b, BIT4_0) == BIT4_1;
+}
+
+void vvp_queue_vec4::sort(void)
+{
+      std::sort(queue.begin(), queue.end(), vec4_less);
+}
+
+void vvp_queue_vec4::rsort(void)
+{
+      std::sort(queue.begin(), queue.end(), vec4_greater);
 }
 
 /*
@@ -1059,6 +1103,20 @@ void vvp_queue_object::shuffle(void)
 void vvp_queue_object::reverse(void)
 {
       std::reverse(queue.begin(), queue.end());
+}
+
+void vvp_queue_object::sort(void)
+{
+      // Objects have no natural ordering, so sort is a no-op
+      cerr << get_fileline()
+           << "Warning: sort() on queue of objects has no effect (objects have no natural ordering)." << endl;
+}
+
+void vvp_queue_object::rsort(void)
+{
+      // Objects have no natural ordering, so rsort is a no-op
+      cerr << get_fileline()
+           << "Warning: rsort() on queue of objects has no effect (objects have no natural ordering)." << endl;
 }
 
 /*

@@ -6993,6 +6993,50 @@ bool of_QREVERSE(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qsort <var-label>
+ * Sort the queue in ascending order.
+ */
+bool of_QSORT(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue*queue = obj->get_object().peek<vvp_queue>();
+      if (queue == 0) {
+	    cerr << thr->get_fileline()
+	         << "Warning: sort() on empty or nil queue." << endl;
+	    return true;
+      }
+
+      queue->sort();
+      return true;
+}
+
+/*
+ * %qrsort <var-label>
+ * Sort the queue in descending order.
+ */
+bool of_QRSORT(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue*queue = obj->get_object().peek<vvp_queue>();
+      if (queue == 0) {
+	    cerr << thr->get_fileline()
+	         << "Warning: rsort() on empty or nil queue." << endl;
+	    return true;
+      }
+
+      queue->rsort();
+      return true;
+}
+
+/*
  * These implement the %release/net and %release/reg instructions. The
  * %release/net instruction applies to a net kind of functor by
  * sending the release/net command to the command port. (See vvp_net.h

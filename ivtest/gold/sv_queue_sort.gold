@@ -1,0 +1,8 @@
+PASSED: Integer queue sort
+PASSED: Integer queue rsort
+PASSED: Real queue sort
+PASSED: Real queue rsort
+PASSED: String queue sort
+PASSED: String queue rsort
+PASSED: Empty queue sort/rsort (no crash)
+PASSED: Single element sort

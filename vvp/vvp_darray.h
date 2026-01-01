@@ -189,6 +189,8 @@ class vvp_queue : public vvp_darray {
       virtual void erase_tail(unsigned idx)=0;
       virtual void shuffle(void)=0;
       virtual void reverse(void)=0;
+      virtual void sort(void)=0;
+      virtual void rsort(void)=0;
 };
 
 class vvp_queue_real : public vvp_queue {
@@ -208,6 +210,8 @@ class vvp_queue_real : public vvp_queue {
       void erase_tail(unsigned idx) override;
       void shuffle(void) override;
       void reverse(void) override;
+      void sort(void) override;
+      void rsort(void) override;
 
     private:
       std::deque<double> queue;
@@ -230,6 +234,8 @@ class vvp_queue_string : public vvp_queue {
       void erase_tail(unsigned idx) override;
       void shuffle(void) override;
       void reverse(void) override;
+      void sort(void) override;
+      void rsort(void) override;
 
     private:
       std::deque<std::string> queue;
@@ -252,6 +258,8 @@ class vvp_queue_vec4 : public vvp_queue {
       void erase_tail(unsigned idx) override;
       void shuffle(void) override;
       void reverse(void) override;
+      void sort(void) override;
+      void rsort(void) override;
 
     private:
       std::deque<vvp_vector4_t> queue;
@@ -274,6 +282,8 @@ class vvp_queue_object : public vvp_queue {
       void erase_tail(unsigned idx) override;
       void shuffle(void) override;
       void reverse(void) override;
+      void sort(void) override;
+      void rsort(void) override;
 
     private:
       std::deque<vvp_object_t> queue;

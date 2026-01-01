@@ -4289,15 +4289,17 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		       << endl;
 		  des->errors += 1;
 		  return 0;
-	    } else if (method_name=="sort") {
+	    } else if (method_name=="sort" && !net->queue_type()) {
+		  // sort for queues is handled below
 		  cerr << get_fileline() << ": sorry: 'sort()' "
-		          "array sorting method is not currently supported."
+		          "array sorting method is not currently supported for non-queue arrays."
 		       << endl;
 		  des->errors += 1;
 		  return 0;
-	    } else if (method_name=="rsort") {
+	    } else if (method_name=="rsort" && !net->queue_type()) {
+		  // rsort for queues is handled below
 		  cerr << get_fileline() << ": sorry: 'rsort()' "
-		          "array sorting method is not currently supported."
+		          "array sorting method is not currently supported for non-queue arrays."
 		       << endl;
 		  des->errors += 1;
 		  return 0;
@@ -4377,6 +4379,38 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  vector<NetExpr*>argv (1);
 		  argv[0] = sig;
 		  NetSTask*sys = new NetSTask("$ivl_queue_method$reverse",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
+	    } else if (method_name == "sort") {
+		  // sort() takes no arguments (with clause not yet supported)
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: sort() "
+			     << "method takes no arguments." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+		  NetSTask*sys = new NetSTask("$ivl_queue_method$sort",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
+	    } else if (method_name == "rsort") {
+		  // rsort() takes no arguments (with clause not yet supported)
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: rsort() "
+			     << "method takes no arguments." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+		  NetSTask*sys = new NetSTask("$ivl_queue_method$rsort",
 		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
 		  sys->set_line(*this);
 		  return sys;

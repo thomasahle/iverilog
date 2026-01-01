@@ -219,6 +219,8 @@ extern bool of_QPOP_F_STR(vthread_t thr, vvp_code_t code);
 extern bool of_QPOP_F_V(vthread_t thr, vvp_code_t code);
 extern bool of_QSHUFFLE(vthread_t thr, vvp_code_t code);
 extern bool of_QREVERSE(vthread_t thr, vvp_code_t code);
+extern bool of_QSORT(vthread_t thr, vvp_code_t code);
+extern bool of_QRSORT(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_DAR_SIZE(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_Q_POPB(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_Q_POPB_O(vthread_t thr, vvp_code_t code);
