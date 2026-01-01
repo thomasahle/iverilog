@@ -4282,9 +4282,10 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  return elaborate_method_func_(scope, net,
 		                                &netvector_t::atom2s32,
 		                                method_name, "$size");
-	    } else if (method_name == "reverse") {
+	    } else if (method_name == "reverse" && !net->queue_type()) {
+		  // reverse for queues is handled below
 		  cerr << get_fileline() << ": sorry: 'reverse()' "
-		          "array sorting method is not currently supported."
+		          "array sorting method is not currently supported for non-queue arrays."
 		       << endl;
 		  des->errors += 1;
 		  return 0;
@@ -4360,6 +4361,22 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  vector<NetExpr*>argv (1);
 		  argv[0] = sig;
 		  NetSTask*sys = new NetSTask("$ivl_queue_method$shuffle",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
+	    } else if (method_name == "reverse") {
+		  // reverse() takes no arguments
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: reverse() "
+			     << "method takes no arguments." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+		  NetSTask*sys = new NetSTask("$ivl_queue_method$reverse",
 		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
 		  sys->set_line(*this);
 		  return sys;

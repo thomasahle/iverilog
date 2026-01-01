@@ -693,6 +693,11 @@ void vvp_queue_real::shuffle(void)
       std::shuffle(queue.begin(), queue.end(), gen);
 }
 
+void vvp_queue_real::reverse(void)
+{
+      std::reverse(queue.begin(), queue.end());
+}
+
 void vvp_queue_string::copy_elems(vvp_object_t src, unsigned max_size)
 {
       if (vvp_queue*src_queue = src.peek<vvp_queue>())
@@ -808,6 +813,11 @@ void vvp_queue_string::shuffle(void)
       std::shuffle(queue.begin(), queue.end(), gen);
 }
 
+void vvp_queue_string::reverse(void)
+{
+      std::reverse(queue.begin(), queue.end());
+}
+
 void vvp_queue_vec4::copy_elems(vvp_object_t src, unsigned max_size)
 {
       if (vvp_queue*src_queue = src.peek<vvp_queue>())
@@ -921,6 +931,11 @@ void vvp_queue_vec4::shuffle(void)
       static std::random_device rd;
       static std::mt19937 gen(rd());
       std::shuffle(queue.begin(), queue.end(), gen);
+}
+
+void vvp_queue_vec4::reverse(void)
+{
+      std::reverse(queue.begin(), queue.end());
 }
 
 /*
@@ -1039,6 +1054,11 @@ void vvp_queue_object::shuffle(void)
       static std::random_device rd;
       static std::mt19937 gen(rd());
       std::shuffle(queue.begin(), queue.end(), gen);
+}
+
+void vvp_queue_object::reverse(void)
+{
+      std::reverse(queue.begin(), queue.end());
 }
 
 /*

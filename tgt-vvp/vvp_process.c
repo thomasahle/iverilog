@@ -2126,6 +2126,29 @@ static int show_system_task_call(ivl_statement_t net)
 	    return 0;
       }
 
+      if (strcmp(stmt_name,"$ivl_queue_method$reverse") == 0) {
+	    show_stmt_file_line(net, "queue: reverse");
+
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 1)
+		  return 1;
+
+	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);
+
+	    /* Handle queue property on class objects (obj.queue_prop.reverse) */
+	    if (ivl_expr_type(parm0) == IVL_EX_PROPERTY) {
+		  draw_eval_object(parm0);  /* Push queue object to stack */
+		  fprintf(vvp_out, "    %%qprop/reverse; // Queue property reverse (stub)\n");
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  return 0;
+	    }
+
+	    assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
+	    ivl_signal_t var = ivl_expr_signal(parm0);
+	    fprintf(vvp_out, "    %%qreverse v%p_0;\n", var);
+	    return 0;
+      }
+
       if (strcmp(stmt_name,"$ivl_config_db_set") == 0) {
 	    /* $ivl_config_db_set(inst_name, field_name, value)
 	     * - Push inst_name string to string stack
