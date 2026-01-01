@@ -1,0 +1,4 @@
+PASSED: Loop init + bulk copy
+PASSED: Direct init + bulk copy
+PASSED: Indexed access after bulk copy
+All tests passed
