@@ -2337,10 +2337,12 @@ package uvm_pkg;
 
     root = uvm_root::get();
 
-    // Check for +UVM_TESTNAME command line argument
-    if (test_name == "" && $value$plusargs("UVM_TESTNAME=%s", cmdline_test)) begin
+    // Check for +UVM_TESTNAME command line argument (always overrides)
+    if ($value$plusargs("UVM_TESTNAME=%s", cmdline_test)) begin
+      if (test_name != "" && test_name != cmdline_test) begin
+        $display("UVM_INFO: Overriding run_test('%s') with +UVM_TESTNAME=%s", test_name, cmdline_test);
+      end
       test_name = cmdline_test;
-      $display("UVM_INFO: Using +UVM_TESTNAME=%s from command line", test_name);
     end
 
     $display("UVM_INFO: run_test called with test_name='%s'", test_name);
