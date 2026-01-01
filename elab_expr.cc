@@ -4043,10 +4043,57 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			}
 		  }
 	    }
-      } else if (dynamic_cast<const netdarray_t*>(tmp_type) || dynamic_cast<const netqueue_t*>(tmp_type)) {
-	      // Dynamic array or queue property access
+      } else if (const netdarray_t*darray_type = dynamic_cast<const netdarray_t*>(tmp_type)) {
+	      // Dynamic array property access
 	    if (!comp.index.empty()) {
-		  if (comp.index.size() != 1) {
+		  // Check if we have a packed element type that supports bit-select
+		  ivl_type_t elem_type = darray_type->element_type();
+		  unsigned elem_width = elem_type ? elem_type->packed_width() : 0;
+		  bool has_packed_elem = elem_width > 0 && !dynamic_cast<const netdarray_t*>(elem_type);
+
+		  if (comp.index.size() == 2 && has_packed_elem) {
+			// Two indices on queue/darray with packed element type:
+			// arr[i][b] where [i] is element index, [b] is bit-select
+			auto idx_it = comp.index.begin();
+			const index_component_t&arr_idx = *idx_it++;
+			const index_component_t&bit_idx = *idx_it;
+
+			// Get the array index
+			if (arr_idx.msb && !arr_idx.lsb) {
+			      canon_index = elab_and_eval(des, scope, arr_idx.msb, -1);
+			} else {
+			      cerr << get_fileline() << ": error: "
+				   << "Invalid array index expression for dynamic array property." << endl;
+			      des->errors++;
+			}
+
+			// Get the bit-select index
+			NetExpr*bit_sel = nullptr;
+			if (bit_idx.msb && !bit_idx.lsb) {
+			      bit_sel = elab_and_eval(des, scope, bit_idx.msb, -1);
+			} else {
+			      cerr << get_fileline() << ": error: "
+				   << "Invalid bit-select expression for dynamic array element." << endl;
+			      des->errors++;
+			}
+
+			if (canon_index && bit_sel) {
+			      // Create the property access with array index
+			      NetEProperty *prop_tmp = new NetEProperty(sr.net, pidx, canon_index);
+			      prop_tmp->set_line(*this);
+
+			      // Wrap in NetESelect for the bit-select
+			      NetESelect *sel = new NetESelect(prop_tmp, bit_sel, 1, elem_type);
+			      sel->set_line(*this);
+
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_member_: "
+					 << "Queue/darray property " << class_type->get_prop_name(pidx)
+					 << " with bit-select, elem_width=" << elem_width << endl;
+			      }
+			      return sel;
+			}
+		  } else if (comp.index.size() != 1) {
 			cerr << get_fileline() << ": error: "
 			     << "Dynamic arrays only support single index." << endl;
 			des->errors++;
@@ -4097,6 +4144,121 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			} else {
 			      cerr << get_fileline() << ": error: "
 				   << "Invalid index expression for dynamic array property." << endl;
+			      des->errors++;
+			}
+		  }
+	    }
+      } else if (const netqueue_t*queue_type = dynamic_cast<const netqueue_t*>(tmp_type)) {
+	      // Queue property access
+	    if (!comp.index.empty()) {
+		  // Check if we have a packed element type that supports bit-select
+		  ivl_type_t elem_type = queue_type->element_type();
+		  unsigned elem_width = elem_type ? elem_type->packed_width() : 0;
+		  bool has_packed_elem = elem_width > 0 && !dynamic_cast<const netdarray_t*>(elem_type);
+
+		  if (comp.index.size() == 2 && has_packed_elem) {
+			// Two indices on queue with packed element type:
+			// arr[i][b] where [i] is element index, [b] is bit-select
+			auto idx_it = comp.index.begin();
+			const index_component_t&arr_idx = *idx_it++;
+			const index_component_t&bit_idx = *idx_it;
+
+			// Get the array index (handle both $ and regular)
+			if (arr_idx.sel == index_component_t::SEL_BIT_LAST) {
+			      // Last element ($) - compute size - 1
+			      NetEProperty*prop_expr = new NetEProperty(sr.net, pidx);
+			      prop_expr->set_line(*this);
+			      NetESFunc*size_expr = new NetESFunc("$size", &netvector_t::atom2s32, 1);
+			      size_expr->set_line(*this);
+			      size_expr->parm(0, prop_expr);
+			      NetEConst*one = new NetEConst(verinum((uint64_t)1, 32));
+			      one->set_line(*this);
+			      canon_index = new NetEBinary('-', size_expr, one, 32, true);
+			      canon_index->set_line(*this);
+			      if (arr_idx.msb) {
+				    NetExpr*offset = elab_and_eval(des, scope, arr_idx.msb, -1);
+				    if (offset) {
+					  canon_index = new NetEBinary('+', canon_index, offset, 32, true);
+					  canon_index->set_line(*this);
+				    }
+			      }
+			} else if (arr_idx.msb && !arr_idx.lsb) {
+			      canon_index = elab_and_eval(des, scope, arr_idx.msb, -1);
+			} else {
+			      cerr << get_fileline() << ": error: "
+				   << "Invalid array index expression for queue property." << endl;
+			      des->errors++;
+			}
+
+			// Get the bit-select index
+			NetExpr*bit_sel = nullptr;
+			if (bit_idx.msb && !bit_idx.lsb) {
+			      bit_sel = elab_and_eval(des, scope, bit_idx.msb, -1);
+			} else {
+			      cerr << get_fileline() << ": error: "
+				   << "Invalid bit-select expression for queue element." << endl;
+			      des->errors++;
+			}
+
+			if (canon_index && bit_sel) {
+			      // Create the property access with array index
+			      NetEProperty *prop_tmp = new NetEProperty(sr.net, pidx, canon_index);
+			      prop_tmp->set_line(*this);
+
+			      // Wrap in NetESelect for the bit-select
+			      NetESelect *sel = new NetESelect(prop_tmp, bit_sel, 1, elem_type);
+			      sel->set_line(*this);
+
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_member_: "
+					 << "Queue property " << class_type->get_prop_name(pidx)
+					 << " with bit-select, elem_width=" << elem_width << endl;
+			      }
+			      return sel;
+			}
+		  } else if (comp.index.size() != 1) {
+			cerr << get_fileline() << ": error: "
+			     << "Queues only support single index." << endl;
+			des->errors++;
+		  } else {
+			const index_component_t&idx = comp.index.front();
+			if (idx.sel == index_component_t::SEL_BIT_LAST) {
+			      // Handle $[-n] index: compute size() - 1 - offset
+			      NetEProperty*prop_expr = new NetEProperty(sr.net, pidx);
+			      prop_expr->set_line(*this);
+			      NetESFunc*size_expr = new NetESFunc("$size", &netvector_t::atom2s32, 1);
+			      size_expr->set_line(*this);
+			      size_expr->parm(0, prop_expr);
+			      NetEConst*one = new NetEConst(verinum((uint64_t)1, 32));
+			      one->set_line(*this);
+			      NetEBinary*last_idx = new NetEBinary('-', size_expr, one, 32, true);
+			      last_idx->set_line(*this);
+			      if (idx.msb) {
+				    NetExpr*offset = elab_and_eval(des, scope, idx.msb, -1);
+				    if (offset) {
+					  canon_index = new NetEBinary('+', last_idx, offset, 32, true);
+					  canon_index->set_line(*this);
+				    } else {
+					  canon_index = last_idx;
+				    }
+			      } else {
+				    canon_index = last_idx;
+			      }
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_member_: "
+					 << "Queue property " << class_type->get_prop_name(pidx)
+					 << " last index ($): " << *canon_index << endl;
+			      }
+			} else if (idx.msb && !idx.lsb) {
+			      canon_index = elab_and_eval(des, scope, idx.msb, -1);
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_member_: "
+					 << "Queue property " << class_type->get_prop_name(pidx)
+					 << " index: " << *canon_index << endl;
+			      }
+			} else {
+			      cerr << get_fileline() << ": error: "
+				   << "Invalid index expression for queue property." << endl;
 			      des->errors++;
 			}
 		  }

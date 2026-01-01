@@ -240,6 +240,11 @@ struct vthread_s {
 	    assert(stack_obj_size_ > 0);
 	    return stack_obj_[stack_obj_size_-1];
       }
+      inline vvp_object_t& peek_object(unsigned depth)
+      {
+	    assert(stack_obj_size_ > depth);
+	    return stack_obj_[stack_obj_size_-1-depth];
+      }
       inline void pop_object(vvp_object_t&obj)
       {
 	    assert(stack_obj_size_ > 0);
@@ -10148,15 +10153,35 @@ static vvp_queue* get_qprop_queue(vthread_t thr)
 }
 
 /*
- * %qprop/qb/v - push_back vec4 value to queue property
+ * %qprop/qb/v <pidx> - push_back vec4 value to queue property
+ * Stack: [class_obj, queue_obj] + vec4 stack top
+ * The property index is used to store the queue back if it was newly created.
  */
-bool of_QPROP_QB_V(vthread_t thr, vvp_code_t)
+bool of_QPROP_QB_V(vthread_t thr, vvp_code_t cp)
 {
+      size_t pidx = cp->number;
+
       // Pop the value to push
       vvp_vector4_t value = thr->pop_vec4();
 
-      // Get queue from object stack (don't pop - %pop/obj will handle it)
-      vvp_queue*queue = get_qprop_queue<vvp_queue_vec4>(thr);
+      // Top of object stack is the queue, second is the class object
+      vvp_object_t&queue_obj = thr->peek_object(0);
+      vvp_object_t&class_obj = thr->peek_object(1);
+
+      // Get or create the queue
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+      if (queue == 0 && queue_obj.test_nil()) {
+	    // Queue was nil - create new queue
+	    queue = new vvp_queue_vec4;
+	    queue_obj.reset(queue);
+
+	    // Store the new queue back to the class property
+	    vvp_cobject*cobj = class_obj.peek<vvp_cobject>();
+	    if (cobj) {
+		  cobj->set_object(pidx, queue_obj, 0);
+	    }
+      }
+
       if (queue) {
 	    queue->push_back(value, 0); // 0 = unlimited size
       } else {
@@ -10167,17 +10192,33 @@ bool of_QPROP_QB_V(vthread_t thr, vvp_code_t)
 }
 
 /*
- * %qprop/qb/o - push_back object value to queue property
+ * %qprop/qb/o <pidx> - push_back object value to queue property
+ * Stack: [class_obj, queue_obj, value_obj]
  * Pushes a class/struct object onto the back of a queue property.
  */
-bool of_QPROP_QB_O(vthread_t thr, vvp_code_t)
+bool of_QPROP_QB_O(vthread_t thr, vvp_code_t cp)
 {
+      size_t pidx = cp->number;
+
       // Pop the value object (top of stack)
       vvp_object_t value;
       thr->pop_object(value);
 
-      // Get queue from object stack (don't pop - %pop/obj will handle it)
-      vvp_queue*queue = get_qprop_queue<vvp_queue_object>(thr);
+      // Top of object stack is the queue, second is the class object
+      vvp_object_t&queue_obj = thr->peek_object(0);
+      vvp_object_t&class_obj = thr->peek_object(1);
+
+      // Get or create the queue
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+      if (queue == 0 && queue_obj.test_nil()) {
+	    queue = new vvp_queue_object;
+	    queue_obj.reset(queue);
+	    vvp_cobject*cobj = class_obj.peek<vvp_cobject>();
+	    if (cobj) {
+		  cobj->set_object(pidx, queue_obj, 0);
+	    }
+      }
+
       if (queue) {
 	    queue->push_back(value, 0); // 0 = unlimited size
       } else {
@@ -10188,15 +10229,31 @@ bool of_QPROP_QB_O(vthread_t thr, vvp_code_t)
 }
 
 /*
- * %qprop/qf/v - push_front vec4 value to queue property
+ * %qprop/qf/v <pidx> - push_front vec4 value to queue property
+ * Stack: [class_obj, queue_obj] + vec4 stack top
  */
-bool of_QPROP_QF_V(vthread_t thr, vvp_code_t)
+bool of_QPROP_QF_V(vthread_t thr, vvp_code_t cp)
 {
+      size_t pidx = cp->number;
+
       // Pop the value to push
       vvp_vector4_t value = thr->pop_vec4();
 
-      // Get queue from object stack
-      vvp_queue*queue = get_qprop_queue<vvp_queue_vec4>(thr);
+      // Top of object stack is the queue, second is the class object
+      vvp_object_t&queue_obj = thr->peek_object(0);
+      vvp_object_t&class_obj = thr->peek_object(1);
+
+      // Get or create the queue
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+      if (queue == 0 && queue_obj.test_nil()) {
+	    queue = new vvp_queue_vec4;
+	    queue_obj.reset(queue);
+	    vvp_cobject*cobj = class_obj.peek<vvp_cobject>();
+	    if (cobj) {
+		  cobj->set_object(pidx, queue_obj, 0);
+	    }
+      }
+
       if (queue) {
 	    queue->push_front(value, 0); // 0 = unlimited size
       } else {
@@ -10207,17 +10264,33 @@ bool of_QPROP_QF_V(vthread_t thr, vvp_code_t)
 }
 
 /*
- * %qprop/qf/o - push_front object value to queue property
+ * %qprop/qf/o <pidx> - push_front object value to queue property
+ * Stack: [class_obj, queue_obj, value_obj]
  * Pushes a class/struct object onto the front of a queue property.
  */
-bool of_QPROP_QF_O(vthread_t thr, vvp_code_t)
+bool of_QPROP_QF_O(vthread_t thr, vvp_code_t cp)
 {
+      size_t pidx = cp->number;
+
       // Pop the value object (top of stack)
       vvp_object_t value;
       thr->pop_object(value);
 
-      // Get queue from object stack
-      vvp_queue*queue = get_qprop_queue<vvp_queue_object>(thr);
+      // Top of object stack is the queue, second is the class object
+      vvp_object_t&queue_obj = thr->peek_object(0);
+      vvp_object_t&class_obj = thr->peek_object(1);
+
+      // Get or create the queue
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+      if (queue == 0 && queue_obj.test_nil()) {
+	    queue = new vvp_queue_object;
+	    queue_obj.reset(queue);
+	    vvp_cobject*cobj = class_obj.peek<vvp_cobject>();
+	    if (cobj) {
+		  cobj->set_object(pidx, queue_obj, 0);
+	    }
+      }
+
       if (queue) {
 	    queue->push_front(value, 0); // 0 = unlimited size
       } else {

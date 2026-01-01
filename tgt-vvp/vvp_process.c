@@ -2012,31 +2012,50 @@ static int show_push_frontback_method(ivl_statement_t net, bool is_front)
 
       /* Handle queue property on class objects (obj.queue_prop.push_back) */
       if (ivl_expr_type(parm0) == IVL_EX_PROPERTY) {
-	    /* For queue properties, we need to evaluate the property to get
-	       the queue object, then push to it. For now, emit a stub. */
+	    /* For queue properties, we need to:
+	       1. Load the class object
+	       2. Get the queue property (keep class on stack)
+	       3. Push the value
+	       4. Call %qprop/qb/v with property index
+	       5. Pop both class and queue */
 	    ivl_expr_t parm1 = ivl_stmt_parm(net,1);
-	    draw_eval_object(parm0);  /* Push queue object to stack */
+	    unsigned pidx = ivl_expr_property_idx(parm0);
+	    ivl_signal_t sig = ivl_expr_signal(parm0);
+	    ivl_expr_t base = ivl_expr_property_base(parm0);
+
+	    /* Load the class object */
+	    if (base) {
+		  draw_eval_object(base);
+	    } else {
+		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+	    }
+
+	    /* Get the queue property (keep class on stack for later) */
+	    fprintf(vvp_out, "    %%prop/obj %u, 0; Get queue property\n", pidx);
+	    /* Don't pop class - we need it for storing back if queue is nil */
+
 	    /* Evaluate value based on element type */
 	    ivl_variable_type_t val_type = ivl_expr_value(parm1);
 	    if (val_type == IVL_VT_BOOL || val_type == IVL_VT_LOGIC) {
 		  draw_eval_vec4(parm1);
-		  fprintf(vvp_out, "    %%qprop/%s/v; // Queue property %s vec (stub)\n",
-			  type_code, method_name);
+		  fprintf(vvp_out, "    %%qprop/%s/v %u; // Queue property %s vec\n",
+			  type_code, pidx, method_name);
 	    } else if (val_type == IVL_VT_REAL) {
 		  draw_eval_real(parm1);
-		  fprintf(vvp_out, "    %%qprop/%s/r; // Queue property %s real (stub)\n",
-			  type_code, method_name);
+		  fprintf(vvp_out, "    %%qprop/%s/r %u; // Queue property %s real\n",
+			  type_code, pidx, method_name);
 	    } else if (val_type == IVL_VT_STRING) {
 		  draw_eval_string(parm1);
-		  fprintf(vvp_out, "    %%qprop/%s/str; // Queue property %s str (stub)\n",
-			  type_code, method_name);
+		  fprintf(vvp_out, "    %%qprop/%s/str %u; // Queue property %s str\n",
+			  type_code, pidx, method_name);
 	    } else {
 		  /* Structs, classes, etc - evaluate as object */
 		  draw_eval_object(parm1);
-		  fprintf(vvp_out, "    %%qprop/%s/o; // Queue property %s obj (stub)\n",
-			  type_code, method_name);
+		  fprintf(vvp_out, "    %%qprop/%s/o %u; // Queue property %s obj\n",
+			  type_code, pidx, method_name);
 	    }
-	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    /* Pop both queue and class objects */
+	    fprintf(vvp_out, "    %%pop/obj 2, 0;\n");
 	    return 0;
       }
 

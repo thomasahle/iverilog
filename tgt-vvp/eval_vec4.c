@@ -1023,6 +1023,14 @@ static void draw_property_vec4(ivl_expr_t expr)
 		  fprintf(vvp_out, "    %%pop/obj 1, 1; Pop class obj, keep darray\n");
 		  fprintf(vvp_out, "    %%get/dar/obj/vec4 %d;\n", idx_word);
 		  clr_word(idx_word);
+	    } else if (prop_type && ivl_type_base(prop_type) == IVL_VT_QUEUE) {
+		  // Queue property - load queue, then index into it
+		  int idx_word = allocate_word();
+		  draw_eval_expr_into_integer(array_idx, idx_word);
+		  fprintf(vvp_out, "    %%prop/obj %u, 0; Load queue property\n", pidx);
+		  fprintf(vvp_out, "    %%pop/obj 1, 1; Pop class obj, keep queue\n");
+		  fprintf(vvp_out, "    %%get/dar/obj/vec4 %d;\n", idx_word);
+		  clr_word(idx_word);
 	    } else {
 		  // Regular array property - use integer index
 		  draw_eval_vec4(array_idx);
