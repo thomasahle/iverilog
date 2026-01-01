@@ -28,6 +28,7 @@
 # include  "netassoc.h"
 # include  "netclass.h"
 # include  "netdarray.h"
+# include  "netqueue.h"
 # include  "netparray.h"
 # include  "netvector.h"
 # include  "netenum.h"
@@ -942,19 +943,50 @@ bool PEIdent::elaborate_lval_darray_bit_(Design*des,
       const name_component_t&name_tail = path_.back();
       ivl_assert(*this, !name_tail.index.empty());
 
-	// For now, only support single-dimension dynamic arrays.
+      if ((lv->sig()->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
+	    ivl_assert(*this, lv->sig()->coerced_to_uwire());
+	    report_mixed_assignment_conflict_("darray word");
+	    des->errors += 1;
+	    return false;
+      }
+
+      // Handle multi-dimensional access for nested arrays (e.g., arr[i][j])
+      if (name_tail.index.size() == 2) {
+	    // Check if element type is also a darray/queue
+	    const netdarray_t*darray_type = lv->sig()->darray_type();
+	    if (darray_type) {
+		  ivl_type_t element_type = darray_type->element_type();
+		  const netdarray_t*inner_darray = dynamic_cast<const netdarray_t*>(element_type);
+		  const netqueue_t*inner_queue = dynamic_cast<const netqueue_t*>(element_type);
+
+		  if (inner_darray || inner_queue) {
+			// This is arr[i][j] where arr is int[][]
+			// Set first index on current lval
+			const index_component_t&first_idx = name_tail.index.front();
+			ivl_assert(*this, first_idx.msb != 0);
+			ivl_assert(*this, first_idx.lsb == 0);
+			NetExpr*mux1 = elab_and_eval(des, scope, first_idx.msb, -1);
+			lv->set_word(mux1);
+
+			// Set second index - this will be used for inner array access
+			const index_component_t&second_idx = name_tail.index.back();
+			ivl_assert(*this, second_idx.msb != 0);
+			ivl_assert(*this, second_idx.lsb == 0);
+			NetExpr*mux2 = elab_and_eval(des, scope, second_idx.msb, -1);
+			lv->set_word2(mux2);
+
+			return true;
+		  }
+	    }
+	    // Fall through to error for non-nested cases
+      }
+
+      // For now, only support single-dimension dynamic arrays (or nested handled above)
       if (name_tail.index.size() != 1) {
 	    cerr << get_fileline() << ": sorry: "
 		 << "Associative/dynamic arrays with additional dimensions "
 		 << "are not yet supported. Found " << name_tail.index.size()
 		 << " indices." << endl;
-	    des->errors += 1;
-	    return false;
-      }
-
-      if ((lv->sig()->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
-	    ivl_assert(*this, lv->sig()->coerced_to_uwire());
-	    report_mixed_assignment_conflict_("darray word");
 	    des->errors += 1;
 	    return false;
       }

@@ -2904,6 +2904,10 @@ class NetAssign_ {
       NetExpr*word();
       const NetExpr*word() const;
 
+	// Second word index for multi-dimensional array access (arr[i][j])
+      NetExpr*word2();
+      const NetExpr*word2() const;
+
       NetScope*scope()const;
 
 	// Get the base index of the part select, or 0 if there is no
@@ -2912,6 +2916,7 @@ class NetAssign_ {
       ivl_select_type_t select_type() const;
 
       void set_word(NetExpr*);
+      void set_word2(NetExpr*);
 	// Set a part select expression for the l-value vector. Note
 	// that the expression calculates a CANONICAL bit address.
       void set_part(NetExpr* loff, unsigned wid,
@@ -2988,6 +2993,8 @@ class NetAssign_ {
       NetNet *sig_;
 	// Memory word index
       NetExpr*word_;
+	// Second word index for multi-dimensional array access (arr[i][j])
+      NetExpr*word2_;
 	// member/property if signal is a class.
       perm_string member_;
       int member_idx_ = -1;

@@ -6645,10 +6645,32 @@ bool PEIdent::calculate_packed_indices_(Design*des, NetScope*scope, const NetNet
       unsigned dimensions = net->unpacked_dimensions() + net->packed_dimensions();
       switch (net->data_type()) {
 	  case IVL_VT_STRING:
-	  case IVL_VT_DARRAY:
-	  case IVL_VT_QUEUE:
 	  case IVL_VT_ASSOC:
 	    dimensions += 1;
+	    break;
+	  case IVL_VT_DARRAY:
+	  case IVL_VT_QUEUE:
+	    // Count dimensions for nested dynamic arrays/queues
+	    {
+		  ivl_type_t cur_type = net->net_type();
+		  while (cur_type) {
+			ivl_variable_type_t vtype = cur_type->base_type();
+			if (vtype == IVL_VT_DARRAY || vtype == IVL_VT_QUEUE) {
+			      dimensions += 1;
+			      const netdarray_t*dar = dynamic_cast<const netdarray_t*>(cur_type);
+			      const netqueue_t*que = dynamic_cast<const netqueue_t*>(cur_type);
+			      if (dar)
+				    cur_type = dar->element_type();
+			      else if (que)
+				    cur_type = que->element_type();
+			      else
+				    break;
+			} else {
+			      break;
+			}
+		  }
+	    }
+	    break;
 	  default:
 	    break;
       }
@@ -9606,6 +9628,61 @@ NetExpr* PEIdent::elaborate_expr_net(Design*des, NetScope*scope,
       if (net->unpacked_dimensions() > 0)
 	    return elaborate_expr_net_word_(des, scope, net, found_in,
                                             expr_wid, flags);
+
+      // Handle multi-dimensional darray access (e.g., arr[i][j] where arr is int[][])
+      if ((net->data_type() == IVL_VT_DARRAY || net->data_type() == IVL_VT_QUEUE)
+          && path_.back().index.size() == 2) {
+	    const netdarray_t*outer_type = net->darray_type();
+	    if (!outer_type)
+		  outer_type = net->queue_type();
+	    if (outer_type) {
+		  ivl_type_t element_type = outer_type->element_type();
+		  const netdarray_t*inner_darray = dynamic_cast<const netdarray_t*>(element_type);
+		  const netqueue_t*inner_queue = dynamic_cast<const netqueue_t*>(element_type);
+
+		  if (inner_darray || inner_queue) {
+			// Get the two index expressions
+			auto idx_it = path_.back().index.begin();
+			const index_component_t& idx1 = *idx_it++;
+			const index_component_t& idx2 = *idx_it;
+
+			ivl_assert(*this, idx1.msb != 0);
+			ivl_assert(*this, idx1.lsb == 0);
+			ivl_assert(*this, idx2.msb != 0);
+			ivl_assert(*this, idx2.lsb == 0);
+
+			NetExpr*idx1_expr = elab_and_eval(des, scope, idx1.msb, -1, false);
+			NetExpr*idx2_expr = elab_and_eval(des, scope, idx2.msb, -1, false);
+
+			if (!idx1_expr || !idx2_expr)
+			      return 0;
+
+			// Create NetESignal for arr[i] - the outer array indexed by first index
+			NetESignal*outer_access = new NetESignal(net, idx1_expr);
+			outer_access->set_line(*this);
+
+			// Now create a select expression for the second index on the inner array
+			// The inner element type
+			ivl_type_t inner_elem_type = inner_darray
+			      ? inner_darray->element_type()
+			      : inner_queue->element_type();
+			unsigned elem_width = inner_elem_type ? inner_elem_type->packed_width() : 32;
+
+			// Create a NetESelect to get element [j] from the inner array
+			NetESelect*inner_access = new NetESelect(outer_access, idx2_expr, elem_width, inner_elem_type);
+			inner_access->set_line(*this);
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_expr_net: "
+			           << "Multi-dimensional darray access: "
+			           << net->name() << "[idx1][idx2], elem_width=" << elem_width
+			           << endl;
+			}
+
+			return inner_access;
+		  }
+	    }
+      }
 
       bool need_const = NEED_CONST & flags;
 

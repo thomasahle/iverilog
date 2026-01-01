@@ -1292,6 +1292,74 @@ static int show_stmt_assign_sig_darray(ivl_statement_t net)
       assert(ivl_stmt_lvals(net) == 1);
       assert(part == 0);
 
+      /* Check for multi-dimensional array access (arr[i][j] = value) */
+      ivl_expr_t idx2 = ivl_lval_idx2(lval);
+      if (idx2 && ivl_lval_idx(lval)) {
+	    /* This is arr[i][j] = value where arr is int[][]
+	       1. Evaluate rvalue first
+	       2. Load outer darray, get inner darray at idx
+	       3. Store value at idx2 in inner darray */
+	    ivl_expr_t idx1 = ivl_lval_idx(lval);
+
+	    /* Get the inner element type (e.g., int from int[][]) */
+	    ivl_type_t inner_darray_type = element_type;
+	    ivl_type_t inner_element_type = ivl_type_element(inner_darray_type);
+
+	    /* Evaluate the rvalue first based on inner element type */
+	    switch (ivl_type_base(inner_element_type)) {
+		case IVL_VT_REAL:
+		  draw_eval_real(rval);
+		  break;
+		case IVL_VT_STRING:
+		  draw_eval_string(rval);
+		  break;
+		case IVL_VT_CLASS:
+		case IVL_VT_DARRAY:
+		case IVL_VT_QUEUE:
+		  draw_eval_object(rval);
+		  break;
+		case IVL_VT_BOOL:
+		case IVL_VT_LOGIC:
+		default:
+		  draw_eval_vec4(rval);
+		  resize_vec4_wid(rval, ivl_stmt_lwidth(net));
+		  break;
+	    }
+
+	    /* Load idx1 into register 4, idx2 into register 3 */
+	    draw_eval_expr_into_integer(idx1, 4);
+	    draw_eval_expr_into_integer(idx2, 3);
+
+	    /* Load outer darray */
+	    fprintf(vvp_out, "    %%load/obj v%p_0;\n", var);
+	    /* Get inner darray at idx1 - uses reg 4, pops outer, pushes inner */
+	    fprintf(vvp_out, "    %%get/dar/obj/o 4;\n");
+
+	    /* Store rvalue at idx2 of inner darray - uses reg 3 */
+	    switch (ivl_type_base(inner_element_type)) {
+		case IVL_VT_REAL:
+		  fprintf(vvp_out, "    %%set/dar/obj/r 3;\n");
+		  break;
+		case IVL_VT_STRING:
+		  fprintf(vvp_out, "    %%set/dar/obj/str 3;\n");
+		  break;
+		case IVL_VT_CLASS:
+		case IVL_VT_DARRAY:
+		case IVL_VT_QUEUE:
+		  fprintf(vvp_out, "    %%set/dar/obj/o 3;\n");
+		  break;
+		case IVL_VT_BOOL:
+		case IVL_VT_LOGIC:
+		default:
+		  fprintf(vvp_out, "    %%set/dar/obj/vec4 3;\n");
+		  break;
+	    }
+	    /* Pop the inner darray from object stack */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+
+	    return errors;
+      }
+
       if (ivl_lval_idx(lval)) {
 	    show_stmt_assign_sig_darray_queue_mux(net);
 	    switch (ivl_type_base(element_type)) {

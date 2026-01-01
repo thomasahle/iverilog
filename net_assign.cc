@@ -23,6 +23,7 @@
 # include  "netassoc.h"
 # include  "netclass.h"
 # include  "netdarray.h"
+# include  "netqueue.h"
 # include  "netparray.h"
 # include  "netenum.h"
 # include  "netstruct.h"
@@ -45,7 +46,7 @@ unsigned count_lval_width(const NetAssign_*idx)
 }
 
 NetAssign_::NetAssign_(NetAssign_*n)
-: nest_(n), sig_(0), word_(0), base_(0), sel_type_(IVL_SEL_OTHER)
+: nest_(n), sig_(0), word_(0), word2_(0), base_(0), sel_type_(IVL_SEL_OTHER)
 {
       lwid_ = 0;
       more = 0;
@@ -54,7 +55,7 @@ NetAssign_::NetAssign_(NetAssign_*n)
 }
 
 NetAssign_::NetAssign_(NetNet*s)
-: nest_(0), sig_(s), word_(0), base_(0), sel_type_(IVL_SEL_OTHER)
+: nest_(0), sig_(s), word_(0), word2_(0), base_(0), sel_type_(IVL_SEL_OTHER)
 {
       lwid_ = sig_->vector_width();
       sig_->incr_lref();
@@ -104,6 +105,22 @@ NetExpr* NetAssign_::word()
 const NetExpr* NetAssign_::word() const
 {
       return word_;
+}
+
+void NetAssign_::set_word2(NetExpr*r)
+{
+      ivl_assert(*this, word2_ == 0);
+      word2_ = r;
+}
+
+NetExpr* NetAssign_::word2()
+{
+      return word2_;
+}
+
+const NetExpr* NetAssign_::word2() const
+{
+      return word2_;
 }
 
 const NetExpr* NetAssign_::get_base() const
@@ -187,6 +204,14 @@ ivl_type_t NetAssign_::net_type() const
 		  ntype = uarray->element_type();
 	    else if (const netassoc_t *assoc = dynamic_cast<const netassoc_t*>(ntype))
 		  ntype = assoc->element_type();
+      }
+
+      // For multi-dimensional access (arr[i][j]), unwrap a second level
+      if (word2_) {
+	    if (const netdarray_t *darray = dynamic_cast<const netdarray_t*>(ntype))
+		  ntype = darray->element_type();
+	    else if (const netqueue_t *queue = dynamic_cast<const netqueue_t*>(ntype))
+		  ntype = queue->element_type();
       }
 
       return ntype;

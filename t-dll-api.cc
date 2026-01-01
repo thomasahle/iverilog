@@ -1793,6 +1793,15 @@ extern "C" ivl_expr_t ivl_lval_idx(ivl_lval_t net)
       return 0x0;
 }
 
+/* Return second index for multi-dimensional array access (arr[i][j]) */
+extern "C" ivl_expr_t ivl_lval_idx2(ivl_lval_t net)
+{
+      assert(net);
+      if (net->type_ == IVL_LVAL_ARR || net->type_ == IVL_LVAL_LVAL)
+	    return net->idx2;
+      return 0x0;
+}
+
 extern "C" ivl_expr_t ivl_lval_part_off(ivl_lval_t net)
 {
       assert(net);

@@ -202,6 +202,7 @@ bool dll_target::make_single_lval_(const LineInfo*li, struct ivl_lval_s*cur, con
       }
 
       cur->idx = 0;
+      cur->idx2 = 0;
 	// If there is a word select expression, it is
 	// really an array index. Note that the word index
 	// expression is already converted to canonical
@@ -215,6 +216,14 @@ bool dll_target::make_single_lval_(const LineInfo*li, struct ivl_lval_s*cur, con
 	    if (cur->type_ == IVL_LVAL_REG)
 		  cur->type_ = IVL_LVAL_ARR;
 	    cur->idx = expr_;
+	    expr_ = 0;
+      }
+
+	// Second word index for multi-dimensional array access (e.g., arr[i][j])
+      if (asn->word2()) {
+	    assert(expr_ == 0);
+	    asn->word2()->expr_scan(this);
+	    cur->idx2 = expr_;
 	    expr_ = 0;
       }
 

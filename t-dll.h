@@ -507,6 +507,7 @@ struct ivl_lval_s {
       ivl_expr_t loff;
       ivl_select_type_t sel_type :3;
       ivl_expr_t idx;
+      ivl_expr_t idx2;  // Second index for multi-dimensional array access
       unsigned width_;
       unsigned type_   : 8; /* values from ivl_lval_type_t */
       int property_idx;

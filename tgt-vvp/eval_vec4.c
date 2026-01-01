@@ -1191,8 +1191,30 @@ static void draw_select_vec4(ivl_expr_t expr)
 		    || (ivl_signal_data_type(sig)==IVL_VT_QUEUE) );
 
 	    assert(base);
-	    draw_eval_expr_into_integer(base, 3);
-	    fprintf(vvp_out, "    %%load/dar/vec4 v%p_0;\n", sig);
+
+	    // Check if the subexpr has a word index (nested array access)
+	    ivl_expr_t word_idx = ivl_expr_oper1(subexpr);
+	    if (word_idx) {
+		  // This is arr[i][j] where arr is a nested darray/queue
+		  // word_idx is the first index (i), base is the second index (j)
+		  int idx1_reg = allocate_word();
+		  draw_eval_expr_into_integer(word_idx, idx1_reg);
+		  draw_eval_expr_into_integer(base, 3);
+
+		  // Load the outer array
+		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+		  // Get the inner array at index i (result on object stack)
+		  fprintf(vvp_out, "    %%get/dar/obj/o %d;\n", idx1_reg);
+		  clr_word(idx1_reg);
+		  // Now load vec4 from inner array at index j (index in reg 3)
+		  // This also pops the inner array from object stack
+		  fprintf(vvp_out, "    %%get/dar/obj/vec4 3;\n");
+	    } else {
+		  // Simple single-level darray access
+		  draw_eval_expr_into_integer(base, 3);
+		  fprintf(vvp_out, "    %%load/dar/vec4 v%p_0;\n", sig);
+	    }
+
 	    if (ivl_expr_value(expr) == IVL_VT_BOOL)
 		  fprintf(vvp_out, "    %%cast2;\n");
 

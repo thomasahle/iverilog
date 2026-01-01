@@ -1587,6 +1587,7 @@ extern const char*ivl_lpm_string(ivl_lpm_t net);
 extern unsigned    ivl_lval_width(ivl_lval_t net);
 extern ivl_expr_t  ivl_lval_mux(ivl_lval_t net) __attribute__((deprecated)); /* XXXX Obsolete? */
 extern ivl_expr_t  ivl_lval_idx(ivl_lval_t net);
+extern ivl_expr_t  ivl_lval_idx2(ivl_lval_t net);  /* Second index for arr[i][j] */
 extern ivl_expr_t  ivl_lval_part_off(ivl_lval_t net);
 extern ivl_select_type_t ivl_lval_sel_type(ivl_lval_t net);
 extern int ivl_lval_property_idx(ivl_lval_t net);
