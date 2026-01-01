@@ -2252,6 +2252,17 @@ for_variable_decl_list
 	tmp->push_back($3);
 	$$ = tmp;
       }
+    /* Support for repeated type declarations: for(int i=0, int j=0; ...) */
+  | for_variable_decl_list ',' data_type for_variable_decl_assignment
+      { std::list<decl_assignment_t*>*tmp = $1;
+	/* Note: we're ignoring the additional type here ($3) since the for loop
+	   grammar uses a single type for all variables. This allows parsing but
+	   all variables share the first type. For most cases (like int i=0, int j=0)
+	   this is acceptable since the types are the same. */
+	delete $3;
+	tmp->push_back($4);
+	$$ = tmp;
+      }
   ;
 
   /* The function declaration rule matches the function declaration
