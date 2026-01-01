@@ -252,12 +252,15 @@ static int eval_object_property(ivl_expr_t expr)
       }
       ivl_type_t prop_type = class_type ? ivl_type_prop_type(class_type, pidx) : NULL;
 
-      if (prop_type && ivl_type_base(prop_type) == IVL_VT_DARRAY && idx != 0) {
-	    /* Load the darray property without index */
-	    fprintf(vvp_out, "    %%prop/obj %u, 0; Load darray property\n", pidx);
+      ivl_variable_type_t prop_base = prop_type ? ivl_type_base(prop_type) : IVL_VT_NO_TYPE;
+      if ((prop_base == IVL_VT_DARRAY || prop_base == IVL_VT_QUEUE) && idx != 0) {
+	    /* Load the darray/queue property without index */
+	    fprintf(vvp_out, "    %%prop/obj %u, 0; Load %s property\n", pidx,
+		    prop_base == IVL_VT_QUEUE ? "queue" : "darray");
 	    fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
 	    /* Access element at index */
-	    fprintf(vvp_out, "    %%get/dar/obj/o %d; Load darray element\n", idx);
+	    fprintf(vvp_out, "    %%get/dar/obj/o %d; Load %s element\n", idx,
+		    prop_base == IVL_VT_QUEUE ? "queue" : "darray");
       } else {
 	    /* Normal property access (with or without index for static arrays) */
 	    fprintf(vvp_out, "    %%prop/obj %u, %d; eval_object_property\n", pidx, idx);

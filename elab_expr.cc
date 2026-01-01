@@ -3612,35 +3612,77 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			des->errors += 1;
 		  }
 
-		  // Check for dynamic array or associative array indexing
+		  // Check for dynamic array, queue, or associative array indexing
 		  NetExpr* prop_index = nullptr;
 		  const netdarray_t* darray_type = dynamic_cast<const netdarray_t*>(mem_ptype);
 		  const netassoc_t* assoc_type = dynamic_cast<const netassoc_t*>(mem_ptype);
-		  if ((darray_type || assoc_type) && !member_comp.index.empty()) {
+		  const netqueue_t* queue_type_tmp = dynamic_cast<const netqueue_t*>(mem_ptype);
+		  if ((darray_type || assoc_type || queue_type_tmp) && !member_comp.index.empty()) {
 			// Elaborate the index expression for array access
+			const char* arr_kind = darray_type ? "Dynamic" : (queue_type_tmp ? "Queue" : "Associative");
 			if (member_comp.index.size() != 1) {
 			      cerr << get_fileline() << ": error: "
-				   << (darray_type ? "Dynamic" : "Associative")
-				   << " arrays only support single index." << endl;
+				   << arr_kind << " arrays only support single index." << endl;
 			      des->errors += 1;
 			      return nullptr;
 			}
 			const index_component_t& idx = member_comp.index.front();
-			if (idx.msb && !idx.lsb) {
+			if (idx.sel == index_component_t::SEL_BIT_LAST) {
+			      // Handle $ (last element) and $-offset for queues/darrays
+			      // Need to create: size() - 1 - offset (if any)
+			      // First, create a property expression to get the queue/darray
+			      NetEProperty* size_prop;
+			      if (current_expr == nullptr) {
+				    size_prop = new NetEProperty(sr.net, mem_pidx);
+			      } else {
+				    size_prop = new NetEProperty(current_expr, mem_pidx);
+			      }
+			      size_prop->set_line(*this);
+
+			      // Call $size on the property
+			      NetESFunc* size_expr = new NetESFunc("$size", &netvector_t::atom2s32, 1);
+			      size_expr->set_line(*this);
+			      size_expr->parm(0, size_prop);
+
+			      // Compute size - 1
+			      NetEConst* one = new NetEConst(verinum((uint64_t)1, 32));
+			      one->set_line(*this);
+			      NetEBinary* last_idx = new NetEBinary('-', size_expr, one, 32, true);
+			      last_idx->set_line(*this);
+
+			      // If there's an offset ($-n), subtract it
+			      if (idx.msb) {
+				    NetExpr* offset = elab_and_eval(des, scope, idx.msb, -1);
+				    if (offset) {
+					  // Parser stores n as positive in msb for $-n syntax
+					  // So we need: (size - 1) - n
+					  prop_index = new NetEBinary('-', last_idx, offset, 32, true);
+					  prop_index->set_line(*this);
+				    } else {
+					  prop_index = last_idx;
+				    }
+			      } else {
+				    prop_index = last_idx;
+			      }
+
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_field_: "
+					 << arr_kind << " last index ($) for property " << member_comp.name
+					 << ": " << *prop_index << endl;
+			      }
+			} else if (idx.msb && !idx.lsb) {
 			      prop_index = elab_and_eval(des, scope, idx.msb, -1, false);
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_field_: "
+					 << arr_kind << " array index for property " << member_comp.name
+					 << ": " << *prop_index << endl;
+			      }
 			} else {
 			      cerr << get_fileline() << ": error: "
 				   << "Invalid index expression for "
-				   << (darray_type ? "dynamic" : "associative")
-				   << " array." << endl;
+				   << arr_kind << " array." << endl;
 			      des->errors += 1;
 			      return nullptr;
-			}
-			if (debug_elaborate) {
-			      cerr << get_fileline() << ": PEIdent::elaborate_expr_class_field_: "
-				   << (darray_type ? "Dynamic" : "Associative")
-				   << " array index for property " << member_comp.name
-				   << ": " << *prop_index << endl;
 			}
 		  }
 
@@ -3669,14 +3711,12 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			} else if (assoc_type && prop_index) {
 			      current_class = dynamic_cast<const netclass_t*>(assoc_type->element_type());
 			      element_or_prop_type = assoc_type->element_type();
-			} else if (const netqueue_t* queue_type = dynamic_cast<const netqueue_t*>(mem_ptype)) {
-			      if (prop_index) {
-				    current_class = dynamic_cast<const netclass_t*>(queue_type->element_type());
-				    element_or_prop_type = queue_type->element_type();
-			      } else {
-				    // No index - next component must be a queue method, not a class property
-				    current_class = nullptr;
-			      }
+			} else if (queue_type_tmp && prop_index) {
+			      current_class = dynamic_cast<const netclass_t*>(queue_type_tmp->element_type());
+			      element_or_prop_type = queue_type_tmp->element_type();
+			} else if (queue_type_tmp && !prop_index) {
+			      // No index - next component must be a queue method, not a class property
+			      current_class = nullptr;
 			} else {
 			      current_class = dynamic_cast<const netclass_t*>(mem_ptype);
 			}
@@ -3830,7 +3870,7 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 				    }
 			      } else {
 				    // Check if property is a queue/darray and the next
-				    // component is a built-in method like size()
+				    // component is a built-in method like size(), pop_back(), etc.
 				    const netqueue_t* queue_type = dynamic_cast<const netqueue_t*>(mem_ptype);
 				    const netdarray_t* darray_type2 = dynamic_cast<const netdarray_t*>(mem_ptype);
 				    if ((queue_type || darray_type2) && !member_path.empty()) {
@@ -3840,6 +3880,17 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 						// Generate call to $size (same as queue.size() with parens)
 						NetESFunc*sys_expr = new NetESFunc("$size",
 						    &netvector_t::atom2u32, 1);
+						sys_expr->parm(0, current_expr);
+						sys_expr->set_line(*this);
+						return sys_expr;
+					  }
+					  // Check for pop_back() and pop_front() methods
+					  if (queue_type && (method_comp.name == "pop_back" || method_comp.name == "pop_front")) {
+						ivl_type_t element_type = queue_type->element_type();
+						perm_string func_name = method_comp.name == "pop_back"
+						    ? perm_string::literal("$ivl_queue_method$pop_back")
+						    : perm_string::literal("$ivl_queue_method$pop_front");
+						NetESFunc*sys_expr = new NetESFunc(func_name, element_type, 1);
 						sys_expr->parm(0, current_expr);
 						sys_expr->set_line(*this);
 						return sys_expr;
@@ -4120,7 +4171,9 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			      if (idx.msb) {
 				    NetExpr*offset = elab_and_eval(des, scope, idx.msb, -1);
 				    if (offset) {
-					  canon_index = new NetEBinary('+', last_idx, offset, 32, true);
+					  // Parser stores n as positive in msb for $-n syntax
+					  // So we need: (size - 1) - n
+					  canon_index = new NetEBinary('-', last_idx, offset, 32, true);
 					  canon_index->set_line(*this);
 				    } else {
 					  canon_index = last_idx;
@@ -4178,7 +4231,9 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			      if (arr_idx.msb) {
 				    NetExpr*offset = elab_and_eval(des, scope, arr_idx.msb, -1);
 				    if (offset) {
-					  canon_index = new NetEBinary('+', canon_index, offset, 32, true);
+					  // Parser stores n as positive in msb for $-n syntax
+					  // So we need: (size - 1) - n
+					  canon_index = new NetEBinary('-', canon_index, offset, 32, true);
 					  canon_index->set_line(*this);
 				    }
 			      }
@@ -4236,7 +4291,9 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			      if (idx.msb) {
 				    NetExpr*offset = elab_and_eval(des, scope, idx.msb, -1);
 				    if (offset) {
-					  canon_index = new NetEBinary('+', last_idx, offset, 32, true);
+					  // Parser stores n as positive in msb for $-n syntax
+					  // So we need: (size - 1) - n
+					  canon_index = new NetEBinary('-', last_idx, offset, 32, true);
 					  canon_index->set_line(*this);
 				    } else {
 					  canon_index = last_idx;
