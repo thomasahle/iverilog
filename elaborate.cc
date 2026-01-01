@@ -4625,6 +4625,30 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 				    return elaborate_queue_prop_method_(des, scope, net, class_type, pidx,
 								       method_name, "$ivl_darray_method$delete",
 								       parm_names);
+			      } else if (method_name == "shuffle") {
+				    // shuffle() takes no arguments
+				    if (parms_.size() != 0) {
+					  cerr << get_fileline() << ": error: shuffle() "
+					       << "method takes no arguments." << endl;
+					  des->errors += 1;
+					  return 0;
+				    }
+				    static const std::vector<perm_string> parm_names;
+				    return elaborate_queue_prop_method_(des, scope, net, class_type, pidx,
+								       method_name, "$ivl_queue_method$shuffle",
+								       parm_names);
+			      } else if (method_name == "reverse") {
+				    // reverse() takes no arguments
+				    if (parms_.size() != 0) {
+					  cerr << get_fileline() << ": error: reverse() "
+					       << "method takes no arguments." << endl;
+					  des->errors += 1;
+					  return 0;
+				    }
+				    static const std::vector<perm_string> parm_names;
+				    return elaborate_queue_prop_method_(des, scope, net, class_type, pidx,
+								       method_name, "$ivl_darray_method$reverse",
+								       parm_names);
 			      }
 			      // pop_front/pop_back are functions, not tasks - handled elsewhere
 			}
