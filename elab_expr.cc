@@ -3863,8 +3863,8 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			}
 		  }
 	    }
-      } else if (dynamic_cast<const netdarray_t*>(tmp_type)) {
-	      // Dynamic array property access
+      } else if (dynamic_cast<const netdarray_t*>(tmp_type) || dynamic_cast<const netqueue_t*>(tmp_type)) {
+	      // Dynamic array or queue property access
 	    if (!comp.index.empty()) {
 		  if (comp.index.size() != 1) {
 			cerr << get_fileline() << ": error: "
@@ -3872,7 +3872,42 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			des->errors++;
 		  } else {
 			const index_component_t&idx = comp.index.front();
-			if (idx.msb && !idx.lsb) {
+			if (idx.sel == index_component_t::SEL_BIT_LAST) {
+			      // Handle $[-n] index: compute size() - 1 - offset
+			      // First, create a property expression to get the queue/darray
+			      NetEProperty*prop_expr = new NetEProperty(sr.net, pidx);
+			      prop_expr->set_line(*this);
+
+			      // Call $size on the property
+			      NetESFunc*size_expr = new NetESFunc("$size", &netvector_t::atom2s32, 1);
+			      size_expr->set_line(*this);
+			      size_expr->parm(0, prop_expr);
+
+			      // Compute size - 1
+			      NetEConst*one = new NetEConst(verinum((uint64_t)1, 32));
+			      one->set_line(*this);
+			      NetEBinary*last_idx = new NetEBinary('-', size_expr, one, 32, true);
+			      last_idx->set_line(*this);
+
+			      // If there's an offset ($-n), subtract it
+			      if (idx.msb) {
+				    NetExpr*offset = elab_and_eval(des, scope, idx.msb, -1);
+				    if (offset) {
+					  canon_index = new NetEBinary('+', last_idx, offset, 32, true);
+					  canon_index->set_line(*this);
+				    } else {
+					  canon_index = last_idx;
+				    }
+			      } else {
+				    canon_index = last_idx;
+			      }
+
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_member_: "
+					 << "Queue/darray property " << class_type->get_prop_name(pidx)
+					 << " last index ($): " << *canon_index << endl;
+			      }
+			} else if (idx.msb && !idx.lsb) {
 			      canon_index = elab_and_eval(des, scope, idx.msb, -1);
 			      if (debug_elaborate) {
 				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_member_: "
