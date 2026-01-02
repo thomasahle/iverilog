@@ -1427,6 +1427,19 @@ package uvm_pkg;
       return m_count == 0;
     endfunction
 
+    // Is full check
+    virtual function bit is_full();
+      return m_count >= 64;
+    endfunction
+
+    // Peek - blocking task to look at next item without removing
+    virtual task peek(output T t);
+      while (m_count == 0) begin
+        #1; // Wait for item to be written
+      end
+      t = m_items[m_head];
+    endtask
+
     // Flush - reset fifo
     virtual function void flush();
       m_count = 0;
@@ -1503,7 +1516,7 @@ package uvm_pkg;
       return 0;
     endfunction
 
-    // Peek - look at next item without removing
+    // Peek - look at next item without removing (non-blocking)
     virtual function bit try_peek(output T t);
       if (m_count > 0) begin
         t = m_items[m_head];
@@ -1511,6 +1524,14 @@ package uvm_pkg;
       end
       return 0;
     endfunction
+
+    // Peek - blocking task to look at next item without removing
+    virtual task peek(output T t);
+      while (m_count == 0) begin
+        #1; // Wait for item
+      end
+      t = m_items[m_head];
+    endtask
 
     // Can_put - check if can write
     virtual function bit can_put();

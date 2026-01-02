@@ -6380,15 +6380,9 @@ NetProc* PEventStatement::elaborate_wait(Design*des, NetScope*scope,
       expr->set_line(*pe);
       eval_expr(expr);
 
-      NetEvent*wait_event = new NetEvent(scope->local_symbol());
-      wait_event->set_line(*this);
-      wait_event->local_flag(true);
-      scope->add_event(wait_event);
-
-      NetEvWait*wait = new NetEvWait(0 /* noop */);
-      wait->add_event(wait_event);
-      wait->set_line(*this);
-
+      // Check for class property expressions before creating wait event.
+      // Class properties don't have traditional nexuses, so we need to
+      // use a polling loop instead.
       NexusSet*wait_set = expr->nex_input();
       if (wait_set == 0) {
 	    cerr << get_fileline() << ": internal error: No NexusSet"
@@ -6398,13 +6392,47 @@ NetProc* PEventStatement::elaborate_wait(Design*des, NetScope*scope,
       }
 
       if (wait_set->size() == 0) {
-	    cerr << get_fileline() << ": sorry: wait() on class property "
-		 << "expressions is not yet supported." << endl;
-	    cerr << get_fileline() << ":      : Consider using a polling "
-		 << "loop: while (!expr) #1;" << endl;
-	    des->errors += 1;
-	    return 0;
+	    // For class property expressions, use a polling loop instead
+	    // of event-based wait. This is less efficient but works for
+	    // expressions involving class properties that don't have nexuses.
+	    if (warn_timescale) {
+		  cerr << get_fileline() << ": warning: wait() on class property "
+		       << "expression uses polling loop." << endl;
+	    }
+
+	    // Create a delay statement: #1
+	    NetPDelay*delay = new NetPDelay(1, 0);
+	    delay->set_line(*this);
+
+	    // Create a while loop: while(expr) #1;
+	    NetWhile*loop = new NetWhile(expr, delay);
+	    loop->set_line(*this);
+
+	    delete wait_set;
+
+	    // If there is no real substatement (i.e., "wait (foo) ;")
+	    if (enet == 0)
+		  return loop;
+
+	    // Create a sequential block to combine the wait loop and the
+	    // delayed statement.
+	    NetBlock*block = new NetBlock(NetBlock::SEQU, 0);
+	    block->append(loop);
+	    block->append(enet);
+	    block->set_line(*this);
+
+	    return block;
       }
+
+      // For regular signal expressions, create event-based wait
+      NetEvent*wait_event = new NetEvent(scope->local_symbol());
+      wait_event->set_line(*this);
+      wait_event->local_flag(true);
+      scope->add_event(wait_event);
+
+      NetEvWait*wait = new NetEvWait(0 /* noop */);
+      wait->add_event(wait_event);
+      wait->set_line(*this);
 
       NetEvProbe*wait_pr = new NetEvProbe(scope, scope->local_symbol(),
 					  wait_event, NetEvProbe::ANYEDGE,
