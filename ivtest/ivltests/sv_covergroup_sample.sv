@@ -1,41 +1,46 @@
-// Test covergroup sample() method invocation with typed arguments
-// This tests that covergroup sample() calls compile correctly
-// even when the covergroup stub class doesn't know about specific argument types
+// Simple covergroup test
+`include "uvm_pkg.sv"
+import uvm_pkg::*;
 
-class transaction;
-  bit [7:0] data;
-  bit [3:0] addr;
-endclass
+class simple_test extends uvm_object;
+  int data;
 
-class coverage;
-  covergroup cg with function sample(transaction t);
-    option.per_instance = 1;
-    DATA_CP : coverpoint t.data {
-      bins LOW = {[0:127]};
-      bins HIGH = {[128:255]};
-    }
+  // Covergroup declaration
+  covergroup my_cg;
+    coverpoint data;
   endgroup
 
-  function new();
-    cg = new();
-  endfunction
-
-  function void collect(transaction t);
-    // This is where the covergroup sample() is called with typed argument
-    cg.sample(t);
+  function new(string name = "simple_test");
+    super.new(name);
+    // Create the covergroup
+    my_cg = new();
   endfunction
 endclass
 
 module test;
-  coverage cov;
-  transaction txn;
-
   initial begin
-    cov = new();
-    txn = new();
-    txn.data = 8'h55;
-    txn.addr = 4'h3;
-    cov.collect(txn);
-    $display("PASSED: covergroup sample() with typed argument compiles");
+    simple_test t;
+    t = new("t");
+
+    $display("Initial sample_count = %0d", t.my_cg.get_sample_count());
+
+    // Sample a few times
+    t.data = 1;
+    t.my_cg.sample();
+    $display("After 1 sample, count = %0d", t.my_cg.get_sample_count());
+
+    t.data = 2;
+    t.my_cg.sample();
+    $display("After 2 samples, count = %0d", t.my_cg.get_sample_count());
+
+    t.data = 3;
+    t.my_cg.sample();
+    $display("After 3 samples, count = %0d", t.my_cg.get_sample_count());
+
+    if (t.my_cg.get_sample_count() == 3) begin
+      $display("PASSED: Coverage tracking working!");
+    end else begin
+      $display("FAILED: Expected 3 samples, got %0d", t.my_cg.get_sample_count());
+    end
   end
 endmodule

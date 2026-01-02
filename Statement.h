@@ -275,6 +275,12 @@ class PCallTask  : public Statement {
 				      perm_string method_name,
 				      const char *sys_task_name,
 				      const std::vector<perm_string> &parm_names) const;
+      NetProc*elaborate_covergroup_prop_method_(Design*des, NetScope*scope,
+				      NetNet*net,
+				      const netclass_t*class_type,
+				      int pidx,
+				      perm_string method_name,
+				      const char *sys_task_name) const;
       NetProc*elaborate_method_func_(NetScope*scope,
 				     NetNet*net,
 				     ivl_type_t type,

@@ -2214,6 +2214,27 @@ static int show_system_task_call(ivl_statement_t net)
 	    return 0;
       }
 
+      /* Handle covergroup sample() method on class properties */
+      if (strcmp(stmt_name,"$ivl_covergroup_method$sample") == 0) {
+	    show_stmt_file_line(net, "covergroup: sample");
+
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 1)
+		  return 1;
+
+	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);
+
+	    /* The argument is the covergroup property expression */
+	    if (ivl_expr_type(parm0) == IVL_EX_PROPERTY) {
+		  draw_eval_object(parm0);  /* Push covergroup object to stack */
+		  fprintf(vvp_out, "    %%cvg/sample;\n");
+		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  return 0;
+	    }
+
+	    return 1;
+      }
+
       if (strcmp(stmt_name,"$ivl_config_db_set") == 0) {
 	    /* $ivl_config_db_set(inst_name, field_name, value)
 	     * - Push inst_name string to string stack

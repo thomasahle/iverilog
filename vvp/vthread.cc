@@ -10549,6 +10549,34 @@ bool of_QPROP_REVERSE(vthread_t thr, vvp_code_t)
 }
 
 /*
+ * %cvg/sample - sample a covergroup property
+ * Covergroup object is on top of the object stack.
+ * Increments the sample counter in the __ivl_covergroup class.
+ */
+bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t)
+{
+      // Get covergroup object from stack
+      vvp_object_t&cvg_obj = thr->peek_object();
+      vvp_cobject*cobj = cvg_obj.peek<vvp_cobject>();
+
+      if (cobj) {
+	    // Increment m_sample_count property (index 3 in __ivl_covergroup)
+	    // Property layout: 0=m_bins_hit, 1=m_enabled, 2=m_inst_name, 3=m_sample_count
+	    vvp_vector4_t cur_count;
+	    cobj->get_vec4(3, cur_count);
+	    uint64_t count = 0;
+	    vector4_to_value(cur_count, count);
+	    count++;
+	    vvp_vector4_t new_count(32);
+	    for (unsigned b = 0; b < 32; b++) {
+		  new_count.set_bit(b, ((count >> b) & 1) ? BIT4_1 : BIT4_0);
+	    }
+	    cobj->set_vec4(3, new_count);
+      }
+      return true;
+}
+
+/*
  * %qprop/shuffle - shuffle a queue property in place
  * Queue object is on top of the object stack.
  */

@@ -162,6 +162,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%config_db/get/v", of_CONFIG_DB_GET_V, 1, {OA_FUNC_PTR, OA_NONE, OA_NONE} },
       { "%config_db/set/o", of_CONFIG_DB_SET_O, 0, {OA_NONE,     OA_NONE, OA_NONE} },
       { "%config_db/set/v", of_CONFIG_DB_SET_V, 1, {OA_NUMBER,   OA_NONE, OA_NONE} },
+      { "%cvg/sample",  of_CVG_SAMPLE,  0, {OA_NONE, OA_NONE, OA_NONE} },
       { "%cvt/rv",   of_CVT_RV,  0, {OA_NONE,   OA_NONE,     OA_NONE} },
       { "%cvt/rv/s", of_CVT_RV_S,0, {OA_NONE,   OA_NONE,     OA_NONE} },
       { "%cvt/sr", of_CVT_SR, 1,  {OA_BIT1,     OA_NONE,     OA_NONE} },

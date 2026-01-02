@@ -4019,6 +4019,37 @@ NetProc* PCallTask::elaborate_queue_method_(Design*des, NetScope*scope,
 }
 
 /*
+ * This private method is called to elaborate covergroup property methods on class
+ * objects. For example: obj.my_covergroup.sample()
+ * Unlike queue methods, covergroup methods don't need element type handling.
+ */
+NetProc* PCallTask::elaborate_covergroup_prop_method_(Design*des, NetScope*scope,
+					    NetNet*net,
+					    const netclass_t*class_type,
+					    int pidx,
+					    perm_string method_name,
+					    const char *sys_task_name) const
+{
+      // Create a NetEProperty expression for the covergroup property
+      NetEProperty*prop_expr = new NetEProperty(net, pidx);
+      prop_expr->set_line(*this);
+
+      // For sample(), no additional arguments are needed
+      vector<NetExpr*>argv (1);
+      argv[0] = prop_expr;
+
+      if (debug_elaborate) {
+	    cerr << get_fileline() << ": PCallTask::elaborate_covergroup_prop_method_: "
+	         << "Creating system task " << sys_task_name
+	         << " for method " << method_name << endl;
+      }
+
+      NetSTask*sys = new NetSTask(sys_task_name, IVL_SFUNC_AS_TASK_IGNORE, argv);
+      sys->set_line(*this);
+      return sys;
+}
+
+/*
  * This private method is called to elaborate queue property methods on class
  * objects. For example: obj.queue_prop.push_back(item)
  */
@@ -4653,23 +4684,19 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			      // pop_front/pop_back are functions, not tasks - handled elsewhere
 			}
 
-			// Check for covergroup property sample() method
-			// Covergroups are elaborated as __ivl_covergroup class instances
-			// The sample() method has custom typed arguments defined by the
-			// covergroup, but since we use a stub class, we just generate a no-op.
+			// Handle covergroup property method calls (sample, get_coverage, etc.)
+			// using system task approach like queue methods
 			const netclass_t* cg_class = dynamic_cast<const netclass_t*>(prop_type);
 			if (cg_class && cg_class->get_name() &&
 			    strcmp(cg_class->get_name(), "__ivl_covergroup") == 0) {
 			      if (method_name == "sample") {
+				    // sample() takes no required arguments
 				    if (debug_elaborate) {
 					  cerr << get_fileline() << ": PCallTask::elaborate_method_: "
-					       << "Detected covergroup sample() call - generating no-op" << endl;
+					       << "covergroup.sample()" << endl;
 				    }
-				    // Generate a no-op for covergroup sample()
-				    // The arguments are ignored since we don't track coverage
-				    NetBlock*block = new NetBlock(NetBlock::SEQU, 0);
-				    block->set_line(*this);
-				    return block;
+				    return elaborate_covergroup_prop_method_(des, scope, net, class_type, pidx,
+								       method_name, "$ivl_covergroup_method$sample");
 			      }
 			}
 
