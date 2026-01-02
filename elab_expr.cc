@@ -5000,6 +5000,27 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    return 0;
       }
 
+      // Handle module-scope darray of enum with method call: ops[i].name()
+      // Note: This is not fully supported yet due to VPI limitations
+      // Workaround: assign darray element to a temporary variable first
+      if (search_results.path_tail.size() == 1) {
+	    const netdarray_t*darray_type = dynamic_cast<const netdarray_t*>(search_results.type);
+	    if (darray_type) {
+		  ivl_type_t elem_type = darray_type->element_type();
+		  const netenum_t*enum_type = dynamic_cast<const netenum_t*>(elem_type);
+		  if (enum_type) {
+			perm_string method_name = search_results.path_tail.front().name;
+			cerr << get_fileline() << ": sorry: "
+			     << "Enum method '" << method_name << "()' on module-scope "
+			     << "dynamic array elements is not yet supported. "
+			     << "Workaround: assign element to a temporary variable first."
+			     << endl;
+			des->errors += 1;
+			return 0;
+		  }
+	    }
+      }
+
       // Handle nested method calls like req.get_count()
       // path_tail contains [property_name, method_name, ...]
       if (search_results.path_tail.size() > 1) {
@@ -5008,6 +5029,106 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 
 	    // Get the current class (where 'this' is defined)
 	    const netclass_t*this_class = dynamic_cast<const netclass_t*>(search_results.type);
+
+	    // Also check if it's a struct type - handle enum methods on struct members
+	    const netstruct_t*this_struct = dynamic_cast<const netstruct_t*>(search_results.type);
+
+	    if (!this_class && this_struct) {
+		  // For structs, we need to handle enum.name() differently
+		  // Get the method name (second element)
+		  pform_name_t::const_iterator it = search_results.path_tail.begin();
+		  ++it;  // Skip property name
+		  perm_string method_name = it->name;
+
+		  // Find the member in the struct
+		  int member_idx = this_struct->member_idx_from_name(prop_name);
+		  if (member_idx >= 0) {
+			const netstruct_t::member_t*member = this_struct->get_member(member_idx);
+			if (member && member->net_type) {
+			      // Check if member is an enum type
+			      if (const netenum_t*enum_type = dynamic_cast<const netenum_t*>(member->net_type)) {
+				    if (debug_elaborate) {
+					  cerr << get_fileline() << ": PECallFunction::elaborate_expr: "
+					       << "Struct enum member method call: " << prop_name
+					       << "." << method_name << endl;
+				    }
+
+				    // Create expression to access the struct member
+				    NetNet*struct_net = search_results.net;
+				    NetESignal*sig_expr = new NetESignal(struct_net);
+				    sig_expr->set_line(*this);
+
+				    // Calculate offset to the enum member
+				    unsigned long member_off = 0;
+				    for (int i = 0; i < member_idx; i++) {
+					  const netstruct_t::member_t*m = this_struct->get_member(i);
+					  if (m && m->net_type)
+						member_off += m->net_type->packed_width();
+				    }
+
+				    unsigned long member_wid = member->net_type->packed_width();
+				    NetExpr*off_expr = make_const_val(member_off);
+
+				    NetESelect*sel_expr = new NetESelect(sig_expr, off_expr, member_wid);
+				    sel_expr->set_line(*this);
+
+				    // Call the enum method handler
+				    return check_for_enum_methods(this, des, scope,
+								  enum_type, path_,
+								  method_name, sel_expr,
+								  parms_);
+			      }
+			}
+		  }
+		  // Fall through to error if not handled
+	    }
+
+	    // Check if it's a darray type with enum elements - handle enum_arr[i].name()
+	    const netdarray_t*this_darray = dynamic_cast<const netdarray_t*>(search_results.type);
+	    if (!this_class && this_darray) {
+		  ivl_type_t elem_type = this_darray->element_type();
+		  const netenum_t*enum_type = dynamic_cast<const netenum_t*>(elem_type);
+		  if (enum_type && search_results.path_tail.size() > 1) {
+			// Get the method name (second element)
+			pform_name_t::const_iterator it = search_results.path_tail.begin();
+			++it;  // Skip array name
+			perm_string method_name = it->name;
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PECallFunction::elaborate_expr: "
+				   << "Darray enum element method call: " << prop_name
+				   << "[...]." << method_name << endl;
+			}
+
+			// Get the index expression from the first path element
+			NetExpr*index_expr = 0;
+			const name_component_t& first_comp = search_results.path_tail.front();
+			if (!first_comp.index.empty()) {
+			      const index_component_t& idx = first_comp.index.back();
+			      if (idx.msb != 0) {
+				    index_expr = elab_and_eval(des, scope, idx.msb, -1, false);
+			      }
+			}
+
+			// Create expression to access the darray element
+			NetNet*arr_net = search_results.net;
+			NetESignal*sig_expr = new NetESignal(arr_net);
+			sig_expr->set_line(*this);
+
+			// Create NetESelect to extract the indexed element
+			NetESelect*elem_expr = new NetESelect(sig_expr, index_expr,
+							      enum_type->packed_width(),
+							      IVL_SEL_IDX_UP);
+			elem_expr->set_line(*this);
+
+			// Call the enum method handler
+			return check_for_enum_methods(this, des, scope,
+						      enum_type, path_,
+						      method_name, elem_expr,
+						      parms_);
+		  }
+	    }
+
 	    if (!this_class) {
 		  cerr << get_fileline() << ": error: "
 		       << "Cannot find class type for nested method call." << endl;
@@ -5282,6 +5403,24 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // Determine class type after first property access
 		  if (first_index) {
 			current_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+
+			// Handle enum element type with method call (e.g., enum_arr[i].name())
+			if (!current_class && search_results.path_tail.size() > 1) {
+			      const netenum_t* enum_type = dynamic_cast<const netenum_t*>(darray_type->element_type());
+			      if (enum_type) {
+				    // Get the method name (second element)
+				    pform_name_t::const_iterator enum_it = search_results.path_tail.begin();
+				    ++enum_it;  // Skip property name
+				    perm_string enum_method = enum_it->name;
+
+				    // Create a path for the enum method
+				    pform_scoped_name_t use_path;
+				    use_path.name.push_back(name_component_t(prop_name));
+				    return check_for_enum_methods(this, des, scope,
+								 enum_type, use_path,
+								 enum_method, base_expr, parms_);
+			      }
+			}
 		  }
 
 		  // If we have more path components, traverse them
