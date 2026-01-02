@@ -2339,11 +2339,16 @@ package uvm_pkg;
   task run_test(string test_name = "");
     uvm_root root;
     uvm_object test_obj;
+    string plusarg_testname;
 
     root = uvm_root::get();
 
-    // Note: +UVM_TESTNAME command line parsing disabled due to vvp bug
-    // To run a specific test, modify hvl_top.sv to call run_test with desired name
+    // Check for +UVM_TESTNAME command line plusarg
+    if ($value$plusargs("UVM_TESTNAME=%s", plusarg_testname)) begin
+      $display("UVM_INFO: +UVM_TESTNAME='%s' specified on command line", plusarg_testname);
+      // Command line always overrides run_test() argument
+      test_name = plusarg_testname;
+    end
 
     $display("UVM_INFO: run_test called with test_name='%s'", test_name);
 
