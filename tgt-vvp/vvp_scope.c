@@ -514,9 +514,20 @@ static void draw_reg_in_scope(ivl_signal_t sig)
 	    break;
       }
 
+	/* Handle associative arrays first, even if they have unpacked dimensions.
+	   For something like "bit [7:0] data[int][1]", we need .var/assoc, not .array */
+      if (ivl_signal_data_type(sig) == IVL_VT_ASSOC) {
+	    ivl_type_t var_type = ivl_signal_net_type(sig);
+	    ivl_type_t element_type = ivl_type_element(var_type);
+
+	    fprintf(vvp_out, "v%p_0 .var/assoc \"%s\", %u;%s\n", sig,
+		    vvp_mangle_name(ivl_signal_basename(sig)),
+		    ivl_type_packed_width(element_type),
+		    ivl_signal_local(sig)? " Local signal" : "");
+
 	/* If the reg objects are collected into an array, then first
 	   write out the .array record to declare the array indices. */
-      if (ivl_signal_dimensions(sig) > 0 && vector_dims==0) {
+      } else if (ivl_signal_dimensions(sig) > 0 && vector_dims==0) {
 
               /* Some types cannot be placed in packed dimensions, so
 		 do not include packed dimensions. */

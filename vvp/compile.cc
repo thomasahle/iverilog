@@ -319,6 +319,8 @@ static const struct opcode_table_s opcode_table[] = {
       { "%qprop/qb/v",       of_QPROP_QB_V,        1,{OA_NUMBER,OA_NONE,OA_NONE} },
       { "%qprop/qf/o",       of_QPROP_QF_O,        1,{OA_NUMBER,OA_NONE,OA_NONE} },
       { "%qprop/qf/v",       of_QPROP_QF_V,        1,{OA_NUMBER,OA_NONE,OA_NONE} },
+      { "%qprop/reverse",    of_QPROP_REVERSE,     0,{OA_NONE,OA_NONE,OA_NONE} },
+      { "%qprop/shuffle",    of_QPROP_SHUFFLE,     0,{OA_NONE,OA_NONE,OA_NONE} },
       { "%qreverse",   of_QREVERSE,   1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },
       { "%qrsort",     of_QRSORT,     1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },
       { "%qshuffle",   of_QSHUFFLE,   1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },

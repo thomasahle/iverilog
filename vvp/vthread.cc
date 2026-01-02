@@ -10444,3 +10444,41 @@ bool of_QPROP_DELETE_ELEM(vthread_t thr, vvp_code_t)
       }
       return true;
 }
+
+/*
+ * %qprop/reverse - reverse a queue property in place
+ * Queue object is on top of the object stack.
+ */
+bool of_QPROP_REVERSE(vthread_t thr, vvp_code_t)
+{
+      // Get queue from object stack
+      vvp_object_t&queue_obj = thr->peek_object();
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+
+      if (queue) {
+	    queue->reverse();
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Warning: reverse() on empty or nil queue property." << endl;
+      }
+      return true;
+}
+
+/*
+ * %qprop/shuffle - shuffle a queue property in place
+ * Queue object is on top of the object stack.
+ */
+bool of_QPROP_SHUFFLE(vthread_t thr, vvp_code_t)
+{
+      // Get queue from object stack
+      vvp_object_t&queue_obj = thr->peek_object();
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+
+      if (queue) {
+	    queue->shuffle();
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Warning: shuffle() on empty or nil queue property." << endl;
+      }
+      return true;
+}
