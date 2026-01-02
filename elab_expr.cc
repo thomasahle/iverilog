@@ -5310,10 +5310,10 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			return 0;
 		  }
 
-		  // Elaborate the key argument if needed
+		  // Elaborate the key argument if needed (not constant - can be variable)
 		  NetExpr*key_expr = 0;
 		  if (needs_key && parms_.size() > 0 && parms_[0].parm) {
-			key_expr = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+			key_expr = elab_and_eval(des, scope, parms_[0].parm, -1, false);
 		  }
 
 		  NetEAssocMethod*method_expr = new NetEAssocMethod(this_net, prop_idx, meth, key_expr);
@@ -6586,10 +6586,10 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return 0;
 	    }
 
-	    // Elaborate the key argument if needed
+	    // Elaborate the key argument if needed (not constant - can be variable)
 	    NetExpr*key_expr = 0;
 	    if (needs_key && parms_.size() > 0 && parms_[0].parm) {
-		  key_expr = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+		  key_expr = elab_and_eval(des, scope, parms_[0].parm, -1, false);
 	    }
 
 	    // Use -1 for property index to indicate standalone array
