@@ -2453,13 +2453,29 @@ bool of_CONFIG_DB_GET_PROP(vthread_t thr, vvp_code_t cp)
             }
       }
 
-      // Look up in config_db
-      vvp_object_t value;
-      bool found = vvp_config_db::instance().get_object(context_path, inst_name, field_name, value);
+      bool found = false;
 
-      if (found && cobj) {
-            // Store value to property of base object
-            cobj->set_object(prop_idx, value, 0);
+      // Try to get as object first (for class-type properties)
+      vvp_object_t obj_value;
+      if (vvp_config_db::instance().get_object(context_path, inst_name, field_name, obj_value)) {
+            if (cobj) {
+                  cobj->set_object(prop_idx, obj_value, 0);
+                  found = true;
+            }
+      }
+
+      // If not found as object, try as vec4 (for enum/int properties)
+      if (!found) {
+            vvp_vector4_t vec_value;
+            if (vvp_config_db::instance().get_vec4(context_path, inst_name, field_name, vec_value)) {
+                  if (cobj) {
+                        cobj->set_vec4(prop_idx, vec_value);
+                        found = true;
+                  }
+            }
+      }
+
+      if (found) {
             vvp_vector4_t res(32, BIT4_0);
             res.set_bit(0, BIT4_1);
             thr->push_vec4(res);
