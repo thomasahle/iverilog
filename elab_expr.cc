@@ -7432,8 +7432,38 @@ bool PEIdent::calculate_packed_indices_(Design*des, NetScope*scope, const NetNet
 
       list<index_component_t> index;
       index = path_.back().index;
-      ivl_assert(*this, index.size() >= net->unpacked_dimensions());
-      for (size_t idx = 0 ; idx < net->unpacked_dimensions() ; idx += 1)
+
+      // Calculate how many "word" indices to skip (unpacked dimensions that
+      // form the array word address, not the packed bit/part select).
+      size_t word_dims = net->unpacked_dimensions();
+      // For associative arrays with additional unpacked dimensions (e.g., data[int][1]),
+      // the assoc array key is an additional word dimension.
+      if (net->data_type() == IVL_VT_ASSOC && net->unpacked_dimensions() > 0) {
+	    word_dims += 1;
+      }
+      // For dynamic arrays and queues, each level is a word dimension.
+      if (net->data_type() == IVL_VT_DARRAY || net->data_type() == IVL_VT_QUEUE) {
+	    ivl_type_t cur_type = net->net_type();
+	    while (cur_type) {
+		  ivl_variable_type_t vtype = cur_type->base_type();
+		  if (vtype == IVL_VT_DARRAY || vtype == IVL_VT_QUEUE) {
+			word_dims += 1;
+			const netdarray_t*dar = dynamic_cast<const netdarray_t*>(cur_type);
+			const netqueue_t*que = dynamic_cast<const netqueue_t*>(cur_type);
+			if (dar)
+			      cur_type = dar->element_type();
+			else if (que)
+			      cur_type = que->element_type();
+			else
+			      break;
+		  } else {
+			break;
+		  }
+	    }
+      }
+
+      ivl_assert(*this, index.size() >= word_dims);
+      for (size_t idx = 0 ; idx < word_dims ; idx += 1)
 	    index.pop_front();
 
       return evaluate_index_prefix(des, scope, prefix_indices, index);

@@ -786,16 +786,9 @@ bool PEIdent::elaborate_lval_net_bit_(Design*des,
       ivl_assert(*this, reg);
 
 	// For associative arrays with unpacked dimensions (e.g., data[int][1]),
-	// bit-select is not yet fully supported because calculate_packed_indices_
-	// doesn't properly account for the mixed assoc + unpacked dimensions.
-      if (reg->data_type() == IVL_VT_ASSOC && reg->unpacked_dimensions() > 0) {
-	    cerr << get_fileline() << ": sorry: "
-		 << "Bit-select on associative array element '"
-		 << reg->name() << "' with additional unpacked dimensions "
-		 << "is not yet supported." << endl;
-	    des->errors += 1;
-	    return false;
-      }
+	// the word indices (assoc key + unpacked) have already been handled by
+	// elaborate_lval_net_word_. We just need to process the bit-select here.
+	// calculate_packed_indices_ now properly accounts for the extra dimension.
 
 	// Bit selects have a single select expression. Evaluate the
 	// constant value and treat it as a part select with a bit
@@ -918,7 +911,38 @@ bool PEIdent::elaborate_lval_net_bit_(Design*des,
 		  des->errors += 1;
 		  return false;
 	    }
-	    mux = normalize_variable_bit_base(prefix_indices, mux, reg);
+
+	    // For associative arrays with unpacked dimensions, we need special
+	    // handling because reg->packed_dims() doesn't work for element access.
+	    // The element address is already set up by set_word(), so we just need
+	    // to normalize based on the element type's packed range.
+	    if (reg->data_type() == IVL_VT_ASSOC && reg->unpacked_dimensions() > 0) {
+		  const netassoc_t*assoc = reg->assoc_type();
+		  ivl_type_t elem_type = assoc ? assoc->element_type() : 0;
+		  // Navigate through any unpacked array dimensions to get to the packed type
+		  while (elem_type) {
+			const netuarray_t*uarr = dynamic_cast<const netuarray_t*>(elem_type);
+			if (uarr) {
+			      elem_type = uarr->element_type();
+			} else {
+			      break;
+			}
+		  }
+		  // Get the packed range from the element type
+		  if (elem_type && elem_type->packed()) {
+			const std::vector<netrange_t>&packed = elem_type->slice_dimensions();
+			if (!packed.empty()) {
+			      const netrange_t&rng = packed.back();
+			      // Normalize the bit-select expression for the element's range
+			      mux = normalize_variable_base(mux, rng.get_msb(), rng.get_lsb(),
+							    1, true, 0);
+			}
+		  }
+		  // If we couldn't get the packed range, just use the mux as-is
+		  // (assumes 0-based indexing)
+	    } else {
+		  mux = normalize_variable_bit_base(prefix_indices, mux, reg);
+	    }
 
 	    if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 		  ivl_assert(*this, reg->coerced_to_uwire());
