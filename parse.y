@@ -1971,7 +1971,7 @@ packed_array_data_type /* IEEE1800-2005: A.2.2.1 */
       { $$ = $1; }
   | struct_data_type
       { if (!$1->packed_flag) {
-	      yywarn(@1, "warning: Unpacked structs parsed but not yet fully supported.");
+	      yywarn(@1, "warning: Unpacked structs: basic operations work, but string members are not supported.");
         }
 	$$ = $1;
       }
