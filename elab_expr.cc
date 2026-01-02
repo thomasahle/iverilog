@@ -5000,23 +5000,34 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    return 0;
       }
 
-      // Handle module-scope darray of enum with method call: ops[i].name()
-      // Note: This is not fully supported yet due to VPI limitations
-      // Workaround: assign darray element to a temporary variable first
+      // Handle module-scope darray of enum with enum method call: ops[i].name()
+      // Note: Enum methods on darray elements are not fully supported yet.
+      // Queue/darray methods like pop_front(), push_back() should work fine.
       if (search_results.path_tail.size() == 1) {
 	    const netdarray_t*darray_type = dynamic_cast<const netdarray_t*>(search_results.type);
-	    if (darray_type) {
-		  ivl_type_t elem_type = darray_type->element_type();
+	    const netqueue_t*queue_type = dynamic_cast<const netqueue_t*>(search_results.type);
+	    if (darray_type || queue_type) {
+		  ivl_type_t elem_type = darray_type
+			? darray_type->element_type()
+			: queue_type->element_type();
 		  const netenum_t*enum_type = dynamic_cast<const netenum_t*>(elem_type);
 		  if (enum_type) {
 			perm_string method_name = search_results.path_tail.front().name;
-			cerr << get_fileline() << ": sorry: "
-			     << "Enum method '" << method_name << "()' on module-scope "
-			     << "dynamic array elements is not yet supported. "
-			     << "Workaround: assign element to a temporary variable first."
-			     << endl;
-			des->errors += 1;
-			return 0;
+			// Check if this is an enum method (like name(), first(), last())
+			// rather than a queue/darray method (like pop_front(), size())
+			// Only block actual enum methods on elements
+			if (method_name == "name" || method_name == "first" ||
+			    method_name == "last" || method_name == "next" ||
+			    method_name == "prev" || method_name == "num") {
+			      cerr << get_fileline() << ": sorry: "
+				   << "Enum method '" << method_name << "()' on "
+				   << "dynamic array/queue elements is not yet supported. "
+				   << "Workaround: assign element to a temporary variable first."
+				   << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+			// Otherwise, it's a queue/darray method - let it proceed
 		  }
 	    }
       }
