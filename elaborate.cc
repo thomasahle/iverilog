@@ -4647,7 +4647,7 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 				    }
 				    static const std::vector<perm_string> parm_names;
 				    return elaborate_queue_prop_method_(des, scope, net, class_type, pidx,
-								       method_name, "$ivl_darray_method$reverse",
+								       method_name, "$ivl_queue_method$reverse",
 								       parm_names);
 			      }
 			      // pop_front/pop_back are functions, not tasks - handled elsewhere
