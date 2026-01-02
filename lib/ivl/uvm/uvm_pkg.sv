@@ -472,6 +472,12 @@ package uvm_pkg;
     function int get_report_verbosity_level();
       return m_verbosity;
     endfunction
+
+    // TLM write method - used by analysis ports to forward transactions
+    // Override in export/imp classes to handle forwarded writes
+    virtual function void tlm_write(uvm_object t);
+      // Base implementation does nothing - override in derived classes
+    endfunction
   endclass
 
   // ============================================================================
@@ -966,18 +972,34 @@ package uvm_pkg;
   // NOTE: Moved before uvm_subscriber so it can be used as a type
   // ============================================================================
   class uvm_analysis_port #(type T = int) extends uvm_object;
+    // Array to store connected exports/imps (max 8 subscribers)
+    protected uvm_object m_subscribers[8];
+    protected int m_num_subscribers;
+
     function new(string name = "", uvm_component parent = null);
       super.new(name);
+      m_num_subscribers = 0;
     endfunction
 
     virtual function void connect(uvm_object port);
-      // Simplified - no actual connection tracking
+      // Store the connected port as a subscriber
+      if (m_num_subscribers < 8 && port != null) begin
+        m_subscribers[m_num_subscribers] = port;
+        m_num_subscribers++;
+      end
     endfunction
 
     // Note: Using uvm_object instead of T due to Icarus limitation
     // with type parameter resolution in method parameters
     virtual function void write(uvm_object t);
-      // Simplified - override in subclass for actual functionality
+      uvm_object sub;
+      // Forward to all connected subscribers via tlm_write
+      for (int i = 0; i < m_num_subscribers; i++) begin
+        sub = m_subscribers[i];
+        if (sub != null) begin
+          sub.tlm_write(t);
+        end
+      end
     endfunction
   endclass
 
@@ -985,8 +1007,17 @@ package uvm_pkg;
   // UVM Analysis Export - TLM export for receiving analysis transactions
   // ============================================================================
   class uvm_analysis_export #(type T = int) extends uvm_object;
+    // Parent FIFO/component that will receive forwarded writes
+    protected uvm_object m_parent_fifo;
+
     function new(string name = "", uvm_component parent = null);
       super.new(name);
+      m_parent_fifo = null;
+    endfunction
+
+    // Set the parent FIFO that will receive writes
+    function void set_parent_fifo(uvm_object parent);
+      m_parent_fifo = parent;
     endfunction
 
     virtual function void connect(uvm_object port);
@@ -994,7 +1025,17 @@ package uvm_pkg;
     endfunction
 
     virtual function void write(T t);
-      // Simplified - override in subclass for actual functionality
+      // Note: write(T t) is not used in the forwarding chain
+      // Analysis ports call tlm_write() directly on the export
+      // This method exists for API compatibility only
+    endfunction
+
+    // Override tlm_write to forward to parent FIFO
+    virtual function void tlm_write(uvm_object t);
+      // Forward to parent FIFO's tlm_write
+      if (m_parent_fifo != null) begin
+        m_parent_fifo.tlm_write(t);
+      end
     endfunction
   endclass
 
@@ -1415,6 +1456,8 @@ package uvm_pkg;
       m_head = 0;
       m_tail = 0;
       analysis_export = new("analysis_export", this);
+      // Connect export to this FIFO so writes are forwarded
+      analysis_export.set_parent_fifo(this);
     endfunction
 
     // Write method - receives data from analysis port
@@ -1423,6 +1466,15 @@ package uvm_pkg;
         m_items[m_tail] = t;
         m_tail = (m_tail + 1) % 64;
         m_count++;
+      end
+    endfunction
+
+    // tlm_write - receives forwarded writes from analysis_export
+    // Cast from uvm_object to T and store in FIFO
+    virtual function void tlm_write(uvm_object t);
+      T item;
+      if ($cast(item, t)) begin
+        write(item);
       end
     endfunction
 
