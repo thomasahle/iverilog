@@ -1825,6 +1825,7 @@ static void draw_unary_inc_dec(ivl_expr_t sub, bool incr, bool pre)
 {
       ivl_signal_t sig = 0;
       unsigned wid = 0;
+      bool is_property = false;
 
       switch (ivl_expr_type(sub)) {
 	  case IVL_EX_SELECT: {
@@ -1839,25 +1840,70 @@ static void draw_unary_inc_dec(ivl_expr_t sub, bool incr, bool pre)
 	    wid = ivl_expr_width(sub);
 	    break;
 
+	  case IVL_EX_PROPERTY:
+	    /* For property increment/decrement, we need special handling */
+	    is_property = true;
+	    wid = ivl_expr_width(sub);
+	    break;
+
 	  default:
+	    fprintf(stderr, "draw_unary_inc_dec: unexpected expression type %d\n",
+		    ivl_expr_type(sub));
 	    assert(0);
 	    break;
       }
 
-      draw_eval_vec4(sub);
-
       const char*cmd = incr? "%add" : "%sub";
 
+      if (is_property) {
+	    /* For class properties, we need to:
+	       1. Load the object (and keep it on the stack)
+	       2. Get the current property value
+	       3. Do the increment/decrement
+	       4. Store back to the property
+	       5. Leave the result on the vec4 stack
+	       We can't use draw_eval_vec4(sub) because it pops the object. */
+	    unsigned pidx = ivl_expr_property_idx(sub);
+	    ivl_signal_t prop_sig = ivl_expr_signal(sub);
+	    ivl_expr_t base = ivl_expr_property_base(sub);
+
+	    /* Load the object onto the object stack */
+	    if (base) {
+		  draw_eval_object(base);
+	    } else {
+		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", prop_sig);
+	    }
+
+	    /* Get the current property value */
+	    fprintf(vvp_out, "    %%prop/v %u;\n", pidx);
+
+	    if (pre) {
+		  /* Pre-increment: add first, then dup and store */
+		  fprintf(vvp_out, "    %si 1, 0, %u;\n", cmd, wid);
+		  fprintf(vvp_out, "    %%dup/vec4;\n");
+		  fprintf(vvp_out, "    %%store/prop/v %u, %u;\n", pidx, wid);
+	    } else {
+		  /* Post-increment: dup, then add and store */
+		  fprintf(vvp_out, "    %%dup/vec4;\n");
+		  fprintf(vvp_out, "    %si 1, 0, %u;\n", cmd, wid);
+		  fprintf(vvp_out, "    %%store/prop/v %u, %u;\n", pidx, wid);
+	    }
+	    /* Pop the object from the stack */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return;
+      }
+
+      draw_eval_vec4(sub);
+
       if (pre) {
-	      /* prefix means we add the result first, and store the
-		 result, as well as leaving a copy on the stack. */
+	    /* prefix means we add the result first, and store the
+	       result, as well as leaving a copy on the stack. */
 	    fprintf(vvp_out, "    %si 1, 0, %u;\n", cmd, wid);
 	    fprintf(vvp_out, "    %%dup/vec4;\n");
 	    fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", sig, wid);
-
       } else {
-	      /* The post-fix decrement returns the non-decremented
-		 version, so there is a slight re-arrange. */
+	    /* The post-fix decrement returns the non-decremented
+	       version, so there is a slight re-arrange. */
 	    fprintf(vvp_out, "    %%dup/vec4;\n");
 	    fprintf(vvp_out, "    %si 1, 0, %u;\n", cmd, wid);
 	    fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", sig, wid);

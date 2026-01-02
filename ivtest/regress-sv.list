@@ -1258,3 +1258,4 @@ sv_class_virtual_inherit	normal,-g2012		ivltests gold=sv_class_virtual_inherit.g
 sv_constraint_soft		normal,-g2012		ivltests gold=sv_constraint_soft.gold
 sv_struct_assoc_key	normal,-g2012	ivltests
 sv_packed_2d_varindex normal,-g2012 ivltests gold=sv_packed_2d_varindex.gold
+sv_prop_incdec		normal,-g2012		ivltests	gold=sv_prop_incdec.gold
