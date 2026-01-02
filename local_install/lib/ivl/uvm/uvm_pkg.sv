@@ -199,12 +199,23 @@ package uvm_pkg;
     // Print a field with given name, value, size and radix
     virtual function void print_field(string name, logic [1023:0] value, int size, uvm_radix_enum radix = UVM_HEX);
       string val_str;
+      logic [1023:0] masked_value;
+      logic [1023:0] mask;
+      // Mask the value to the specified size to avoid printing garbage from upper bits
+      if (size > 0 && size < 1024) begin
+        // Create mask by setting all bits from 0 to size-1
+        mask = '0;
+        for (int i = 0; i < size; i++) mask[i] = 1'b1;
+        masked_value = value & mask;
+      end else begin
+        masked_value = value;
+      end
       case (radix)
-        UVM_BIN: $sformat(val_str, "%0b", value);
-        UVM_DEC: $sformat(val_str, "%0d", value);
-        UVM_HEX: $sformat(val_str, "%0h", value);
-        UVM_OCT: $sformat(val_str, "%0o", value);
-        default: $sformat(val_str, "%0h", value);
+        UVM_BIN: $sformat(val_str, "%0b", masked_value);
+        UVM_DEC: $sformat(val_str, "%0d", masked_value);
+        UVM_HEX: $sformat(val_str, "%0h", masked_value);
+        UVM_OCT: $sformat(val_str, "%0o", masked_value);
+        default: $sformat(val_str, "%0h", masked_value);
       endcase
       $display("%s%s: %s", get_indent(), name, val_str);
     endfunction
@@ -416,11 +427,30 @@ package uvm_pkg;
       return sprint();
     endfunction
 
+    // Create a clone of this object
+    // Uses the factory to create a new object of the same type, then copies data
     virtual function uvm_object clone();
-      return null;
+      uvm_object obj;
+      // Create new object of the same type using factory
+      obj = $ivl_factory_create(get_type_name());
+      if (obj != null) begin
+        obj.copy(this);
+      end
+      return obj;
     endfunction
 
+    // Copy data from rhs into this object
     virtual function void copy(uvm_object rhs);
+      if (rhs == null) return;
+      // Copy basic properties
+      // m_name is NOT copied per UVM standard (preserves destination name)
+      // Call do_copy for derived class fields
+      do_copy(rhs);
+    endfunction
+
+    // Override this method in derived classes to copy fields
+    virtual function void do_copy(uvm_object rhs);
+      // Base implementation - override in derived classes
     endfunction
 
     virtual function bit compare(uvm_object rhs, uvm_comparer comparer = null);
@@ -443,10 +473,10 @@ package uvm_pkg;
       return m_verbosity;
     endfunction
 
-    // TLM write callback - used by analysis ports to forward transactions
-    // Override in classes that receive analysis transactions (like analysis_export)
+    // TLM write method - used by analysis ports to forward transactions
+    // Override in export/imp classes to handle forwarded writes
     virtual function void tlm_write(uvm_object t);
-      // Default: do nothing - override in derived classes
+      // Base implementation does nothing - override in derived classes
     endfunction
   endclass
 
@@ -942,43 +972,52 @@ package uvm_pkg;
   // NOTE: Moved before uvm_subscriber so it can be used as a type
   // ============================================================================
   class uvm_analysis_port #(type T = int) extends uvm_object;
-    // Store first connected target (primary subscriber - typically scoreboard FIFO)
-    uvm_object m_connected;
+    // Array to store connected exports/imps (max 8 subscribers)
+    protected uvm_object m_subscribers[8];
+    protected int m_num_subscribers;
 
     function new(string name = "", uvm_component parent = null);
       super.new(name);
-      m_connected = null;
+      m_num_subscribers = 0;
     endfunction
 
     virtual function void connect(uvm_object port);
-      // Store connection (last non-null wins - in UVM, parent connect_phase runs after children,
-      // so scoreboard connection from apb_env overwrites coverage connection from apb_master_agent)
-      if (port != null) begin
-        m_connected = port;
+      // Store the connected port as a subscriber
+      if (m_num_subscribers < 8 && port != null) begin
+        m_subscribers[m_num_subscribers] = port;
+        m_num_subscribers++;
       end
     endfunction
 
     // Note: Using uvm_object instead of T due to Icarus limitation
     // with type parameter resolution in method parameters
     virtual function void write(uvm_object t);
-      // Forward to connected target via tlm_write
-      if (m_connected != null) begin
-        m_connected.tlm_write(t);
+      uvm_object sub;
+      // Forward to all connected subscribers via tlm_write
+      for (int i = 0; i < m_num_subscribers; i++) begin
+        sub = m_subscribers[i];
+        if (sub != null) begin
+          sub.tlm_write(t);
+        end
       end
     endfunction
   endclass
 
   // ============================================================================
   // UVM Analysis Export - TLM export for receiving analysis transactions
-  // Stores parent component to forward writes to (e.g., parent FIFO)
   // ============================================================================
   class uvm_analysis_export #(type T = int) extends uvm_object;
-    // Store parent component for forwarding writes
-    uvm_object m_parent;
+    // Parent FIFO/component that will receive forwarded writes
+    protected uvm_object m_parent_fifo;
 
     function new(string name = "", uvm_component parent = null);
       super.new(name);
-      m_parent = parent;
+      m_parent_fifo = null;
+    endfunction
+
+    // Set the parent FIFO that will receive writes
+    function void set_parent_fifo(uvm_object parent);
+      m_parent_fifo = parent;
     endfunction
 
     virtual function void connect(uvm_object port);
@@ -986,14 +1025,16 @@ package uvm_pkg;
     endfunction
 
     virtual function void write(T t);
-      // Simplified - override in subclass for actual functionality
+      // Note: write(T t) is not used in the forwarding chain
+      // Analysis ports call tlm_write() directly on the export
+      // This method exists for API compatibility only
     endfunction
 
-    // Called by analysis_port.write() to forward transactions
+    // Override tlm_write to forward to parent FIFO
     virtual function void tlm_write(uvm_object t);
-      // Forward to parent's tlm_write (which should add to FIFO)
-      if (m_parent != null) begin
-        m_parent.tlm_write(t);
+      // Forward to parent FIFO's tlm_write
+      if (m_parent_fifo != null) begin
+        m_parent_fifo.tlm_write(t);
       end
     endfunction
   endclass
@@ -1304,20 +1345,29 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
-  // Stub config_db class - actual functionality is in the parser
-  // The parser returns 1 for get() calls on uvm_config_db
-  // NOTE: This stub exists for reference but is not actually called -
-  // the parser creates stub code for parameterized static method calls
+  // UVM Config Database
+  // ============================================================================
+  // NOTE: Parameterized class static methods are not fully supported in Icarus.
+  // The set() method call is silently ignored, so config_db doesn't actually
+  // store values.
+  //
+  // WORKAROUND: For AVIPs that use config_db#(enum_type)::set/get, you must
+  // instead use the config object pattern:
+  //   1. Create a config class with enum properties
+  //   2. Use config_db#(config_class)::set/get to pass the whole object
+  //
+  // This stub implementation allows code to compile and run, but config_db
+  // get() will always return 1 (success) without actually providing a value.
   // ============================================================================
   class uvm_config_db #(type T = int);
+    // Stub implementation - parameterized static methods not supported
     static function void set(uvm_component cntxt, string inst_name, string field_name, T value);
-      // No-op - parser handles this
+      // No-op: parameterized class static void methods don't execute
     endfunction
 
-    // Note: Can't use output/ref in static functions in Icarus
-    // Parser handles this by returning constant 1 for get() calls
-    static function bit get(uvm_component cntxt, string inst_name, string field_name, T value);
-      // Parser returns 1 for this call
+    // Always returns 1, but doesn't modify value (limitation)
+    static function bit get(uvm_component cntxt, string inst_name, string field_name, output T value);
+      // Return 1 to prevent fatal errors, but value is not actually set
       return 1;
     endfunction
   endclass
@@ -1406,6 +1456,8 @@ package uvm_pkg;
       m_head = 0;
       m_tail = 0;
       analysis_export = new("analysis_export", this);
+      // Connect export to this FIFO so writes are forwarded
+      analysis_export.set_parent_fifo(this);
     endfunction
 
     // Write method - receives data from analysis port
@@ -1417,8 +1469,8 @@ package uvm_pkg;
       end
     endfunction
 
-    // TLM write callback - receives data forwarded from analysis_export
-    // Cast uvm_object back to T and call write()
+    // tlm_write - receives forwarded writes from analysis_export
+    // Cast from uvm_object to T and store in FIFO
     virtual function void tlm_write(uvm_object t);
       T item;
       if ($cast(item, t)) begin
@@ -2369,16 +2421,15 @@ package uvm_pkg;
   task run_test(string test_name = "");
     uvm_root root;
     uvm_object test_obj;
+    string plusarg_testname;
 
     root = uvm_root::get();
 
-    // Check for +UVM_TESTNAME command line argument - overrides test_name
-    begin
-      string cmdline_test;
-      if ($value$plusargs("UVM_TESTNAME=%s", cmdline_test)) begin
-        $display("UVM_INFO: +UVM_TESTNAME='%s' specified on command line", cmdline_test);
-        test_name = cmdline_test;
-      end
+    // Check for +UVM_TESTNAME command line plusarg
+    if ($value$plusargs("UVM_TESTNAME=%s", plusarg_testname)) begin
+      $display("UVM_INFO: +UVM_TESTNAME='%s' specified on command line", plusarg_testname);
+      // Command line always overrides run_test() argument
+      test_name = plusarg_testname;
     end
 
     $display("UVM_INFO: run_test called with test_name='%s'", test_name);
