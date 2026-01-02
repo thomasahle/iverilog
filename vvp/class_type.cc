@@ -148,6 +148,11 @@ template <class T> class property_atom : public class_property_t {
       bool is_signed() const override { return std::is_signed<T>::value; }
       unsigned bit_width() const override { return sizeof(T) * 8; }
 
+      string get_string(char*buf) override
+      { T*tmp = reinterpret_cast<T*> (buf+offset_);
+	return std::to_string(tmp[0]);
+      }
+
       void copy(char*dst, char*src) override;
 
     private:
@@ -178,6 +183,8 @@ class property_bit : public class_property_t {
       void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
       bool supports_vec4() const override { return true; }
       unsigned bit_width() const override { return wid_; }
+
+      string get_string(char*buf) override;
 
       void copy(char*dst, char*src) override;
 
@@ -211,6 +218,8 @@ class property_logic : public class_property_t {
       bool supports_vec4() const override { return true; }
       unsigned bit_width() const override { return wid_; }
 
+      string get_string(char*buf) override;
+
       void copy(char*dst, char*src) override;
 
     private:
@@ -233,6 +242,11 @@ template <class T> class property_real : public class_property_t {
 
       void set_real(char*buf, double val) override;
       double get_real(char*buf) override;
+
+      string get_string(char*buf) override
+      { T*tmp = reinterpret_cast<T*> (buf+offset_);
+	return std::to_string(*tmp);
+      }
 
       void copy(char*dst, char*src) override;
 };
@@ -340,6 +354,15 @@ void property_bit::copy(char*dst, char*src)
 	    dst_obj[i] = src_obj[i];
 }
 
+string property_bit::get_string(char*buf)
+{
+      const vvp_vector2_t*obj = reinterpret_cast<vvp_vector2_t*>(buf+offset_);
+      vvp_vector4_t tmp = vector2_to_vector4(obj[0], obj[0].size());
+      char str_buf[4096];
+      tmp.as_string(str_buf, sizeof(str_buf));
+      return string(str_buf);
+}
+
 void property_logic::set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx)
 {
       assert(idx < array_size_);
@@ -360,6 +383,14 @@ void property_logic::copy(char*dst, char*src)
       const vvp_vector4_t*src_obj = reinterpret_cast<vvp_vector4_t*> (src+offset_);
       for (uint64_t i = 0; i < array_size_; ++i)
 	    dst_obj[i] = src_obj[i];
+}
+
+string property_logic::get_string(char*buf)
+{
+      const vvp_vector4_t*obj = reinterpret_cast<vvp_vector4_t*>(buf+offset_);
+      char str_buf[4096];
+      obj[0].as_string(str_buf, sizeof(str_buf));
+      return string(str_buf);
 }
 
 template <class T> void property_real<T>::set_real(char*buf, double val)
