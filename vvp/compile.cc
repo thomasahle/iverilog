@@ -348,7 +348,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%shiftr",   of_SHIFTR,   1, {OA_NUMBER, OA_NONE,   OA_NONE} },
       { "%shiftr/s", of_SHIFTR_S, 1, {OA_NUMBER, OA_NONE,   OA_NONE} },
       { "%split/vec4",    of_SPLIT_VEC4,    1,{OA_NUMBER,   OA_NONE, OA_NONE} },
-      { "%std_randomize", of_STD_RANDOMIZE, 2, {OA_FUNC_PTR, OA_BIT1, OA_NONE} },
+      { "%std_randomize", of_STD_RANDOMIZE, 3, {OA_FUNC_PTR, OA_BIT1, OA_BIT2} },
       { "%store/assoc/r",of_STORE_ASSOC_R,1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },
       { "%store/assoc/str",of_STORE_ASSOC_STR,1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },
       { "%store/assoc/vec4",of_STORE_ASSOC_VEC4,1,{OA_FUNC_PTR, OA_NONE, OA_NONE} },

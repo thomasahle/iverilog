@@ -7512,26 +7512,94 @@ bool of_CLEAR_RAND_BOUNDS(vthread_t thr, vvp_code_t)
 }
 
 /*
- * %std_randomize <sig>, <wid>
+ * %std_randomize <sig>, <wid>, <num_bounds>
  * Randomize a standalone signal (for std::randomize function).
+ * If num_bounds > 0, uses inline constraints from the constraint stack.
  * Does NOT push any result - that's handled by the code generator.
  */
-bool of_STD_RANDOMIZE(vthread_t, vvp_code_t cp)
+bool of_STD_RANDOMIZE(vthread_t thr, vvp_code_t cp)
 {
       vvp_net_t*net = cp->net;
       unsigned wid = cp->bit_idx[0];
+      unsigned num_bounds = cp->bit_idx[1];
 
       if (net == 0) {
 	    return true;
       }
 
-      // Generate random bits
-      vvp_vector4_t val(wid);
-      for (unsigned b = 0; b < wid; b++) {
-	    val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+      // Get the inline constraints if any (property_idx=0 for std::randomize)
+      const std::vector<class_type::simple_bound_t>& bounds = thr->get_inline_constraints();
+
+      // Collect bounds for property index 0 (the std::randomize variable)
+      int64_t min_val = INT64_MIN;
+      int64_t max_val = INT64_MAX;
+      bool has_eq = false;
+      int64_t eq_val = 0;
+
+      for (const auto& b : bounds) {
+	    if (b.property_idx != 0) continue;
+	    switch (b.op) {
+		  case '>':  // value > const
+			if (b.const_bound >= min_val) min_val = b.const_bound + 1;
+			break;
+		  case 'G':  // value >= const
+			if (b.const_bound > min_val) min_val = b.const_bound;
+			break;
+		  case '<':  // value < const
+			if (b.const_bound <= max_val) max_val = b.const_bound - 1;
+			break;
+		  case 'L':  // value <= const
+			if (b.const_bound < max_val) max_val = b.const_bound;
+			break;
+		  case '=':  // value == const
+			has_eq = true;
+			eq_val = b.const_bound;
+			break;
+	    }
       }
 
-      // Store the random value to the signal
+      // Clear the inline constraints after use
+      if (num_bounds > 0) {
+	    thr->clear_inline_constraints();
+      }
+
+      int64_t generated_val;
+      if (has_eq) {
+	    // Equality constraint - use exact value
+	    generated_val = eq_val;
+      } else if (max_val >= min_val) {
+	    // Generate value in range [min_val, max_val]
+	    int64_t range = max_val - min_val + 1;
+	    if (range > 0) {
+		  // Generate random value in range
+		  generated_val = min_val + (int64_t)((unsigned long long)rand() * rand() % (unsigned long long)range);
+	    } else {
+		  // Overflow - just generate random
+		  generated_val = rand();
+	    }
+      } else {
+	    // No valid range - generate random bits
+	    vvp_vector4_t val(wid);
+	    for (unsigned b = 0; b < wid; b++) {
+		  val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+	    }
+	    vvp_net_ptr_t ptr(net, 0);
+	    vvp_send_vec4(ptr, val, 0);
+	    return true;
+      }
+
+      // Convert integer to vvp_vector4_t and store
+      vvp_vector4_t val(wid);
+      for (unsigned b = 0; b < wid && b < 64; b++) {
+	    val.set_bit(b, ((generated_val >> b) & 1) ? BIT4_1 : BIT4_0);
+      }
+      // Sign-extend if needed for wider signals
+      vvp_bit4_t sign_bit = ((generated_val >> (wid < 64 ? wid-1 : 63)) & 1) ? BIT4_1 : BIT4_0;
+      for (unsigned b = 64; b < wid; b++) {
+	    val.set_bit(b, sign_bit);
+      }
+
+      // Store the constrained random value to the signal
       vvp_net_ptr_t ptr(net, 0);
       vvp_send_vec4(ptr, val, 0);
 

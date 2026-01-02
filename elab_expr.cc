@@ -2388,6 +2388,83 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 	    return sys_expr;
       }
 
+	/* Handle $ivl_std_randomize - Randomize a standalone variable with optional
+	   inline constraints. std::randomize(var) with { var >= 0; var < 100; } */
+      if (name=="$ivl_std_randomize") {
+	    if ((parms_.size() != 1) || !parms_[0].parm) {
+		  cerr << get_fileline() << ": error: $ivl_std_randomize "
+		       << "takes exactly one signal argument." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Get the signal being randomized
+	    PExpr *sig_expr = parms_[0].parm;
+	    const PEIdent *sig_ident = dynamic_cast<const PEIdent*>(sig_expr);
+	    if (!sig_ident) {
+		  cerr << get_fileline() << ": error: $ivl_std_randomize "
+		       << "argument must be a simple signal identifier." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Get the signal name for constraint matching
+	    const pform_scoped_name_t& scoped_path = sig_ident->path();
+	    if (scoped_path.size() != 1) {
+		  cerr << get_fileline() << ": error: $ivl_std_randomize "
+		       << "argument must be a simple identifier." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+	    perm_string sig_name = scoped_path.name.front().name;
+
+	    // Elaborate the signal argument
+	    NetExpr*sig_net = elab_and_eval(des, scope, sig_expr, -1);
+	    if (!sig_net) {
+		  cerr << get_fileline() << ": error: $ivl_std_randomize "
+		       << "failed to elaborate signal argument." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    // Check for inline constraints
+	    const std::list<PExpr*>& constraints = get_inline_constraints();
+	    std::vector<std::tuple<int, int64_t>> bounds;  // (op_code, const_val)
+
+	    for (const PExpr* cons : constraints) {
+		  perm_string cons_name;
+		  int op_code;
+		  int64_t const_val;
+		  if (analyze_constraint_expr(cons, cons_name, op_code, const_val, des, scope)) {
+			// Check if this constraint is for our signal
+			if (cons_name == sig_name) {
+			      bounds.push_back(std::make_tuple(op_code, const_val));
+			}
+		  }
+	    }
+
+	    // Create system function with bounds as additional parameters
+	    unsigned num_parms = 1 + bounds.size() * 2;
+	    NetESFunc*sys_expr = new NetESFunc("$ivl_std_randomize",
+					       &netvector_t::atom2s32, num_parms);
+	    sys_expr->set_line(*this);
+	    sys_expr->parm(0, sig_net);
+
+	    // Add inline constraint bounds as constant integer parameters
+	    unsigned parm_idx = 1;
+	    for (const auto& bound : bounds) {
+		  // Operator code
+		  NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
+		  sys_expr->parm(parm_idx++, op_const);
+		  // Constant bound value
+		  int64_t val = std::get<1>(bound);
+		  NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
+		  sys_expr->parm(parm_idx++, val_const);
+	    }
+
+	    return sys_expr;
+      }
+
       unsigned nparms = parms_.size();
 
       // Count trailing empty parameters (from trailing commas) to exclude them

@@ -701,7 +701,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <flag>    signing unsigned_signed_opt signed_unsigned_opt
 %type <flag>    import_export
 %type <flag>    K_genvar_opt K_static_opt K_virtual_opt K_const_opt
-%type <flag>    udp_reg_opt edge_operator with_constraint_opt
+%type <flag>    udp_reg_opt edge_operator
 %type <class_params> class_parameter_port_list_opt class_parameter_port_list
 %type <class_param> class_parameter_port
 %type <drive>   drive_strength drive_strength_opt dr_strength0 dr_strength1
@@ -791,7 +791,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <exprs> delay1 delay3 delay3_opt delay_value_list
 %type <exprs> expression_list_with_nuls expression_list_proper
 %type <exprs> cont_assign cont_assign_list
-%type <exprs> constraint_block_item_list constraint_block_item_list_opt
+%type <exprs> constraint_block_item_list constraint_block_item_list_opt std_randomize_constraint_opt
 %type <expr>  constraint_block_item constraint_expression
 
 %type <decl_assignment> variable_decl_assignment for_variable_decl_assignment
@@ -1699,12 +1699,12 @@ constraint_set /* IEEE1800-2005 A.1.9 */
   | '{' constraint_expression_list '}'
   ;
 
-  /* Optional 'with { constraints }' clause for randomize() */
-with_constraint_opt
+  /* Optional 'with { constraints }' clause for std::randomize() */
+std_randomize_constraint_opt
   : /* empty */
-      { $$ = false; }
+      { $$ = 0; }
   | K_with '{' constraint_block_item_list_opt '}'
-      { $$ = true; }
+      { $$ = $3; }
   ;
 
 /* ============ Covergroup Declarations (IEEE1800-2017: A.2.11) ============ */
@@ -5442,21 +5442,21 @@ expr_primary
 	delete $2;
 	$$ = tmp;
       }
-  | package_scope hierarchy_identifier { lex_in_package_scope(0); } argument_list_parens with_constraint_opt
-      { /* Check for std::randomize() special case */
+  | package_scope hierarchy_identifier { lex_in_package_scope(0); } argument_list_parens std_randomize_constraint_opt
+      { /* Package scope function call with optional inline constraints for std::randomize */
 	perm_string pkg_name = $1->pscope_name();
 	bool is_std_randomize = (pkg_name == "std" && $2->size() == 1 &&
 	                         peek_head_name(*$2) == "randomize");
 	PECallFunction*tmp;
 	if (is_std_randomize) {
-	    if ($5) {
-	        yywarn(@5, "warning: Inline constraints after std::randomize() parsed but not enforced.");
-	    }
 	    perm_string fn = perm_string::literal("$ivl_std_randomize");
 	    tmp = new PECallFunction(fn, *$4);
+	    if ($5) {
+		tmp->set_inline_constraints($5);
+	    }
 	} else {
 	    if ($5) {
-	        yyerror(@5, "error: 'with' constraint block can only be used with randomize().");
+		yyerror(@5, "error: 'with' constraint block can only be used with randomize().");
 	    }
 	    tmp = new PECallFunction($1, *$2, *$4);
 	}
