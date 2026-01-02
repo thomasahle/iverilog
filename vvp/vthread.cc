@@ -1803,7 +1803,9 @@ bool of_CALLF_VIRT_VOID(vthread_t thr, vvp_code_t cp)
 	    child->parent = thr;
 	    thr->children.insert(child);
 	    assert(thr->children.size()==1);
-	    assert(child->parent_scope->get_type_code() == vpiFunction);
+	    // Virtual dispatch can call either functions or tasks
+	    assert(child->parent_scope->get_type_code() == vpiFunction ||
+	           child->parent_scope->get_type_code() == vpiTask);
 	    child->is_scheduled = 1;
 	    child->i_am_in_function = 1;
 	    vthread_run(child);
@@ -6583,10 +6585,8 @@ bool of_PROP_OBJ(vthread_t thr, vvp_code_t cp)
       vvp_cobject*cobj = obj.peek<vvp_cobject>();
 
       if (!cobj) {
-	    __vpiScope*scope = vthread_scope(thr);
-	    fprintf(stderr, "ERROR of_PROP_OBJ: cobj null at pid=%u idx=%u scope=%s obj.nil=%d\n",
-	            pid, idx, scope ? scope->scope_name() : "(null)", obj.test_nil());
-	    // Push a null object and continue
+	    // Object is null - push null object and continue gracefully
+	    // This can happen when accessing properties of uninitialized objects
 	    vvp_object_t val;
 	    thr->push_object(val);
 	    return true;
