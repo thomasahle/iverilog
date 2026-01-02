@@ -2908,8 +2908,28 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 
 		    // Have indices - create expression to access specific element
 		    // For struct.arr[i], we need: base_offset + i * elem_width
+		    // If there are more indices than array dimensions, the extra
+		    // indices are bit/part-selects on the element (e.g., arr[i][7:0])
+
+		  size_t array_dims = dims.size();
+		  size_t total_indices = member_comp.index.size();
+
+		    // Separate array indices from part-select indices
+		  std::list<index_component_t> array_indices;
+		  std::list<index_component_t>::const_iterator idx_it = member_comp.index.begin();
+		  for (size_t i = 0; i < array_dims && idx_it != member_comp.index.end(); ++i, ++idx_it) {
+			array_indices.push_back(*idx_it);
+		  }
+
+		  if (debug_elaborate && total_indices > array_dims) {
+			cerr << li->get_fileline() << ": check_for_struct_members: "
+			     << "Extra indices on array element: "
+			     << total_indices << " indices, " << array_dims << " dimensions"
+			     << endl;
+		  }
+
 		  NetExpr* canon_index = make_canonical_index(des, scope, li,
-							      member_comp.index,
+							      array_indices,
 							      uarray, false);
 		  if (!canon_index) {
 			cerr << li->get_fileline() << ": error: "
@@ -2949,19 +2969,78 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 		  NetESignal* sig = new NetESignal(net);
 		  sig->set_line(*li);
 
+		    // If there are additional indices beyond array dimensions,
+		    // they are bit/part-selects on the element
+		    // Calculate the combined offset and width before creating the select
+		  unsigned long final_elem_width = elem_width;
+		  NetExpr* final_offset = offset_expr;
+		  ivl_type_t final_type = elem_type;
+
+		  if (total_indices > array_dims) {
+			  // Get the extra index (should be the last one for [i][high:low])
+			const index_component_t& extra_idx = member_comp.index.back();
+
+			if (extra_idx.sel == index_component_t::SEL_PART) {
+			      // Constant part-select [high:low]
+			      long msb_val, lsb_val;
+			      NetExpr* msb_ex = elab_and_eval(des, scope, extra_idx.msb, -1);
+			      NetExpr* lsb_ex = elab_and_eval(des, scope, extra_idx.lsb, -1);
+			      if (msb_ex && lsb_ex &&
+				  eval_as_long(msb_val, msb_ex) && eval_as_long(lsb_val, lsb_ex)) {
+				    long part_off = lsb_val;
+				    long part_wid = msb_val - lsb_val + 1;
+				    if (part_wid > 0) {
+					    // Adjust the base select offset and width
+					  long off_val;
+					  if (eval_as_long(off_val, offset_expr)) {
+						final_offset = make_const_val(off_val + part_off);
+						delete offset_expr;
+					  } else {
+						NetExpr* off_adj = make_const_val(part_off);
+						final_offset = new NetEBAdd('+', offset_expr, off_adj,
+									    offset_expr->expr_width(), false);
+						final_offset->set_line(*li);
+					  }
+					  final_elem_width = part_wid;
+					  final_type = 0; // Part-select result is just bits
+				    }
+			      }
+			      delete msb_ex;
+			      delete lsb_ex;
+			} else if (extra_idx.sel == index_component_t::SEL_BIT) {
+			      // Bit-select [bit]
+			      NetExpr* bit_ex = elab_and_eval(des, scope, extra_idx.msb, -1);
+			      long bit_val;
+			      if (bit_ex && eval_as_long(bit_val, bit_ex)) {
+				    long off_val;
+				    if (eval_as_long(off_val, offset_expr)) {
+					  final_offset = make_const_val(off_val + bit_val);
+					  delete offset_expr;
+				    } else {
+					  NetExpr* off_adj = make_const_val(bit_val);
+					  final_offset = new NetEBAdd('+', offset_expr, off_adj,
+								      offset_expr->expr_width(), false);
+					  final_offset->set_line(*li);
+				    }
+				    final_elem_width = 1;
+				    final_type = 0; // Bit-select result is just a bit
+			      }
+			      delete bit_ex;
+			}
+		  }
+
 		  if (debug_elaborate) {
 			cerr << li->get_fileline() << ": check_for_struct_members: "
 			     << "Creating NetESelect for unpacked array element access, "
 			     << "base_offset=" << base_offset
-			     << ", elem_width=" << elem_width
-			     << ", elem_type=" << (elem_type ? typeid(*elem_type).name() : "null")
-			     << ", elem_type->base_type()=" << (elem_type ? elem_type->base_type() : -1)
+			     << ", elem_width=" << final_elem_width
+			     << ", elem_type=" << (final_type ? typeid(*final_type).name() : "null")
+			     << ", has_part_select=" << (total_indices > array_dims)
 			     << endl;
 		  }
 
-		  NetESelect* sel = new NetESelect(sig, offset_expr, elem_width, elem_type);
+		  NetESelect* sel = new NetESelect(sig, final_offset, final_elem_width, final_type);
 		  sel->set_line(*li);
-
 		  return sel;
 	    }
 

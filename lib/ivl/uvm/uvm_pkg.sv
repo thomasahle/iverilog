@@ -615,6 +615,39 @@ package uvm_pkg;
         if (child != null) child.print_topology({prefix, "  "});
       end
     endfunction
+
+    // Factory override methods (stub implementations)
+    // These allow code using factory overrides to compile and run,
+    // but actual override functionality is not implemented
+
+    // Override a specific instance with a different type
+    // Note: uvm_factory_proxy parameter type - accepts null from get_type()
+    function void set_inst_override_by_type(string relative_inst_path,
+                                            uvm_object original_type,
+                                            uvm_object override_type);
+      $display("UVM_INFO: Factory instance override requested: %s", relative_inst_path);
+    endfunction
+
+    // Override all instances of a type with a different type
+    function void set_type_override_by_type(uvm_object original_type,
+                                            uvm_object override_type,
+                                            bit replace = 1);
+      $display("UVM_INFO: Factory type override requested");
+    endfunction
+
+    // Override a specific instance by name
+    function void set_inst_override(string relative_inst_path,
+                                    string original_type_name,
+                                    string override_type_name);
+      $display("UVM_INFO: Factory instance override by name requested: %s", relative_inst_path);
+    endfunction
+
+    // Override all instances of a type by name
+    function void set_type_override(string original_type_name,
+                                    string override_type_name,
+                                    bit replace = 1);
+      $display("UVM_INFO: Factory type override by name requested: %s -> %s", original_type_name, override_type_name);
+    endfunction
   endclass
 
   // ============================================================================
