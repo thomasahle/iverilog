@@ -427,11 +427,30 @@ package uvm_pkg;
       return sprint();
     endfunction
 
+    // Create a clone of this object
+    // Uses the factory to create a new object of the same type, then copies data
     virtual function uvm_object clone();
-      return null;
+      uvm_object obj;
+      // Create new object of the same type using factory
+      obj = $ivl_factory_create(get_type_name());
+      if (obj != null) begin
+        obj.copy(this);
+      end
+      return obj;
     endfunction
 
+    // Copy data from rhs into this object
     virtual function void copy(uvm_object rhs);
+      if (rhs == null) return;
+      // Copy basic properties
+      // m_name is NOT copied per UVM standard (preserves destination name)
+      // Call do_copy for derived class fields
+      do_copy(rhs);
+    endfunction
+
+    // Override this method in derived classes to copy fields
+    virtual function void do_copy(uvm_object rhs);
+      // Base implementation - override in derived classes
     endfunction
 
     virtual function bit compare(uvm_object rhs, uvm_comparer comparer = null);

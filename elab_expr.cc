@@ -55,7 +55,9 @@ using namespace std;
 static bool analyze_constraint_expr(const PExpr*expr,
                                     perm_string& property_name,
                                     int& op_code,
-                                    int64_t& const_value)
+                                    int64_t& const_value,
+                                    Design*des = nullptr,
+                                    NetScope*scope = nullptr)
 {
       // Check if it's a binary comparison expression
       const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
@@ -82,15 +84,35 @@ static bool analyze_constraint_expr(const PExpr*expr,
       if (scoped_path.size() != 1) return false;
       property_name = scoped_path.name.front().name;
 
-      // Get the right operand (should be a constant)
+      // Get the right operand (should be a constant - either number or named constant)
       const PExpr*rhs = bin->get_right();
+
+      // First try: direct PENumber
       const PENumber*num = dynamic_cast<const PENumber*>(rhs);
-      if (!num) return false;
+      if (num) {
+            const verinum& val = num->value();
+            const_value = val.as_long();
+            return true;
+      }
 
-      const verinum& val = num->value();
-      const_value = val.as_long();
+      // Second try: named constant (enum value, parameter, etc.)
+      // If we have scope information, try to elaborate the RHS as a constant
+      if (des && scope) {
+            PExpr* rhs_nc = const_cast<PExpr*>(rhs);
+            NetExpr* rhs_expr = rhs_nc->elaborate_expr(des, scope, -1, true);
+            if (rhs_expr) {
+                  NetEConst* rhs_const = dynamic_cast<NetEConst*>(rhs_expr);
+                  if (rhs_const) {
+                        const verinum& val = rhs_const->value();
+                        const_value = val.as_long();
+                        delete rhs_expr;
+                        return true;
+                  }
+                  delete rhs_expr;
+            }
+      }
 
-      return true;
+      return false;
 }
 
 bool type_is_vectorable(ivl_variable_type_t type)
@@ -6643,7 +6665,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			perm_string prop_name;
 			int op_code;
 			int64_t const_val;
-			if (analyze_constraint_expr(cons, prop_name, op_code, const_val)) {
+			if (analyze_constraint_expr(cons, prop_name, op_code, const_val, des, scope)) {
 			      // Look up property index
 			      int pidx = class_type->property_idx_from_name(prop_name);
 			      if (pidx >= 0) {
