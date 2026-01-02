@@ -8490,6 +8490,25 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value)
  */
 static bool extract_simple_bound(netclass_t*cls, PExpr*expr, bool is_soft)
 {
+      // Check for logical AND expression (from 'inside' constraints)
+      // e.g., (x >= 0) && (x <= 3) from "inside {[0:3]}"
+      const PEBLogic* logic = dynamic_cast<const PEBLogic*>(expr);
+      if (logic != nullptr && logic->get_op() == 'a') {
+	    // Recursively extract bounds from both sides of AND
+	    bool left_ok = extract_simple_bound(cls, logic->get_left(), is_soft);
+	    bool right_ok = extract_simple_bound(cls, logic->get_right(), is_soft);
+	    return left_ok || right_ok;
+      }
+
+      // Check for logical OR expression (from multi-value 'inside')
+      // e.g., (x == 1) || (x == 2) from "inside {1, 2}"
+      // For OR, we can't easily extract bounds, so just process each side
+      if (logic != nullptr && logic->get_op() == 'o') {
+	    extract_simple_bound(cls, logic->get_left(), is_soft);
+	    extract_simple_bound(cls, logic->get_right(), is_soft);
+	    return false;  // OR constraints are harder to enforce as bounds
+      }
+
       // Check if this is a comparison expression
       const PEBComp* cmp = dynamic_cast<const PEBComp*>(expr);
       if (cmp == nullptr) {
