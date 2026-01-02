@@ -486,7 +486,8 @@ void pform_class_constraint(const struct vlltype&loc,
       // Store in the class
       pform_cur_class->type->constraints[constraint_name] = constraint;
 
-      yywarn(loc, "warning: Constraint declarations parsed but not yet enforced.");
+      yywarn(loc, "warning: Only simple bound constraints (>=, <=, inside) are enforced. "
+                  "Complex constraints (solve...before, dist, implication) are not yet supported.");
 }
 
 static bool pform_in_extern_decl = false;
