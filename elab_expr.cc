@@ -7320,8 +7320,28 @@ bool PEIdent::calculate_packed_indices_(Design*des, NetScope*scope, const NetNet
       unsigned dimensions = net->unpacked_dimensions() + net->packed_dimensions();
       switch (net->data_type()) {
 	  case IVL_VT_STRING:
-	  case IVL_VT_ASSOC:
 	    dimensions += 1;
+	    break;
+	  case IVL_VT_ASSOC:
+	    // Count the associative array dimension plus any nested dimensions
+	    {
+		  dimensions += 1;  // For the associative array itself
+		  ivl_type_t cur_type = net->net_type();
+		  const netassoc_t*assoc = dynamic_cast<const netassoc_t*>(cur_type);
+		  if (assoc) {
+			ivl_type_t elem_type = assoc->element_type();
+			// Check for fixed-size array dimensions in element
+			const netuarray_t*uarr = dynamic_cast<const netuarray_t*>(elem_type);
+			if (uarr) {
+			      dimensions += uarr->static_dimensions().size();
+			      elem_type = uarr->element_type();
+			}
+			// Add packed dimensions of the final element type
+			if (elem_type && elem_type->packed()) {
+			      dimensions += elem_type->slice_dimensions().size();
+			}
+		  }
+	    }
 	    break;
 	  case IVL_VT_DARRAY:
 	  case IVL_VT_QUEUE:
