@@ -5380,6 +5380,46 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			return sys_expr;
 		  }
 
+		  // Handle array locator methods that return queue of int (indices)
+		  if (method_name == "find_last_index" || method_name == "find_first_index"
+		      || method_name == "find_index") {
+			// These methods require a 'with' clause
+			if (with_expr_ == nullptr) {
+			      cerr << get_fileline() << ": error: Array locator method '"
+				   << method_name << "' requires a 'with' clause." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			// Create expression to load the property from 'this'
+			NetNet*this_net = search_results.net;
+			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+			prop_expr->set_line(*this);
+
+			// These methods return queue of int (indices)
+			static netqueue_t int_queue_type(&netvector_t::atom2s32, -1);
+
+			// Create the system function call
+			perm_string fname;
+			if (method_name == "find_last_index")
+			      fname = perm_string::literal("$ivl_array_locator$find_last_index");
+			else if (method_name == "find_first_index")
+			      fname = perm_string::literal("$ivl_array_locator$find_first_index");
+			else
+			      fname = perm_string::literal("$ivl_array_locator$find_index");
+
+			NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 1);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+
+			// Emit warning that this is partially implemented
+			cerr << get_fileline() << ": warning: Array locator method '"
+			     << method_name << "' with 'with' clause on class property is partially implemented. "
+			     << "Returning empty queue (results may be incorrect)." << endl;
+
+			return sys_expr;
+		  }
+
 		  // General handling for chained property/function access on darray properties
 		  // Handles patterns like: arr[i].func(), arr[i].member.func(), etc.
 		  // Build the initial property expression
