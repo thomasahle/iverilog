@@ -1525,9 +1525,50 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 							   member_cur.index, stype, false);
 
 		  } else if (const netvector_t *vtype = dynamic_cast<const netvector_t*>(ptype)) {
-			// For packed vectors, bit-select is allowed but not yet fully supported
-			cerr << get_fileline() << ": warning: "
-			     << "Bit-select on class vector property not yet fully supported." << endl;
+			// For packed vectors, bit-select is treated as 1-bit part-select
+			if (member_cur.index.size() == 1) {
+			      const index_component_t&idx = member_cur.index.front();
+			      if (idx.msb && !idx.lsb) {
+				    // Simple bit-select: prop[bit]
+				    NetExpr* bit_expr = elab_and_eval(des, scope, idx.msb, -1, false);
+				    if (bit_expr) {
+					  lv->set_part(bit_expr, 1);
+					  if (debug_elaborate) {
+						cerr << get_fileline() << ": PEIdent::elaborate_lval_method_class_member_: "
+						     << "Bit-select on vector property." << endl;
+					  }
+				    }
+			      } else if (idx.sel == index_component_t::SEL_IDX_UP ||
+					 idx.sel == index_component_t::SEL_IDX_DO) {
+				    // Indexed part-select: prop[base +: width] or prop[base -: width]
+				    NetExpr* base_expr = elab_and_eval(des, scope, idx.msb, -1, false);
+				    NetExpr* wid_expr = elab_and_eval(des, scope, idx.lsb, -1, true);
+				    if (base_expr && wid_expr) {
+					  const NetEConst* wid_const = dynamic_cast<const NetEConst*>(wid_expr);
+					  if (wid_const) {
+						unsigned long wid = wid_const->value().as_ulong();
+						ivl_select_type_t sel_type = (idx.sel == index_component_t::SEL_IDX_UP)
+						      ? IVL_SEL_IDX_UP : IVL_SEL_IDX_DOWN;
+						lv->set_part(base_expr, wid, sel_type);
+					  }
+				    }
+			      } else if (idx.msb && idx.lsb) {
+				    // Constant part-select: prop[msb:lsb]
+				    NetExpr* msb_expr = elab_and_eval(des, scope, idx.msb, -1, true);
+				    NetExpr* lsb_expr = elab_and_eval(des, scope, idx.lsb, -1, true);
+				    const NetEConst* msb_const = dynamic_cast<const NetEConst*>(msb_expr);
+				    const NetEConst* lsb_const = dynamic_cast<const NetEConst*>(lsb_expr);
+				    if (msb_const && lsb_const) {
+					  long msb_val = msb_const->value().as_long();
+					  long lsb_val = lsb_const->value().as_long();
+					  unsigned long wid = (msb_val >= lsb_val) ? msb_val - lsb_val + 1 : lsb_val - msb_val + 1;
+					  long base_val = (msb_val >= lsb_val) ? lsb_val : msb_val;
+					  verinum base_ver(base_val);
+					  base_ver.has_sign(true);
+					  lv->set_part(new NetEConst(base_ver), wid);
+				    }
+			      }
+			}
 		  } else if (const netassoc_t *atype = dynamic_cast<const netassoc_t*>(ptype)) {
 			// Associative array indexing - elaborate the key expression
 			if (member_cur.index.size() != 1) {
