@@ -97,9 +97,14 @@ static bool analyze_constraint_expr(const PExpr*expr,
 
       // Second try: named constant (enum value, parameter, etc.)
       // If we have scope information, try to elaborate the RHS as a constant
-      if (des && scope) {
+      // First check if it's an identifier (could be a named constant)
+      const PEIdent* rhs_ident = dynamic_cast<const PEIdent*>(rhs);
+      if (rhs_ident && des && scope) {
+            // Try to elaborate as a non-constant expression first
+            // then check if the result is actually a constant
             PExpr* rhs_nc = const_cast<PExpr*>(rhs);
-            NetExpr* rhs_expr = rhs_nc->elaborate_expr(des, scope, -1, true);
+            NetExpr* rhs_expr = rhs_nc->elaborate_expr(des, scope, -1, false);
+
             if (rhs_expr) {
                   NetEConst* rhs_const = dynamic_cast<NetEConst*>(rhs_expr);
                   if (rhs_const) {
@@ -6087,11 +6092,46 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
 		  prop_expr->set_line(*this);
 
+		  // Analyze inline constraints
+		  const std::list<PExpr*>& constraints = get_inline_constraints();
+		  std::vector<std::tuple<size_t, int, int64_t>> bounds;
+
+		  for (const PExpr* cons : constraints) {
+			perm_string cons_prop_name;
+			int op_code;
+			int64_t const_val;
+			if (analyze_constraint_expr(cons, cons_prop_name, op_code, const_val, des, scope)) {
+			      // Look up property index in the property's class type
+			      int pidx = prop_class->property_idx_from_name(cons_prop_name);
+			      if (pidx >= 0) {
+				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val));
+			      }
+			}
+		  }
+
 		  // Generate a system function call to $ivl_randomize
+		  // with extra parameters for inline constraints
+		  unsigned num_parms = 1 + bounds.size() * 3;
 		  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
-						     &netvector_t::atom2s32, 1);
+						     &netvector_t::atom2s32, num_parms);
 		  sys_expr->set_line(*this);
 		  sys_expr->parm(0, prop_expr);
+
+		  // Add inline constraint bounds as constant integer parameters
+		  unsigned parm_idx = 1;
+		  for (const auto& bound : bounds) {
+			// Property index
+			NetEConst* prop_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
+			sys_expr->parm(parm_idx++, prop_const);
+			// Operator code
+			NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<1>(bound), 32));
+			sys_expr->parm(parm_idx++, op_const);
+			// Constant bound value
+			int64_t val = std::get<2>(bound);
+			NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
+			sys_expr->parm(parm_idx++, val_const);
+		  }
+
 		  return sys_expr;
 	    }
 
