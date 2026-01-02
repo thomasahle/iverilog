@@ -1724,9 +1724,49 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			      /* darray of primitive types - use %set/dar/obj/vec4 */
 			      int idx = allocate_word();
 			      draw_eval_expr_into_integer(idx_expr, idx);
-			      draw_eval_vec4(rval);
-			      fprintf(vvp_out, "    %%set/dar/obj/vec4 %d; IVL_VT_DARRAY element (vec4)\n", idx);
-			      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+
+			      /* Check for part-select on the element */
+			      ivl_expr_t part_off_ex = ivl_lval_part_off(lval);
+			      if (part_off_ex) {
+				    /* Part-select: arr[i][base -: width] = value */
+				    unsigned lwid = ivl_stmt_lwidth(net);
+				    int off_reg = allocate_word();
+				    ivl_select_type_t sel_type = ivl_lval_sel_type(lval);
+
+				    /* Evaluate the rvalue */
+				    draw_eval_vec4(rval);
+				    resize_vec4_wid(rval, lwid);
+
+				    /* Get the part-select offset.
+				       For down-select [msb -: width], part_off is MSB.
+				       We need LSB = MSB - (width - 1) */
+				    if (number_is_immediate(part_off_ex, IMM_WID, 0) &&
+				        !number_is_unknown(part_off_ex)) {
+					  unsigned long off = get_number_immediate(part_off_ex);
+					  if (sel_type == IVL_SEL_IDX_DOWN && lwid > 1) {
+						off = off - (lwid - 1);
+					  }
+					  fprintf(vvp_out, "    %%ix/load %d, %lu, 0;\n", off_reg, off);
+				    } else {
+					  draw_eval_vec4(part_off_ex);
+					  if (sel_type == IVL_SEL_IDX_DOWN && lwid > 1) {
+						/* Subtract (width-1) from the offset */
+						fprintf(vvp_out, "    %%pushi/vec4 %u, 0, 32;\n", lwid - 1);
+						fprintf(vvp_out, "    %%sub;\n");
+					  }
+					  fprintf(vvp_out, "    %%ix/vec4 %d;\n", off_reg);
+				    }
+
+				    fprintf(vvp_out, "    %%set/dar/obj/pv %d, %d, %u; IVL_VT_DARRAY element part-select\n",
+				            idx, off_reg, lwid);
+				    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+				    clr_word(off_reg);
+			      } else {
+				    /* Full element assignment */
+				    draw_eval_vec4(rval);
+				    fprintf(vvp_out, "    %%set/dar/obj/vec4 %d; IVL_VT_DARRAY element (vec4)\n", idx);
+				    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			      }
 			      clr_word(idx);
 			}
 		  } else {
@@ -1874,9 +1914,49 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			      /* Queue of primitive types */
 			      int idx = allocate_word();
 			      draw_eval_expr_into_integer(idx_expr, idx);
-			      draw_eval_vec4(rval);
-			      fprintf(vvp_out, "    %%set/dar/obj/vec4 %d; IVL_VT_QUEUE element (vec4)\n", idx);
-			      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+
+			      /* Check for part-select on the element */
+			      ivl_expr_t part_off_ex = ivl_lval_part_off(lval);
+			      if (part_off_ex) {
+				    /* Part-select: arr[i][base -: width] = value */
+				    unsigned lwid = ivl_stmt_lwidth(net);
+				    int off_reg = allocate_word();
+				    ivl_select_type_t sel_type = ivl_lval_sel_type(lval);
+
+				    /* Evaluate the rvalue */
+				    draw_eval_vec4(rval);
+				    resize_vec4_wid(rval, lwid);
+
+				    /* Get the part-select offset.
+				       For down-select [msb -: width], part_off is MSB.
+				       We need LSB = MSB - (width - 1) */
+				    if (number_is_immediate(part_off_ex, IMM_WID, 0) &&
+				        !number_is_unknown(part_off_ex)) {
+					  unsigned long off = get_number_immediate(part_off_ex);
+					  if (sel_type == IVL_SEL_IDX_DOWN && lwid > 1) {
+						off = off - (lwid - 1);
+					  }
+					  fprintf(vvp_out, "    %%ix/load %d, %lu, 0;\n", off_reg, off);
+				    } else {
+					  draw_eval_vec4(part_off_ex);
+					  if (sel_type == IVL_SEL_IDX_DOWN && lwid > 1) {
+						/* Subtract (width-1) from the offset */
+						fprintf(vvp_out, "    %%pushi/vec4 %u, 0, 32;\n", lwid - 1);
+						fprintf(vvp_out, "    %%sub;\n");
+					  }
+					  fprintf(vvp_out, "    %%ix/vec4 %d;\n", off_reg);
+				    }
+
+				    fprintf(vvp_out, "    %%set/dar/obj/pv %d, %d, %u; IVL_VT_QUEUE element part-select\n",
+				            idx, off_reg, lwid);
+				    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+				    clr_word(off_reg);
+			      } else {
+				    /* Full element assignment */
+				    draw_eval_vec4(rval);
+				    fprintf(vvp_out, "    %%set/dar/obj/vec4 %d; IVL_VT_QUEUE element (vec4)\n", idx);
+				    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			      }
 			      clr_word(idx);
 			}
 		  } else {

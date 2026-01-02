@@ -1465,11 +1465,7 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 			}
 		  } else if (const netdarray_t *dtype = dynamic_cast<const netdarray_t*>(ptype)) {
 			// Dynamic array indexing
-			if (member_cur.index.size() != 1) {
-			      cerr << get_fileline() << ": error: "
-				   << "Dynamic arrays only support single index." << endl;
-			      des->errors++;
-			} else {
+			if (member_cur.index.size() == 1) {
 			      const index_component_t&idx = member_cur.index.front();
 			      if (idx.msb && !idx.lsb) {
 				    assoc_index = elab_and_eval(des, scope, idx.msb, -1);
@@ -1478,6 +1474,84 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 					 << "Invalid index expression for dynamic array." << endl;
 				    des->errors++;
 			      }
+			} else if (member_cur.index.size() == 2) {
+			      // Two indices: arr[i][part-select] or arr[i][bit]
+			      const index_component_t&first_idx = member_cur.index.front();
+			      const index_component_t&second_idx = member_cur.index.back();
+
+			      // First index must be simple array index
+			      if (!first_idx.msb || first_idx.lsb) {
+				    cerr << get_fileline() << ": error: "
+					 << "First index must be simple expression for dynamic array." << endl;
+				    des->errors++;
+			      } else {
+				    assoc_index = elab_and_eval(des, scope, first_idx.msb, -1);
+			      }
+
+			      // Check if second index is a part-select
+			      if (second_idx.sel == index_component_t::SEL_IDX_UP ||
+				  second_idx.sel == index_component_t::SEL_IDX_DO) {
+				    // Indexed part-select: arr[i][base +: width] or arr[i][base -: width]
+				    NetExpr* base_expr = elab_and_eval(des, scope, second_idx.msb, -1, false);
+				    NetExpr* wid_expr = elab_and_eval(des, scope, second_idx.lsb, -1, true);
+				    if (base_expr == 0 || wid_expr == 0) {
+					  cerr << get_fileline() << ": error: Failed to elaborate "
+					       << "indexed part-select on dynamic array element." << endl;
+					  des->errors++;
+				    } else {
+					  const NetEConst* wid_const = dynamic_cast<const NetEConst*>(wid_expr);
+					  if (wid_const == 0) {
+						cerr << get_fileline() << ": error: Indexed part-select width "
+						     << "must be constant." << endl;
+						des->errors++;
+					  } else {
+						unsigned long wid = wid_const->value().as_ulong();
+						ivl_select_type_t sel_type = (second_idx.sel == index_component_t::SEL_IDX_UP)
+						      ? IVL_SEL_IDX_UP : IVL_SEL_IDX_DOWN;
+						lv->set_part(base_expr, wid, sel_type);
+
+						if (debug_elaborate) {
+						      cerr << get_fileline() << ": PEIdent::elaborate_lval_method_class_member_: "
+							   << "Added indexed part-select [base "
+							   << (second_idx.sel == index_component_t::SEL_IDX_UP ? "+:" : "-:")
+							   << " " << wid << "] to darray element." << endl;
+						}
+					  }
+				    }
+			      } else if (second_idx.msb && second_idx.lsb) {
+				    // Constant part-select: arr[i][msb:lsb]
+				    NetExpr* msb_expr = elab_and_eval(des, scope, second_idx.msb, -1, true);
+				    NetExpr* lsb_expr = elab_and_eval(des, scope, second_idx.lsb, -1, true);
+				    const NetEConst* msb_const = dynamic_cast<const NetEConst*>(msb_expr);
+				    const NetEConst* lsb_const = dynamic_cast<const NetEConst*>(lsb_expr);
+				    if (msb_const == 0 || lsb_const == 0) {
+					  cerr << get_fileline() << ": error: Part-select bounds must "
+					       << "be constant." << endl;
+					  des->errors++;
+				    } else {
+					  long msb_val = msb_const->value().as_long();
+					  long lsb_val = lsb_const->value().as_long();
+					  unsigned long wid = (msb_val >= lsb_val) ? msb_val - lsb_val + 1 : lsb_val - msb_val + 1;
+					  long base_val = (msb_val >= lsb_val) ? lsb_val : msb_val;
+					  verinum base_ver(base_val);
+					  base_ver.has_sign(true);
+					  lv->set_part(new NetEConst(base_ver), wid);
+				    }
+			      } else if (second_idx.msb && !second_idx.lsb) {
+				    // Bit-select: arr[i][bit] - treat as 1-bit part-select
+				    NetExpr* bit_expr = elab_and_eval(des, scope, second_idx.msb, -1, false);
+				    if (bit_expr) {
+					  lv->set_part(bit_expr, 1);
+				    }
+			      } else {
+				    cerr << get_fileline() << ": error: "
+					 << "Invalid second index expression for dynamic array element." << endl;
+				    des->errors++;
+			      }
+			} else {
+			      cerr << get_fileline() << ": error: "
+				   << "Dynamic arrays only support single index or index with part-select." << endl;
+			      des->errors++;
 			}
 		  } else {
 			cerr << get_fileline() << ": error: "

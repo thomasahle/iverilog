@@ -7810,6 +7810,53 @@ bool of_SET_DAR_OBJ_VEC4(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %set/dar/obj/pv <idx_reg>, <off_reg>, <wid>
+ *
+ * Set a partial value into a darray/queue element with part-select.
+ * This is used for assignments like arr[i][base -: width] = value.
+ * The idx_reg contains the array index, off_reg contains the bit offset,
+ * and wid is the width of the part-select.
+ * Pop vec4 value from stack, do read-modify-write on darray element.
+ */
+bool of_SET_DAR_OBJ_PV(vthread_t thr, vvp_code_t cp)
+{
+      unsigned idx_reg = cp->number;
+      unsigned off_reg = cp->bit_idx[0];
+      unsigned wid = cp->bit_idx[1];
+
+      int64_t adr = thr->words[idx_reg].w_int;
+      int64_t off = off_reg ? thr->words[off_reg].w_int : 0;
+
+      // Pop the value to store
+      vvp_vector4_t val = thr->pop_vec4();
+      if (val.size() > wid)
+	    val.resize(wid);
+
+      vvp_object_t&top = thr->peek_object();
+      vvp_darray*darray = top.peek<vvp_darray>();
+
+      if (darray && (adr >= 0) && (thr->flags[4] == BIT4_0)) {
+	    // Get the current element value
+	    vvp_vector4_t cur_val;
+	    darray->get_word(adr, cur_val);
+
+	    // Resize if needed to accommodate the part select
+	    if (cur_val.size() < (size_t)(off + wid)) {
+		  cur_val.resize(off + wid, BIT4_0);
+	    }
+
+	    // Insert the new value at the offset
+	    for (unsigned i = 0; i < wid && i < val.size(); i++) {
+		  cur_val.set_bit(off + i, val.value(i));
+	    }
+
+	    // Store the modified value back
+	    darray->set_word(adr, cur_val);
+      }
+      return true;
+}
+
+/*
  * %get/dar/obj/o <index_reg>
  *
  * Get an object from the darray on top of the object stack at the index

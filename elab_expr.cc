@@ -4118,29 +4118,82 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			      des->errors++;
 			}
 
-			// Get the bit-select index
-			NetExpr*bit_sel = nullptr;
-			if (bit_idx.msb && !bit_idx.lsb) {
-			      bit_sel = elab_and_eval(des, scope, bit_idx.msb, -1);
+			// Get the bit-select or part-select
+			NetExpr*sel_base = nullptr;
+			unsigned sel_wid = 1;
+			ivl_select_type_t sel_type = IVL_SEL_OTHER;
+			if (bit_idx.sel == index_component_t::SEL_BIT && bit_idx.msb && !bit_idx.lsb) {
+			      // Simple bit-select: arr[i][b]
+			      sel_base = elab_and_eval(des, scope, bit_idx.msb, -1);
+			      sel_wid = 1;
+			      sel_type = IVL_SEL_OTHER;
+			} else if (bit_idx.sel == index_component_t::SEL_IDX_UP && bit_idx.msb && bit_idx.lsb) {
+			      // Indexed up-select: arr[i][base +: width]
+			      sel_base = elab_and_eval(des, scope, bit_idx.msb, -1);
+			      NetExpr*wid_ex = elab_and_eval(des, scope, bit_idx.lsb, -1);
+			      if (wid_ex) {
+				    if (NetEConst*wid_c = dynamic_cast<NetEConst*>(wid_ex)) {
+					  sel_wid = wid_c->value().as_ulong();
+				    } else {
+					  cerr << get_fileline() << ": error: "
+					       << "Part-select width must be constant." << endl;
+					  des->errors++;
+				    }
+			      }
+			      sel_type = IVL_SEL_IDX_UP;
+			} else if (bit_idx.sel == index_component_t::SEL_IDX_DO && bit_idx.msb && bit_idx.lsb) {
+			      // Indexed down-select: arr[i][base -: width]
+			      // For [msb -: width], we want bits [msb : msb-width+1]
+			      // The VVP %parti instruction takes LSB position, so compute:
+			      // lsb = msb - (width - 1)
+			      sel_base = elab_and_eval(des, scope, bit_idx.msb, -1);
+			      NetExpr*wid_ex = elab_and_eval(des, scope, bit_idx.lsb, -1);
+			      if (wid_ex) {
+				    if (NetEConst*wid_c = dynamic_cast<NetEConst*>(wid_ex)) {
+					  sel_wid = wid_c->value().as_ulong();
+					  // Adjust base: lsb = msb - (width - 1)
+					  if (sel_wid > 1 && sel_base) {
+						verinum adj_v (sel_wid - 1, sel_base->expr_width());
+						adj_v.has_sign(sel_base->has_sign());
+						NetEConst*adj_c = new NetEConst(adj_v);
+						adj_c->set_line(*sel_base);
+						NetExpr* adj_expr = new NetEBAdd('-', sel_base, adj_c,
+									sel_base->expr_width(),
+									sel_base->has_sign());
+						adj_expr->set_line(*this);
+						// Evaluate to fold constants
+						NetExpr* folded = adj_expr->eval_tree();
+						sel_base = folded ? folded : adj_expr;
+					  }
+				    } else {
+					  cerr << get_fileline() << ": error: "
+					       << "Part-select width must be constant." << endl;
+					  des->errors++;
+				    }
+			      }
+			      // For down-select, we've adjusted the base to LSB,
+			      // so use IVL_SEL_IDX_UP (same as normal variable path)
+			      sel_type = IVL_SEL_IDX_UP;
 			} else {
 			      cerr << get_fileline() << ": error: "
 				   << "Invalid bit-select expression for dynamic array element." << endl;
 			      des->errors++;
 			}
 
-			if (canon_index && bit_sel) {
+			if (canon_index && sel_base) {
 			      // Create the property access with array index
 			      NetEProperty *prop_tmp = new NetEProperty(sr.net, pidx, canon_index);
 			      prop_tmp->set_line(*this);
 
-			      // Wrap in NetESelect for the bit-select
-			      NetESelect *sel = new NetESelect(prop_tmp, bit_sel, 1, elem_type);
+			      // Wrap in NetESelect for the bit/part-select
+			      NetESelect *sel = new NetESelect(prop_tmp, sel_base, sel_wid, sel_type);
 			      sel->set_line(*this);
 
 			      if (debug_elaborate) {
 				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_member_: "
-					 << "Queue/darray property " << class_type->get_prop_name(pidx)
-					 << " with bit-select, elem_width=" << elem_width << endl;
+					 << "Darray property " << class_type->get_prop_name(pidx)
+					 << " with " << (sel_wid == 1 ? "bit" : "part")
+					 << "-select, width=" << sel_wid << endl;
 			      }
 			      return sel;
 			}
@@ -4245,29 +4298,82 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			      des->errors++;
 			}
 
-			// Get the bit-select index
-			NetExpr*bit_sel = nullptr;
-			if (bit_idx.msb && !bit_idx.lsb) {
-			      bit_sel = elab_and_eval(des, scope, bit_idx.msb, -1);
+			// Get the bit-select or part-select
+			NetExpr*sel_base = nullptr;
+			unsigned sel_wid = 1;
+			ivl_select_type_t sel_type = IVL_SEL_OTHER;
+			if (bit_idx.sel == index_component_t::SEL_BIT && bit_idx.msb && !bit_idx.lsb) {
+			      // Simple bit-select: arr[i][b]
+			      sel_base = elab_and_eval(des, scope, bit_idx.msb, -1);
+			      sel_wid = 1;
+			      sel_type = IVL_SEL_OTHER;
+			} else if (bit_idx.sel == index_component_t::SEL_IDX_UP && bit_idx.msb && bit_idx.lsb) {
+			      // Indexed up-select: arr[i][base +: width]
+			      sel_base = elab_and_eval(des, scope, bit_idx.msb, -1);
+			      NetExpr*wid_ex = elab_and_eval(des, scope, bit_idx.lsb, -1);
+			      if (wid_ex) {
+				    if (NetEConst*wid_c = dynamic_cast<NetEConst*>(wid_ex)) {
+					  sel_wid = wid_c->value().as_ulong();
+				    } else {
+					  cerr << get_fileline() << ": error: "
+					       << "Part-select width must be constant." << endl;
+					  des->errors++;
+				    }
+			      }
+			      sel_type = IVL_SEL_IDX_UP;
+			} else if (bit_idx.sel == index_component_t::SEL_IDX_DO && bit_idx.msb && bit_idx.lsb) {
+			      // Indexed down-select: arr[i][base -: width]
+			      // For [msb -: width], we want bits [msb : msb-width+1]
+			      // The VVP %parti instruction takes LSB position, so compute:
+			      // lsb = msb - (width - 1)
+			      sel_base = elab_and_eval(des, scope, bit_idx.msb, -1);
+			      NetExpr*wid_ex = elab_and_eval(des, scope, bit_idx.lsb, -1);
+			      if (wid_ex) {
+				    if (NetEConst*wid_c = dynamic_cast<NetEConst*>(wid_ex)) {
+					  sel_wid = wid_c->value().as_ulong();
+					  // Adjust base: lsb = msb - (width - 1)
+					  if (sel_wid > 1 && sel_base) {
+						verinum adj_v (sel_wid - 1, sel_base->expr_width());
+						adj_v.has_sign(sel_base->has_sign());
+						NetEConst*adj_c = new NetEConst(adj_v);
+						adj_c->set_line(*sel_base);
+						NetExpr* adj_expr = new NetEBAdd('-', sel_base, adj_c,
+									sel_base->expr_width(),
+									sel_base->has_sign());
+						adj_expr->set_line(*this);
+						// Evaluate to fold constants
+						NetExpr* folded = adj_expr->eval_tree();
+						sel_base = folded ? folded : adj_expr;
+					  }
+				    } else {
+					  cerr << get_fileline() << ": error: "
+					       << "Part-select width must be constant." << endl;
+					  des->errors++;
+				    }
+			      }
+			      // For down-select, we've adjusted the base to LSB,
+			      // so use IVL_SEL_IDX_UP (same as normal variable path)
+			      sel_type = IVL_SEL_IDX_UP;
 			} else {
 			      cerr << get_fileline() << ": error: "
 				   << "Invalid bit-select expression for queue element." << endl;
 			      des->errors++;
 			}
 
-			if (canon_index && bit_sel) {
+			if (canon_index && sel_base) {
 			      // Create the property access with array index
 			      NetEProperty *prop_tmp = new NetEProperty(sr.net, pidx, canon_index);
 			      prop_tmp->set_line(*this);
 
-			      // Wrap in NetESelect for the bit-select
-			      NetESelect *sel = new NetESelect(prop_tmp, bit_sel, 1, elem_type);
+			      // Wrap in NetESelect for the bit/part-select
+			      NetESelect *sel = new NetESelect(prop_tmp, sel_base, sel_wid, sel_type);
 			      sel->set_line(*this);
 
 			      if (debug_elaborate) {
 				    cerr << get_fileline() << ": PEIdent::elaborate_expr_class_member_: "
 					 << "Queue property " << class_type->get_prop_name(pidx)
-					 << " with bit-select, elem_width=" << elem_width << endl;
+					 << " with " << (sel_wid == 1 ? "bit" : "part")
+					 << "-select, width=" << sel_wid << endl;
 			      }
 			      return sel;
 			}
