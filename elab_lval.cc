@@ -525,7 +525,18 @@ NetAssign_*PEIdent::elaborate_lval_var_(Design *des, NetScope *scope,
 
       bool need_const_idx = is_cassign || is_force;
 
-      if (reg->unpacked_dimensions() > 0)
+      // Check for arrays that have multiple indices to process.
+      // For regular arrays, use unpacked_dimensions().
+      // For associative arrays, the assoc array itself is a dimension,
+      // plus any nested fixed-size arrays in the element type.
+      size_t array_dims = reg->unpacked_dimensions();
+      if (reg->data_type() == IVL_VT_ASSOC && reg->unpacked_dimensions() > 0) {
+	    // For associative arrays WITH additional unpacked dimensions (like data[int][1]),
+	    // add 1 for the assoc array dimension. Don't do this for simple assoc arrays
+	    // (like data[int]) which should go through the darray_bit_ code path.
+	    array_dims += 1;
+      }
+      if (array_dims > 0)
 	    return elaborate_lval_net_word_(des, scope, reg, need_const_idx, is_force);
 
 	// This must be after the array word elaboration above!
@@ -719,7 +730,14 @@ NetAssign_* PEIdent::elaborate_lval_net_word_(Design*des,
 	/* An array word may also have part selects applied to them. */
 
       index_component_t::ctype_t use_sel = index_component_t::SEL_NONE;
-      if (name_tail.index.size() > reg->unpacked_dimensions())
+      // For associative arrays WITH additional unpacked dimensions, count effective unpacked
+      // dimensions including the assoc array itself plus any fixed-size unpacked dimensions.
+      size_t effective_unpacked = reg->unpacked_dimensions();
+      if (reg->data_type() == IVL_VT_ASSOC && reg->unpacked_dimensions() > 0) {
+	    // Add 1 for the associative array dimension
+	    effective_unpacked += 1;
+      }
+      if (name_tail.index.size() > effective_unpacked)
 	    use_sel = name_tail.index.back().sel;
 
       if (reg->get_scalar() &&
@@ -767,15 +785,16 @@ bool PEIdent::elaborate_lval_net_bit_(Design*des,
       NetNet*reg = lv->sig();
       ivl_assert(*this, reg);
 
-	// Check for unsupported associative array bit-select
-      if (reg->data_type() == IVL_VT_ASSOC) {
-	    if (prefix_indices.size() + 1 != reg->packed_dims().size()) {
-		  cerr << get_fileline() << ": sorry: "
-		       << "Bit-select on associative array element '"
-		       << reg->name() << "' is not yet supported." << endl;
-		  des->errors += 1;
-		  return false;
-	    }
+	// For associative arrays with unpacked dimensions (e.g., data[int][1]),
+	// bit-select is not yet fully supported because calculate_packed_indices_
+	// doesn't properly account for the mixed assoc + unpacked dimensions.
+      if (reg->data_type() == IVL_VT_ASSOC && reg->unpacked_dimensions() > 0) {
+	    cerr << get_fileline() << ": sorry: "
+		 << "Bit-select on associative array element '"
+		 << reg->name() << "' with additional unpacked dimensions "
+		 << "is not yet supported." << endl;
+	    des->errors += 1;
+	    return false;
       }
 
 	// Bit selects have a single select expression. Evaluate the
@@ -965,8 +984,15 @@ bool PEIdent::elaborate_lval_darray_bit_(Design*des,
       if (name_tail.index.size() == 2) {
 	    // Check if element type is also a darray/queue
 	    const netdarray_t*darray_type = lv->sig()->darray_type();
-	    if (darray_type) {
-		  ivl_type_t element_type = darray_type->element_type();
+	    const netassoc_t*assoc_type = lv->sig()->assoc_type();
+
+	    ivl_type_t element_type = 0;
+	    if (darray_type)
+		  element_type = darray_type->element_type();
+	    else if (assoc_type)
+		  element_type = assoc_type->element_type();
+
+	    if (element_type) {
 		  const netdarray_t*inner_darray = dynamic_cast<const netdarray_t*>(element_type);
 		  const netqueue_t*inner_queue = dynamic_cast<const netqueue_t*>(element_type);
 
@@ -985,6 +1011,26 @@ bool PEIdent::elaborate_lval_darray_bit_(Design*des,
 			ivl_assert(*this, second_idx.lsb == 0);
 			NetExpr*mux2 = elab_and_eval(des, scope, second_idx.msb, -1);
 			lv->set_word2(mux2);
+
+			return true;
+		  }
+
+		  // Check if element type is packed (bit-select case)
+		  // e.g., bit[7:0] data[int]; data[key][idx] = 1
+		  if (element_type->packed()) {
+			// First index is array word, second is bit-select
+			const index_component_t&first_idx = name_tail.index.front();
+			ivl_assert(*this, first_idx.msb != 0);
+			ivl_assert(*this, first_idx.lsb == 0);
+			NetExpr*mux = elab_and_eval(des, scope, first_idx.msb, -1);
+			lv->set_word(mux);
+
+			// Second index is bit-select
+			const index_component_t&second_idx = name_tail.index.back();
+			ivl_assert(*this, second_idx.msb != 0);
+			ivl_assert(*this, second_idx.lsb == 0);
+			NetExpr*bit_mux = elab_and_eval(des, scope, second_idx.msb, -1);
+			lv->set_part(bit_mux, 1);
 
 			return true;
 		  }
