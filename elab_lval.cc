@@ -767,6 +767,17 @@ bool PEIdent::elaborate_lval_net_bit_(Design*des,
       NetNet*reg = lv->sig();
       ivl_assert(*this, reg);
 
+	// Check for unsupported associative array bit-select
+      if (reg->data_type() == IVL_VT_ASSOC) {
+	    if (prefix_indices.size() + 1 != reg->packed_dims().size()) {
+		  cerr << get_fileline() << ": sorry: "
+		       << "Bit-select on associative array element '"
+		       << reg->name() << "' is not yet supported." << endl;
+		  des->errors += 1;
+		  return false;
+	    }
+      }
+
 	// Bit selects have a single select expression. Evaluate the
 	// constant value and treat it as a part select with a bit
 	// width of 1.
