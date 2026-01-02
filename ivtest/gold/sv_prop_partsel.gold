@@ -1,0 +1,7 @@
+Initial data = 0000
+After data[3:0]=A: data = 000a
+After data[7:4]=B: data = 00ba
+After data[15:8]=CD: data = cdba
+After data[0 +: 4]=5: data = 0005
+After data[4 +: 4]=6: data = 0065
+PASSED: Part-select on class vector property works!

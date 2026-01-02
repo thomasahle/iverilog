@@ -1,0 +1,6 @@
+Initial data = 00000000
+After data[0]=1: data = 00000001
+After data[3]=1: data = 00001001
+After data[7]=1: data = 10001001
+After loop: data = 10001111
+PASSED: Bit-select on class vector property works!
