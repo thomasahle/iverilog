@@ -442,12 +442,6 @@ package uvm_pkg;
     function int get_report_verbosity_level();
       return m_verbosity;
     endfunction
-
-    // TLM write method - override in FIFO/subscriber/export classes
-    // Uses uvm_object as parameter type for base class compatibility
-    virtual function void tlm_write(uvm_object t);
-      // Base implementation does nothing - override in derived classes
-    endfunction
   endclass
 
   // ============================================================================
@@ -522,12 +516,6 @@ package uvm_pkg;
     endfunction
 
     virtual function void final_phase(uvm_phase phase);
-    endfunction
-
-    // TLM write method - override in FIFO/subscriber classes
-    // Uses uvm_object as parameter type for base class compatibility
-    virtual function void tlm_write(uvm_object t);
-      // Base implementation does nothing - FIFOs override this
     endfunction
 
     // Phase execution - iterate through children
@@ -626,6 +614,39 @@ package uvm_pkg;
         uvm_component child = m_children[i];
         if (child != null) child.print_topology({prefix, "  "});
       end
+    endfunction
+
+    // Factory override methods (stub implementations)
+    // These allow code using factory overrides to compile and run,
+    // but actual override functionality is not implemented
+
+    // Override a specific instance with a different type
+    // Note: uvm_factory_proxy parameter type - accepts null from get_type()
+    function void set_inst_override_by_type(string relative_inst_path,
+                                            uvm_object original_type,
+                                            uvm_object override_type);
+      $display("UVM_INFO: Factory instance override requested: %s", relative_inst_path);
+    endfunction
+
+    // Override all instances of a type with a different type
+    function void set_type_override_by_type(uvm_object original_type,
+                                            uvm_object override_type,
+                                            bit replace = 1);
+      $display("UVM_INFO: Factory type override requested");
+    endfunction
+
+    // Override a specific instance by name
+    function void set_inst_override(string relative_inst_path,
+                                    string original_type_name,
+                                    string override_type_name);
+      $display("UVM_INFO: Factory instance override by name requested: %s", relative_inst_path);
+    endfunction
+
+    // Override all instances of a type by name
+    function void set_type_override(string original_type_name,
+                                    string override_type_name,
+                                    bit replace = 1);
+      $display("UVM_INFO: Factory type override by name requested: %s -> %s", original_type_name, override_type_name);
     endfunction
   endclass
 
@@ -911,70 +932,39 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
-  // UVM Analysis Port - TLM port for broadcasting to connected subscribers
+  // UVM Analysis Port - TLM port for broadcasting (simplified)
   // NOTE: Moved before uvm_subscriber so it can be used as a type
-  // NOTE: Uses uvm_object for write() to work around VVP parameterized method bug
   // ============================================================================
   class uvm_analysis_port #(type T = int) extends uvm_object;
-    // Store connected objects (max 8) - will call tlm_write on each
-    uvm_object m_subscribers[8];
-    int m_num_subscribers;
-
     function new(string name = "", uvm_component parent = null);
       super.new(name);
-      m_num_subscribers = 0;
     endfunction
 
-    // Connect to a subscriber (export or component)
-    // The export/component registers itself here
     virtual function void connect(uvm_object port);
-      if (port != null && m_num_subscribers < 8) begin
-        m_subscribers[m_num_subscribers] = port;
-        m_num_subscribers++;
-      end
+      // Simplified - no actual connection tracking
     endfunction
 
-    // Write using uvm_object to work around VVP bug with parameterized methods
-    // taking class objects. The original UVM API is write(T t), but VVP crashes
-    // when T is a class type due to how it handles parameterized methods.
+    // Note: Using uvm_object instead of T due to Icarus limitation
+    // with type parameter resolution in method parameters
     virtual function void write(uvm_object t);
-      uvm_object sub;
-      for (int i = 0; i < m_num_subscribers; i++) begin
-        sub = m_subscribers[i];
-        if (sub != null) begin
-          sub.tlm_write(t);
-        end
-      end
+      // Simplified - override in subclass for actual functionality
     endfunction
   endclass
 
   // ============================================================================
   // UVM Analysis Export - TLM export for receiving analysis transactions
-  // The export stores a reference to its parent component (FIFO).
-  // When analysis_port.write() calls tlm_write on this export, we forward
-  // to the parent FIFO's tlm_write method.
   // ============================================================================
   class uvm_analysis_export #(type T = int) extends uvm_object;
-    uvm_component m_parent;  // Track parent component (FIFO)
-
     function new(string name = "", uvm_component parent = null);
       super.new(name);
-      m_parent = parent;
     endfunction
 
     virtual function void connect(uvm_object port);
-      // Exports don't initiate connections, they receive them
+      // Simplified - no actual connection tracking
     endfunction
 
-    // Override tlm_write to forward to parent component's tlm_write
-    virtual function void tlm_write(uvm_object t);
-      if (m_parent != null) begin
-        m_parent.tlm_write(t);
-      end
-    endfunction
-
-    // Not typically called directly - analysis_port calls tlm_write
     virtual function void write(T t);
+      // Simplified - override in subclass for actual functionality
     endfunction
   endclass
 
@@ -1442,6 +1432,14 @@ package uvm_pkg;
       return m_count >= 64;
     endfunction
 
+    // Peek - blocking task to look at next item without removing
+    virtual task peek(output T t);
+      while (m_count == 0) begin
+        #1; // Wait for item to be written
+      end
+      t = m_items[m_head];
+    endtask
+
     // Flush - reset fifo
     virtual function void flush();
       m_count = 0;
@@ -1452,15 +1450,6 @@ package uvm_pkg;
     // Used returns count (compatible with real UVM API)
     virtual function int used();
       return m_count;
-    endfunction
-
-    // Override tlm_write from uvm_component - called by analysis_port
-    virtual function void tlm_write(uvm_object t);
-      T typed_t;
-      // Cast to the parameterized type and call write()
-      if ($cast(typed_t, t)) begin
-        write(typed_t);
-      end
     endfunction
 
   endclass
@@ -1527,7 +1516,7 @@ package uvm_pkg;
       return 0;
     endfunction
 
-    // Peek - look at next item without removing
+    // Peek - look at next item without removing (non-blocking)
     virtual function bit try_peek(output T t);
       if (m_count > 0) begin
         t = m_items[m_head];
@@ -1535,6 +1524,14 @@ package uvm_pkg;
       end
       return 0;
     endfunction
+
+    // Peek - blocking task to look at next item without removing
+    virtual task peek(output T t);
+      while (m_count == 0) begin
+        #1; // Wait for item
+      end
+      t = m_items[m_head];
+    endtask
 
     // Can_put - check if can write
     virtual function bit can_put();
@@ -2333,16 +2330,16 @@ package uvm_pkg;
   task run_test(string test_name = "");
     uvm_root root;
     uvm_object test_obj;
-    string cmdline_test;
 
     root = uvm_root::get();
 
-    // Check for +UVM_TESTNAME command line argument (always overrides)
-    if ($value$plusargs("UVM_TESTNAME=%s", cmdline_test)) begin
-      if (test_name != "" && test_name != cmdline_test) begin
-        $display("UVM_INFO: Overriding run_test('%s') with +UVM_TESTNAME=%s", test_name, cmdline_test);
+    // Check for +UVM_TESTNAME command line argument - overrides test_name
+    begin
+      string cmdline_test;
+      if ($value$plusargs("UVM_TESTNAME=%s", cmdline_test)) begin
+        $display("UVM_INFO: +UVM_TESTNAME='%s' specified on command line", cmdline_test);
+        test_name = cmdline_test;
       end
-      test_name = cmdline_test;
     end
 
     $display("UVM_INFO: run_test called with test_name='%s'", test_name);
