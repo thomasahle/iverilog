@@ -1274,20 +1274,29 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
-  // Stub config_db class - actual functionality is in the parser
-  // The parser returns 1 for get() calls on uvm_config_db
-  // NOTE: This stub exists for reference but is not actually called -
-  // the parser creates stub code for parameterized static method calls
+  // UVM Config Database
+  // ============================================================================
+  // NOTE: Parameterized class static methods are not fully supported in Icarus.
+  // The set() method call is silently ignored, so config_db doesn't actually
+  // store values.
+  //
+  // WORKAROUND: For AVIPs that use config_db#(enum_type)::set/get, you must
+  // instead use the config object pattern:
+  //   1. Create a config class with enum properties
+  //   2. Use config_db#(config_class)::set/get to pass the whole object
+  //
+  // This stub implementation allows code to compile and run, but config_db
+  // get() will always return 1 (success) without actually providing a value.
   // ============================================================================
   class uvm_config_db #(type T = int);
+    // Stub implementation - parameterized static methods not supported
     static function void set(uvm_component cntxt, string inst_name, string field_name, T value);
-      // No-op - parser handles this
+      // No-op: parameterized class static void methods don't execute
     endfunction
 
-    // Note: Can't use output/ref in static functions in Icarus
-    // Parser handles this by returning constant 1 for get() calls
-    static function bit get(uvm_component cntxt, string inst_name, string field_name, T value);
-      // Parser returns 1 for this call
+    // Always returns 1, but doesn't modify value (limitation)
+    static function bit get(uvm_component cntxt, string inst_name, string field_name, output T value);
+      // Return 1 to prevent fatal errors, but value is not actually set
       return 1;
     endfunction
   endclass
