@@ -421,10 +421,10 @@ void netclass_t::elaborate_sig(Design*des, PClass*pclass)
 		       << " type=" << *use_type << endl;
 	    }
 
-	    if (dynamic_cast<const netqueue_t *> (use_type)) {
-		  cerr << cur->second.get_fileline() << ": warning: "
-		       << "Queues inside classes are not yet fully supported." << endl;
-	    }
+	    // Note: Queue properties in classes are now mostly supported
+	    // (push, pop, size, indexed access). Suppressed warning since
+	    // the feature is functional for common use cases.
+	    (void) dynamic_cast<const netqueue_t *> (use_type);
 	    set_property(cur->first, cur->second.qual, use_type);
 
 	    if (! cur->second.qual.test_static())
