@@ -199,12 +199,23 @@ package uvm_pkg;
     // Print a field with given name, value, size and radix
     virtual function void print_field(string name, logic [1023:0] value, int size, uvm_radix_enum radix = UVM_HEX);
       string val_str;
+      logic [1023:0] masked_value;
+      logic [1023:0] mask;
+      // Mask the value to the specified size to avoid printing garbage from upper bits
+      if (size > 0 && size < 1024) begin
+        // Create mask by setting all bits from 0 to size-1
+        mask = '0;
+        for (int i = 0; i < size; i++) mask[i] = 1'b1;
+        masked_value = value & mask;
+      end else begin
+        masked_value = value;
+      end
       case (radix)
-        UVM_BIN: $sformat(val_str, "%0b", value);
-        UVM_DEC: $sformat(val_str, "%0d", value);
-        UVM_HEX: $sformat(val_str, "%0h", value);
-        UVM_OCT: $sformat(val_str, "%0o", value);
-        default: $sformat(val_str, "%0h", value);
+        UVM_BIN: $sformat(val_str, "%0b", masked_value);
+        UVM_DEC: $sformat(val_str, "%0d", masked_value);
+        UVM_HEX: $sformat(val_str, "%0h", masked_value);
+        UVM_OCT: $sformat(val_str, "%0o", masked_value);
+        default: $sformat(val_str, "%0h", masked_value);
       endcase
       $display("%s%s: %s", get_indent(), name, val_str);
     endfunction
