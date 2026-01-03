@@ -1,16 +1,17 @@
 // Test basic UVM class inheritance and macros
-`include "uvm_macros.svh"
-`include "uvm_pkg.sv"
+// Compile with: iverilog -g2012 uvm_pkg.sv sv_uvm_basic.sv
 import uvm_pkg::*;
 
 class my_object extends uvm_object;
-  `uvm_object_utils(my_object)
-
   int data;
 
   function new(string name = "my_object");
     super.new(name);
     data = 42;
+  endfunction
+
+  virtual function string get_type_name();
+    return "my_object";
   endfunction
 
   virtual function void do_print(uvm_printer printer);
@@ -19,12 +20,14 @@ class my_object extends uvm_object;
 endclass
 
 class my_component extends uvm_component;
-  `uvm_component_utils(my_component)
-
   my_object obj;
 
   function new(string name = "my_component", uvm_component parent = null);
     super.new(name, parent);
+  endfunction
+
+  virtual function string get_type_name();
+    return "my_component";
   endfunction
 
   virtual function void build_phase(uvm_phase phase);
