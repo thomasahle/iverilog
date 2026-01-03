@@ -1261,3 +1261,8 @@ sv_packed_2d_varindex normal,-g2012 ivltests gold=sv_packed_2d_varindex.gold
 sv_prop_incdec		normal,-g2012		ivltests	gold=sv_prop_incdec.gold
 sv_prop_bitsel		normal,-g2012		ivltests	gold=sv_prop_bitsel.gold
 sv_prop_partsel		normal,-g2012		ivltests	gold=sv_prop_partsel.gold
+
+sv_case_inside	normal,-g2012		ivltests gold=sv_case_inside.gold
+sv_case_inside_wildcard	normal,-g2012		ivltests gold=sv_case_inside_wildcard.gold
+sv_interface_modport	normal,-g2012		ivltests gold=sv_interface_modport.gold
+sv_test_local_static	normal,-g2012		ivltests gold=sv_test_local_static.gold
