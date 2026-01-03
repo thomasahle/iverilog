@@ -6769,7 +6769,13 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    perm_string method_name = search_results.path_tail.back().name;
 
 	    NetNet*net = search_results.net;
+	    // Try to get class type from search_results.type first, then from sub_expr->net_type().
+	    // This handles cases like q[i].method() where q is a queue of class objects -
+	    // search_results.type will be the queue type, not the class element type.
 	    const netclass_t*class_type = dynamic_cast<const netclass_t*>(search_results.type);
+	    if (!class_type && sub_expr->net_type()) {
+		  class_type = dynamic_cast<const netclass_t*>(sub_expr->net_type());
+	    }
 	    ivl_assert(*this, class_type);
 
 	    // Handle built-in randomize() method

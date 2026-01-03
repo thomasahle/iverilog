@@ -461,6 +461,40 @@ static int eval_object_sfunc(ivl_expr_t ex)
       return 1;
 }
 
+/*
+ * Handle select expressions (e.g., q[i]) where q is a queue of class objects.
+ * This is used when a queue element is passed as an object argument, such as
+ * the 'this' parameter when calling q[i].method().
+ */
+static int eval_object_select(ivl_expr_t ex)
+{
+      ivl_expr_t subexpr = ivl_expr_oper1(ex);
+      ivl_expr_t base = ivl_expr_oper2(ex);
+
+      /* Get the signal from the subexpression (the queue/darray variable) */
+      ivl_signal_t sig = ivl_expr_signal(subexpr);
+      if (sig) {
+	    ivl_variable_type_t sig_type = ivl_signal_data_type(sig);
+	    /* Check if the signal is a queue or darray */
+	    if (sig_type == IVL_VT_QUEUE || sig_type == IVL_VT_DARRAY) {
+		  /* Evaluate the index into register 3 */
+		  draw_eval_expr_into_integer(base, 3);
+
+		  /* Load the queue/darray onto the object stack */
+		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+
+		  /* Get the element at the index (pops queue, pushes element) */
+		  fprintf(vvp_out, "    %%get/dar/obj/o 3;\n");
+
+		  return 0;
+	    }
+      }
+
+      fprintf(vvp_out, "; ERROR: eval_object_select: Unsupported - sig=%p, subexpr_type=%d\n",
+              (void*)sig, subexpr ? ivl_expr_type(subexpr) : -1);
+      return 1;
+}
+
 int draw_eval_object(ivl_expr_t ex)
 {
       switch (ivl_expr_type(ex)) {
@@ -500,6 +534,9 @@ int draw_eval_object(ivl_expr_t ex)
 
 	  case IVL_EX_SCOPE:
 	    return eval_object_scope(ex);
+
+	  case IVL_EX_SELECT:
+	    return eval_object_select(ex);
 
 	  default:
 	    fprintf(vvp_out, "; ERROR: draw_eval_object: Invalid expression type %d\n", ivl_expr_type(ex));
