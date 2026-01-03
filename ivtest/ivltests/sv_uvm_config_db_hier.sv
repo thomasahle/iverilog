@@ -3,7 +3,7 @@
 // This is the key pattern used for passing virtual interfaces to child components
 
 `include "uvm_macros.svh"
-`include "uvm_pkg.sv"
+
 
 interface simple_if;
   logic [7:0] data;

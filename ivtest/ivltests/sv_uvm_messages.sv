@@ -1,6 +1,6 @@
 // Test UVM messaging macros
+// Compile with: iverilog -g2012 -I<uvm_dir> uvm_pkg.sv sv_uvm_messages.sv
 `include "uvm_macros.svh"
-`include "uvm_pkg.sv"
 import uvm_pkg::*;
 
 module test;

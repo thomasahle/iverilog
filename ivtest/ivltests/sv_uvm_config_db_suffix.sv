@@ -3,7 +3,7 @@
 // Uses virtual interface (object) config_db which properly extracts component context
 
 `include "uvm_macros.svh"
-`include "uvm_pkg.sv"
+
 
 interface simple_if;
   logic [7:0] data;

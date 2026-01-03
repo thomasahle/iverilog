@@ -1,7 +1,7 @@
 // Test UVM TLM blocking handshake between sequence and driver
 // Verifies that finish_item() blocks until item_done() is called
 `include "uvm_macros.svh"
-`include "uvm_pkg.sv"
+
 import uvm_pkg::*;
 
 // Counters for test verification

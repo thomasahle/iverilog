@@ -1,0 +1,3 @@
+Original: addr=0x00001234, data=0x0000abcd, name_str=test_packet
+Cloned: addr=0x00001234, data=0x0000abcd, name_str=test_packet
+PASSED: copy() works correctly

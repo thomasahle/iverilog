@@ -2,7 +2,7 @@
 // Verifies that analysis_port.write() forwards to connected FIFOs
 
 `include "uvm_macros.svh"
-`include "uvm_pkg.sv"
+
 import uvm_pkg::*;
 
 class my_transaction extends uvm_object;
