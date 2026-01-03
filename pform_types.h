@@ -90,6 +90,17 @@ struct inside_range_t {
       inside_range_t() : single_val(0), low_val(0), high_val(0) { }
 };
 
+/*
+ * Structure for case inside items. Used to collect case items
+ * that include value ranges like [low:high].
+ */
+struct case_inside_item_t {
+      std::list<inside_range_t*>* ranges;  // null for default
+      Statement* stmt;
+
+      case_inside_item_t() : ranges(0), stmt(0) { }
+};
+
 /* The lgate is gate instantiation information. */
 struct lgate : public LineInfo {
       explicit lgate() : parms(0), parms_by_name(0), ranges(0) { }
@@ -418,15 +429,21 @@ struct event_type_t : public data_type_t {
 /*
  * The virtual_interface_type_t represents a virtual interface property.
  * It stores the name of the interface type for later elaboration.
+ * For interface ports with modports, both interface_name and modport_name
+ * are set (e.g., handshake.src).
  */
 struct virtual_interface_type_t : public data_type_t {
-      inline explicit virtual_interface_type_t(perm_string n) : interface_name(n) { }
+      inline explicit virtual_interface_type_t(perm_string n)
+            : interface_name(n), modport_name() { }
+      inline explicit virtual_interface_type_t(perm_string n, perm_string mp)
+            : interface_name(n), modport_name(mp) { }
       ~virtual_interface_type_t() override;
 
       ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
       void pform_dump(std::ostream&out, unsigned indent) const override;
 
       perm_string interface_name;
+      perm_string modport_name;  // Optional modport name for interface ports
 };
 
 /*

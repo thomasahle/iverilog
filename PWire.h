@@ -21,6 +21,7 @@
 
 # include  "netlist.h"
 # include  "PNamedItem.h"
+# include  "PScope.h"
 # include  <list>
 # include  <map>
 # include  "StringHeap.h"
@@ -74,6 +75,9 @@ class PWire : public PNamedItem {
       void set_const(bool is_const) { is_const_ = is_const; };
       bool get_const() const { return is_const_; };
 
+      void set_lifetime(LexicalScope::lifetime_t lt) { lifetime_ = lt; };
+      LexicalScope::lifetime_t get_lifetime() const { return lifetime_; };
+
       void set_signed(bool flag);
       bool get_signed() const;
 
@@ -109,6 +113,9 @@ class PWire : public PNamedItem {
 
         // Whether the wire is variable declared with the const keyword.
       bool is_const_ = false;
+
+        // Explicit lifetime (static/automatic) or INHERITED from scope.
+      LexicalScope::lifetime_t lifetime_ = LexicalScope::INHERITED;
 
       bool is_elaborating_ = false;
 

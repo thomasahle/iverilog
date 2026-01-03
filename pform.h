@@ -402,17 +402,20 @@ extern void pform_makewire(const struct vlltype&li,
 			   NetNet::Type type,
 			   data_type_t*data_type,
 			   std::list<named_pexpr_t>*attr = 0,
-			   bool is_const = false);
+			   bool is_const = false,
+			   LexicalScope::lifetime_t lifetime = LexicalScope::INHERITED);
 
 extern void pform_make_var(const struct vlltype&loc,
 			   std::list<decl_assignment_t*>*assign_list,
 			   data_type_t*data_type,
 			   std::list<named_pexpr_t>*attr = 0,
-			   bool is_const = false);
+			   bool is_const = false,
+			   LexicalScope::lifetime_t lifetime = LexicalScope::INHERITED);
 
 extern void pform_make_var_init(const struct vlltype&li,
 				const pform_ident_t&name,
-				PExpr*expr);
+				PExpr*expr,
+				LexicalScope::lifetime_t lifetime = LexicalScope::INHERITED);
 
 /* This function is used when we have an incomplete port definition in
    a non-ansi style declaration. Look up the names of the wires, and set

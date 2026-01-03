@@ -786,6 +786,13 @@ void NetScope::add_signal(NetNet*net)
       signals_map_[net->name()]=net;
 }
 
+void NetScope::add_signal_alias(perm_string alias_name, NetNet*net)
+{
+      // Add an alias so the signal can be found by a different name
+      // in this scope. Used for static locals in automatic functions.
+      signals_map_[alias_name]=net;
+}
+
 void NetScope::rem_signal(NetNet*net)
 {
       ivl_assert(*this, net->scope() == this);

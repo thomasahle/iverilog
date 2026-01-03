@@ -1026,6 +1026,52 @@ NetNet* PWire::elaborate_sig(Design*des, NetScope*scope)
 	// enabled.
       const long warn_dimension_size = 1 << 30;
 
+	// Handle static local variables in automatic functions/tasks.
+	// These need to be created in the parent module scope and persist
+	// across calls.
+      if (lifetime_ == LexicalScope::STATIC && scope->is_auto()) {
+	    // Find the parent module scope
+	    NetScope*module_scope = scope;
+	    while (module_scope && module_scope->type() != NetScope::MODULE)
+		  module_scope = module_scope->parent();
+
+	    if (module_scope) {
+		  // Create a unique name for this static local variable
+		  // by combining function name and variable name
+		  perm_string static_name = lex_strings.make(
+			string(scope->basename().str()) + "$static$" + string(name_.str()));
+
+		  // Check if already elaborated
+		  if (NetNet*sig = module_scope->find_signal(static_name)) {
+			// Also ensure the alias exists in function scope
+			scope->add_signal_alias(name_, sig);
+			return sig;
+		  }
+
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PWire::elaborate_sig: "
+			     << "Static local " << name_ << " in automatic function "
+			     << scope->basename() << ", placing in "
+			     << scope_path(module_scope) << " as " << static_name << endl;
+		  }
+
+		  // Elaborate this signal in the module scope instead
+		  // Temporarily change name and lifetime for the recursive call
+		  perm_string saved_name = name_;
+		  LexicalScope::lifetime_t saved_lifetime = lifetime_;
+		  name_ = static_name;
+		  lifetime_ = LexicalScope::INHERITED;  // Prevent re-triggering static handling
+		  NetNet*sig = elaborate_sig(des, module_scope);
+		  name_ = saved_name;
+		  lifetime_ = saved_lifetime;
+
+		  // Also add an alias in the function scope so references work
+		  if (sig) scope->add_signal_alias(name_, sig);
+
+		  return sig;
+	    }
+      }
+
 	// Check if we elaborated this signal earlier because it was
 	// used in another declaration.
       if (NetNet*sig = scope->find_signal(name_))

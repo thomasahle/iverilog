@@ -495,6 +495,9 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
       PCase::Item*citem;
       std::vector<PCase::Item*>*citems;
 
+      case_inside_item_t*case_inside_item;
+      std::vector<case_inside_item_t*>*case_inside_items;
+
       lgate*gate;
       std::vector<lgate>*gates;
 
@@ -764,6 +767,8 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 
 %type <citem>  case_item
 %type <citems> case_items
+%type <case_inside_item>  case_inside_item
+%type <case_inside_items> case_inside_items
 
 %type <gate>  gate_instance
 %type <gates> gate_instance_list
@@ -2030,6 +2035,35 @@ data_type /* IEEE1800-2005: A.2.2.1 */
       { virtual_interface_type_t*tmp = new virtual_interface_type_t(lex_strings.make($2));
 	FILE_NAME(tmp, @1);
 	delete[]$2;
+	$$ = tmp;
+      }
+    /* Virtual interface with modport: virtual interface_name.modport_name */
+  | K_virtual TYPE_IDENTIFIER '.' IDENTIFIER
+      { virtual_interface_type_t*tmp = new virtual_interface_type_t(
+		lex_strings.make($2.text),
+		lex_strings.make($4));
+	FILE_NAME(tmp, @1);
+	delete[]$2.text;
+	delete[]$4;
+	$$ = tmp;
+      }
+  | K_virtual IDENTIFIER '.' IDENTIFIER
+      { virtual_interface_type_t*tmp = new virtual_interface_type_t(
+		lex_strings.make($2),
+		lex_strings.make($4));
+	FILE_NAME(tmp, @1);
+	delete[]$2;
+	delete[]$4;
+	$$ = tmp;
+      }
+    /* Interface port with modport: interface_name.modport_name (for port declarations) */
+  | TYPE_IDENTIFIER '.' IDENTIFIER
+      { virtual_interface_type_t*tmp = new virtual_interface_type_t(
+		lex_strings.make($1.text),
+		lex_strings.make($3));
+	FILE_NAME(tmp, @1);
+	delete[]$1.text;
+	delete[]$3;
 	$$ = tmp;
       }
   ;
@@ -4066,18 +4100,18 @@ block_item_decl
 	      data_type = new vector_type_t(IVL_VT_LOGIC, false, 0);
 	      FILE_NAME(data_type, @2);
 	}
-	pform_make_var(@2, $5, data_type, attributes_in_context, $1);
+	pform_make_var(@2, $5, data_type, attributes_in_context, $1, var_lifetime);
 	var_lifetime = LexicalScope::INHERITED;
       }
 
   | K_const_opt variable_lifetime_opt data_type list_of_variable_decl_assignments ';'
-      { if ($3) pform_make_var(@3, $4, $3, attributes_in_context, $1);
+      { if ($3) pform_make_var(@3, $4, $3, attributes_in_context, $1, var_lifetime);
 	var_lifetime = LexicalScope::INHERITED;
       }
 
   /* The extra `reg` is not valid (System)Verilog, this is a iverilog extension. */
   | K_const_opt variable_lifetime_opt K_reg data_type list_of_variable_decl_assignments ';'
-      { if ($4) pform_make_var(@4, $5, $4, attributes_in_context, $1);
+      { if ($4) pform_make_var(@4, $5, $4, attributes_in_context, $1, var_lifetime);
 	var_lifetime = LexicalScope::INHERITED;
       }
 
@@ -4478,6 +4512,38 @@ case_items
       }
   | case_item
       { $$ = new std::vector<PCase::Item*>(1, $1);
+      }
+  ;
+
+  /* case inside uses value ranges instead of plain expressions */
+case_inside_item
+  : inside_open_range_list ':' statement_or_null
+      { case_inside_item_t*tmp = new case_inside_item_t;
+	tmp->ranges = $1;
+	tmp->stmt = $3;
+	$$ = tmp;
+      }
+  | K_default ':' statement_or_null
+      { case_inside_item_t*tmp = new case_inside_item_t;
+	tmp->ranges = 0;
+	tmp->stmt = $3;
+	$$ = tmp;
+      }
+  | K_default statement_or_null
+      { case_inside_item_t*tmp = new case_inside_item_t;
+	tmp->ranges = 0;
+	tmp->stmt = $2;
+	$$ = tmp;
+      }
+  ;
+
+case_inside_items
+  : case_inside_items case_inside_item
+      { $1->push_back($2);
+	$$ = $1;
+      }
+  | case_inside_item
+      { $$ = new std::vector<case_inside_item_t*>(1, $1);
       }
   ;
 
@@ -9075,6 +9141,80 @@ statement_item /* This is roughly statement_item in the LRM */
       { PCase*tmp = new PCase($1, NetCase::EQZ, $4, $6);
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
+      }
+  | unique_priority K_case '(' expression ')' K_inside case_inside_items K_endcase
+      { /* Transform case inside into an if-else chain.
+	   For each item, build: (expr inside {ranges}) ? stmt : next_item
+	   Find the default statement first (if any). */
+	PExpr*case_expr = $4;
+	std::vector<case_inside_item_t*>*items = $7;
+	Statement*default_stmt = 0;
+	Statement*result = 0;
+
+	/* First pass: find default statement */
+	for (size_t idx = 0; idx < items->size(); idx++) {
+	      case_inside_item_t*item = (*items)[idx];
+	      if (item->ranges == 0) {
+		    default_stmt = item->stmt;
+		    break;
+	      }
+	}
+
+	/* Build if-else chain from bottom up (reverse order) */
+	result = default_stmt;
+	for (int idx = items->size() - 1; idx >= 0; idx--) {
+	      case_inside_item_t*item = (*items)[idx];
+	      if (item->ranges == 0) continue; /* skip default */
+
+	      /* Build condition: (case_expr inside {ranges}) */
+	      PExpr*cond = 0;
+	      for (std::list<inside_range_t*>::iterator it = item->ranges->begin();
+		   it != item->ranges->end(); ++it) {
+		    inside_range_t*rng = *it;
+		    PExpr*cmp = 0;
+		    if (rng->single_val) {
+			  /* Single value: (case_expr ==? val) for wildcard equality */
+			  cmp = new PEBComp('w', case_expr, rng->single_val);
+			  FILE_NAME(cmp, @6);
+		    } else if (rng->low_val && rng->high_val) {
+			  /* Range [low:high]: (case_expr >= low) && (case_expr <= high) */
+			  PExpr*ge = new PEBComp('G', case_expr, rng->low_val);
+			  FILE_NAME(ge, @6);
+			  PExpr*le = new PEBComp('L', case_expr, rng->high_val);
+			  FILE_NAME(le, @6);
+			  cmp = new PEBLogic('a', ge, le);
+			  FILE_NAME(cmp, @6);
+		    }
+		    if (cmp) {
+			  if (cond == 0) {
+				cond = cmp;
+			  } else {
+				cond = new PEBLogic('o', cond, cmp);
+				FILE_NAME(cond, @6);
+			  }
+		    }
+		    delete rng;
+	      }
+	      delete item->ranges;
+
+	      if (cond) {
+		    PCondit*tmp = new PCondit(cond, item->stmt, result);
+		    FILE_NAME(tmp, @6);
+		    result = tmp;
+	      } else if (item->stmt) {
+		    /* Empty ranges - just use statement directly (unusual) */
+		    result = item->stmt;
+	      }
+	      delete item;
+	}
+	delete items;
+
+	if (result == 0) {
+	      /* No items at all - return empty block */
+	      result = new PBlock(PBlock::BL_SEQ);
+	      FILE_NAME(result, @2);
+	}
+	$$ = result;
       }
   | unique_priority K_case '(' expression ')' error K_endcase
       { yyerrok; }

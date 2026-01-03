@@ -1035,6 +1035,7 @@ class NetScope : public Definitions, public Attrib {
 	   used to locate signals within a scope. */
 
       void add_signal(NetNet*);
+      void add_signal_alias(perm_string alias_name, NetNet*);
       void rem_signal(NetNet*);
       NetNet* find_signal(perm_string name);
 

@@ -1148,12 +1148,31 @@ PCallTask* pform_make_call_task(const struct vlltype&loc,
 void pform_make_var(const struct vlltype&loc,
 		    std::list<decl_assignment_t*>*assign_list,
 		    data_type_t*data_type, std::list<named_pexpr_t>*attr,
-		    bool is_const)
+		    bool is_const, LexicalScope::lifetime_t lifetime)
 {
       static const struct str_pair_t str = { IVL_DR_STRONG, IVL_DR_STRONG };
 
-      pform_makewire(loc, 0, str, assign_list, NetNet::REG, data_type, attr,
-		     is_const);
+      // If lifetime was explicitly specified, set it on the wires after creation
+      if (lifetime != LexicalScope::INHERITED) {
+	    // Get the wire names from assign_list before pform_makewire
+	    std::list<perm_string> wire_names;
+	    for (auto cur = assign_list->begin(); cur != assign_list->end(); ++cur) {
+		  wire_names.push_back((*cur)->name.first);
+	    }
+
+	    pform_makewire(loc, 0, str, assign_list, NetNet::REG, data_type, attr,
+			   is_const, lifetime);
+
+	    // Now set lifetime on the created wires
+	    LexicalScope*scope = pform_peek_scope();
+	    for (auto name : wire_names) {
+		  PWire*wire = scope->wires[name];
+		  if (wire) wire->set_lifetime(lifetime);
+	    }
+      } else {
+	    pform_makewire(loc, 0, str, assign_list, NetNet::REG, data_type, attr,
+			   is_const, lifetime);
+      }
 }
 
 void pform_make_foreach_declarations(const struct vlltype&loc,
@@ -2705,7 +2724,7 @@ void pform_make_pgassign_list(const struct vlltype&loc,
  * approved by OVI as enhancement BTF-B14.
  */
 void pform_make_var_init(const struct vlltype&li, const pform_ident_t&name,
-			 PExpr*expr)
+			 PExpr*expr, LexicalScope::lifetime_t lifetime)
 {
       if (! pform_at_module_level() && !gn_system_verilog()) {
 	    VLerror(li, "error: Variable declaration assignments are only "
@@ -2714,12 +2733,43 @@ void pform_make_var_init(const struct vlltype&li, const pform_ident_t&name,
 	    return;
       }
 
+      // Determine where to store the initialization
+      LexicalScope*target_scope = lexical_scope;
+
+      // If this is a static variable in an automatic function/task,
+      // store the initialization at module level so it runs once at time 0
+      if (lifetime == LexicalScope::STATIC &&
+	  lexical_scope->default_lifetime == LexicalScope::AUTOMATIC) {
+	    // Find the parent module scope by walking up and looking for a Module
+	    LexicalScope*scope = lexical_scope->parent_scope();
+	    while (scope && !dynamic_cast<Module*>(scope)) {
+		  scope = scope->parent_scope();
+	    }
+	    if (scope) {
+		  target_scope = scope;
+		  // Use the mangled name for the static local
+		  PScope*pscope = dynamic_cast<PScope*>(lexical_scope);
+		  if (pscope) {
+			pform_ident_t static_name;
+			static_name.first = lex_strings.make(
+			      string(pscope->pscope_name().str()) + "$static$" + string(name.first.str()));
+			static_name.second = name.second;
+			PEIdent*lval = new PEIdent(static_name.first, static_name.second);
+			FILE_NAME(lval, li);
+			PAssign*ass = new PAssign(lval, expr, true, true);
+			FILE_NAME(ass, li);
+			target_scope->var_inits.push_back(ass);
+			return;
+		  }
+	    }
+      }
+
       PEIdent*lval = new PEIdent(name.first, name.second);
       FILE_NAME(lval, li);
       PAssign*ass = new PAssign(lval, expr, !gn_system_verilog(), true);
       FILE_NAME(ass, li);
 
-      lexical_scope->var_inits.push_back(ass);
+      target_scope->var_inits.push_back(ass);
 }
 
 /*
@@ -2878,7 +2928,8 @@ void pform_makewire(const struct vlltype&li,
 		    NetNet::Type type,
 		    data_type_t*data_type,
 		    list<named_pexpr_t>*attr,
-		    bool is_const)
+		    bool is_const,
+		    LexicalScope::lifetime_t lifetime)
 {
       if (is_compilation_unit(lexical_scope) && !gn_system_verilog()) {
 	    VLerror(li, "error: Variable declarations must be contained within a module.");
@@ -2901,7 +2952,7 @@ void pform_makewire(const struct vlltype&li,
 	    assign_list->pop_front();
             if (PExpr*expr = first->expr.release()) {
                   if (type == NetNet::REG || type == NetNet::IMPLICIT_REG) {
-                        pform_make_var_init(li, first->name, expr);
+                        pform_make_var_init(li, first->name, expr, lifetime);
                   } else {
 		        PEIdent*lval = new PEIdent(first->name.first,
 						   first->name.second);
