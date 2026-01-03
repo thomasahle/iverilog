@@ -10561,7 +10561,8 @@ bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t)
 
       if (cobj) {
 	    // Increment m_sample_count property (index 3 in __ivl_covergroup)
-	    // Property layout: 0=m_bins_hit, 1=m_enabled, 2=m_inst_name, 3=m_sample_count
+	    // Properties are sorted alphabetically by Icarus:
+	    // 0=m_bins_hit, 1=m_enabled, 2=m_inst_name, 3=m_sample_count, 4=m_target_bins
 	    vvp_vector4_t cur_count;
 	    cobj->get_vec4(3, cur_count);
 	    uint64_t count = 0;
