@@ -256,16 +256,59 @@ void __vpiVThrStrStack::vpi_get_value(p_vpi_value vp)
       if (vpip_current_vthread)
 	    val = vthread_get_str_stack(vpip_current_vthread, depth_);
 
+      size_t size = val.size();
+
       switch (vp->format) {
 
 	  case vpiObjTypeVal:
 	    vp->format = vpiStringVal;
 	    // fallthrough
 	  case vpiStringVal:
-	    rbuf = static_cast<char *>(need_result_buf(val.size()+1, RBUF_VAL));
+	    rbuf = static_cast<char *>(need_result_buf(size+1, RBUF_VAL));
 	    strcpy(rbuf, val.c_str());
 	    vp->value.str = rbuf;
 	    break;
+
+	  case vpiDecStrVal: {
+	    // Convert (up to 4) characters to a numeric value, then to decimal string
+	    size_t use_size = size > 4 ? 4 : size;
+	    unsigned uint_value = 0;
+	    for (size_t i = 0; i < use_size; i++) {
+		  uint_value <<= 8;
+		  uint_value += (unsigned char)(val[i]);
+	    }
+	    static const size_t RBUF_USE_SIZE = 12;
+	    rbuf = static_cast<char *>(need_result_buf(RBUF_USE_SIZE, RBUF_VAL));
+	    snprintf(rbuf, RBUF_USE_SIZE, "%u", uint_value);
+	    vp->value.str = rbuf;
+	    break;
+	  }
+
+	  case vpiHexStrVal: {
+	    rbuf = static_cast<char *>(need_result_buf(2 * size + 1, RBUF_VAL));
+	    char*cp = rbuf;
+	    for (size_t i = 0; i < size; i++) {
+		  for (int nibble = 1; nibble >= 0; nibble--) {
+			*cp++ = "0123456789abcdef"[(val[i] >> (nibble*4)) & 15];
+		  }
+	    }
+	    *cp = 0;
+	    vp->value.str = rbuf;
+	    break;
+	  }
+
+	  case vpiBinStrVal: {
+	    rbuf = static_cast<char *>(need_result_buf(8 * size + 1, RBUF_VAL));
+	    char*cp = rbuf;
+	    for (size_t i = 0; i < size; i++) {
+		  for (int bit = 7; bit >= 0; bit--) {
+			*cp++ = "01"[(val[i] >> bit) & 1];
+		  }
+	    }
+	    *cp = 0;
+	    vp->value.str = rbuf;
+	    break;
+	  }
 
 	  default:
 	    fprintf(stderr, "vvp error: get %d not supported "
