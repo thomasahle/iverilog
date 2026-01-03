@@ -1,0 +1,6 @@
+Subscriber received transaction with value=42
+Subscriber received transaction with value=100
+Subscriber received transaction with value=255
+Received count: 3
+Last value: 255
+PASSED
