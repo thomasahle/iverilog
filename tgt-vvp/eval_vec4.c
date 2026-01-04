@@ -1097,9 +1097,11 @@ static void draw_assoc_method_vec4(ivl_expr_t expr)
       // For methods that update key, get the signal to store back to
       ivl_signal_t key_sig = NULL;
       unsigned key_wid = 32;
+      int key_is_string = 0;
       if (updates_key && key_expr && ivl_expr_type(key_expr) == IVL_EX_SIGNAL) {
 	    key_sig = ivl_expr_signal(key_expr);
 	    key_wid = ivl_expr_width(key_expr);
+	    key_is_string = (ivl_signal_data_type(key_sig) == IVL_VT_STRING);
       }
 
       if (base_expr) {
@@ -1121,8 +1123,12 @@ static void draw_assoc_method_vec4(ivl_expr_t expr)
 
 	    /* For first/last/next/prev, store updated key back to variable */
 	    if (key_sig) {
-		  fprintf(vvp_out, "    %%cast/vec4/str %u;\n", key_wid);
-		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", key_sig, key_wid);
+		  if (key_is_string) {
+			fprintf(vvp_out, "    %%store/str v%p_0;\n", key_sig);
+		  } else {
+			fprintf(vvp_out, "    %%cast/vec4/str %u;\n", key_wid);
+			fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", key_sig, key_wid);
+		  }
 	    }
       } else if (pidx >= 0) {
 	    /* Associative array is a direct class property */
@@ -1142,8 +1148,12 @@ static void draw_assoc_method_vec4(ivl_expr_t expr)
 
 	    /* For first/last/next/prev, store updated key back to variable */
 	    if (key_sig) {
-		  fprintf(vvp_out, "    %%cast/vec4/str %u;\n", key_wid);
-		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", key_sig, key_wid);
+		  if (key_is_string) {
+			fprintf(vvp_out, "    %%store/str v%p_0;\n", key_sig);
+		  } else {
+			fprintf(vvp_out, "    %%cast/vec4/str %u;\n", key_wid);
+			fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", key_sig, key_wid);
+		  }
 	    }
       } else {
 	    /* Standalone associative array variable */
@@ -1160,8 +1170,12 @@ static void draw_assoc_method_vec4(ivl_expr_t expr)
 
 	    /* For first/last/next/prev, store updated key back to variable */
 	    if (key_sig) {
-		  fprintf(vvp_out, "    %%cast/vec4/str %u;\n", key_wid);
-		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", key_sig, key_wid);
+		  if (key_is_string) {
+			fprintf(vvp_out, "    %%store/str v%p_0;\n", key_sig);
+		  } else {
+			fprintf(vvp_out, "    %%cast/vec4/str %u;\n", key_wid);
+			fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", key_sig, key_wid);
+		  }
 	    }
       }
 }
