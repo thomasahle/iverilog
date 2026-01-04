@@ -1,0 +1,7 @@
+PASS: tolower() basic
+PASS: toupper() basic
+PASS: tolower() no change needed
+PASS: toupper() no change needed
+PASS: tolower() with numbers
+PASS: toupper() with numbers
+PASSED: All 6 tests passed
