@@ -1417,6 +1417,24 @@ class_item /* IEEE1800-2005: A.1.8 */
 	delete $6;
       }
 
+    /* Pure virtual method declarations - abstract methods with no body */
+  | K_pure K_virtual class_item_qualifier_opt K_function data_type_or_implicit_or_void IDENTIFIER tf_port_list_parens_opt ';'
+      { pform_requires_sv(@1, "Pure virtual function");
+	/* Pure virtual function - treat like extern with virtual flag */
+	property_qualifier_t pq = $3 | property_qualifier_t::make_virtual();
+	pform_declare_extern_function(@1, pq, $5, $6, $7);
+	delete[] $6;
+	delete $7;
+      }
+  | K_pure K_virtual class_item_qualifier_opt K_task IDENTIFIER tf_port_list_parens_opt ';'
+      { pform_requires_sv(@1, "Pure virtual task");
+	/* Pure virtual task - treat like extern with virtual flag */
+	property_qualifier_t pq = $3 | property_qualifier_t::make_virtual();
+	pform_declare_extern_task(@1, pq, $5, $6);
+	delete[] $5;
+	delete $6;
+      }
+
     /* Class constraints... */
 
   | class_constraint

@@ -915,6 +915,7 @@ sv_typedef_scope1	normal,-g2009		ivltests
 sv_typedef_scope2	normal,-g2009		ivltests
 sv_typedef_scope3	normal,-g2009		ivltests
 sv_typename		gold,-g2012		ivltests
+sv_pure_virtual_syntax	gold,-g2012		ivltests
 sv_union1		normal,-g2009		ivltests
 sv_union1b		normal,-g2009		ivltests
 sv_union2		normal,-g2009		ivltests
