@@ -116,6 +116,17 @@ struct case_inside_item_t {
       case_inside_item_t() : ranges(0), stmt(0) { }
 };
 
+/*
+ * Structure for randcase items. Each item has a weight expression
+ * and a statement to execute if selected.
+ */
+struct randcase_item_t {
+      PExpr* weight;   // Weight expression (relative probability)
+      Statement* stmt;
+
+      randcase_item_t() : weight(0), stmt(0) { }
+};
+
 /* The lgate is gate instantiation information. */
 struct lgate : public LineInfo {
       explicit lgate() : parms(0), parms_by_name(0), ranges(0) { }

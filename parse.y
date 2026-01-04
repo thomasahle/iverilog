@@ -498,6 +498,9 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
       case_inside_item_t*case_inside_item;
       std::vector<case_inside_item_t*>*case_inside_items;
 
+      randcase_item_t*randcase_item;
+      std::vector<randcase_item_t*>*randcase_items;
+
       lgate*gate;
       std::vector<lgate>*gates;
 
@@ -774,6 +777,8 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <citems> case_items
 %type <case_inside_item>  case_inside_item
 %type <case_inside_items> case_inside_items
+%type <randcase_item>  randcase_item
+%type <randcase_items> randcase_items
 
 %type <gate>  gate_instance
 %type <gates> gate_instance_list
@@ -4661,6 +4666,26 @@ case_inside_items
       }
   | case_inside_item
       { $$ = new std::vector<case_inside_item_t*>(1, $1);
+      }
+  ;
+
+  /* randcase items: each item has a weight expression and a statement */
+randcase_item
+  : expression ':' statement_or_null
+      { randcase_item_t*tmp = new randcase_item_t;
+	tmp->weight = $1;
+	tmp->stmt = $3;
+	$$ = tmp;
+      }
+  ;
+
+randcase_items
+  : randcase_items randcase_item
+      { $1->push_back($2);
+	$$ = $1;
+      }
+  | randcase_item
+      { $$ = new std::vector<randcase_item_t*>(1, $1);
       }
   ;
 
@@ -9339,6 +9364,72 @@ statement_item /* This is roughly statement_item in the LRM */
       { yyerrok; }
   | unique_priority K_casez '(' expression ')' error K_endcase
       { yyerrok; }
+
+    /* randcase: weighted random selection statement.
+       Transform to: if ($urandom_range(0, total-1) < w1) stmt1
+                     else if ($urandom_range(0, total-1) < w1+w2) stmt2
+                     else stmtN */
+  | K_randcase randcase_items K_endcase
+      { std::vector<randcase_item_t*>*items = $2;
+	if (items->empty()) {
+	      PBlock*empty = new PBlock(PBlock::BL_SEQ);
+	      FILE_NAME(empty, @1);
+	      $$ = empty;
+	} else {
+	      /* First pass: compute cumulative sums forward */
+	      std::vector<PExpr*> cumulative_sums;
+	      for (size_t i = 0; i < items->size(); i++) {
+		    if (i == 0) {
+			  cumulative_sums.push_back((*items)[i]->weight);
+		    } else {
+			  PExpr*add = new PEBinary('+', cumulative_sums[i-1], (*items)[i]->weight);
+			  FILE_NAME(add, @1);
+			  cumulative_sums.push_back(add);
+		    }
+	      }
+
+	      /* Total weight is the last cumulative sum.
+	         Build $urandom_range(0, total-1) call */
+	      PExpr*total_weight = cumulative_sums[items->size() - 1];
+	      PExpr*one = new PENumber(new verinum(1));
+	      FILE_NAME(one, @1);
+	      PExpr*total_minus_one = new PEBinary('-', total_weight, one);
+	      FILE_NAME(total_minus_one, @1);
+
+	      PExpr*zero = new PENumber(new verinum(0));
+	      FILE_NAME(zero, @1);
+
+	      std::vector<named_pexpr_t> parms(2);
+	      parms[0].parm = zero;
+	      parms[1].parm = total_minus_one;
+
+	      PECallFunction*urandom = new PECallFunction(
+		    perm_string::literal("$urandom_range"), parms);
+	      FILE_NAME(urandom, @1);
+
+	      /* Build if-else chain from last to first */
+	      Statement*result = 0;
+	      for (int i = items->size() - 1; i >= 0; i--) {
+		    randcase_item_t*item = (*items)[i];
+
+		    if (i == (int)items->size() - 1) {
+			  /* Last item is the else clause (no condition) */
+			  result = item->stmt;
+		    } else {
+			  /* if ($urandom_range(0,total-1) < cumulative[i]) stmt[i] else result */
+			  PExpr*cmp = new PEBComp('<', urandom, cumulative_sums[i]);
+			  FILE_NAME(cmp, @1);
+			  PCondit*cond = new PCondit(cmp, item->stmt, result);
+			  FILE_NAME(cond, @1);
+			  result = cond;
+		    }
+		    delete item;
+	      }
+
+	      delete items;
+	      $$ = result;
+	}
+      }
 
   | K_if '(' expression ')' statement_or_null %prec less_than_K_else
       { PCondit*tmp = new PCondit($3, $5, 0);
