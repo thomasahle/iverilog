@@ -7534,8 +7534,12 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			// Apply inline constraint bounds
 			// Track excluded values for != constraints
 			// Track discrete allowed values for == constraints (from inside/dist)
+			// Track range pairs for multiple disjoint ranges (from dist with ranges)
 			std::vector<int64_t> excluded_values;
 			std::vector<int64_t> discrete_values;
+			std::vector<class_type::simple_bound_t> ge_bounds;  // >= bounds
+			std::vector<class_type::simple_bound_t> le_bounds;  // <= bounds
+			bool has_simple_bounds = false;
 
 			for (const auto& bound : inline_constraints) {
 			      if (bound.property_idx != i) continue;
@@ -7544,18 +7548,18 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    case '>':  // value > const  =>  min = const+1
 					  if (bound.const_bound + 1 > min_val)
 						min_val = bound.const_bound + 1;
+					  has_simple_bounds = true;
 					  break;
-				    case 'G':  // value >= const  =>  min = const
-					  if (bound.const_bound > min_val)
-						min_val = bound.const_bound;
+				    case 'G':  // value >= const
+					  ge_bounds.push_back(bound);
 					  break;
 				    case '<':  // value < const  =>  max = const-1
 					  if (bound.const_bound - 1 < max_val)
 						max_val = bound.const_bound - 1;
+					  has_simple_bounds = true;
 					  break;
-				    case 'L':  // value <= const  =>  max = const
-					  if (bound.const_bound < max_val)
-						max_val = bound.const_bound;
+				    case 'L':  // value <= const
+					  le_bounds.push_back(bound);
 					  break;
 				    case '=':  // value == const  =>  discrete allowed value
 					  discrete_values.push_back(bound.const_bound);
@@ -7565,6 +7569,28 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 					  break;
 				    default:
 					  break;
+			      }
+			}
+
+			// Build range list from paired >= and <= bounds
+			std::vector<std::pair<int64_t, int64_t>> ranges;
+			if (!ge_bounds.empty() || !le_bounds.empty()) {
+			      // Pair up bounds in order (from dist items)
+			      size_t ge_idx = 0, le_idx = 0;
+			      while (ge_idx < ge_bounds.size() || le_idx < le_bounds.size()) {
+				    int64_t low = min_val, high = max_val;
+				    if (ge_idx < ge_bounds.size()) {
+					  low = ge_bounds[ge_idx++].const_bound;
+				    }
+				    if (le_idx < le_bounds.size()) {
+					  high = le_bounds[le_idx++].const_bound;
+				    }
+				    // Clamp to variable bounds
+				    if (low < min_val) low = min_val;
+				    if (high > max_val) high = max_val;
+				    if (low <= high) {
+					  ranges.push_back({low, high});
+				    }
 			      }
 			}
 
@@ -7579,7 +7605,27 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      rval = discrete_values[pick];
 			      generated = true;
 			}
-			// Priority 2: Class-level constraints combined with inline bounds
+			// Priority 2: Multiple disjoint ranges (from dist {[a:b], [c:d], ...})
+			// Pick a random range, then pick a value within that range
+			else if (!ranges.empty()) {
+			      // Pick a random range (could weight by range size for uniform dist)
+			      size_t range_idx = rand() % ranges.size();
+			      int64_t low = ranges[range_idx].first;
+			      int64_t high = ranges[range_idx].second;
+			      int64_t range_size = high - low + 1;
+			      int avoid_tries = 0;
+			      do {
+				    rval = low + (rand() % range_size);
+				    bool is_excluded = false;
+				    for (auto excl : excluded_values) {
+					  if (rval == excl) { is_excluded = true; break; }
+				    }
+				    if (!is_excluded) break;
+				    avoid_tries++;
+			      } while (avoid_tries < 100);
+			      generated = true;
+			}
+			// Priority 3: Class-level constraints combined with inline bounds
 			else if (has_class_constraints) {
 			      rval = defn->generate_constrained_random(inst, i, wid);
 			      // Combine with inline bounds and excluded values
@@ -7605,7 +7651,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      }
 			      generated = true;
 			}
-			// Priority 3: Inline range constraints (min_val to max_val)
+			// Priority 4: Inline range constraints (> and < bounds)
 			else if (has_inline_constraints && min_val <= max_val) {
 			      // Generate within inline constraint bounds
 			      int64_t range = max_val - min_val + 1;
@@ -7622,7 +7668,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      } while (avoid_tries < 100 && range > (int64_t)excluded_values.size());
 			      generated = true;
 			}
-			// Priority 4: No constraints - purely random
+			// Priority 5: No constraints - purely random
 			else {
 			      // Generate purely random bits
 			      for (unsigned b = 0; b < wid; b++) {
@@ -7692,29 +7738,99 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			}
 		  }
 
-		  // Check other constraints with AND logic (all must be satisfied)
+		  // Check other constraints - handle range pairs with OR logic
+		  // Multiple ranges from dist like {[0:10], [200:$]} need OR between ranges
 		  if (success) {
+			// Group bounds by property for range detection
+			std::map<size_t, std::vector<class_type::simple_bound_t>> prop_bounds;
+			std::vector<class_type::simple_bound_t> simple_constraints;
+
 			for (const auto& bound : other_constraints) {
+			      // >= and <= are range bounds, pair them
+			      if (bound.op == 'G' || bound.op == 'L') {
+				    prop_bounds[bound.property_idx].push_back(bound);
+			      } else {
+				    simple_constraints.push_back(bound);
+			      }
+			}
+
+			// Check range bounds - group into pairs and OR between pairs
+			for (const auto& kv : prop_bounds) {
+			      size_t prop_idx = kv.first;
+			      const auto& bounds = kv.second;
+
 			      vvp_vector4_t val;
-			      cobj->get_vec4(bound.property_idx, val);
+			      cobj->get_vec4(prop_idx, val);
 			      int64_t prop_val = 0;
 			      for (unsigned b = 0; b < val.size() && b < 64; b++) {
 				    if (val.value(b) == BIT4_1)
 					  prop_val |= (1LL << b);
 			      }
 
-			      bool constraint_ok = true;
-			      switch (bound.op) {
-				    case '>': constraint_ok = (prop_val > bound.const_bound); break;
-				    case 'G': constraint_ok = (prop_val >= bound.const_bound); break;
-				    case '<': constraint_ok = (prop_val < bound.const_bound); break;
-				    case 'L': constraint_ok = (prop_val <= bound.const_bound); break;
-				    case '!': constraint_ok = (prop_val != bound.const_bound); break;
-				    default: break;
+			      // Pair up >= and <= bounds into ranges
+			      std::vector<std::pair<int64_t, int64_t>> ranges;
+			      int64_t pending_low = INT64_MIN;
+			      bool have_low = false;
+
+			      for (const auto& b : bounds) {
+				    if (b.op == 'G') {  // >=
+					  if (have_low) {
+						// Two lows in a row - start new range
+						ranges.push_back({pending_low, INT64_MAX});
+					  }
+					  pending_low = b.const_bound;
+					  have_low = true;
+				    } else if (b.op == 'L') {  // <=
+					  if (have_low) {
+						ranges.push_back({pending_low, b.const_bound});
+						have_low = false;
+					  } else {
+						// <= without >= is [INT64_MIN, high]
+						ranges.push_back({INT64_MIN, b.const_bound});
+					  }
+				    }
 			      }
-			      if (!constraint_ok && !bound.is_soft) {
+			      if (have_low) {
+				    ranges.push_back({pending_low, INT64_MAX});
+			      }
+
+			      // Check if value is in ANY range (OR logic)
+			      bool in_any_range = false;
+			      for (const auto& range : ranges) {
+				    if (prop_val >= range.first && prop_val <= range.second) {
+					  in_any_range = true;
+					  break;
+				    }
+			      }
+
+			      if (!in_any_range && !ranges.empty()) {
 				    success = false;
 				    break;
+			      }
+			}
+
+			// Check simple constraints (>, <, !=) with AND logic
+			if (success) {
+			      for (const auto& bound : simple_constraints) {
+				    vvp_vector4_t val;
+				    cobj->get_vec4(bound.property_idx, val);
+				    int64_t prop_val = 0;
+				    for (unsigned b = 0; b < val.size() && b < 64; b++) {
+					  if (val.value(b) == BIT4_1)
+						prop_val |= (1LL << b);
+				    }
+
+				    bool constraint_ok = true;
+				    switch (bound.op) {
+					  case '>': constraint_ok = (prop_val > bound.const_bound); break;
+					  case '<': constraint_ok = (prop_val < bound.const_bound); break;
+					  case '!': constraint_ok = (prop_val != bound.const_bound); break;
+					  default: break;
+				    }
+				    if (!constraint_ok && !bound.is_soft) {
+					  success = false;
+					  break;
+				    }
 			      }
 			}
 		  }

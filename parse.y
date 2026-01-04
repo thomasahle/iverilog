@@ -1739,6 +1739,27 @@ dist_item
         tmp->high_val = $4;
         $$ = tmp;
       }
+  | '[' expression ':' '$' ']' dist_weight_opt
+      { /* Unbounded upper range [low:$] - treat as range to max value */
+        inside_range_t*tmp = new inside_range_t;
+        tmp->low_val = $2;
+        /* Use a large constant for unbounded upper - will be type-limited later */
+        verinum*max_v = new verinum(verinum::V1, 32);
+        for (unsigned i = 0; i < 31; i++) max_v->set(i, verinum::V1);
+        max_v->set(31, verinum::V0);  // Keep it positive (0x7FFFFFFF)
+        tmp->high_val = new PENumber(max_v);
+        FILE_NAME(tmp->high_val, @4);
+        $$ = tmp;
+      }
+  | '[' '$' ':' expression ']' dist_weight_opt
+      { /* Unbounded lower range [$:high] - treat as range from min value */
+        inside_range_t*tmp = new inside_range_t;
+        /* Use 0 for unbounded lower */
+        tmp->low_val = new PENumber(new verinum((uint64_t)0, 32));
+        FILE_NAME(tmp->low_val, @2);
+        tmp->high_val = $4;
+        $$ = tmp;
+      }
   ;
 
 dist_weight_opt
