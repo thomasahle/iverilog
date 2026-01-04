@@ -1730,6 +1730,27 @@ unsigned PECallFunction::test_width_sfunc_(Design*des, NetScope*scope,
 	    return expr_width_;
       }
 
+      if (name=="$typename") {
+	    PExpr *expr = parms_.size() > 0 ? parms_[0].parm : 0;
+	    if (expr) {
+		    // The argument type/width is self-determined
+		  width_mode_t arg_mode = SIZED;
+		  expr->test_width(des, scope, arg_mode);
+	    }
+
+	    expr_type_   = IVL_VT_STRING;
+	    expr_width_  = 0;  // string has dynamic width
+	    min_width_   = 0;
+	    signed_flag_ = false;
+
+	    if (debug_elaborate)
+		  cerr << get_fileline() << ": " << __func__ << ": "
+		       << "test_width of $typename returns string type."
+		       << endl;
+
+	    return expr_width_;
+      }
+
 	/* Get the return type of the system function by looking it up
 	   in the sfunc_table. */
       const struct sfunc_return_type*sfunc_info = lookup_sys_func(name);
@@ -2273,6 +2294,68 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 	    sub->set_line(*this);
 
 	    return cast_to_width_(sub, expr_wid);
+      }
+
+	/* Handle $typename(expr) system function.
+	   Returns a string with the type name of the expression. */
+      if (name=="$typename") {
+	    if ((parms_.size() != 1) || !parms_[0].parm) {
+		  cerr << get_fileline() << ": error: The " << name
+		       << " function takes exactly one(1) argument." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
+	    const PExpr *expr = parms_[0].parm;
+
+	    // Determine the type name based on the expression's type
+	    string type_name;
+
+	    // Check if it's a type expression first
+	    if (const PETypename*type_expr = dynamic_cast<const PETypename*>(expr)) {
+		  // Get the type from the typename expression
+		  ivl_type_t data_type = type_expr->get_type()->elaborate_type(des, scope);
+		  if (data_type) {
+			// For now, just use a basic description
+			type_name = "type";
+		  } else {
+			type_name = "unknown";
+		  }
+	    } else {
+		  // Get the type from the expression
+		  ivl_variable_type_t etype = expr->expr_type();
+		  switch (etype) {
+			case IVL_VT_LOGIC:
+			      type_name = "logic";
+			      break;
+			case IVL_VT_BOOL:
+			      type_name = "bit";
+			      break;
+			case IVL_VT_REAL:
+			      type_name = "real";
+			      break;
+			case IVL_VT_STRING:
+			      type_name = "string";
+			      break;
+			case IVL_VT_CLASS:
+			      type_name = "class";
+			      break;
+			case IVL_VT_DARRAY:
+			      type_name = "dynamic array";
+			      break;
+			case IVL_VT_QUEUE:
+			      type_name = "queue";
+			      break;
+			default:
+			      type_name = "unknown";
+			      break;
+		  }
+	    }
+
+	    NetECString*sub = new NetECString(type_name);
+	    sub->set_line(*this);
+
+	    return sub;
       }
 
 	/* Handle $cast(dest, src) system function.

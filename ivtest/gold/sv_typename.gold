@@ -1,0 +1,6 @@
+PASS: $typename(int) = 'bit'
+PASS: $typename(real) = 'real'
+PASS: $typename(string) = 'string'
+PASS: $typename(bit[7:0]) = 'bit'
+PASS: $typename(logic[15:0]) = 'logic'
+PASSED: All 5 tests passed
