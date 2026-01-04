@@ -1,0 +1,6 @@
+PASS: atooct('377') = 255
+PASS: atooct('10') = 8
+PASS: atobin('11111111') = 255
+PASS: atobin('1010') = 10
+PASS: atobin('1111_1111') = 255
+PASSED: All 5 tests passed

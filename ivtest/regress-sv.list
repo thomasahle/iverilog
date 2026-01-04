@@ -1272,3 +1272,4 @@ sv_test_local_static	normal,-g2012		ivltests gold=sv_test_local_static.gold
 sv_string_compare           normal,-g2012           ivltests gold=sv_string_compare.gold
 sv_string_getc              normal,-g2012           ivltests gold=sv_string_getc.gold
 sv_string_putc              normal,-g2012           ivltests gold=sv_string_putc.gold
+sv_string_atooct_atobin     normal,-g2012           ivltests gold=sv_string_atooct_atobin.gold

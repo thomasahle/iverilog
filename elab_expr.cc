@@ -7327,6 +7327,20 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
+	    if (method_name == "atooct") {
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_string_method$atooct",
+						     netvector_t::integer_type(), 1);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
+	    if (method_name == "atobin") {
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_string_method$atobin",
+						     netvector_t::integer_type(), 1);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
 	    if (method_name == "tolower") {
 		  NetESFunc*sys_expr = new NetESFunc("$ivl_string_method$tolower",
 						     &netstring_t::type_string, 1);
