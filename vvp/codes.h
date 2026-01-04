@@ -218,6 +218,7 @@ extern bool of_QPOP_B_V(vthread_t thr, vvp_code_t code);
 extern bool of_QPOP_F_OBJ(vthread_t thr, vvp_code_t code);
 extern bool of_QPOP_F_REAL(vthread_t thr, vvp_code_t code);
 extern bool of_QFIND(vthread_t thr, vvp_code_t code);
+extern bool of_QFIND_PROP(vthread_t thr, vvp_code_t code);
 extern bool of_QPOP_F_STR(vthread_t thr, vvp_code_t code);
 extern bool of_QPOP_F_V(vthread_t thr, vvp_code_t code);
 extern bool of_QPRODUCT(vthread_t thr, vvp_code_t code);

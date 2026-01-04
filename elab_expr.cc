@@ -5524,39 +5524,75 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      fname = perm_string::literal("$ivl_array_locator$find_index");
 
 			// Try to analyze the 'with' clause for simple cases like 'item == value'
+			// or 'item.property == value'
 			NetExpr*cmp_value = nullptr;
+			int item_prop_idx = -1;  // Property index for item.property pattern
 			PEBinary*bin_with = dynamic_cast<PEBinary*>(with_expr_);
 			if (bin_with && bin_with->get_op() == 'e') {
-			      // Check if left or right side is 'item'
+			      // Check if left or right side is 'item' or 'item.property'
 			      PEIdent*left_id = dynamic_cast<PEIdent*>(bin_with->get_left());
 			      PEIdent*right_id = dynamic_cast<PEIdent*>(bin_with->get_right());
 			      PExpr*value_expr = nullptr;
+			      PEIdent*item_id = nullptr;
 
 			      if (left_id && peek_head_name(left_id->path()) == perm_string::literal("item")) {
 				    value_expr = bin_with->get_right();
+				    item_id = left_id;
 			      } else if (right_id && peek_head_name(right_id->path()) == perm_string::literal("item")) {
 				    value_expr = bin_with->get_left();
+				    item_id = right_id;
 			      }
 
-			      if (value_expr) {
+			      if (value_expr && item_id) {
 				    // Elaborate the comparison value
 				    cmp_value = elab_and_eval(des, scope, value_expr, -1, true);
+
+				    // Check if this is item.property pattern (path has 2 components)
+				    if (item_id->path().name.size() == 2) {
+					  // Get the property name from second component
+					  pform_name_t::const_iterator it = item_id->path().name.begin();
+					  ++it;  // Skip "item"
+					  perm_string item_prop_name = it->name;
+
+					  // Get the class type from queue element type
+					  const netclass_t*elem_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+					  if (elem_class) {
+						item_prop_idx = elem_class->property_idx_from_name(item_prop_name);
+						if (item_prop_idx < 0) {
+						      cerr << get_fileline() << ": error: Property '"
+							   << item_prop_name << "' not found in class '"
+							   << elem_class->get_name() << "'." << endl;
+						      des->errors += 1;
+						      return 0;
+						}
+					  }
+				    }
 			      }
 			}
 
 			if (cmp_value) {
-			      // Simple 'item == value' case - pass queue and value to VVP
-			      NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 2);
-			      sys_expr->set_line(*this);
-			      sys_expr->parm(0, prop_expr);
-			      sys_expr->parm(1, cmp_value);
-			      return sys_expr;
+			      if (item_prop_idx >= 0) {
+				    // 'item.property == value' case - pass queue, property index, and value
+				    NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 3);
+				    sys_expr->set_line(*this);
+				    sys_expr->parm(0, prop_expr);
+				    sys_expr->parm(1, new NetEConst(verinum(item_prop_idx)));
+				    sys_expr->parm(2, cmp_value);
+				    return sys_expr;
+			      } else {
+				    // Simple 'item == value' case - pass queue and value to VVP
+				    NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 2);
+				    sys_expr->set_line(*this);
+				    sys_expr->parm(0, prop_expr);
+				    sys_expr->parm(1, cmp_value);
+				    return sys_expr;
+			      }
 			}
 
 			// Complex 'with' clause - emit warning and return empty queue
 			cerr << get_fileline() << ": warning: Array locator method '"
 			     << method_name << "' with complex 'with' clause on class property is not fully implemented. "
-			     << "Only 'item == value' patterns are supported." << endl;
+			     << "Only 'item == value' and 'item.property == value' patterns are supported." << endl;
 
 			NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 1);
 			sys_expr->set_line(*this);
@@ -6632,40 +6668,75 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			fname = perm_string::literal("$ivl_array_locator$find_index");
 
 		  // Try to analyze the 'with' clause for simple cases like 'item == value'
+		  // or 'item.property == value'
 		  NetExpr*cmp_value = nullptr;
+		  int item_prop_idx = -1;  // Property index for item.property pattern
 		  PEBinary*bin_with = dynamic_cast<PEBinary*>(with_expr_);
 		  if (bin_with && bin_with->get_op() == 'e') {
-			// Check if left or right side is 'item'
+			// Check if left or right side is 'item' or 'item.property'
 			PEIdent*left_id = dynamic_cast<PEIdent*>(bin_with->get_left());
 			PEIdent*right_id = dynamic_cast<PEIdent*>(bin_with->get_right());
 			PExpr*value_expr = nullptr;
+			PEIdent*item_id = nullptr;
 
 			if (left_id && peek_head_name(left_id->path()) == perm_string::literal("item")) {
 			      value_expr = bin_with->get_right();
+			      item_id = left_id;
 			} else if (right_id && peek_head_name(right_id->path()) == perm_string::literal("item")) {
 			      value_expr = bin_with->get_left();
+			      item_id = right_id;
 			}
 
-			if (value_expr) {
+			if (value_expr && item_id) {
 			      // Elaborate the comparison value
-			      // Use elab_and_eval for safer elaboration
 			      cmp_value = elab_and_eval(des, scope, value_expr, -1, true);
+
+			      // Check if this is item.property pattern (path has 2 components)
+			      if (item_id->path().name.size() == 2) {
+				    // Get the property name from second component
+				    pform_name_t::const_iterator prop_it = item_id->path().name.begin();
+				    ++prop_it;  // Skip "item"
+				    perm_string item_prop_name = prop_it->name;
+
+				    // Get the class type from queue element type
+				    const netclass_t*elem_class = dynamic_cast<const netclass_t*>(element_type);
+				    if (elem_class) {
+					  item_prop_idx = elem_class->property_idx_from_name(item_prop_name);
+					  if (item_prop_idx < 0) {
+						cerr << get_fileline() << ": error: Property '"
+						     << item_prop_name << "' not found in class '"
+						     << elem_class->get_name() << "'." << endl;
+						des->errors += 1;
+						return 0;
+					  }
+				    }
+			      }
 			}
 		  }
 
 		  if (cmp_value) {
-			// Simple 'item == value' case - pass queue and value to VVP
-			NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 2);
-			sys_expr->set_line(*this);
-			sys_expr->parm(0, sub_expr);
-			sys_expr->parm(1, cmp_value);
-			return sys_expr;
+			if (item_prop_idx >= 0) {
+			      // 'item.property == value' case - pass queue, property index, and value
+			      NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 3);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, sub_expr);
+			      sys_expr->parm(1, new NetEConst(verinum(item_prop_idx)));
+			      sys_expr->parm(2, cmp_value);
+			      return sys_expr;
+			} else {
+			      // Simple 'item == value' case - pass queue and value to VVP
+			      NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 2);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, sub_expr);
+			      sys_expr->parm(1, cmp_value);
+			      return sys_expr;
+			}
 		  }
 
 		  // Complex 'with' clause - emit warning and return empty queue
 		  cerr << get_fileline() << ": warning: Array locator method '"
 		       << method_name << "' with complex 'with' clause is not fully implemented. "
-		       << "Only 'item == value' patterns are supported." << endl;
+		       << "Only 'item == value' and 'item.property == value' patterns are supported." << endl;
 
 		  NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 1);
 		  sys_expr->set_line(*this);

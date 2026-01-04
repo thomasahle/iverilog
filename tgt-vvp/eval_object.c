@@ -418,6 +418,32 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    if (strcmp(method, "find_first_index") == 0) mode = 1;
 	    else if (strcmp(method, "find_last_index") == 0) mode = 2;
 
+	    if (nparms >= 3) {
+		  /* item.property == value pattern - use %qfind_prop opcode */
+		  ivl_expr_t prop_idx_arg = ivl_expr_parm(ex, 1);
+		  ivl_expr_t cmp_arg = ivl_expr_parm(ex, 2);
+
+		  /* Evaluate the queue onto object stack */
+		  draw_eval_object(queue_arg);
+
+		  /* Evaluate the comparison value onto vec4 stack */
+		  draw_eval_vec4(cmp_arg);
+
+		  /* Get the property index (should be a constant) */
+		  int prop_idx = 0;
+		  if (ivl_expr_type(prop_idx_arg) == IVL_EX_NUMBER) {
+			const char*bits = ivl_expr_bits(prop_idx_arg);
+			unsigned wid = ivl_expr_width(prop_idx_arg);
+			for (unsigned i = 0; i < wid; i++) {
+			      if (bits[i] == '1') prop_idx |= (1 << i);
+			}
+		  }
+
+		  /* Emit the find_prop opcode with mode and property index */
+		  fprintf(vvp_out, "    %%qfind_prop %d, %d; // %s (item.property pattern)\n", mode, prop_idx, method);
+		  return 0;
+	    }
+
 	    if (nparms >= 2) {
 		  /* We have a comparison value - use the %qfind opcode */
 		  ivl_expr_t cmp_arg = ivl_expr_parm(ex, 1);
