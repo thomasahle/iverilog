@@ -296,6 +296,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%pushi/vec4",of_PUSHI_VEC4,3,{OA_BIT1,   OA_BIT2,   OA_NUMBER} },
       { "%pushv/str", of_PUSHV_STR, 0,{OA_NONE,   OA_NONE,   OA_NONE} },
       { "%putc/str/vec4",of_PUTC_STR_VEC4,2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
+      { "%qfind",      of_QFIND,      1,{OA_NUMBER,OA_NONE,OA_NONE} },
       { "%qinsert/obj", of_QINSERT_OBJ, 2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
       { "%qinsert/real",of_QINSERT_REAL,2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
       { "%qinsert/str", of_QINSERT_STR, 2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },

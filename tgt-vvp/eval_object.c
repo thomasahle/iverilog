@@ -409,15 +409,33 @@ static int eval_object_sfunc(ivl_expr_t ex)
 
       /* Array locator methods - return a queue of int indices */
       if (strncmp(name, "$ivl_array_locator$", 19) == 0) {
-	    /* Get the source queue argument */
-	    ivl_expr_t arg = ivl_expr_parm(ex, 0);
+	    const char* method = name + 19; /* Skip "$ivl_array_locator$" prefix */
+	    ivl_expr_t queue_arg = ivl_expr_parm(ex, 0);
+	    unsigned nparms = ivl_expr_parms(ex);
 
-	    /* For now, emit a new empty queue.
-	     * TODO: Implement actual array locator search logic.
-	     * The 'with' clause expression would need to be evaluated
-	     * for each element of the source queue. */
-	    (void)arg;
-	    fprintf(vvp_out, "    %%new/darray 32, \"sb32\"; array locator result queue\n");
+	    /* Determine the locator mode: 0=find_index, 1=find_first_index, 2=find_last_index */
+	    int mode = 0;
+	    if (strcmp(method, "find_first_index") == 0) mode = 1;
+	    else if (strcmp(method, "find_last_index") == 0) mode = 2;
+
+	    if (nparms >= 2) {
+		  /* We have a comparison value - use the %qfind opcode */
+		  ivl_expr_t cmp_arg = ivl_expr_parm(ex, 1);
+
+		  /* Evaluate the queue onto object stack */
+		  draw_eval_object(queue_arg);
+
+		  /* Evaluate the comparison value onto vec4 stack */
+		  draw_eval_vec4(cmp_arg);
+
+		  /* Emit the find opcode with mode */
+		  fprintf(vvp_out, "    %%qfind %d; // %s\n", mode, method);
+		  return 0;
+	    }
+
+	    /* No comparison value - complex 'with' clause not supported */
+	    /* Return empty queue */
+	    fprintf(vvp_out, "    %%new/darray 32, \"sb32\"; array locator (complex with clause)\n");
 	    return 0;
       }
 

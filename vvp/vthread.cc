@@ -7199,6 +7199,83 @@ bool of_QPRODUCT(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qfind <mode>
+ * Find elements in a queue matching a value.
+ * Mode: 0=find_index (all), 1=find_first_index, 2=find_last_index
+ * Queue is on object stack, comparison value is on vec4 stack.
+ * Pushes result queue (of int indices) onto object stack.
+ */
+bool of_QFIND(vthread_t thr, vvp_code_t cp)
+{
+      unsigned mode = cp->number;
+
+      // Pop comparison value from vec4 stack
+      vvp_vector4_t cmp_val = thr->pop_vec4();
+
+      // Pop queue from object stack
+      vvp_object_t queue_obj;
+      thr->pop_object(queue_obj);
+
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return empty result queue
+	    vvp_object_t result;
+	    result.reset(new vvp_queue_vec4);
+	    thr->push_object(result);
+	    return true;
+      }
+
+      // Create result queue to hold matching indices
+      vvp_queue_vec4*result = new vvp_queue_vec4;
+      size_t qsize = queue->get_size();
+
+      // Helper lambda to convert index to vvp_vector4_t
+      auto make_idx_vec = [](size_t idx) {
+	    vvp_vector4_t vec(32);
+	    for (unsigned i = 0; i < 32; i++) {
+		  vec.set_bit(i, (idx >> i) & 1 ? BIT4_1 : BIT4_0);
+	    }
+	    return vec;
+      };
+
+      if (mode == 0) {
+	    // find_index: return all matching indices
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i, elem);
+		  if (elem.eeq(cmp_val)) {
+			result->push_back(make_idx_vec(i), 0);
+		  }
+	    }
+      } else if (mode == 1) {
+	    // find_first_index: return first matching index
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i, elem);
+		  if (elem.eeq(cmp_val)) {
+			result->push_back(make_idx_vec(i), 0);
+			break;
+		  }
+	    }
+      } else if (mode == 2) {
+	    // find_last_index: return last matching index
+	    for (size_t i = qsize; i > 0; i--) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i - 1, elem);
+		  if (elem.eeq(cmp_val)) {
+			result->push_back(make_idx_vec(i - 1), 0);
+			break;
+		  }
+	    }
+      }
+
+      vvp_object_t result_obj;
+      result_obj.reset(result);
+      thr->push_object(result_obj);
+      return true;
+}
+
+/*
  * %qunique <var-label>
  * Push a queue with unique elements to the object stack.
  */

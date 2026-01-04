@@ -6602,18 +6602,45 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  else
 			fname = perm_string::literal("$ivl_array_locator$find_index");
 
-		  // Elaborate the 'with' expression in the current scope
-		  // Note: The 'item' variable in the with expression needs special handling
-		  // For now, just pass the source queue - runtime will handle the search
+		  // Try to analyze the 'with' clause for simple cases like 'item == value'
+		  NetExpr*cmp_value = nullptr;
+		  PEBinary*bin_with = dynamic_cast<PEBinary*>(with_expr_);
+		  if (bin_with && bin_with->get_op() == 'e') {
+			// Check if left or right side is 'item'
+			PEIdent*left_id = dynamic_cast<PEIdent*>(bin_with->get_left());
+			PEIdent*right_id = dynamic_cast<PEIdent*>(bin_with->get_right());
+			PExpr*value_expr = nullptr;
+
+			if (left_id && peek_head_name(left_id->path()) == perm_string::literal("item")) {
+			      value_expr = bin_with->get_right();
+			} else if (right_id && peek_head_name(right_id->path()) == perm_string::literal("item")) {
+			      value_expr = bin_with->get_left();
+			}
+
+			if (value_expr) {
+			      // Elaborate the comparison value
+			      // Use elab_and_eval for safer elaboration
+			      cmp_value = elab_and_eval(des, scope, value_expr, -1, true);
+			}
+		  }
+
+		  if (cmp_value) {
+			// Simple 'item == value' case - pass queue and value to VVP
+			NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 2);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, sub_expr);
+			sys_expr->parm(1, cmp_value);
+			return sys_expr;
+		  }
+
+		  // Complex 'with' clause - emit warning and return empty queue
+		  cerr << get_fileline() << ": warning: Array locator method '"
+		       << method_name << "' with complex 'with' clause is not fully implemented. "
+		       << "Only 'item == value' patterns are supported." << endl;
+
 		  NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 1);
 		  sys_expr->set_line(*this);
 		  sys_expr->parm(0, sub_expr);
-
-		  // Emit warning that this is partially implemented
-		  cerr << get_fileline() << ": warning: Array locator method '"
-		       << method_name << "' with 'with' clause is partially implemented. "
-		       << "Results may be incorrect." << endl;
-
 		  return sys_expr;
 	    }
 
