@@ -24,6 +24,7 @@
 # include  <vector>
 # include  <valarray>
 # include  <memory>
+# include  <set>
 # include  "netlist.h"
 # include  "verinum.h"
 # include  "LineInfo.h"
@@ -755,6 +756,25 @@ class PEUnary : public PExpr {
       PExpr*expr_;
 };
 
+/*
+ * PESoftConstraint is a marker wrapper that indicates an inline constraint
+ * expression is soft. Soft constraints are preferred but don't cause
+ * randomize() to fail if they cannot be satisfied.
+ */
+class PESoftConstraint : public PExpr {
+
+    public:
+      explicit PESoftConstraint(PExpr*ex);
+      ~PESoftConstraint() override;
+
+      virtual void dump(std::ostream&out) const override;
+
+      PExpr* get_expr() const { return expr_; }
+
+    private:
+      PExpr*expr_;
+};
+
 class PEBinary : public PExpr {
 
     public:
@@ -945,6 +965,9 @@ class PECallFunction : public PExpr {
 	// Set inline constraints for randomize() with { ... }
       void set_inline_constraints(std::list<PExpr*>* cons);
       const std::list<PExpr*>& get_inline_constraints() const { return inline_constraints_; }
+	// Mark a constraint as soft
+      void mark_constraint_soft(const PExpr* expr) { soft_constraints_.insert(expr); }
+      bool is_constraint_soft(const PExpr* expr) const { return soft_constraints_.count(expr) > 0; }
 
       virtual void dump(std::ostream &) const override;
 
@@ -970,6 +993,8 @@ class PECallFunction : public PExpr {
 
         // For randomize() with { inline constraints }
       std::list<PExpr*> inline_constraints_;
+        // Track which constraints are soft
+      std::set<const PExpr*> soft_constraints_;
 
         // For system functions.
       bool is_overridden_;

@@ -580,6 +580,22 @@ bool PEUnary::has_aa_term(Design*des, NetScope*scope) const
       return expr_->has_aa_term(des, scope);
 }
 
+PESoftConstraint::PESoftConstraint(PExpr*ex)
+: expr_(ex)
+{
+}
+
+PESoftConstraint::~PESoftConstraint()
+{
+}
+
+void PESoftConstraint::dump(std::ostream&out) const
+{
+      out << "soft ";
+      if (expr_)
+            expr_->dump(out);
+}
+
 PEVoid::PEVoid()
 {
 }

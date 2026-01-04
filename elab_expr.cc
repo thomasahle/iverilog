@@ -123,27 +123,37 @@ static bool analyze_constraint_expr(const PExpr*expr,
 /*
  * Recursive helper to extract ALL bounds from a constraint expression.
  * Handles logical AND expressions (from 'inside' constraints) by recursively
- * processing both sides. Populates the bounds vector with (prop_name, op_code, const_value).
+ * processing both sides. Handles PESoftConstraint wrapper to mark soft constraints.
+ * Populates the bounds vector with (prop_name, op_code, const_value, is_soft).
  */
 static void analyze_constraint_expr_recursive(const PExpr*expr,
-                                              std::vector<std::tuple<perm_string, int, int64_t>>& bounds,
+                                              std::vector<std::tuple<perm_string, int, int64_t, bool>>& bounds,
                                               Design*des = nullptr,
-                                              NetScope*scope = nullptr)
+                                              NetScope*scope = nullptr,
+                                              bool is_soft = false)
 {
+      // Check for soft constraint wrapper
+      const PESoftConstraint*soft = dynamic_cast<const PESoftConstraint*>(expr);
+      if (soft) {
+            // Unwrap and mark as soft
+            analyze_constraint_expr_recursive(soft->get_expr(), bounds, des, scope, true);
+            return;
+      }
+
       // Check for logical AND expression (from 'inside' constraints)
       // e.g., (x >= 10) && (x <= 20) from "inside {[10:20]}"
       const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
       if (bin && bin->get_op() == 'a') {
             // Recursively extract bounds from both sides of AND
-            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope);
-            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope);
+            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope, is_soft);
+            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope, is_soft);
             return;
       }
 
       // For logical OR, process each side (though OR bounds are harder to enforce)
       if (bin && bin->get_op() == 'o') {
-            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope);
-            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope);
+            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope, is_soft);
+            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope, is_soft);
             return;
       }
 
@@ -152,7 +162,7 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
       int op_code;
       int64_t const_value;
       if (analyze_constraint_expr(expr, prop_name, op_code, const_value, des, scope)) {
-            bounds.push_back(std::make_tuple(prop_name, op_code, const_value));
+            bounds.push_back(std::make_tuple(prop_name, op_code, const_value, is_soft));
       }
 }
 
@@ -2466,11 +2476,11 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 	    // Check for inline constraints (including 'inside' constraints which
 	    // become AND expressions)
 	    const std::list<PExpr*>& constraints = get_inline_constraints();
-	    std::vector<std::tuple<int, int64_t>> bounds;  // (op_code, const_val)
+	    std::vector<std::tuple<int, int64_t>> bounds;  // (op_code with soft flag, const_val)
 
 	    for (const PExpr* cons : constraints) {
 		  // Use recursive extraction to handle AND expressions from 'inside'
-		  std::vector<std::tuple<perm_string, int, int64_t>> extracted;
+		  std::vector<std::tuple<perm_string, int, int64_t, bool>> extracted;
 		  analyze_constraint_expr_recursive(cons, extracted, des, scope);
 
 		  // Filter to only include bounds for our signal
@@ -2478,8 +2488,11 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 			perm_string cons_name = std::get<0>(ex);
 			int op_code = std::get<1>(ex);
 			int64_t const_val = std::get<2>(ex);
+			bool is_soft = std::get<3>(ex);
 			// Check if this constraint is for our signal
 			if (cons_name == sig_name) {
+			      // Encode soft flag in bit 3 of op_code
+			      if (is_soft) op_code |= 8;
 			      bounds.push_back(std::make_tuple(op_code, const_val));
 			}
 		  }
@@ -2495,7 +2508,7 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 	    // Add inline constraint bounds as constant integer parameters
 	    unsigned parm_idx = 1;
 	    for (const auto& bound : bounds) {
-		  // Operator code
+		  // Operator code (with soft flag in bit 3)
 		  NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
 		  sys_expr->parm(parm_idx++, op_const);
 		  // Constant bound value
@@ -6280,11 +6293,11 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // Analyze inline constraints (including 'inside' constraints which
 		  // become AND expressions)
 		  const std::list<PExpr*>& constraints = get_inline_constraints();
-		  std::vector<std::tuple<size_t, int, int64_t>> bounds;
+		  std::vector<std::tuple<size_t, int, int64_t>> bounds;  // (prop_idx, op_code with soft, const_val)
 
 		  for (const PExpr* cons : constraints) {
 			// Use recursive extraction to handle AND expressions from 'inside'
-			std::vector<std::tuple<perm_string, int, int64_t>> extracted;
+			std::vector<std::tuple<perm_string, int, int64_t, bool>> extracted;
 			analyze_constraint_expr_recursive(cons, extracted, des, scope);
 
 			// Convert extracted bounds to property indices
@@ -6292,9 +6305,12 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      perm_string cons_prop_name = std::get<0>(ex);
 			      int op_code = std::get<1>(ex);
 			      int64_t const_val = std::get<2>(ex);
+			      bool is_soft = std::get<3>(ex);
 			      // Look up property index in the property's class type
 			      int pidx = prop_class->property_idx_from_name(cons_prop_name);
 			      if (pidx >= 0) {
+				    // Encode soft flag in bit 3 of op_code
+				    if (is_soft) op_code |= 8;
 				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val));
 			      }
 			}
@@ -6314,7 +6330,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			// Property index
 			NetEConst* prop_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
 			sys_expr->parm(parm_idx++, prop_const);
-			// Operator code
+			// Operator code (with soft flag in bit 3)
 			NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<1>(bound), 32));
 			sys_expr->parm(parm_idx++, op_const);
 			// Constant bound value
@@ -7008,11 +7024,11 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // Analyze inline constraints (including 'inside' constraints which
 		  // become AND expressions)
 		  const std::list<PExpr*>& constraints = get_inline_constraints();
-		  std::vector<std::tuple<size_t, int, int64_t>> bounds;
+		  std::vector<std::tuple<size_t, int, int64_t>> bounds;  // (prop_idx, op_code with soft, const_val)
 
 		  for (const PExpr* cons : constraints) {
 			// Use recursive extraction to handle AND expressions from 'inside'
-			std::vector<std::tuple<perm_string, int, int64_t>> extracted;
+			std::vector<std::tuple<perm_string, int, int64_t, bool>> extracted;
 			analyze_constraint_expr_recursive(cons, extracted, des, scope);
 
 			// Convert extracted bounds to property indices
@@ -7020,9 +7036,12 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      perm_string prop_name = std::get<0>(ex);
 			      int op_code = std::get<1>(ex);
 			      int64_t const_val = std::get<2>(ex);
+			      bool is_soft = std::get<3>(ex);
 			      // Look up property index
 			      int pidx = class_type->property_idx_from_name(prop_name);
 			      if (pidx >= 0) {
+				    // Encode soft flag in bit 3 of op_code
+				    if (is_soft) op_code |= 8;
 				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val));
 			      }
 			}
@@ -7042,7 +7061,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			// Property index
 			NetEConst* prop_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
 			sys_expr->parm(parm_idx++, prop_const);
-			// Operator code
+			// Operator code (with soft flag in bit 3)
 			NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<1>(bound), 32));
 			sys_expr->parm(parm_idx++, op_const);
 			// Constant bound value - use signed constructor then cast to unsigned

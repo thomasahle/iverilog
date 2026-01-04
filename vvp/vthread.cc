@@ -7545,6 +7545,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			for (const auto& bound : inline_constraints) {
 			      if (bound.property_idx != i) continue;
 			      if (!bound.has_const_bound) continue;
+			      // For value generation, only use hard constraints (non-soft)
+			      // Soft constraints are checked afterwards but don't fail randomize()
+			      if (bound.is_soft) continue;
 			      switch (bound.op) {
 				    case '>':  // value > const  =>  min = const+1
 					  if (bound.const_bound + 1 > min_val)
@@ -7750,8 +7753,12 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    // Special handling: multiple '=' constraints on same property are OR'd
 	    // (e.g., from "inside {1, 3, 5}" or "dist {1, 3, 5}")
 	    if (success && has_inline_constraints) {
-		  // Group '=' constraints by property index
-		  std::map<size_t, std::vector<int64_t>> eq_constraints;
+		  // Group '=' constraints by property index, tracking if any are hard
+		  struct eq_info {
+			std::vector<int64_t> values;
+			bool has_hard;  // true if any '=' constraint is hard (non-soft)
+		  };
+		  std::map<size_t, eq_info> eq_constraints;
 		  std::vector<class_type::simple_bound_t> other_constraints;
 
 		  for (const auto& bound : inline_constraints) {
@@ -7759,16 +7766,22 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			if (!bound.has_const_bound) continue;
 
 			if (bound.op == '=') {
-			      eq_constraints[bound.property_idx].push_back(bound.const_bound);
+			      auto& info = eq_constraints[bound.property_idx];
+			      info.values.push_back(bound.const_bound);
+			      if (!bound.is_soft) info.has_hard = true;
 			} else {
 			      other_constraints.push_back(bound);
 			}
 		  }
 
 		  // Check '=' constraints with OR logic (value matches ANY allowed value)
+		  // Only fail if there are hard '=' constraints that don't match
 		  for (const auto& kv : eq_constraints) {
 			size_t prop_idx = kv.first;
-			const std::vector<int64_t>& allowed = kv.second;
+			const eq_info& info = kv.second;
+
+			// If all '=' constraints for this property are soft, skip checking
+			if (!info.has_hard) continue;
 
 			vvp_vector4_t val;
 			cobj->get_vec4(prop_idx, val);
@@ -7779,7 +7792,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			}
 
 			bool any_match = false;
-			for (int64_t allowed_val : allowed) {
+			for (int64_t allowed_val : info.values) {
 			      if (prop_val == allowed_val) {
 				    any_match = true;
 				    break;
@@ -7795,23 +7808,33 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  // Check other constraints - handle range pairs with OR logic
 		  // Multiple ranges from dist like {[0:10], [200:$]} need OR between ranges
 		  if (success) {
-			// Group bounds by property for range detection
-			std::map<size_t, std::vector<class_type::simple_bound_t>> prop_bounds;
+			// Group bounds by property for range detection, tracking if any are hard
+			struct range_info {
+			      std::vector<class_type::simple_bound_t> bounds;
+			      bool has_hard;  // true if any range bound is hard
+			};
+			std::map<size_t, range_info> prop_bounds;
 			std::vector<class_type::simple_bound_t> simple_constraints;
 
 			for (const auto& bound : other_constraints) {
 			      // >= and <= are range bounds, pair them
 			      if (bound.op == 'G' || bound.op == 'L') {
-				    prop_bounds[bound.property_idx].push_back(bound);
+				    auto& info = prop_bounds[bound.property_idx];
+				    info.bounds.push_back(bound);
+				    if (!bound.is_soft) info.has_hard = true;
 			      } else {
 				    simple_constraints.push_back(bound);
 			      }
 			}
 
 			// Check range bounds - group into pairs and OR between pairs
+			// Only fail if there are hard range constraints
 			for (const auto& kv : prop_bounds) {
 			      size_t prop_idx = kv.first;
-			      const auto& bounds = kv.second;
+			      const range_info& info = kv.second;
+
+			      // If all range constraints for this property are soft, skip checking
+			      if (!info.has_hard) continue;
 
 			      vvp_vector4_t val;
 			      cobj->get_vec4(prop_idx, val);
@@ -7826,7 +7849,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      int64_t pending_low = INT64_MIN;
 			      bool have_low = false;
 
-			      for (const auto& b : bounds) {
+			      for (const auto& b : info.bounds) {
 				    if (b.op == 'G') {  // >=
 					  if (have_low) {
 						// Two lows in a row - start new range
@@ -7910,13 +7933,17 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
  * %push_rand_bound <prop_idx>, <op_encoded>, <bound_value>
  *
  * Push an inline constraint bound for the next randomize() call.
- * op_encoded: 0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!'
+ * op_encoded: bits 0-2 = operator (0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!')
+ *             bit 3 = soft flag (8 = soft constraint)
  */
 bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 {
       class_type::simple_bound_t bound;
       bound.property_idx = cp->number;
       int op_code = cp->bit_idx[0];
+      // Extract soft flag from bit 3
+      bool is_soft = (op_code & 8) != 0;
+      op_code &= 7;  // Mask off soft flag to get operator
       switch (op_code) {
 	    case 0: bound.op = '>'; break;
 	    case 1: bound.op = '<'; break;
@@ -7926,7 +7953,7 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 	    case 5: bound.op = '!'; break;
 	    default: bound.op = '='; break;
       }
-      bound.is_soft = false;
+      bound.is_soft = is_soft;
       bound.has_const_bound = true;
       bound.const_bound = (int64_t)(int32_t)cp->bit_idx[1];  // Sign-extend
       bound.bound_prop_idx = 0;

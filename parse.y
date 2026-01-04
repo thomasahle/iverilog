@@ -1640,8 +1640,10 @@ constraint_expression /* IEEE1800-2005 A.1.9 */
   : expression ';'
       { $$ = $1; }
   | K_soft expression ';'
-      { /* Soft constraint - parsed but marked as soft for later */
-        $$ = $2;
+      { /* Soft constraint - wrap in marker class to track soft flag */
+        PESoftConstraint*tmp = new PESoftConstraint($2);
+        FILE_NAME(tmp, @1);
+        $$ = tmp;
       }
   | expression K_dist '{' '}' ';'
       { /* Dist constraint with empty distribution - use expression */
