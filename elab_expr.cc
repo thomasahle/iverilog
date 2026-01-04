@@ -120,6 +120,42 @@ static bool analyze_constraint_expr(const PExpr*expr,
       return false;
 }
 
+/*
+ * Recursive helper to extract ALL bounds from a constraint expression.
+ * Handles logical AND expressions (from 'inside' constraints) by recursively
+ * processing both sides. Populates the bounds vector with (prop_name, op_code, const_value).
+ */
+static void analyze_constraint_expr_recursive(const PExpr*expr,
+                                              std::vector<std::tuple<perm_string, int, int64_t>>& bounds,
+                                              Design*des = nullptr,
+                                              NetScope*scope = nullptr)
+{
+      // Check for logical AND expression (from 'inside' constraints)
+      // e.g., (x >= 10) && (x <= 20) from "inside {[10:20]}"
+      const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
+      if (bin && bin->get_op() == 'a') {
+            // Recursively extract bounds from both sides of AND
+            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope);
+            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope);
+            return;
+      }
+
+      // For logical OR, process each side (though OR bounds are harder to enforce)
+      if (bin && bin->get_op() == 'o') {
+            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope);
+            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope);
+            return;
+      }
+
+      // Try to extract a simple comparison bound
+      perm_string prop_name;
+      int op_code;
+      int64_t const_value;
+      if (analyze_constraint_expr(expr, prop_name, op_code, const_value, des, scope)) {
+            bounds.push_back(std::make_tuple(prop_name, op_code, const_value));
+      }
+}
+
 bool type_is_vectorable(ivl_variable_type_t type)
 {
       switch (type) {
@@ -2427,15 +2463,21 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 		  return 0;
 	    }
 
-	    // Check for inline constraints
+	    // Check for inline constraints (including 'inside' constraints which
+	    // become AND expressions)
 	    const std::list<PExpr*>& constraints = get_inline_constraints();
 	    std::vector<std::tuple<int, int64_t>> bounds;  // (op_code, const_val)
 
 	    for (const PExpr* cons : constraints) {
-		  perm_string cons_name;
-		  int op_code;
-		  int64_t const_val;
-		  if (analyze_constraint_expr(cons, cons_name, op_code, const_val, des, scope)) {
+		  // Use recursive extraction to handle AND expressions from 'inside'
+		  std::vector<std::tuple<perm_string, int, int64_t>> extracted;
+		  analyze_constraint_expr_recursive(cons, extracted, des, scope);
+
+		  // Filter to only include bounds for our signal
+		  for (const auto& ex : extracted) {
+			perm_string cons_name = std::get<0>(ex);
+			int op_code = std::get<1>(ex);
+			int64_t const_val = std::get<2>(ex);
 			// Check if this constraint is for our signal
 			if (cons_name == sig_name) {
 			      bounds.push_back(std::make_tuple(op_code, const_val));
@@ -6235,15 +6277,21 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
 		  prop_expr->set_line(*this);
 
-		  // Analyze inline constraints
+		  // Analyze inline constraints (including 'inside' constraints which
+		  // become AND expressions)
 		  const std::list<PExpr*>& constraints = get_inline_constraints();
 		  std::vector<std::tuple<size_t, int, int64_t>> bounds;
 
 		  for (const PExpr* cons : constraints) {
-			perm_string cons_prop_name;
-			int op_code;
-			int64_t const_val;
-			if (analyze_constraint_expr(cons, cons_prop_name, op_code, const_val, des, scope)) {
+			// Use recursive extraction to handle AND expressions from 'inside'
+			std::vector<std::tuple<perm_string, int, int64_t>> extracted;
+			analyze_constraint_expr_recursive(cons, extracted, des, scope);
+
+			// Convert extracted bounds to property indices
+			for (const auto& ex : extracted) {
+			      perm_string cons_prop_name = std::get<0>(ex);
+			      int op_code = std::get<1>(ex);
+			      int64_t const_val = std::get<2>(ex);
 			      // Look up property index in the property's class type
 			      int pidx = prop_class->property_idx_from_name(cons_prop_name);
 			      if (pidx >= 0) {
@@ -6957,15 +7005,21 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 
 	    // Handle built-in randomize() method
 	    if (method_name == "randomize") {
-		  // Analyze inline constraints
+		  // Analyze inline constraints (including 'inside' constraints which
+		  // become AND expressions)
 		  const std::list<PExpr*>& constraints = get_inline_constraints();
 		  std::vector<std::tuple<size_t, int, int64_t>> bounds;
 
 		  for (const PExpr* cons : constraints) {
-			perm_string prop_name;
-			int op_code;
-			int64_t const_val;
-			if (analyze_constraint_expr(cons, prop_name, op_code, const_val, des, scope)) {
+			// Use recursive extraction to handle AND expressions from 'inside'
+			std::vector<std::tuple<perm_string, int, int64_t>> extracted;
+			analyze_constraint_expr_recursive(cons, extracted, des, scope);
+
+			// Convert extracted bounds to property indices
+			for (const auto& ex : extracted) {
+			      perm_string prop_name = std::get<0>(ex);
+			      int op_code = std::get<1>(ex);
+			      int64_t const_val = std::get<2>(ex);
 			      // Look up property index
 			      int pidx = class_type->property_idx_from_name(prop_name);
 			      if (pidx >= 0) {
