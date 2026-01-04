@@ -7536,7 +7536,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			// Track discrete allowed values for == constraints (from inside/dist)
 			// Track range pairs for multiple disjoint ranges (from dist with ranges)
 			std::vector<int64_t> excluded_values;
-			std::vector<int64_t> discrete_values;
+			// Discrete values with weights: (value, weight)
+			std::vector<std::pair<int64_t, int64_t>> discrete_values;
 			std::vector<class_type::simple_bound_t> ge_bounds;  // >= bounds
 			std::vector<class_type::simple_bound_t> le_bounds;  // <= bounds
 			bool has_simple_bounds = false;
@@ -7562,7 +7563,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 					  le_bounds.push_back(bound);
 					  break;
 				    case '=':  // value == const  =>  discrete allowed value
-					  discrete_values.push_back(bound.const_bound);
+					  discrete_values.push_back({bound.const_bound, bound.weight});
 					  break;
 				    case '!':  // value != const  =>  exclude value
 					  excluded_values.push_back(bound.const_bound);
@@ -7573,14 +7574,24 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			}
 
 			// Build range list from paired >= and <= bounds
-			std::vector<std::pair<int64_t, int64_t>> ranges;
+			// Ranges with weights: (low, high, weight, weight_per_value)
+			struct weighted_range_t {
+			      int64_t low, high, weight;
+			      bool weight_per_value;
+			};
+			std::vector<weighted_range_t> ranges;
 			if (!ge_bounds.empty() || !le_bounds.empty()) {
 			      // Pair up bounds in order (from dist items)
 			      size_t ge_idx = 0, le_idx = 0;
 			      while (ge_idx < ge_bounds.size() || le_idx < le_bounds.size()) {
 				    int64_t low = min_val, high = max_val;
+				    int64_t weight = 1;
+				    bool weight_per_value = true;
 				    if (ge_idx < ge_bounds.size()) {
-					  low = ge_bounds[ge_idx++].const_bound;
+					  low = ge_bounds[ge_idx].const_bound;
+					  weight = ge_bounds[ge_idx].weight;
+					  weight_per_value = ge_bounds[ge_idx].weight_per_value;
+					  ge_idx++;
 				    }
 				    if (le_idx < le_bounds.size()) {
 					  high = le_bounds[le_idx++].const_bound;
@@ -7589,7 +7600,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    if (low < min_val) low = min_val;
 				    if (high > max_val) high = max_val;
 				    if (low <= high) {
-					  ranges.push_back({low, high});
+					  ranges.push_back({low, high, weight, weight_per_value});
 				    }
 			      }
 			}
@@ -7599,19 +7610,62 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			bool generated = false;
 
 			// Priority 1: Discrete values from == constraints (from inside/dist)
-			// Randomly pick one from the allowed set
+			// Use weighted random selection if weights are present
 			if (!discrete_values.empty()) {
-			      size_t pick = rand() % discrete_values.size();
-			      rval = discrete_values[pick];
+			      // Calculate total weight
+			      int64_t total_weight = 0;
+			      for (const auto& dv : discrete_values) {
+				    total_weight += dv.second;
+			      }
+			      // Weighted random selection
+			      int64_t pick = rand() % total_weight;
+			      int64_t cumulative = 0;
+			      size_t selected = 0;
+			      for (size_t j = 0; j < discrete_values.size(); j++) {
+				    cumulative += discrete_values[j].second;
+				    if (pick < cumulative) {
+					  selected = j;
+					  break;
+				    }
+			      }
+			      rval = discrete_values[selected].first;
 			      generated = true;
 			}
 			// Priority 2: Multiple disjoint ranges (from dist {[a:b], [c:d], ...})
-			// Pick a random range, then pick a value within that range
+			// Use weighted random selection based on range weights
 			else if (!ranges.empty()) {
-			      // Pick a random range (could weight by range size for uniform dist)
-			      size_t range_idx = rand() % ranges.size();
-			      int64_t low = ranges[range_idx].first;
-			      int64_t high = ranges[range_idx].second;
+			      // Calculate total weight (considering weight_per_value)
+			      int64_t total_weight = 0;
+			      for (const auto& r : ranges) {
+				    if (r.weight_per_value) {
+					  // := means weight per value, so multiply by range size
+					  int64_t range_size = r.high - r.low + 1;
+					  total_weight += r.weight * range_size;
+				    } else {
+					  // :/ means weight divided across range
+					  total_weight += r.weight;
+				    }
+			      }
+			      // Weighted random selection of range
+			      int64_t pick = rand() % total_weight;
+			      int64_t cumulative = 0;
+			      size_t range_idx = 0;
+			      for (size_t j = 0; j < ranges.size(); j++) {
+				    int64_t range_weight;
+				    if (ranges[j].weight_per_value) {
+					  int64_t range_size = ranges[j].high - ranges[j].low + 1;
+					  range_weight = ranges[j].weight * range_size;
+				    } else {
+					  range_weight = ranges[j].weight;
+				    }
+				    cumulative += range_weight;
+				    if (pick < cumulative) {
+					  range_idx = j;
+					  break;
+				    }
+			      }
+			      int64_t low = ranges[range_idx].low;
+			      int64_t high = ranges[range_idx].high;
 			      int64_t range_size = high - low + 1;
 			      int avoid_tries = 0;
 			      do {
@@ -7876,6 +7930,8 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
       bound.has_const_bound = true;
       bound.const_bound = (int64_t)(int32_t)cp->bit_idx[1];  // Sign-extend
       bound.bound_prop_idx = 0;
+      bound.weight = 1;  // Default weight
+      bound.weight_per_value = true;
 
       thr->push_inline_constraint(bound);
       return true;

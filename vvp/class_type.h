@@ -111,6 +111,8 @@ class class_type : public __vpiHandle {
 	    bool has_const_bound; // true if bound is a constant
 	    int64_t const_bound;  // Constant bound value (if has_const_bound)
 	    size_t bound_prop_idx;// Property index (if !has_const_bound)
+	    int64_t weight;       // Weight for dist constraints (default 1)
+	    bool weight_per_value;// true for := (per value), false for :/ (per range)
       };
       void add_constraint_bound(const simple_bound_t& bound);
       size_t constraint_bound_count() const { return constraint_bounds_.size(); }

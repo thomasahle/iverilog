@@ -79,15 +79,30 @@ typedef std::pair<perm_string, unsigned> pform_ident_t;
 typedef std::pair<PExpr*,PExpr*> pform_range_t;
 
 /*
+ * The dist_weight_t holds weight information for a dist constraint item.
+ * weight_per_value=true means := (equal weight per value in range)
+ * weight_per_value=false means :/ (weight divided across range)
+ */
+struct dist_weight_t {
+      PExpr* weight;       // Weight expression (null = default weight 1)
+      bool   weight_per_value;  // true for :=, false for :/
+
+      dist_weight_t() : weight(0), weight_per_value(true) { }
+};
+
+/*
  * The inside_range_t holds a single item for the "inside" operator.
  * It can be either a single value or a range [low:high].
+ * For dist constraints, weight specifies the relative probability.
  */
 struct inside_range_t {
       PExpr* single_val;   // Non-null for single value
       PExpr* low_val;      // Non-null for range
       PExpr* high_val;     // Non-null for range
+      PExpr* weight;       // Weight for dist (null = default weight 1)
+      bool   weight_per_value;  // true for :=, false for :/
 
-      inside_range_t() : single_val(0), low_val(0), high_val(0) { }
+      inside_range_t() : single_val(0), low_val(0), high_val(0), weight(0), weight_per_value(true) { }
 };
 
 /*

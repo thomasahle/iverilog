@@ -515,6 +515,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 
       inside_range_t*inside_range;
       std::list<inside_range_t*>*inside_ranges;
+      dist_weight_t*dist_weight;
 
       PExpr*expr;
       std::list<PExpr*>*exprs;
@@ -743,6 +744,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 
 %type <inside_range> dist_item
 %type <inside_ranges> dist_list
+%type <dist_weight> dist_weight_opt
 
 %type <class_spec_param> class_specialization_param
 %type <class_spec_params> class_specialization_params class_specialization_params_opt
@@ -1731,12 +1733,22 @@ dist_item
   : expression dist_weight_opt
       { inside_range_t*tmp = new inside_range_t;
         tmp->single_val = $1;
+        if ($2) {
+          tmp->weight = $2->weight;
+          tmp->weight_per_value = $2->weight_per_value;
+          delete $2;
+        }
         $$ = tmp;
       }
   | '[' expression ':' expression ']' dist_weight_opt
       { inside_range_t*tmp = new inside_range_t;
         tmp->low_val = $2;
         tmp->high_val = $4;
+        if ($6) {
+          tmp->weight = $6->weight;
+          tmp->weight_per_value = $6->weight_per_value;
+          delete $6;
+        }
         $$ = tmp;
       }
   | '[' expression ':' '$' ']' dist_weight_opt
@@ -1749,6 +1761,11 @@ dist_item
         max_v->set(31, verinum::V0);  // Keep it positive (0x7FFFFFFF)
         tmp->high_val = new PENumber(max_v);
         FILE_NAME(tmp->high_val, @4);
+        if ($6) {
+          tmp->weight = $6->weight;
+          tmp->weight_per_value = $6->weight_per_value;
+          delete $6;
+        }
         $$ = tmp;
       }
   | '[' '$' ':' expression ']' dist_weight_opt
@@ -1758,16 +1775,30 @@ dist_item
         tmp->low_val = new PENumber(new verinum((uint64_t)0, 32));
         FILE_NAME(tmp->low_val, @2);
         tmp->high_val = $4;
+        if ($6) {
+          tmp->weight = $6->weight;
+          tmp->weight_per_value = $6->weight_per_value;
+          delete $6;
+        }
         $$ = tmp;
       }
   ;
 
 dist_weight_opt
   : /* empty */
+      { $$ = 0; }
   | K_COLON_EQ expression
-      { /* := equal weight per value - weights not yet enforced */ }
+      { dist_weight_t*tmp = new dist_weight_t;
+        tmp->weight = $2;
+        tmp->weight_per_value = true;  // := means equal weight per value
+        $$ = tmp;
+      }
   | K_COLON_DIV expression
-      { /* :/ divided weight - weights not yet enforced */ }
+      { dist_weight_t*tmp = new dist_weight_t;
+        tmp->weight = $2;
+        tmp->weight_per_value = false;  // :/ means weight divided across range
+        $$ = tmp;
+      }
   ;
 
 constraint_expression_list /* */
