@@ -1433,13 +1433,12 @@ package uvm_pkg;
       end
     endfunction
 
-    // Get coverage percentage based on bins hit vs target
+    // Get coverage percentage based on samples vs target
+    // Uses sample count since %cvg/sample updates m_sample_count directly
     virtual function real get_coverage();
-      int bins_count;
-      bins_count = m_bins_hit.num();
       if (m_target_bins <= 0) return 100.0;
-      if (bins_count >= m_target_bins) return 100.0;
-      return (real'(bins_count) / real'(m_target_bins)) * 100.0;
+      if (m_sample_count >= m_target_bins) return 100.0;
+      return (real'(m_sample_count) / real'(m_target_bins)) * 100.0;
     endfunction
 
     // Get instance coverage - same as get_coverage for this stub
