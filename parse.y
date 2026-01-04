@@ -741,6 +741,9 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <inside_range> inside_value_range
 %type <inside_ranges> inside_open_range_list
 
+%type <inside_range> dist_item
+%type <inside_ranges> dist_list
+
 %type <class_spec_param> class_specialization_param
 %type <class_spec_params> class_specialization_params class_specialization_params_opt
 
@@ -1643,8 +1646,49 @@ constraint_expression /* IEEE1800-2005 A.1.9 */
         $$ = $1;
       }
   | expression K_dist '{' dist_list '}' ';'
-      { /* Dist constraint - parsed but not enforced at runtime */
-        $$ = $1;
+      { /* Dist constraint - transform into inside-like expression */
+        /* For now, ignore weights and treat as: x inside {values} */
+        PExpr*lhs = $1;
+        std::list<inside_range_t*>*ranges = $4;
+        PExpr*result = 0;
+
+        for (std::list<inside_range_t*>::iterator it = ranges->begin();
+             it != ranges->end(); ++it) {
+              inside_range_t*rng = *it;
+              PExpr*cmp = 0;
+
+              if (rng->single_val) {
+                    /* Single value: (lhs == val) */
+                    cmp = new PEBComp('e', lhs, rng->single_val);
+                    FILE_NAME(cmp, @2);
+              } else if (rng->low_val && rng->high_val) {
+                    /* Range [low:high]: (lhs >= low) && (lhs <= high) */
+                    PExpr*ge = new PEBComp('G', lhs, rng->low_val);
+                    FILE_NAME(ge, @2);
+                    PExpr*le = new PEBComp('L', lhs, rng->high_val);
+                    FILE_NAME(le, @2);
+                    cmp = new PEBLogic('a', ge, le);
+                    FILE_NAME(cmp, @2);
+              }
+
+              if (cmp) {
+                    if (result == 0) {
+                          result = cmp;
+                    } else {
+                          result = new PEBLogic('o', result, cmp);
+                          FILE_NAME(result, @2);
+                    }
+              }
+              delete rng;
+        }
+        delete ranges;
+
+        if (result == 0) {
+              /* Empty list - return expression unchanged */
+              result = lhs;
+        }
+
+        $$ = result;
       }
   | expression constraint_trigger
       { /* Implication constraint - parsed but not enforced */
@@ -1669,22 +1713,40 @@ constraint_trigger
   : K_CONSTRAINT_IMPL '{' constraint_expression_list '}'
   ;
 
-  /* Dist constraint list and items - parsed but not enforced */
+  /* Dist constraint list and items - now converted to inside_range_t for enforcement */
 dist_list
   : dist_item
+      { std::list<inside_range_t*>*tmp = new std::list<inside_range_t*>;
+        tmp->push_back($1);
+        $$ = tmp;
+      }
   | dist_list ',' dist_item
+      { std::list<inside_range_t*>*tmp = $1;
+        tmp->push_back($3);
+        $$ = tmp;
+      }
   ;
 
 dist_item
-  : value_range dist_weight_opt
+  : expression dist_weight_opt
+      { inside_range_t*tmp = new inside_range_t;
+        tmp->single_val = $1;
+        $$ = tmp;
+      }
+  | '[' expression ':' expression ']' dist_weight_opt
+      { inside_range_t*tmp = new inside_range_t;
+        tmp->low_val = $2;
+        tmp->high_val = $4;
+        $$ = tmp;
+      }
   ;
 
 dist_weight_opt
   : /* empty */
   | K_COLON_EQ expression
-      { /* := equal weight per value - not enforced */ }
+      { /* := equal weight per value - weights not yet enforced */ }
   | K_COLON_DIV expression
-      { /* :/ divided weight - not enforced */ }
+      { /* :/ divided weight - weights not yet enforced */ }
   ;
 
 constraint_expression_list /* */

@@ -7533,7 +7533,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
 			// Apply inline constraint bounds
 			// Track excluded values for != constraints
+			// Track discrete allowed values for == constraints (from inside/dist)
 			std::vector<int64_t> excluded_values;
+			std::vector<int64_t> discrete_values;
 
 			for (const auto& bound : inline_constraints) {
 			      if (bound.property_idx != i) continue;
@@ -7555,9 +7557,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 					  if (bound.const_bound < max_val)
 						max_val = bound.const_bound;
 					  break;
-				    case '=':  // value == const  =>  exact value
-					  min_val = bound.const_bound;
-					  max_val = bound.const_bound;
+				    case '=':  // value == const  =>  discrete allowed value
+					  discrete_values.push_back(bound.const_bound);
 					  break;
 				    case '!':  // value != const  =>  exclude value
 					  excluded_values.push_back(bound.const_bound);
@@ -7567,9 +7568,20 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      }
 			}
 
-			// Also apply class-level constraints
-			if (has_class_constraints) {
-			      int64_t rval = defn->generate_constrained_random(inst, i, wid);
+			// Determine generation strategy
+			int64_t rval;
+			bool generated = false;
+
+			// Priority 1: Discrete values from == constraints (from inside/dist)
+			// Randomly pick one from the allowed set
+			if (!discrete_values.empty()) {
+			      size_t pick = rand() % discrete_values.size();
+			      rval = discrete_values[pick];
+			      generated = true;
+			}
+			// Priority 2: Class-level constraints combined with inline bounds
+			else if (has_class_constraints) {
+			      rval = defn->generate_constrained_random(inst, i, wid);
 			      // Combine with inline bounds and excluded values
 			      bool valid = (rval >= min_val && rval <= max_val);
 			      if (valid) {
@@ -7591,13 +7603,12 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 					  avoid_tries++;
 				    } while (avoid_tries < 100 && range > (int64_t)excluded_values.size());
 			      }
-			      for (unsigned b = 0; b < wid && b < 64; b++) {
-				    new_val.set_bit(b, (rval & (1LL << b)) ? BIT4_1 : BIT4_0);
-			      }
-			} else if (has_inline_constraints && min_val <= max_val) {
+			      generated = true;
+			}
+			// Priority 3: Inline range constraints (min_val to max_val)
+			else if (has_inline_constraints && min_val <= max_val) {
 			      // Generate within inline constraint bounds
 			      int64_t range = max_val - min_val + 1;
-			      int64_t rval;
 			      int avoid_tries = 0;
 			      do {
 				    rval = min_val + (rand() % range);
@@ -7609,13 +7620,20 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    if (!is_excluded) break;
 				    avoid_tries++;
 			      } while (avoid_tries < 100 && range > (int64_t)excluded_values.size());
-			      for (unsigned b = 0; b < wid && b < 64; b++) {
-				    new_val.set_bit(b, (rval & (1LL << b)) ? BIT4_1 : BIT4_0);
-			      }
-			} else {
-			      // No constraints - generate purely random bits
+			      generated = true;
+			}
+			// Priority 4: No constraints - purely random
+			else {
+			      // Generate purely random bits
 			      for (unsigned b = 0; b < wid; b++) {
 				    new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+			      }
+			}
+
+			// Apply generated value to new_val
+			if (generated) {
+			      for (unsigned b = 0; b < wid && b < 64; b++) {
+				    new_val.set_bit(b, (rval & (1LL << b)) ? BIT4_1 : BIT4_0);
 			      }
 			}
 			cobj->set_vec4(i, new_val);
@@ -7629,31 +7647,75 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  success = defn->check_constraints(inst);
 	    }
 	    // Also check inline constraints
+	    // Special handling: multiple '=' constraints on same property are OR'd
+	    // (e.g., from "inside {1, 3, 5}" or "dist {1, 3, 5}")
 	    if (success && has_inline_constraints) {
+		  // Group '=' constraints by property index
+		  std::map<size_t, std::vector<int64_t>> eq_constraints;
+		  std::vector<class_type::simple_bound_t> other_constraints;
+
 		  for (const auto& bound : inline_constraints) {
 			if (bound.property_idx >= nprop) continue;
 			if (!bound.has_const_bound) continue;
 
+			if (bound.op == '=') {
+			      eq_constraints[bound.property_idx].push_back(bound.const_bound);
+			} else {
+			      other_constraints.push_back(bound);
+			}
+		  }
+
+		  // Check '=' constraints with OR logic (value matches ANY allowed value)
+		  for (const auto& kv : eq_constraints) {
+			size_t prop_idx = kv.first;
+			const std::vector<int64_t>& allowed = kv.second;
+
 			vvp_vector4_t val;
-			cobj->get_vec4(bound.property_idx, val);
+			cobj->get_vec4(prop_idx, val);
 			int64_t prop_val = 0;
 			for (unsigned b = 0; b < val.size() && b < 64; b++) {
 			      if (val.value(b) == BIT4_1)
 				    prop_val |= (1LL << b);
 			}
 
-			bool constraint_ok = true;
-			switch (bound.op) {
-			      case '>': constraint_ok = (prop_val > bound.const_bound); break;
-			      case 'G': constraint_ok = (prop_val >= bound.const_bound); break;
-			      case '<': constraint_ok = (prop_val < bound.const_bound); break;
-			      case 'L': constraint_ok = (prop_val <= bound.const_bound); break;
-			      case '=': constraint_ok = (prop_val == bound.const_bound); break;
-			      case '!': constraint_ok = (prop_val != bound.const_bound); break;
+			bool any_match = false;
+			for (int64_t allowed_val : allowed) {
+			      if (prop_val == allowed_val) {
+				    any_match = true;
+				    break;
+			      }
 			}
-			if (!constraint_ok && !bound.is_soft) {
+
+			if (!any_match) {
 			      success = false;
 			      break;
+			}
+		  }
+
+		  // Check other constraints with AND logic (all must be satisfied)
+		  if (success) {
+			for (const auto& bound : other_constraints) {
+			      vvp_vector4_t val;
+			      cobj->get_vec4(bound.property_idx, val);
+			      int64_t prop_val = 0;
+			      for (unsigned b = 0; b < val.size() && b < 64; b++) {
+				    if (val.value(b) == BIT4_1)
+					  prop_val |= (1LL << b);
+			      }
+
+			      bool constraint_ok = true;
+			      switch (bound.op) {
+				    case '>': constraint_ok = (prop_val > bound.const_bound); break;
+				    case 'G': constraint_ok = (prop_val >= bound.const_bound); break;
+				    case '<': constraint_ok = (prop_val < bound.const_bound); break;
+				    case 'L': constraint_ok = (prop_val <= bound.const_bound); break;
+				    case '!': constraint_ok = (prop_val != bound.const_bound); break;
+				    default: break;
+			      }
+			      if (!constraint_ok && !bound.is_soft) {
+				    success = false;
+				    break;
+			      }
 			}
 		  }
 	    }
