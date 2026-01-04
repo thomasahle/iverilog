@@ -7495,7 +7495,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
       const class_type* defn = cobj->get_class_type();
       size_t nprop = defn->property_count();
-      bool has_class_constraints = (defn->constraint_bound_count() > 0);
+      // Check for constraints including inherited constraints from parent classes
+      bool has_class_constraints = defn->has_any_constraints();
       const std::vector<class_type::simple_bound_t>& inline_constraints = thr->get_inline_constraints();
       bool has_inline_constraints = !inline_constraints.empty();
       bool has_constraints = has_class_constraints || has_inline_constraints;
@@ -7531,7 +7532,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			int64_t max_val = (1LL << wid) - 1;
 			if (wid >= 64) max_val = INT64_MAX;
 
-			// Apply inline constraint bounds
+			// Apply both inline AND class-level constraint bounds
 			// Track excluded values for != constraints
 			// Track discrete allowed values for == constraints (from inside/dist)
 			// Track range pairs for multiple disjoint ranges (from dist with ranges)
@@ -7542,6 +7543,45 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			std::vector<class_type::simple_bound_t> le_bounds;  // <= bounds
 			bool has_simple_bounds = false;
 
+			// First collect class-level constraints (including inherited)
+			const class_type* cls = defn;
+			while (cls != nullptr) {
+			      for (size_t b = 0; b < cls->constraint_bound_count(); b++) {
+				    const class_type::simple_bound_t& bound = cls->get_constraint_bound(b);
+				    if (bound.property_idx != i) continue;
+				    if (!bound.has_const_bound) continue;
+				    if (bound.is_soft) continue;
+				    switch (bound.op) {
+					  case '>':
+						if (bound.const_bound + 1 > min_val)
+						      min_val = bound.const_bound + 1;
+						has_simple_bounds = true;
+						break;
+					  case 'G':
+						ge_bounds.push_back(bound);
+						break;
+					  case '<':
+						if (bound.const_bound - 1 < max_val)
+						      max_val = bound.const_bound - 1;
+						has_simple_bounds = true;
+						break;
+					  case 'L':
+						le_bounds.push_back(bound);
+						break;
+					  case '=':
+						discrete_values.push_back({bound.const_bound, bound.weight});
+						break;
+					  case '!':
+						excluded_values.push_back(bound.const_bound);
+						break;
+					  default:
+						break;
+				    }
+			      }
+			      cls = cls->get_parent();
+			}
+
+			// Then add inline constraints
 			for (const auto& bound : inline_constraints) {
 			      if (bound.property_idx != i) continue;
 			      if (!bound.has_const_bound) continue;
@@ -7708,9 +7748,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      }
 			      generated = true;
 			}
-			// Priority 4: Inline range constraints (> and < bounds)
-			else if (has_inline_constraints && min_val <= max_val) {
-			      // Generate within inline constraint bounds
+			// Priority 4: Range constraints from class or inline (> and < bounds)
+			else if ((has_inline_constraints || has_class_constraints) && min_val <= max_val) {
+			      // Generate within constraint bounds
 			      int64_t range = max_val - min_val + 1;
 			      int avoid_tries = 0;
 			      do {

@@ -117,6 +117,8 @@ class class_type : public __vpiHandle {
       void add_constraint_bound(const simple_bound_t& bound);
       size_t constraint_bound_count() const { return constraint_bounds_.size(); }
       const simple_bound_t& get_constraint_bound(size_t idx) const;
+	// Check if this class or any parent class has constraints
+      bool has_any_constraints() const;
 	// Check if all constraints are satisfied for current property values
       bool check_constraints(inst_t inst) const;
 	// Generate constrained random value for a property

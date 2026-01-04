@@ -757,13 +757,36 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
       return min_val + (r % range);
 }
 
+bool class_type::has_any_constraints() const
+{
+      // Check if this class or any parent has constraints
+      if (!constraint_bounds_.empty())
+	    return true;
+      if (parent_ != nullptr)
+	    return parent_->has_any_constraints();
+      return false;
+}
+
 bool class_type::check_constraints(inst_t inst) const
 {
-      if (constraint_bounds_.empty())
+      // Collect all constraint bounds from this class and all parent classes
+      // We collect them and check using THIS class's property accessors
+      // because property indices match between parent and derived classes
+      // (derived copies parent properties at the same indices)
+      std::vector<simple_bound_t> all_bounds;
+      const class_type* cls = this;
+      while (cls != nullptr) {
+	    for (const auto& bound : cls->constraint_bounds_)
+		  all_bounds.push_back(bound);
+	    cls = cls->parent_;
+      }
+
+      if (all_bounds.empty())
 	    return true;
 
-      for (const auto& bound : constraint_bounds_) {
+      for (const auto& bound : all_bounds) {
 	    // Get the value of the constrained property
+	    // Use THIS class's property accessors (not parent's)
 	    if (bound.property_idx >= properties_.size())
 		  continue;
 

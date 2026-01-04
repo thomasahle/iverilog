@@ -470,9 +470,8 @@ void pform_class_constraint(const struct vlltype&loc,
       }
 
       // Create the constraint object
-      // Default to soft constraints since hard constraints cause randomize() to fail
-      // TODO: Properly parse and propagate 'soft' keyword from individual expressions
-      pform_constraint_t* constraint = new pform_constraint_t(constraint_name, true);
+      // Default to hard constraints (soft requires 'soft' keyword in expressions)
+      pform_constraint_t* constraint = new pform_constraint_t(constraint_name, false);
       constraint->set_lineno(loc.first_line);
       constraint->set_file(filename_strings.make(loc.text));
       constraint->is_static = is_static;
