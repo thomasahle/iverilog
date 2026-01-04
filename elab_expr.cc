@@ -5544,8 +5544,9 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      }
 
 			      if (value_expr && item_id) {
-				    // Elaborate the comparison value
-				    cmp_value = elab_and_eval(des, scope, value_expr, -1, true);
+				    // Elaborate the comparison value (allow non-constant expressions
+				    // like qos_queue[$].awid for runtime comparison)
+				    cmp_value = elab_and_eval(des, scope, value_expr, -1, false);
 
 				    // Check if this is item.property pattern (path has 2 components)
 				    if (item_id->path().name.size() == 2) {
@@ -6688,8 +6689,9 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			}
 
 			if (value_expr && item_id) {
-			      // Elaborate the comparison value
-			      cmp_value = elab_and_eval(des, scope, value_expr, -1, true);
+			      // Elaborate the comparison value (allow non-constant expressions
+			      // like qos_queue[$].awid for runtime comparison)
+			      cmp_value = elab_and_eval(des, scope, value_expr, -1, false);
 
 			      // Check if this is item.property pattern (path has 2 components)
 			      if (item_id->path().name.size() == 2) {
@@ -8684,12 +8686,42 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
 
 			// Get the index expression
 			const index_component_t&use_index = sr.path_head.back().index.back();
-			ivl_assert(*this, use_index.msb != 0);
 			ivl_assert(*this, use_index.lsb == 0);
 
-			NetExpr*index_expr = elab_and_eval(des, scope, use_index.msb, -1, false);
-			if (!index_expr)
-			      return 0;
+			NetExpr*index_expr = nullptr;
+			if (use_index.sel == index_component_t::SEL_BIT_LAST) {
+			      // Handle $ index: compute size() - 1
+			      NetESignal*queue_sig = new NetESignal(sr.net);
+			      queue_sig->set_line(*this);
+
+			      NetESFunc*size_expr = new NetESFunc("$size", &netvector_t::atom2s32, 1);
+			      size_expr->set_line(*this);
+			      size_expr->parm(0, queue_sig);
+
+			      NetEConst*one = new NetEConst(verinum((uint64_t)1, 32));
+			      one->set_line(*this);
+
+			      NetEBinary*last_idx = new NetEBinary('-', size_expr, one, 32, true);
+			      last_idx->set_line(*this);
+
+			      // If there's an offset ($-n), subtract it
+			      if (use_index.msb) {
+				    NetExpr*offset = elab_and_eval(des, scope, use_index.msb, -1, false);
+				    if (offset) {
+					  index_expr = new NetEBinary('-', last_idx, offset, 32, true);
+					  index_expr->set_line(*this);
+				    } else {
+					  index_expr = last_idx;
+				    }
+			      } else {
+				    index_expr = last_idx;
+			      }
+			} else {
+			      ivl_assert(*this, use_index.msb != 0);
+			      index_expr = elab_and_eval(des, scope, use_index.msb, -1, false);
+			      if (!index_expr)
+				    return 0;
+			}
 
 			// Create the indexed signal expression - this now returns
 			// an expression with the element (class) type
