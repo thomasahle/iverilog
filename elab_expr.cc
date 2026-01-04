@@ -6754,11 +6754,59 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			des->errors += 1;
 			return 0;
 		  }
-		  // TODO: Implement find/find_first/find_last
-		  cerr << get_fileline() << ": sorry: '" << method_name << "()' "
-		       << "array locator method is not yet implemented." << endl;
-		  des->errors += 1;
-		  return 0;
+
+		  // Return type is queue of same element type as source
+		  const netqueue_t*queue_type = search_results.net->queue_type();
+
+		  // Create the system function call
+		  perm_string fname;
+		  if (method_name == "find_last")
+			fname = perm_string::literal("$ivl_array_locator$find_last");
+		  else if (method_name == "find_first")
+			fname = perm_string::literal("$ivl_array_locator$find_first");
+		  else
+			fname = perm_string::literal("$ivl_array_locator$find");
+
+		  // Try to analyze the 'with' clause for simple cases like 'item == value'
+		  NetExpr*cmp_value = nullptr;
+		  PEBinary*bin_with = dynamic_cast<PEBinary*>(with_expr_);
+		  if (bin_with && bin_with->get_op() == 'e') {
+			// Check if left or right side is 'item'
+			PEIdent*left_id = dynamic_cast<PEIdent*>(bin_with->get_left());
+			PEIdent*right_id = dynamic_cast<PEIdent*>(bin_with->get_right());
+			PExpr*value_expr = nullptr;
+
+			if (left_id && peek_head_name(left_id->path()) == perm_string::literal("item")
+			    && left_id->path().name.size() == 1) {
+			      value_expr = bin_with->get_right();
+			} else if (right_id && peek_head_name(right_id->path()) == perm_string::literal("item")
+			           && right_id->path().name.size() == 1) {
+			      value_expr = bin_with->get_left();
+			}
+
+			if (value_expr) {
+			      cmp_value = elab_and_eval(des, scope, value_expr, -1, false);
+			}
+		  }
+
+		  if (cmp_value) {
+			// Simple 'item == value' case - pass queue and value to VVP
+			NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 2);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, sub_expr);
+			sys_expr->parm(1, cmp_value);
+			return sys_expr;
+		  }
+
+		  // Complex 'with' clause - emit warning and return empty queue
+		  cerr << get_fileline() << ": warning: Array locator method '"
+		       << method_name << "' with complex 'with' clause is not fully implemented. "
+		       << "Only 'item == value' pattern is supported." << endl;
+
+		  NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
 	    }
 
 	    // min() and max() methods - return queue with min/max element(s)

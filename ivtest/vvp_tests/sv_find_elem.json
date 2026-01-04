@@ -1,0 +1,5 @@
+{
+    "type"          : "normal",
+    "source"        : "sv_find_elem.v",
+    "iverilog-args" : [ "-g2012" ]
+}

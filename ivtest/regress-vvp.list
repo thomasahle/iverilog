@@ -254,6 +254,7 @@ sv_find_index_basic		vvp_tests/sv_find_index_basic.json
 sv_find_index_property		vvp_tests/sv_find_index_property.json
 sv_find_index_item_property	vvp_tests/sv_find_index_item_property.json
 sv_find_index_queue_ref		vvp_tests/sv_find_index_queue_ref.json
+sv_find_elem			vvp_tests/sv_find_elem.json
 sv_interface			vvp_tests/sv_interface.json
 sv_literals			vvp_tests/sv_literals.json
 sv_mixed_assign1		vvp_tests/sv_mixed_assign1.json

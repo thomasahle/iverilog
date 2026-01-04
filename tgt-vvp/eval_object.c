@@ -407,16 +407,22 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    return 0;
       }
 
-      /* Array locator methods - return a queue of int indices */
+      /* Array locator methods - return a queue of indices or elements */
       if (strncmp(name, "$ivl_array_locator$", 19) == 0) {
 	    const char* method = name + 19; /* Skip "$ivl_array_locator$" prefix */
 	    ivl_expr_t queue_arg = ivl_expr_parm(ex, 0);
 	    unsigned nparms = ivl_expr_parms(ex);
 
-	    /* Determine the locator mode: 0=find_index, 1=find_first_index, 2=find_last_index */
+	    /* Determine the locator mode:
+	     * 0=find_index, 1=find_first_index, 2=find_last_index (return indices)
+	     * 3=find, 4=find_first, 5=find_last (return elements)
+	     */
 	    int mode = 0;
 	    if (strcmp(method, "find_first_index") == 0) mode = 1;
 	    else if (strcmp(method, "find_last_index") == 0) mode = 2;
+	    else if (strcmp(method, "find") == 0) mode = 3;
+	    else if (strcmp(method, "find_first") == 0) mode = 4;
+	    else if (strcmp(method, "find_last") == 0) mode = 5;
 
 	    if (nparms >= 3) {
 		  /* item.property == value pattern - use %qfind_prop opcode */

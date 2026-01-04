@@ -7202,8 +7202,11 @@ bool of_QPRODUCT(vthread_t thr, vvp_code_t cp)
  * %qfind <mode>
  * Find elements in a queue matching a value.
  * Mode: 0=find_index (all), 1=find_first_index, 2=find_last_index
+ *       3=find (all elements), 4=find_first (first element), 5=find_last (last element)
  * Queue is on object stack, comparison value is on vec4 stack.
- * Pushes result queue (of int indices) onto object stack.
+ * Pushes result queue onto object stack:
+ *   - Modes 0-2: queue of int indices
+ *   - Modes 3-5: queue of matching elements (same type as source)
  */
 bool of_QFIND(vthread_t thr, vvp_code_t cp)
 {
@@ -7225,7 +7228,7 @@ bool of_QFIND(vthread_t thr, vvp_code_t cp)
 	    return true;
       }
 
-      // Create result queue to hold matching indices
+      // Create result queue to hold matching indices or elements
       vvp_queue_vec4*result = new vvp_queue_vec4;
       size_t qsize = queue->get_size();
 
@@ -7264,6 +7267,35 @@ bool of_QFIND(vthread_t thr, vvp_code_t cp)
 		  queue->get_word(i - 1, elem);
 		  if (elem.eeq(cmp_val)) {
 			result->push_back(make_idx_vec(i - 1), 0);
+			break;
+		  }
+	    }
+      } else if (mode == 3) {
+	    // find: return all matching elements
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i, elem);
+		  if (elem.eeq(cmp_val)) {
+			result->push_back(elem, 0);
+		  }
+	    }
+      } else if (mode == 4) {
+	    // find_first: return first matching element
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i, elem);
+		  if (elem.eeq(cmp_val)) {
+			result->push_back(elem, 0);
+			break;
+		  }
+	    }
+      } else if (mode == 5) {
+	    // find_last: return last matching element
+	    for (size_t i = qsize; i > 0; i--) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i - 1, elem);
+		  if (elem.eeq(cmp_val)) {
+			result->push_back(elem, 0);
 			break;
 		  }
 	    }
