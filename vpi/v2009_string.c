@@ -407,6 +407,88 @@ static PLI_INT32 toupper_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
       return 0;
 }
 
+/*
+ * String compare() method - lexicographic comparison
+ * Returns 0 if equal, <0 if str1 < str2, >0 if str1 > str2
+ */
+static PLI_INT32 compare_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv;
+      vpiHandle arg1, arg2;
+      s_vpi_value value;
+
+      (void)name;
+
+      argv = vpi_iterate(vpiArgument, callh);
+      assert(argv);
+      arg1 = vpi_scan(argv);
+      assert(arg1);
+      arg2 = vpi_scan(argv);
+      assert(arg2);
+      vpi_free_object(argv);
+
+      // Get first string
+      value.format = vpiStringVal;
+      vpi_get_value(arg1, &value);
+      char *str1 = strdup(value.value.str);
+
+      // Get second string
+      value.format = vpiStringVal;
+      vpi_get_value(arg2, &value);
+
+      // Compare strings
+      int result = strcmp(str1, value.value.str);
+      free(str1);
+
+      value.format = vpiIntVal;
+      value.value.integer = result;
+      vpi_put_value(callh, &value, 0, vpiNoDelay);
+
+      return 0;
+}
+
+/*
+ * String icompare() method - case-insensitive comparison
+ * Returns 0 if equal, <0 if str1 < str2, >0 if str1 > str2
+ */
+static PLI_INT32 icompare_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv;
+      vpiHandle arg1, arg2;
+      s_vpi_value value;
+
+      (void)name;
+
+      argv = vpi_iterate(vpiArgument, callh);
+      assert(argv);
+      arg1 = vpi_scan(argv);
+      assert(arg1);
+      arg2 = vpi_scan(argv);
+      assert(arg2);
+      vpi_free_object(argv);
+
+      // Get first string
+      value.format = vpiStringVal;
+      vpi_get_value(arg1, &value);
+      char *str1 = strdup(value.value.str);
+
+      // Get second string
+      value.format = vpiStringVal;
+      vpi_get_value(arg2, &value);
+
+      // Case-insensitive comparison
+      int result = strcasecmp(str1, value.value.str);
+      free(str1);
+
+      value.format = vpiIntVal;
+      value.value.integer = result;
+      vpi_put_value(callh, &value, 0, vpiNoDelay);
+
+      return 0;
+}
+
 static PLI_INT32 realtoa_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
 {
       vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
@@ -540,6 +622,26 @@ void v2009_string_register(void)
       tf_data.compiletf = one_arg_compiletf;
       tf_data.sizetf    = 0;
       tf_data.user_data = "$ivl_string_method$toupper";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type      = vpiSysFunc;
+      tf_data.sysfunctype = vpiIntFunc;
+      tf_data.tfname    = "$ivl_string_method$compare";
+      tf_data.calltf    = compare_calltf;
+      tf_data.compiletf = two_arg_compiletf;
+      tf_data.sizetf    = 0;
+      tf_data.user_data = "$ivl_string_method$compare";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type      = vpiSysFunc;
+      tf_data.sysfunctype = vpiIntFunc;
+      tf_data.tfname    = "$ivl_string_method$icompare";
+      tf_data.calltf    = icompare_calltf;
+      tf_data.compiletf = two_arg_compiletf;
+      tf_data.sizetf    = 0;
+      tf_data.user_data = "$ivl_string_method$icompare";
       res = vpi_register_systf(&tf_data);
       vpip_make_systf_system_defined(res);
 }

@@ -1,0 +1,7 @@
+PASS: compare() equal strings
+PASS: compare() s1 < s2
+PASS: compare() s1 > s2
+PASS: compare() case sensitive
+PASS: icompare() case insensitive equal
+PASS: icompare() APPLE < banana
+PASSED: All 6 tests passed
