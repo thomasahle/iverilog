@@ -1,0 +1,5 @@
+PASS: getc(0) returned 'H' (72)
+PASS: getc(1) returned 'e' (101)
+PASS: getc(4) returned 'o' (111)
+PASS: getc(3) returned '1' (49)
+PASSED: All 4 tests passed

@@ -105,6 +105,65 @@ static PLI_INT32 two_arg_compiletf(ICARUS_VPI_CONST PLI_BYTE8*name)
       return 0;
 }
 
+static PLI_INT32 three_arg_compiletf(ICARUS_VPI_CONST PLI_BYTE8*name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv;
+      vpiHandle arg;
+
+      argv = vpi_iterate(vpiArgument, callh);
+      if (argv == 0) {
+	    vpi_printf("ERROR: %s:%d: ", vpi_get_str(vpiFile, callh),
+	               (int)vpi_get(vpiLineNo, callh));
+	    vpi_printf("%s missing arguments.\n", name);
+	    vpip_set_return_value(1);
+	    vpi_control(vpiFinish, 1);
+	    return 0;
+      }
+
+      arg = vpi_scan(argv);
+      if (arg == 0) {
+	    vpi_printf("ERROR: %s:%d: ", vpi_get_str(vpiFile, callh),
+	               (int)vpi_get(vpiLineNo, callh));
+	    vpi_printf("%s missing first argument.\n", name);
+	    vpip_set_return_value(1);
+	    vpi_control(vpiFinish, 1);
+	    return 0;
+      }
+
+      arg = vpi_scan(argv);
+      if (arg == 0) {
+	    vpi_printf("ERROR: %s:%d: ", vpi_get_str(vpiFile, callh),
+	               (int)vpi_get(vpiLineNo, callh));
+	    vpi_printf("%s missing second argument.\n", name);
+	    vpip_set_return_value(1);
+	    vpi_control(vpiFinish, 1);
+	    return 0;
+      }
+
+      arg = vpi_scan(argv);
+      if (arg == 0) {
+	    vpi_printf("ERROR: %s:%d: ", vpi_get_str(vpiFile, callh),
+	               (int)vpi_get(vpiLineNo, callh));
+	    vpi_printf("%s missing third argument.\n", name);
+	    vpip_set_return_value(1);
+	    vpi_control(vpiFinish, 1);
+	    return 0;
+      }
+
+      arg = vpi_scan(argv);
+      if (arg != 0) {
+	    vpi_printf("ERROR: %s:%d: ", vpi_get_str(vpiFile, callh),
+	               (int)vpi_get(vpiLineNo, callh));
+	    vpi_printf("%s has too many arguments.\n", name);
+	    vpip_set_return_value(1);
+	    vpi_control(vpiFinish, 1);
+	    return 0;
+      }
+
+      return 0;
+}
+
 static PLI_INT32 len_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
 {
       vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
@@ -489,6 +548,105 @@ static PLI_INT32 icompare_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
       return 0;
 }
 
+/*
+ * String getc() method - get character at position
+ * Returns ASCII code of character at index N
+ */
+static PLI_INT32 getc_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv;
+      vpiHandle str_arg, idx_arg;
+      s_vpi_value value;
+
+      (void)name;
+
+      argv = vpi_iterate(vpiArgument, callh);
+      assert(argv);
+      str_arg = vpi_scan(argv);
+      assert(str_arg);
+      idx_arg = vpi_scan(argv);
+      assert(idx_arg);
+      vpi_free_object(argv);
+
+      // Get string
+      value.format = vpiStringVal;
+      vpi_get_value(str_arg, &value);
+      char *str = value.value.str;
+
+      // Get index
+      value.format = vpiIntVal;
+      vpi_get_value(idx_arg, &value);
+      int idx = value.value.integer;
+
+      // Return character code (or 0 if out of bounds)
+      int result = 0;
+      size_t len = strlen(str);
+      if (idx >= 0 && (size_t)idx < len) {
+            result = (unsigned char)str[idx];
+      }
+
+      value.format = vpiIntVal;
+      value.value.integer = result;
+      vpi_put_value(callh, &value, 0, vpiNoDelay);
+
+      return 0;
+}
+
+/*
+ * String putc() method - set character at position
+ * Sets character at index N to given character code
+ */
+static PLI_INT32 putc_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv;
+      vpiHandle str_arg, idx_arg, char_arg;
+      s_vpi_value value;
+
+      (void)name;
+
+      argv = vpi_iterate(vpiArgument, callh);
+      assert(argv);
+      str_arg = vpi_scan(argv);
+      assert(str_arg);
+      idx_arg = vpi_scan(argv);
+      assert(idx_arg);
+      char_arg = vpi_scan(argv);
+      assert(char_arg);
+      vpi_free_object(argv);
+
+      // Get string
+      value.format = vpiStringVal;
+      vpi_get_value(str_arg, &value);
+      size_t len = strlen(value.value.str);
+      char *str = (char*)malloc(len + 1);
+      strcpy(str, value.value.str);
+
+      // Get index
+      value.format = vpiIntVal;
+      vpi_get_value(idx_arg, &value);
+      int idx = value.value.integer;
+
+      // Get character code
+      value.format = vpiIntVal;
+      vpi_get_value(char_arg, &value);
+      int ch = value.value.integer;
+
+      // Modify character if in bounds
+      if (idx >= 0 && (size_t)idx < len) {
+            str[idx] = (char)ch;
+      }
+
+      // Write back the modified string
+      value.format = vpiStringVal;
+      value.value.str = str;
+      vpi_put_value(str_arg, &value, 0, vpiNoDelay);
+
+      free(str);
+      return 0;
+}
+
 static PLI_INT32 realtoa_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
 {
       vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
@@ -642,6 +800,25 @@ void v2009_string_register(void)
       tf_data.compiletf = two_arg_compiletf;
       tf_data.sizetf    = 0;
       tf_data.user_data = "$ivl_string_method$icompare";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type      = vpiSysFunc;
+      tf_data.sysfunctype = vpiIntFunc;
+      tf_data.tfname    = "$ivl_string_method$getc";
+      tf_data.calltf    = getc_calltf;
+      tf_data.compiletf = two_arg_compiletf;
+      tf_data.sizetf    = 0;
+      tf_data.user_data = "$ivl_string_method$getc";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type      = vpiSysTask;
+      tf_data.tfname    = "$ivl_string_method$putc";
+      tf_data.calltf    = putc_calltf;
+      tf_data.compiletf = three_arg_compiletf;
+      tf_data.sizetf    = 0;
+      tf_data.user_data = "$ivl_string_method$putc";
       res = vpi_register_systf(&tf_data);
       vpip_make_systf_system_defined(res);
 }

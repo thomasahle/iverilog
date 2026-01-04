@@ -7377,6 +7377,24 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
+	    if (method_name == "getc") {
+		  if (parms_.size() != 1) {
+			cerr << get_fileline() << ": error: Method `getc()`"
+			     << " requires 1 argument, got " << parms_.size()
+			     << "." << endl;
+		  }
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_string_method$getc",
+						     netvector_t::integer_type(), 2);
+		  sys_expr->parm(0, sub_expr);
+		  if (parms_.size() > 0 && parms_[0].parm) {
+			NetExpr*arg = elaborate_rval_expr(des, scope,
+							  &netvector_t::atom2u32,
+							  parms_[0].parm, false);
+			sys_expr->parm(1, arg);
+		  }
+		  return sys_expr;
+	    }
+
 	    if (method_name == "substr") {
 		  if (parms_.size() != 2)
 			cerr << get_fileline() << ": error: Method `substr()`"

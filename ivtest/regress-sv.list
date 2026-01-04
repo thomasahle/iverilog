@@ -1270,3 +1270,4 @@ sv_case_inside_wildcard	normal,-g2012		ivltests gold=sv_case_inside_wildcard.gol
 sv_interface_modport	normal,-g2012		ivltests gold=sv_interface_modport.gold
 sv_test_local_static	normal,-g2012		ivltests gold=sv_test_local_static.gold
 sv_string_compare           normal,-g2012           ivltests gold=sv_string_compare.gold
+sv_string_getc              normal,-g2012           ivltests gold=sv_string_getc.gold
