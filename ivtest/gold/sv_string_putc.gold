@@ -1,0 +1,5 @@
+PASS: putc(0, 'J') changed 'Hello' to 'Jello'
+PASS: putc(2, 'x') changed 'Hello' to 'Hexlo'
+PASS: putc(4, 'a') changed 'Hello' to 'Hella'
+PASS: putc(1, 88) changed 'ABC' to 'AXC'
+PASSED: All 4 tests passed
