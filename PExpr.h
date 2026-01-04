@@ -775,6 +775,62 @@ class PESoftConstraint : public PExpr {
       PExpr*expr_;
 };
 
+/*
+ * PEConditionalConstraint represents conditional constraints:
+ * - Implication: condition -> { constraints }
+ * - If-else: if (condition) { constraints } else { constraints }
+ *
+ * The constraint is satisfied if:
+ * - For implication: !condition || all_if_constraints_satisfied
+ * - For if-else: (condition && if_satisfied) || (!condition && else_satisfied)
+ */
+class PEConditionalConstraint : public PExpr {
+
+    public:
+      // For implication: condition -> { if_constraints }
+      // For if without else: if (condition) { if_constraints }
+      PEConditionalConstraint(PExpr*cond, std::list<PExpr*>*if_cons);
+      // For if-else: if (condition) { if_constraints } else { else_constraints }
+      PEConditionalConstraint(PExpr*cond, std::list<PExpr*>*if_cons, std::list<PExpr*>*else_cons);
+      ~PEConditionalConstraint() override;
+
+      virtual void dump(std::ostream&out) const override;
+
+      PExpr* get_condition() const { return condition_; }
+      const std::list<PExpr*>& get_if_constraints() const { return if_constraints_; }
+      const std::list<PExpr*>& get_else_constraints() const { return else_constraints_; }
+      bool has_else() const { return has_else_; }
+
+    private:
+      PExpr*condition_;
+      std::list<PExpr*> if_constraints_;
+      std::list<PExpr*> else_constraints_;
+      bool has_else_;
+};
+
+/*
+ * PEDistConstraint represents a dist constraint with weights.
+ * Form: expr dist { val1 := w1, [low:high] :/ w2, ... }
+ *
+ * This preserves the weights through elaboration so VVP can use them
+ * for weighted random value selection.
+ */
+class PEDistConstraint : public PExpr {
+
+    public:
+      PEDistConstraint(PExpr*target, std::list<inside_range_t*>*items);
+      ~PEDistConstraint() override;
+
+      virtual void dump(std::ostream&out) const override;
+
+      PExpr* get_target() const { return target_; }
+      const std::list<inside_range_t*>& get_items() const { return items_; }
+
+    private:
+      PExpr*target_;
+      std::list<inside_range_t*> items_;
+};
+
 class PEBinary : public PExpr {
 
     public:

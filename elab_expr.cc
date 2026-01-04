@@ -124,6 +124,7 @@ static bool analyze_constraint_expr(const PExpr*expr,
  * Recursive helper to extract ALL bounds from a constraint expression.
  * Handles logical AND expressions (from 'inside' constraints) by recursively
  * processing both sides. Handles PESoftConstraint wrapper to mark soft constraints.
+ * Handles PEConditionalConstraint for implication and if-else constraints.
  * Populates the bounds vector with (prop_name, op_code, const_value, is_soft).
  */
 static void analyze_constraint_expr_recursive(const PExpr*expr,
@@ -137,6 +138,74 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
       if (soft) {
             // Unwrap and mark as soft
             analyze_constraint_expr_recursive(soft->get_expr(), bounds, des, scope, true);
+            return;
+      }
+
+      // Check for dist constraint
+      // For dist: x dist { val1, [lo:hi] } - convert to == for values, >= and <= for ranges
+      const PEDistConstraint*dist = dynamic_cast<const PEDistConstraint*>(expr);
+      if (dist) {
+            // Get the target property name
+            PExpr* target = dist->get_target();
+            const PEIdent* target_ident = dynamic_cast<const PEIdent*>(target);
+            if (!target_ident) return;
+
+            const pform_scoped_name_t& path = target_ident->path();
+            if (path.name.empty()) return;
+            perm_string prop_name = path.name.back().name;
+
+            // Process each dist item
+            const std::list<inside_range_t*>& items = dist->get_items();
+            for (auto it = items.begin(); it != items.end(); ++it) {
+                  inside_range_t* rng = *it;
+
+                  if (rng->single_val) {
+                        // Single value: create == constraint
+                        const PENumber* num = dynamic_cast<const PENumber*>(rng->single_val);
+                        if (num) {
+                              int64_t val = num->value().as_long();
+                              // op_code 4 is '=' (==)
+                              bounds.push_back(std::make_tuple(prop_name, 4, val, is_soft));
+                        }
+                  } else if (rng->low_val && rng->high_val) {
+                        // Range: create >= and <= constraints
+                        const PENumber* lo_num = dynamic_cast<const PENumber*>(rng->low_val);
+                        const PENumber* hi_num = dynamic_cast<const PENumber*>(rng->high_val);
+                        if (lo_num) {
+                              int64_t lo = lo_num->value().as_long();
+                              // op_code 2 is 'G' (>=)
+                              bounds.push_back(std::make_tuple(prop_name, 2, lo, is_soft));
+                        }
+                        if (hi_num) {
+                              int64_t hi = hi_num->value().as_long();
+                              // op_code 3 is 'L' (<=)
+                              bounds.push_back(std::make_tuple(prop_name, 3, hi, is_soft));
+                        }
+                  }
+            }
+            return;
+      }
+
+      // Check for conditional constraint (implication or if-else)
+      // For implication: condition -> { body } is satisfied if !condition || body_satisfied
+      // We treat the body constraints as soft when the condition might be false
+      const PEConditionalConstraint*cond = dynamic_cast<const PEConditionalConstraint*>(expr);
+      if (cond) {
+            // For simplicity, extract all constraints from the if-branch as soft constraints
+            // This is conservative: if the condition is false, these won't cause failure
+            // In the future, we could track the condition and evaluate at runtime
+            const std::list<PExpr*>& if_cons = cond->get_if_constraints();
+            for (const PExpr* c : if_cons) {
+                  // Mark conditional constraints as soft since they may not apply
+                  analyze_constraint_expr_recursive(c, bounds, des, scope, true);
+            }
+            // For if-else, also process the else branch as soft
+            if (cond->has_else()) {
+                  const std::list<PExpr*>& else_cons = cond->get_else_constraints();
+                  for (const PExpr* c : else_cons) {
+                        analyze_constraint_expr_recursive(c, bounds, des, scope, true);
+                  }
+            }
             return;
       }
 

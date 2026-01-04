@@ -802,6 +802,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <exprs> expression_list_with_nuls expression_list_proper
 %type <exprs> cont_assign cont_assign_list
 %type <exprs> constraint_block_item_list constraint_block_item_list_opt std_randomize_constraint_opt
+%type <exprs> constraint_trigger constraint_set constraint_expression_list
 %type <expr>  constraint_block_item constraint_expression
 
 %type <decl_assignment> variable_decl_assignment for_variable_decl_assignment
@@ -1650,71 +1651,40 @@ constraint_expression /* IEEE1800-2005 A.1.9 */
         $$ = $1;
       }
   | expression K_dist '{' dist_list '}' ';'
-      { /* Dist constraint - transform into inside-like expression */
-        /* For now, ignore weights and treat as: x inside {values} */
-        PExpr*lhs = $1;
-        std::list<inside_range_t*>*ranges = $4;
-        PExpr*result = 0;
-
-        for (std::list<inside_range_t*>::iterator it = ranges->begin();
-             it != ranges->end(); ++it) {
-              inside_range_t*rng = *it;
-              PExpr*cmp = 0;
-
-              if (rng->single_val) {
-                    /* Single value: (lhs == val) */
-                    cmp = new PEBComp('e', lhs, rng->single_val);
-                    FILE_NAME(cmp, @2);
-              } else if (rng->low_val && rng->high_val) {
-                    /* Range [low:high]: (lhs >= low) && (lhs <= high) */
-                    PExpr*ge = new PEBComp('G', lhs, rng->low_val);
-                    FILE_NAME(ge, @2);
-                    PExpr*le = new PEBComp('L', lhs, rng->high_val);
-                    FILE_NAME(le, @2);
-                    cmp = new PEBLogic('a', ge, le);
-                    FILE_NAME(cmp, @2);
-              }
-
-              if (cmp) {
-                    if (result == 0) {
-                          result = cmp;
-                    } else {
-                          result = new PEBLogic('o', result, cmp);
-                          FILE_NAME(result, @2);
-                    }
-              }
-              delete rng;
-        }
-        delete ranges;
-
-        if (result == 0) {
-              /* Empty list - return expression unchanged */
-              result = lhs;
-        }
-
-        $$ = result;
+      { /* Dist constraint - preserve weights in PEDistConstraint */
+        PEDistConstraint*tmp = new PEDistConstraint($1, $4);
+        FILE_NAME(tmp, @1);
+        $$ = tmp;
       }
-  | expression constraint_trigger
-      { /* Implication constraint - parsed but not enforced */
-        $$ = $1;
+  | expression constraint_trigger semicolon_opt
+      { /* Implication constraint: condition -> { constraints } */
+        PEConditionalConstraint*tmp = new PEConditionalConstraint($1, $2);
+        FILE_NAME(tmp, @1);
+        $$ = tmp;
       }
-  | K_if '(' expression ')' constraint_set %prec less_than_K_else
-      { /* If constraint - complex construct, expression stored */
-        $$ = $3;
+  | K_if '(' expression ')' constraint_set semicolon_opt %prec less_than_K_else
+      { /* If constraint without else */
+        PEConditionalConstraint*tmp = new PEConditionalConstraint($3, $5);
+        FILE_NAME(tmp, @1);
+        $$ = tmp;
       }
-  | K_if '(' expression ')' constraint_set K_else constraint_set
-      { /* If-else constraint - complex construct, expression stored */
-        $$ = $3;
+  | K_if '(' expression ')' constraint_set K_else constraint_set semicolon_opt
+      { /* If-else constraint */
+        PEConditionalConstraint*tmp = new PEConditionalConstraint($3, $5, $7);
+        FILE_NAME(tmp, @1);
+        $$ = tmp;
       }
-  | K_foreach '(' IDENTIFIER '[' loop_variables ']' ')' constraint_set
-      { /* Foreach constraint - complex construct, not stored */
+  | K_foreach '(' IDENTIFIER '[' loop_variables ']' ')' constraint_set semicolon_opt
+      { /* Foreach constraint - complex construct, not yet supported */
         delete[]$3;
+        delete $8;
         $$ = 0;
       }
   ;
 
 constraint_trigger
   : K_CONSTRAINT_IMPL '{' constraint_expression_list '}'
+      { $$ = $3; }
   ;
 
   /* Dist constraint list and items - now converted to inside_range_t for enforcement */
@@ -1805,7 +1775,15 @@ dist_weight_opt
 
 constraint_expression_list /* */
   : constraint_expression_list constraint_expression
+      { std::list<PExpr*>*tmp = $1;
+        if ($2) tmp->push_back($2);
+        $$ = tmp;
+      }
   | constraint_expression
+      { std::list<PExpr*>*tmp = new std::list<PExpr*>;
+        if ($1) tmp->push_back($1);
+        $$ = tmp;
+      }
   ;
 
 constraint_prototype /* IEEE1800-2005: A.1.9 */
@@ -1817,7 +1795,12 @@ constraint_prototype /* IEEE1800-2005: A.1.9 */
 
 constraint_set /* IEEE1800-2005 A.1.9 */
   : constraint_expression
+      { std::list<PExpr*>*tmp = new std::list<PExpr*>;
+        if ($1) tmp->push_back($1);
+        $$ = tmp;
+      }
   | '{' constraint_expression_list '}'
+      { $$ = $2; }
   ;
 
   /* Optional 'with { constraints }' clause for std::randomize() */

@@ -596,6 +596,97 @@ void PESoftConstraint::dump(std::ostream&out) const
             expr_->dump(out);
 }
 
+PEConditionalConstraint::PEConditionalConstraint(PExpr*cond, std::list<PExpr*>*if_cons)
+: condition_(cond), has_else_(false)
+{
+      if (if_cons) {
+            if_constraints_ = *if_cons;
+            delete if_cons;
+      }
+}
+
+PEConditionalConstraint::PEConditionalConstraint(PExpr*cond, std::list<PExpr*>*if_cons,
+                                                 std::list<PExpr*>*else_cons)
+: condition_(cond), has_else_(true)
+{
+      if (if_cons) {
+            if_constraints_ = *if_cons;
+            delete if_cons;
+      }
+      if (else_cons) {
+            else_constraints_ = *else_cons;
+            delete else_cons;
+      }
+}
+
+PEConditionalConstraint::~PEConditionalConstraint()
+{
+}
+
+void PEConditionalConstraint::dump(std::ostream&out) const
+{
+      if (condition_) {
+            condition_->dump(out);
+      }
+      out << " -> { ";
+      for (auto it = if_constraints_.begin(); it != if_constraints_.end(); ++it) {
+            if (*it) (*it)->dump(out);
+            out << "; ";
+      }
+      out << "}";
+      if (has_else_) {
+            out << " else { ";
+            for (auto it = else_constraints_.begin(); it != else_constraints_.end(); ++it) {
+                  if (*it) (*it)->dump(out);
+                  out << "; ";
+            }
+            out << "}";
+      }
+}
+
+PEDistConstraint::PEDistConstraint(PExpr*target, std::list<inside_range_t*>*items)
+: target_(target)
+{
+      if (items) {
+            items_ = *items;
+            delete items;
+      }
+}
+
+PEDistConstraint::~PEDistConstraint()
+{
+      // Note: items_ contents are owned by this class
+      for (auto it = items_.begin(); it != items_.end(); ++it) {
+            delete *it;
+      }
+}
+
+void PEDistConstraint::dump(std::ostream&out) const
+{
+      if (target_) {
+            target_->dump(out);
+      }
+      out << " dist { ";
+      for (auto it = items_.begin(); it != items_.end(); ++it) {
+            if (it != items_.begin()) out << ", ";
+            inside_range_t* rng = *it;
+            if (rng->single_val) {
+                  rng->single_val->dump(out);
+            } else if (rng->low_val && rng->high_val) {
+                  out << "[";
+                  rng->low_val->dump(out);
+                  out << ":";
+                  rng->high_val->dump(out);
+                  out << "]";
+            }
+            if (rng->weight) {
+                  out << (rng->weight_per_value ? " := " : " :/ ");
+                  rng->weight->dump(out);
+            }
+      }
+      out << " }";
+}
+
 PEVoid::PEVoid()
 {
 }
