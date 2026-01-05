@@ -196,6 +196,9 @@ class netclass_t : public ivl_type_s {
 	    // System function constraint support
 	    sysfunc_type_t sysfunc_type; // Type of system function (SYSFUNC_NONE if not applicable)
 	    size_t sysfunc_arg_idx;      // Property index that is argument to system function
+	    // Weighted dist constraint support
+	    int64_t weight;       // Weight for dist constraints (default 1)
+	    bool weight_per_value;// true for := (per value), false for :/ (per range)
       };
       std::vector<simple_bound_t> simple_bounds_;
 
@@ -212,7 +215,8 @@ class netclass_t : public ivl_type_s {
 	// Simple bounds API for constraint solver
       void add_simple_bound(perm_string constraint_name, size_t prop_idx, char op, bool is_soft,
                             bool has_const, int64_t const_val, size_t bound_prop,
-                            sysfunc_type_t sysfunc = SYSFUNC_NONE, size_t sysfunc_arg = 0);
+                            sysfunc_type_t sysfunc = SYSFUNC_NONE, size_t sysfunc_arg = 0,
+                            int64_t weight = 1, bool weight_per_value = true);
       size_t get_simple_bounds() const { return simple_bounds_.size(); }
       const simple_bound_t& get_simple_bound(size_t idx) const;
       perm_string get_simple_bound_constraint_name(size_t idx) const;

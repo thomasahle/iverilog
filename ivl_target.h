@@ -2487,6 +2487,12 @@ extern unsigned    ivl_type_simple_bound_prop2(ivl_type_t net, unsigned idx);
  */
 extern unsigned    ivl_type_simple_bound_sysfunc_type(ivl_type_t net, unsigned idx);
 extern unsigned    ivl_type_simple_bound_sysfunc_arg(ivl_type_t net, unsigned idx);
+/* Weighted dist constraint support.
+ * ivl_type_simple_bound_weight returns the weight for dist constraints (default 1).
+ * ivl_type_simple_bound_weight_per_value returns 1 for := (per value), 0 for :/ (per range).
+ */
+extern int64_t     ivl_type_simple_bound_weight(ivl_type_t net, unsigned idx);
+extern int         ivl_type_simple_bound_weight_per_value(ivl_type_t net, unsigned idx);
 
 extern ivl_type_t  ivl_type_super(ivl_type_t net);
 

@@ -1223,13 +1223,16 @@ void compile_factory(char*type_name, char*class_label)
 }
 
 /*
- * Constraint bound: .constraint_bound class_label, "constraint_name", prop_idx, "op", soft, has_const, value, sysfunc_type, sysfunc_arg ;
+ * Constraint bound: .constraint_bound class_label, "constraint_name", prop_idx, "op", soft, has_const, value, sysfunc_type, sysfunc_arg, weight, weight_per_value ;
  * This registers a simple constraint bound for the randomize() constraint solver.
  * sysfunc_type: 0=NONE, 1=COUNTONES, 2=ONEHOT, 3=ONEHOT0, 4=ISUNKNOWN, 5=CLOG2
+ * weight: weight for weighted dist constraints (default 1)
+ * weight_per_value: 1 for := (per value), 0 for :/ (per range)
  */
 void compile_constraint_bound(char*class_label, char*constraint_name, unsigned prop_idx,
                               char op, int soft, int has_const, int64_t value,
-                              unsigned sysfunc_type, unsigned sysfunc_arg)
+                              unsigned sysfunc_type, unsigned sysfunc_arg,
+                              int64_t weight, int weight_per_value)
 {
       // Look up the class definition from the label
       vpiHandle class_h = vvp_lookup_handle(class_label);
@@ -1266,6 +1269,8 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
       }
       bound.sysfunc_type = static_cast<class_type::sysfunc_type_t>(sysfunc_type);
       bound.sysfunc_arg_idx = sysfunc_arg;
+      bound.weight = weight;
+      bound.weight_per_value = (weight_per_value != 0);
       class_def->add_constraint_bound(bound);
 
       free(class_label);

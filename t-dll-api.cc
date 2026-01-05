@@ -3638,6 +3638,22 @@ extern "C" unsigned ivl_type_simple_bound_sysfunc_arg(ivl_type_t net, unsigned i
       return class_type->get_simple_bound(idx).sysfunc_arg_idx;
 }
 
+extern "C" int64_t ivl_type_simple_bound_weight(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 1;
+      return class_type->get_simple_bound(idx).weight;
+}
+
+extern "C" int ivl_type_simple_bound_weight_per_value(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 1;
+      return class_type->get_simple_bound(idx).weight_per_value ? 1 : 0;
+}
+
 extern "C" ivl_type_t ivl_type_super(ivl_type_t net)
 {
       const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);

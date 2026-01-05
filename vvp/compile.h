@@ -572,9 +572,12 @@ extern void compile_factory(char*type_name, char*class_label);
 
 /* Constraint bound for randomize() constraint solver.
  * sysfunc_type: 0=NONE, 1=COUNTONES, 2=ONEHOT, 3=ONEHOT0, 4=ISUNKNOWN, 5=CLOG2
- * sysfunc_arg: property index that is the system function argument */
+ * sysfunc_arg: property index that is the system function argument
+ * weight: weight for weighted dist constraints (default 1)
+ * weight_per_value: 1 for := (per value), 0 for :/ (per range) */
 extern void compile_constraint_bound(char*class_label, char*constraint_name, unsigned prop_idx,
                                      char op, int soft, int has_const, int64_t value,
-                                     unsigned sysfunc_type, unsigned sysfunc_arg);
+                                     unsigned sysfunc_type, unsigned sysfunc_arg,
+                                     int64_t weight = 1, int weight_per_value = 1);
 
 #endif /* IVL_compile_H */
