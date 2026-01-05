@@ -3804,6 +3804,50 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	      $$ = 0;
 	}
       }
+  | '(' expression K_until expression ')'
+      { /* Parenthesized until: (a until b) - same as a until b */
+	if ($2) {
+	      delete $4;
+	      $$ = $2;
+	} else {
+	      delete $4;
+	      $$ = 0;
+	}
+      }
+  | '(' expression K_s_until expression ')'
+      { /* Parenthesized s_until */
+	if ($2) {
+	      delete $4;
+	      $$ = $2;
+	} else {
+	      delete $4;
+	      $$ = 0;
+	}
+      }
+  | '(' expression K_until_with expression ')'
+      { /* Parenthesized until_with */
+	if ($2 && $4) {
+	      PEBLogic*both = new PEBLogic('a', $2, $4);
+	      FILE_NAME(both, @2);
+	      $$ = both;
+	} else {
+	      delete $2;
+	      delete $4;
+	      $$ = 0;
+	}
+      }
+  | '(' expression K_s_until_with expression ')'
+      { /* Parenthesized s_until_with */
+	if ($2 && $4) {
+	      PEBLogic*both = new PEBLogic('a', $2, $4);
+	      FILE_NAME(both, @2);
+	      $$ = both;
+	} else {
+	      delete $2;
+	      delete $4;
+	      $$ = 0;
+	}
+      }
   ;
 
   /* Sequence expression for use inside first_match, etc.
