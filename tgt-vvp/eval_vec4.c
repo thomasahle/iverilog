@@ -1562,11 +1562,12 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    unsigned nparms = ivl_expr_parms(expr);
 
 	      /* Emit inline constraint bounds before %randomize
-	         Extra parameters come in triplets: prop_idx, op_code, value */
-	    for (unsigned idx = 1; idx + 2 < nparms; idx += 3) {
+	         Extra parameters come in quintuplets: prop_idx, op_code, value, weight, weight_per_value */
+	    for (unsigned idx = 1; idx + 4 < nparms; idx += 5) {
 		  ivl_expr_t prop_expr = ivl_expr_parm(expr, idx);
 		  ivl_expr_t op_expr = ivl_expr_parm(expr, idx+1);
 		  ivl_expr_t val_expr = ivl_expr_parm(expr, idx+2);
+		  /* weight and weight_per_value at idx+3 and idx+4 - not yet used by opcode */
 
 		  /* Extract constant values */
 		  if (ivl_expr_type(prop_expr) == IVL_EX_NUMBER &&
@@ -1610,11 +1611,11 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 
       if (strcmp(ivl_expr_name(expr),"$ivl_std_randomize")==0) {
 	      /* std::randomize(var) with optional inline constraints.
-	         Arguments: arg0 = signal, followed by pairs of (op_code, const_val).
+	         Arguments: arg0 = signal, followed by quadruplets of (op_code, const_val, weight, weight_per_value).
 	         Generate random bits, check constraints, retry if needed. */
 	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
 	    unsigned nparms = ivl_expr_parms(expr);
-	    unsigned num_bounds = (nparms - 1) / 2;
+	    unsigned num_bounds = (nparms - 1) / 4;
 
 	    if (ivl_expr_type(arg) == IVL_EX_SIGNAL) {
 		  ivl_signal_t sig = ivl_expr_signal(arg);
@@ -1624,8 +1625,9 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 		  if (num_bounds > 0) {
 			/* Emit bounds using existing push_rand_bound with property_idx=0 */
 			for (unsigned i = 0; i < num_bounds; i++) {
-			      ivl_expr_t op_expr = ivl_expr_parm(expr, 1 + i*2);
-			      ivl_expr_t val_expr = ivl_expr_parm(expr, 2 + i*2);
+			      ivl_expr_t op_expr = ivl_expr_parm(expr, 1 + i*4);
+			      ivl_expr_t val_expr = ivl_expr_parm(expr, 2 + i*4);
+			      /* weight and weight_per_value at 3+i*4 and 4+i*4 - not yet used */
 			      int op_code = (int)ivl_expr_uvalue(op_expr);
 			      int64_t const_val = (int64_t)(int32_t)ivl_expr_uvalue(val_expr);
 			      /* Use property_idx=0 since std::randomize has just one variable */
