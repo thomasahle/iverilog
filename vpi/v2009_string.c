@@ -725,6 +725,134 @@ static PLI_INT32 putc_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
       return 0;
 }
 
+/*
+ * String find() method - find first occurrence of substring
+ * Returns position of first match, or -1 if not found
+ * Optional second argument specifies starting position
+ */
+static PLI_INT32 find_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv;
+      vpiHandle str_arg, substr_arg, start_arg = 0;
+      s_vpi_value value;
+      int start_pos = 0;
+
+      (void)name;
+
+      argv = vpi_iterate(vpiArgument, callh);
+      assert(argv);
+      str_arg = vpi_scan(argv);
+      assert(str_arg);
+      substr_arg = vpi_scan(argv);
+      assert(substr_arg);
+      start_arg = vpi_scan(argv);
+      if (start_arg) {
+            // Optional start position argument
+            value.format = vpiIntVal;
+            vpi_get_value(start_arg, &value);
+            start_pos = value.value.integer;
+            vpi_free_object(argv);
+      }
+      // If no third arg, argv iterator is already exhausted and freed
+
+      // Get source string
+      value.format = vpiStringVal;
+      vpi_get_value(str_arg, &value);
+      char *str = strdup(value.value.str);
+      size_t str_len = strlen(str);
+
+      // Get substring to find
+      value.format = vpiStringVal;
+      vpi_get_value(substr_arg, &value);
+      char *substr = value.value.str;
+
+      // Find substring starting from start_pos
+      int result = -1;
+      if (start_pos >= 0 && (size_t)start_pos < str_len) {
+            char *found = strstr(str + start_pos, substr);
+            if (found) {
+                  result = found - str;
+            }
+      }
+
+      free(str);
+
+      value.format = vpiIntVal;
+      value.value.integer = result;
+      vpi_put_value(callh, &value, 0, vpiNoDelay);
+
+      return 0;
+}
+
+/*
+ * String rfind() method - find last occurrence of substring
+ * Returns position of last match, or -1 if not found
+ * Optional second argument specifies end position (search backwards from there)
+ */
+static PLI_INT32 rfind_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv;
+      vpiHandle str_arg, substr_arg, end_arg = 0;
+      s_vpi_value value;
+      int end_pos = -1;  // -1 means search from end
+
+      (void)name;
+
+      argv = vpi_iterate(vpiArgument, callh);
+      assert(argv);
+      str_arg = vpi_scan(argv);
+      assert(str_arg);
+      substr_arg = vpi_scan(argv);
+      assert(substr_arg);
+      end_arg = vpi_scan(argv);
+      if (end_arg) {
+            // Optional end position argument
+            value.format = vpiIntVal;
+            vpi_get_value(end_arg, &value);
+            end_pos = value.value.integer;
+            vpi_free_object(argv);
+      }
+      // If no third arg, argv iterator is already exhausted and freed
+
+      // Get source string
+      value.format = vpiStringVal;
+      vpi_get_value(str_arg, &value);
+      char *str = strdup(value.value.str);
+      size_t str_len = strlen(str);
+
+      // Get substring to find
+      value.format = vpiStringVal;
+      vpi_get_value(substr_arg, &value);
+      char *substr = value.value.str;
+      size_t substr_len = strlen(substr);
+
+      // Find last occurrence
+      int result = -1;
+      if (substr_len == 0) {
+            // Empty substring matches at end
+            result = str_len;
+      } else {
+            size_t search_end = (end_pos >= 0 && (size_t)end_pos < str_len) ? (size_t)end_pos : str_len - 1;
+            // Search backwards from search_end
+            for (size_t i = search_end + 1; i > 0 && i >= substr_len; i--) {
+                  if (strncmp(str + i - substr_len, substr, substr_len) == 0) {
+                        result = i - substr_len;
+                        break;
+                  }
+            }
+      }
+
+      free(str);
+
+      value.format = vpiIntVal;
+      value.value.integer = result;
+      vpi_put_value(callh, &value, 0, vpiNoDelay);
+
+      return 0;
+}
+
 static PLI_INT32 realtoa_calltf(ICARUS_VPI_CONST PLI_BYTE8*name)
 {
       vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
@@ -917,6 +1045,26 @@ void v2009_string_register(void)
       tf_data.compiletf = three_arg_compiletf;
       tf_data.sizetf    = 0;
       tf_data.user_data = "$ivl_string_method$putc";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type      = vpiSysFunc;
+      tf_data.sysfunctype = vpiIntFunc;
+      tf_data.tfname    = "$ivl_string_method$find";
+      tf_data.calltf    = find_calltf;
+      tf_data.compiletf = 0;  // Optional args, skip compile check
+      tf_data.sizetf    = 0;
+      tf_data.user_data = "$ivl_string_method$find";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type      = vpiSysFunc;
+      tf_data.sysfunctype = vpiIntFunc;
+      tf_data.tfname    = "$ivl_string_method$rfind";
+      tf_data.calltf    = rfind_calltf;
+      tf_data.compiletf = 0;  // Optional args, skip compile check
+      tf_data.sizetf    = 0;
+      tf_data.user_data = "$ivl_string_method$rfind";
       res = vpi_register_systf(&tf_data);
       vpip_make_systf_system_defined(res);
 }

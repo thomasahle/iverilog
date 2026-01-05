@@ -7409,6 +7409,62 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
+	    // String find() method: str.find(substring) or str.find(substring, start_pos)
+	    // Returns the position of the first occurrence, or -1 if not found
+	    if (method_name == "find") {
+		  if (parms_.size() < 1 || parms_.size() > 2) {
+			cerr << get_fileline() << ": error: Method `find()`"
+			     << " requires 1 or 2 arguments, got " << parms_.size()
+			     << "." << endl;
+		  }
+		  // Use 2 args if only substring provided, 3 if start_pos also provided
+		  int num_args = (parms_.size() > 1 && parms_[1].parm) ? 3 : 2;
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_string_method$find",
+						     netvector_t::integer_type(), num_args);
+		  sys_expr->parm(0, sub_expr);
+		  if (parms_.size() > 0 && parms_[0].parm) {
+			NetExpr*arg = elaborate_rval_expr(des, scope,
+							  &netstring_t::type_string,
+							  parms_[0].parm, false);
+			sys_expr->parm(1, arg);
+		  }
+		  if (num_args > 2 && parms_[1].parm) {
+			NetExpr*arg = elaborate_rval_expr(des, scope,
+							  &netvector_t::atom2u32,
+							  parms_[1].parm, false);
+			sys_expr->parm(2, arg);
+		  }
+		  return sys_expr;
+	    }
+
+	    // String rfind() method: str.rfind(substring) or str.rfind(substring, start_pos)
+	    // Returns the position of the last occurrence, or -1 if not found
+	    if (method_name == "rfind") {
+		  if (parms_.size() < 1 || parms_.size() > 2) {
+			cerr << get_fileline() << ": error: Method `rfind()`"
+			     << " requires 1 or 2 arguments, got " << parms_.size()
+			     << "." << endl;
+		  }
+		  // Use 2 args if only substring provided, 3 if end_pos also provided
+		  int num_args = (parms_.size() > 1 && parms_[1].parm) ? 3 : 2;
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_string_method$rfind",
+						     netvector_t::integer_type(), num_args);
+		  sys_expr->parm(0, sub_expr);
+		  if (parms_.size() > 0 && parms_[0].parm) {
+			NetExpr*arg = elaborate_rval_expr(des, scope,
+							  &netstring_t::type_string,
+							  parms_[0].parm, false);
+			sys_expr->parm(1, arg);
+		  }
+		  if (num_args > 2 && parms_[1].parm) {
+			NetExpr*arg = elaborate_rval_expr(des, scope,
+							  &netvector_t::atom2u32,
+							  parms_[1].parm, false);
+			sys_expr->parm(2, arg);
+		  }
+		  return sys_expr;
+	    }
+
 	    if (method_name == "substr") {
 		  if (parms_.size() != 2)
 			cerr << get_fileline() << ": error: Method `substr()`"
