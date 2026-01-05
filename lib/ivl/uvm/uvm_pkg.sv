@@ -1490,7 +1490,8 @@ package uvm_pkg;
     uvm_analysis_export #(T) analysis_export;
 
     // Analysis export (implements write)
-    function new(string name, uvm_component parent);
+    // size parameter accepted for compatibility but stub uses fixed 64-element array
+    function new(string name, uvm_component parent, int size = 1);
       super.new(name, parent);
       m_count = 0;
       m_head = 0;
@@ -1598,7 +1599,8 @@ package uvm_pkg;
     int m_head;
     int m_tail;
 
-    function new(string name, uvm_component parent);
+    // size parameter accepted for compatibility but stub uses fixed 64-element array
+    function new(string name, uvm_component parent, int size = 1);
       super.new(name, parent);
       m_count = 0;
       m_head = 0;
