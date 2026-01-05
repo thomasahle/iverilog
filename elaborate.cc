@@ -4321,33 +4321,69 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		                                &netvector_t::atom2s32,
 		                                method_name, "$size");
 	    } else if (method_name == "reverse" && !net->queue_type()) {
-		  // reverse for queues is handled below
-		  cerr << get_fileline() << ": sorry: 'reverse()' "
-		          "array sorting method is not currently supported for non-queue arrays."
-		       << endl;
-		  des->errors += 1;
-		  return 0;
+		  // reverse() for dynamic arrays
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: reverse() "
+			     << "method takes no arguments." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+		  NetSTask*sys = new NetSTask("$ivl_darray_method$reverse",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
 	    } else if (method_name=="sort" && !net->queue_type()) {
-		  // sort for queues is handled below
-		  cerr << get_fileline() << ": sorry: 'sort()' "
-		          "array sorting method is not currently supported for non-queue arrays."
-		       << endl;
-		  des->errors += 1;
-		  return 0;
+		  // sort() for dynamic arrays
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: sort() "
+			     << "method takes no arguments." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+		  NetSTask*sys = new NetSTask("$ivl_darray_method$sort",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
 	    } else if (method_name=="rsort" && !net->queue_type()) {
-		  // rsort for queues is handled below
-		  cerr << get_fileline() << ": sorry: 'rsort()' "
-		          "array sorting method is not currently supported for non-queue arrays."
-		       << endl;
-		  des->errors += 1;
-		  return 0;
+		  // rsort() for dynamic arrays
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: rsort() "
+			     << "method takes no arguments." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+		  NetSTask*sys = new NetSTask("$ivl_darray_method$rsort",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
 	    } else if (method_name=="shuffle" && !net->queue_type()) {
-		  // shuffle for queues is handled below
-		  cerr << get_fileline() << ": sorry: 'shuffle()' "
-		          "array sorting method is not currently supported."
-		       << endl;
-		  des->errors += 1;
-		  return 0;
+		  // shuffle() for dynamic arrays
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: shuffle() "
+			     << "method takes no arguments." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+		  NetSTask*sys = new NetSTask("$ivl_darray_method$shuffle",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
 	    }
       }
 

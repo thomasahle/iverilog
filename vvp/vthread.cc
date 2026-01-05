@@ -7322,6 +7322,94 @@ bool of_DMAX(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %dreverse <var-label>
+ * Reverse the dynamic array in place.
+ */
+bool of_DREVERSE(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0) {
+	    cerr << thr->get_fileline()
+	         << "Warning: reverse() on empty or nil dynamic array." << endl;
+	    return true;
+      }
+
+      darray->reverse();
+      return true;
+}
+
+/*
+ * %dshuffle <var-label>
+ * Shuffle the dynamic array in place.
+ */
+bool of_DSHUFFLE(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0) {
+	    cerr << thr->get_fileline()
+	         << "Warning: shuffle() on empty or nil dynamic array." << endl;
+	    return true;
+      }
+
+      darray->shuffle();
+      return true;
+}
+
+/*
+ * %dsort <var-label>
+ * Sort the dynamic array in ascending order.
+ */
+bool of_DSORT(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0) {
+	    cerr << thr->get_fileline()
+	         << "Warning: sort() on empty or nil dynamic array." << endl;
+	    return true;
+      }
+
+      darray->sort();
+      return true;
+}
+
+/*
+ * %drsort <var-label>
+ * Sort the dynamic array in descending order.
+ */
+bool of_DRSORT(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0) {
+	    cerr << thr->get_fileline()
+	         << "Warning: rsort() on empty or nil dynamic array." << endl;
+	    return true;
+      }
+
+      darray->rsort();
+      return true;
+}
+
+/*
  * %qfind <mode>
  * Find elements in a queue matching a value.
  * Mode: 0=find_index (all), 1=find_first_index, 2=find_last_index

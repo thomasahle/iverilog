@@ -73,6 +73,81 @@ vvp_vector4_t vvp_darray::get_bitstream(bool)
       return vvp_vector4_t();
 }
 
+void vvp_darray::shuffle(void)
+{
+      size_t n = get_size();
+      if (n <= 1) return;
+
+	// Fisher-Yates shuffle using get_word/set_word
+      static std::mt19937 rng(std::random_device{}());
+      for (size_t i = n - 1; i > 0; --i) {
+	    std::uniform_int_distribution<size_t> dist(0, i);
+	    size_t j = dist(rng);
+	    if (i != j) {
+		  vvp_vector4_t tmp_i, tmp_j;
+		  get_word(i, tmp_i);
+		  get_word(j, tmp_j);
+		  set_word(i, tmp_j);
+		  set_word(j, tmp_i);
+	    }
+      }
+}
+
+void vvp_darray::reverse(void)
+{
+      size_t n = get_size();
+      if (n <= 1) return;
+
+      for (size_t i = 0; i < n / 2; ++i) {
+	    size_t j = n - 1 - i;
+	    vvp_vector4_t tmp_i, tmp_j;
+	    get_word(i, tmp_i);
+	    get_word(j, tmp_j);
+	    set_word(i, tmp_j);
+	    set_word(j, tmp_i);
+      }
+}
+
+void vvp_darray::sort(void)
+{
+      size_t n = get_size();
+      if (n <= 1) return;
+
+	// Simple bubble sort using signed comparison (for int arrays)
+      for (size_t i = 0; i < n - 1; ++i) {
+	    for (size_t j = 0; j < n - 1 - i; ++j) {
+		  vvp_vector4_t a, b;
+		  get_word(j, a);
+		  get_word(j + 1, b);
+		    // compare_gtge_signed(a, b) returns BIT4_1 if a > b
+		  if (compare_gtge_signed(a, b, BIT4_0) == BIT4_1) {
+			set_word(j, b);
+			set_word(j + 1, a);
+		  }
+	    }
+      }
+}
+
+void vvp_darray::rsort(void)
+{
+      size_t n = get_size();
+      if (n <= 1) return;
+
+	// Simple bubble sort in descending order
+      for (size_t i = 0; i < n - 1; ++i) {
+	    for (size_t j = 0; j < n - 1 - i; ++j) {
+		  vvp_vector4_t a, b;
+		  get_word(j, a);
+		  get_word(j + 1, b);
+		    // compare_gtge_signed(b, a) returns BIT4_1 if b > a (so a < b)
+		  if (compare_gtge_signed(b, a, BIT4_0) == BIT4_1) {
+			set_word(j, b);
+			set_word(j + 1, a);
+		  }
+	    }
+      }
+}
+
 template <class TYPE> vvp_darray_atom<TYPE>::~vvp_darray_atom()
 {
 }

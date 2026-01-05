@@ -2108,6 +2108,54 @@ static int show_system_task_call(ivl_statement_t net)
       if (strcmp(stmt_name,"$ivl_darray_method$delete") == 0)
 	    return show_delete_method(net);
 
+      if (strcmp(stmt_name,"$ivl_darray_method$reverse") == 0) {
+	    show_stmt_file_line(net, "darray: reverse");
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 1)
+		  return 1;
+	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);
+	    assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
+	    ivl_signal_t var = ivl_expr_signal(parm0);
+	    fprintf(vvp_out, "    %%dreverse v%p_0;\n", var);
+	    return 0;
+      }
+
+      if (strcmp(stmt_name,"$ivl_darray_method$shuffle") == 0) {
+	    show_stmt_file_line(net, "darray: shuffle");
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 1)
+		  return 1;
+	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);
+	    assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
+	    ivl_signal_t var = ivl_expr_signal(parm0);
+	    fprintf(vvp_out, "    %%dshuffle v%p_0;\n", var);
+	    return 0;
+      }
+
+      if (strcmp(stmt_name,"$ivl_darray_method$sort") == 0) {
+	    show_stmt_file_line(net, "darray: sort");
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 1)
+		  return 1;
+	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);
+	    assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
+	    ivl_signal_t var = ivl_expr_signal(parm0);
+	    fprintf(vvp_out, "    %%dsort v%p_0;\n", var);
+	    return 0;
+      }
+
+      if (strcmp(stmt_name,"$ivl_darray_method$rsort") == 0) {
+	    show_stmt_file_line(net, "darray: rsort");
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 1)
+		  return 1;
+	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);
+	    assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
+	    ivl_signal_t var = ivl_expr_signal(parm0);
+	    fprintf(vvp_out, "    %%drsort v%p_0;\n", var);
+	    return 0;
+      }
+
       if (strcmp(stmt_name,"$ivl_assoc_method$delete") == 0)
 	    return show_assoc_delete_method(net);
 

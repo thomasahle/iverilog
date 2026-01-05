@@ -49,6 +49,12 @@ class vvp_darray : public vvp_object {
       virtual void get_word(unsigned adr, vvp_object_t&value);
 
       virtual vvp_vector4_t get_bitstream(bool as_vec4);
+
+	// In-place manipulation methods
+      virtual void shuffle(void);
+      virtual void reverse(void);
+      virtual void sort(void);
+      virtual void rsort(void);
 };
 
 template <class TYPE> class vvp_darray_atom : public vvp_darray {
@@ -193,10 +199,10 @@ class vvp_queue : public vvp_darray {
       virtual void pop_front(void)=0;
       virtual void erase(unsigned idx)=0;
       virtual void erase_tail(unsigned idx)=0;
-      virtual void shuffle(void)=0;
-      virtual void reverse(void)=0;
-      virtual void sort(void)=0;
-      virtual void rsort(void)=0;
+      virtual void shuffle(void) override =0;
+      virtual void reverse(void) override =0;
+      virtual void sort(void) override =0;
+      virtual void rsort(void) override =0;
 
       // Reduction methods
       virtual vvp_object_t min_val(void);
