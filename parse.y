@@ -3716,6 +3716,30 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	      $$ = 0;
 	}
       }
+  | expression K_s_until_with expression
+      { /* s_until_with - multi-cycle temporal operator - parsed but not elaborated */
+	delete $1;
+	delete $3;
+	$$ = 0;
+      }
+  | expression K_until_with expression
+      { /* until_with - multi-cycle temporal operator - parsed but not elaborated */
+	delete $1;
+	delete $3;
+	$$ = 0;
+      }
+  | expression K_s_until expression
+      { /* s_until - multi-cycle temporal operator - parsed but not elaborated */
+	delete $1;
+	delete $3;
+	$$ = 0;
+      }
+  | expression K_until expression
+      { /* until - multi-cycle temporal operator - parsed but not elaborated */
+	delete $1;
+	delete $3;
+	$$ = 0;
+      }
   ;
 
   /* Sequence expression for use inside first_match, etc.
