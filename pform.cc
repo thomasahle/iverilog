@@ -3015,10 +3015,19 @@ vector<pform_tf_port_t>*pform_make_task_ports(const struct vlltype&loc,
 
       vector<pform_tf_port_t>*res = new vector<pform_tf_port_t>(0);
 
-      // For extern declarations and SVA (property/sequence) declarations,
-      // we don't want to create actual wires - we're just declaring the
-      // signature. Return empty port list.
-      if (pform_in_extern_declaration() || pform_in_sva_declaration()) {
+      // For extern declarations, we don't want to create actual wires.
+      if (pform_in_extern_declaration()) {
+	    delete ports;
+	    return res;
+      }
+
+      // For SVA (property/sequence) declarations, we don't want to create
+      // actual wires but we still need the port names for parameter substitution.
+      if (pform_in_sva_declaration()) {
+	    for (list<pform_port_t>::iterator cur = ports->begin();
+		 cur != ports->end(); ++cur) {
+		  res->push_back(pform_tf_port_t(cur->name.first));
+	    }
 	    delete ports;
 	    return res;
       }

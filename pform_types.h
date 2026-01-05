@@ -193,9 +193,11 @@ struct decl_assignment_t {
 struct pform_tf_port_t {
       PWire*port;
       PExpr*defe;
+      perm_string name;  // Port name - for SVA mode where port may be null
 
       inline pform_tf_port_t() : port(0), defe(0) { }
       inline explicit pform_tf_port_t(PWire*p) : port(p), defe(0) { }
+      inline explicit pform_tf_port_t(perm_string n) : port(0), defe(0), name(n) { }
 };
 
 /*

@@ -107,18 +107,33 @@ static pform_name_t* pform_create_super(void)
 static std::list<named_pexpr_t>*attributes_in_context = 0;
 
 /* Named property declarations - stored by name for use in assertions.
-   Maps property name to property_spec (clocking_event, expr). */
+   Maps property name to property_spec (clocking_event, expr, optional ports). */
 struct stored_property_t {
       PEventStatement* clocking_event;
       PExpr* expr;
+      std::vector<perm_string> port_names;  // Formal parameter names
 };
 static std::map<perm_string, stored_property_t> named_properties;
 
-static void store_named_property(const char* name, PEventStatement* clk, PExpr* e)
+static void store_named_property(const char* name, PEventStatement* clk, PExpr* e,
+                                 std::vector<pform_tf_port_t>* ports = 0)
 {
       stored_property_t prop;
       prop.clocking_event = clk;
       prop.expr = e;
+      /* Extract port names for parameter substitution.
+         In SVA mode, port->port is null but port->name is set. */
+      if (ports) {
+            for (auto& p : *ports) {
+                  if (p.name) {
+                        /* SVA mode: name is directly set */
+                        prop.port_names.push_back(p.name);
+                  } else if (p.port) {
+                        /* Normal mode: get name from PWire */
+                        prop.port_names.push_back(p.port->basename());
+                  }
+            }
+      }
       /* Use lex_strings.make() to properly copy the string - the parser will delete[]$2 */
       perm_string key = lex_strings.make(name);
       named_properties[key] = prop;
@@ -133,32 +148,171 @@ static stored_property_t* lookup_named_property(perm_string name)
       return 0;
 }
 
+/* Map for parameter substitution during property instantiation */
+static std::map<perm_string, PExpr*> property_param_subst;
+
+/* Forward declaration for recursive substitution */
+static PExpr* substitute_property_params(PExpr* expr);
+
+/* Substitute parameters in an expression tree.
+   Returns a new expression with formal parameters replaced by actual arguments.
+   Only handles common cases - returns original expr for unsupported patterns. */
+static PExpr* substitute_property_params(PExpr* expr)
+{
+      if (expr == 0)
+            return 0;
+
+      /* Check if this is a formal parameter reference */
+      PEIdent* ident = dynamic_cast<PEIdent*>(expr);
+      if (ident) {
+            const pform_scoped_name_t& path = ident->path();
+            if (path.size() == 1 && path.package == 0) {
+                  perm_string name = peek_head_name(path);
+                  auto it = property_param_subst.find(name);
+                  if (it != property_param_subst.end()) {
+                        /* Found a parameter - return the actual argument */
+                        return it->second;
+                  }
+            }
+            /* Not a parameter - return as-is */
+            return expr;
+      }
+
+      /* Handle system/function calls - substitute in arguments */
+      PECallFunction* call = dynamic_cast<PECallFunction*>(expr);
+      if (call) {
+            const std::vector<named_pexpr_t>& old_args = call->parms();
+            std::vector<named_pexpr_t> new_args;
+            bool changed = false;
+            for (auto& arg : old_args) {
+                  PExpr* new_parm = substitute_property_params(arg.parm);
+                  named_pexpr_t new_arg;
+                  new_arg.name = arg.name;
+                  new_arg.parm = new_parm;
+                  new_args.push_back(new_arg);
+                  if (new_parm != arg.parm)
+                        changed = true;
+            }
+            if (changed) {
+                  /* Create a new call with substituted arguments */
+                  perm_string fname = peek_head_name(call->path());
+                  PECallFunction* new_call = new PECallFunction(fname, new_args);
+                  new_call->set_line(*call);  /* Copy file/line info */
+                  return new_call;
+            }
+            return expr;
+      }
+
+      /* Handle logical binary operators (PEBLogic: ||, &&, ->, <->) */
+      PEBLogic* logic = dynamic_cast<PEBLogic*>(expr);
+      if (logic) {
+            PExpr* new_left = substitute_property_params(logic->get_left());
+            PExpr* new_right = substitute_property_params(logic->get_right());
+            if (new_left != logic->get_left() || new_right != logic->get_right()) {
+                  /* Create a new PEBLogic expression with substituted operands */
+                  PEBLogic* new_logic = new PEBLogic(logic->get_op(), new_left, new_right);
+                  new_logic->set_line(*logic);  /* Copy file/line info */
+                  return new_logic;
+            }
+            return expr;
+      }
+
+      /* Handle other binary operators */
+      PEBinary* binary = dynamic_cast<PEBinary*>(expr);
+      if (binary) {
+            PExpr* new_left = substitute_property_params(binary->get_left());
+            PExpr* new_right = substitute_property_params(binary->get_right());
+            if (new_left != binary->get_left() || new_right != binary->get_right()) {
+                  /* Create a new binary expression with substituted operands */
+                  PEBinary* new_binary = new PEBinary(binary->get_op(), new_left, new_right);
+                  new_binary->set_line(*binary);  /* Copy file/line info */
+                  return new_binary;
+            }
+            return expr;
+      }
+
+      /* Handle unary operators */
+      PEUnary* unary = dynamic_cast<PEUnary*>(expr);
+      if (unary) {
+            PExpr* new_operand = substitute_property_params(unary->get_expr());
+            if (new_operand != unary->get_expr()) {
+                  PEUnary* new_unary = new PEUnary(unary->get_op(), new_operand);
+                  new_unary->set_line(*unary);  /* Copy file/line info */
+                  return new_unary;
+            }
+            return expr;
+      }
+
+      /* Unknown expression type - return as-is */
+      return expr;
+}
+
 /* Check if an expression is a simple identifier that refers to a named property.
-   If so, resolve it and update the property_spec. Returns true if resolved. */
+   If so, resolve it and update the property_spec. Returns true if resolved.
+   Also handles parameterized property calls like foo(a, b). */
 static bool resolve_named_property(PExpr*& expr, PEventStatement*& clk)
 {
+      /* First try simple identifier (non-parameterized property) */
       PEIdent* ident = dynamic_cast<PEIdent*>(expr);
-      if (ident == 0)
-	    return false;
+      if (ident) {
+            /* Only match simple identifiers (single component, no indices) */
+            const pform_scoped_name_t& path = ident->path();
+            if (path.size() == 1 && path.package == 0) {
+                  perm_string name = peek_head_name(path);
+                  if (name != 0) {
+                        stored_property_t* prop = lookup_named_property(name);
+                        if (prop && prop->port_names.empty()) {
+                              /* Found a non-parameterized property */
+                              expr = prop->expr;
+                              if (prop->clocking_event && clk == 0)
+                                    clk = prop->clocking_event;
+                              return true;
+                        }
+                  }
+            }
+      }
 
-      /* Only match simple identifiers (single component, no indices) */
-      const pform_scoped_name_t& path = ident->path();
-      if (path.size() != 1 || path.package != 0)
-	    return false;
+      /* Try function call (parameterized property) */
+      PECallFunction* call = dynamic_cast<PECallFunction*>(expr);
+      if (call == 0)
+            return false;
 
-      /* Get the base name of the identifier */
-      perm_string name = peek_head_name(path);
+      /* Get the function name */
+      const pform_scoped_name_t& call_path = call->path();
+      if (call_path.size() != 1 || call_path.package != 0)
+            return false;
+
+      perm_string name = peek_head_name(call_path);
       if (name == 0)
-	    return false;
+            return false;
 
       stored_property_t* prop = lookup_named_property(name);
       if (prop == 0)
-	    return false;
+            return false;
 
-      /* Found a named property - use its expression and clocking */
-      expr = prop->expr;
+      /* Found a parameterized property */
+      const std::vector<named_pexpr_t>& args = call->parms();
+      if (args.size() != prop->port_names.size()) {
+            /* Argument count mismatch - can't substitute */
+            return false;
+      }
+
+      /* Build substitution map: formal_name -> actual_expr */
+      property_param_subst.clear();
+      for (size_t i = 0; i < args.size(); i++) {
+            property_param_subst[prop->port_names[i]] = args[i].parm;
+      }
+
+      /* Substitute formal parameters with actual arguments in property expression */
+      PExpr* substituted = substitute_property_params(prop->expr);
+
+      /* Use the substituted expression and property clocking */
+      expr = substituted;
       if (prop->clocking_event && clk == 0)
-	    clk = prop->clocking_event;
+            clk = prop->clocking_event;
+
+      /* Clear the substitution map */
+      property_param_subst.clear();
 
       return true;
 }
@@ -3621,10 +3775,10 @@ property_declaration
     tf_port_list_opt ')'
       { pform_end_sva_declaration(); }
     ';' property_spec semicolon_opt K_endproperty label_opt
-      { /* Property declaration with ports - store but parameters not yet supported */
+      { /* Property declaration with ports - store with parameter names */
         if (gn_supported_assertions_flag) {
-              /* Store property, but parameter substitution not yet implemented */
-              store_named_property($2, $9.clocking_event, $9.expr);
+              /* Store property with port names for parameter substitution */
+              store_named_property($2, $9.clocking_event, $9.expr, $5);
         } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: property declarations are parsed but not yet elaborated."
                       " Try -gno-assertions or -gsupported-assertions"
