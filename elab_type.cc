@@ -455,6 +455,11 @@ ivl_type_t elaborate_array_type(Design *des, NetScope *scope,
 
       ivl_type_t type = base_type;
 
+      // Track pending associative array key type - the associative array
+      // should be created AFTER processing remaining static dimensions
+      ivl_type_t pending_assoc_key_type = nullptr;
+      bool pending_assoc_wildcard = false;
+
       for (list<pform_range_t>::const_iterator cur = dims.begin();
 	   cur != dims.end() ; ++cur) {
 	    PExpr *lidx = cur->first;
@@ -471,10 +476,11 @@ ivl_type_t elaborate_array_type(Design *des, NetScope *scope,
 	    } else if (PETypename *ptype = dynamic_cast<PETypename*>(lidx)) {
 		    // Special case: Detect the mark for an ASSOCIATIVE ARRAY
 		    // with a typed index, which is [data_type].
+		    // Don't create the netassoc_t yet - wait until we've processed
+		    // any remaining static dimensions that should be part of element type.
 		  type = elaborate_static_array_type(des, li, type, dimensions);
 		  type = elaborate_darray_check_type(des, li, type, "Associative array");
-		  ivl_type_t idx_type = ptype->get_type()->elaborate_type(des, scope);
-		  type = new netassoc_t(type, idx_type);
+		  pending_assoc_key_type = ptype->get_type()->elaborate_type(des, scope);
 		  continue;
 	    } else if (dynamic_cast<PENull*>(lidx)) {
 		    // Special case: Detect the mark for a QUEUE declaration,
@@ -485,7 +491,7 @@ ivl_type_t elaborate_array_type(Design *des, NetScope *scope,
 			// Wildcard associative array [*]
 			type = elaborate_static_array_type(des, li, type, dimensions);
 			type = elaborate_darray_check_type(des, li, type, "Associative array");
-			type = new netassoc_t(type, nullptr);
+			pending_assoc_wildcard = true;
 			continue;
 		  }
 		  type = elaborate_static_array_type(des, li, type, dimensions);
@@ -506,7 +512,15 @@ ivl_type_t elaborate_array_type(Design *des, NetScope *scope,
 	    dimensions.push_back(netrange_t(index_l, index_r));
       }
 
-      return elaborate_static_array_type(des, li, type, dimensions);
+      // Apply remaining static dimensions to the element type
+      type = elaborate_static_array_type(des, li, type, dimensions);
+
+      // Now create the associative array wrapper if we had a pending one
+      if (pending_assoc_key_type || pending_assoc_wildcard) {
+	    type = new netassoc_t(type, pending_assoc_key_type);
+      }
+
+      return type;
 }
 
 ivl_type_t uarray_type_t::elaborate_type_raw(Design*des, NetScope*scope) const

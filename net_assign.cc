@@ -212,6 +212,8 @@ ivl_type_t NetAssign_::net_type() const
 		  ntype = darray->element_type();
 	    else if (const netqueue_t *queue = dynamic_cast<const netqueue_t*>(ntype))
 		  ntype = queue->element_type();
+	    else if (const netuarray_t *uarray = dynamic_cast<const netuarray_t*>(ntype))
+		  ntype = uarray->element_type();
       }
 
       return ntype;

@@ -1058,8 +1058,68 @@ bool PEIdent::elaborate_lval_darray_bit_(Design*des,
 
 			return true;
 		  }
+
+		  // Check if element type is unpacked array (arr[key][idx] pattern)
+		  // e.g., bit[3:0] strobe_data[int][1]; strobe_data[key][0] = value
+		  const netuarray_t*inner_uarray = dynamic_cast<const netuarray_t*>(element_type);
+		  if (inner_uarray) {
+			// First index is assoc/darray key
+			const index_component_t&first_idx = name_tail.index.front();
+			ivl_assert(*this, first_idx.msb != 0);
+			ivl_assert(*this, first_idx.lsb == 0);
+			NetExpr*mux = elab_and_eval(des, scope, first_idx.msb, -1);
+			lv->set_word(mux);
+
+			// Second index is into unpacked element array
+			const index_component_t&second_idx = name_tail.index.back();
+			ivl_assert(*this, second_idx.msb != 0);
+			ivl_assert(*this, second_idx.lsb == 0);
+			NetExpr*idx2 = elab_and_eval(des, scope, second_idx.msb, -1);
+			lv->set_word2(idx2);
+
+			return true;
+		  }
 	    }
 	    // Fall through to error for non-nested cases
+      }
+
+      // Handle 3-index access (arr[key][idx][bit]) for assoc with unpacked+packed element
+      // e.g., bit[3:0] strobe_data[int][1]; strobe_data[key][0][bit] = 1'b1
+      if (name_tail.index.size() == 3) {
+	    const netassoc_t*assoc_type = lv->sig()->assoc_type();
+	    if (assoc_type) {
+		  ivl_type_t element_type = assoc_type->element_type();
+		  const netuarray_t*inner_uarray = dynamic_cast<const netuarray_t*>(element_type);
+		  if (inner_uarray && inner_uarray->element_type()->packed()) {
+			// This is strobe_data[key][idx][bit] = value
+			list<index_component_t>::const_iterator iter = name_tail.index.begin();
+
+			// First index is assoc key
+			const index_component_t&first_idx = *iter;
+			ivl_assert(*this, first_idx.msb != 0);
+			ivl_assert(*this, first_idx.lsb == 0);
+			NetExpr*mux = elab_and_eval(des, scope, first_idx.msb, -1);
+			lv->set_word(mux);
+
+			// Second index is into unpacked element array
+			++iter;
+			const index_component_t&second_idx = *iter;
+			ivl_assert(*this, second_idx.msb != 0);
+			ivl_assert(*this, second_idx.lsb == 0);
+			NetExpr*idx2 = elab_and_eval(des, scope, second_idx.msb, -1);
+			lv->set_word2(idx2);
+
+			// Third index is bit-select
+			++iter;
+			const index_component_t&third_idx = *iter;
+			ivl_assert(*this, third_idx.msb != 0);
+			ivl_assert(*this, third_idx.lsb == 0);
+			NetExpr*bit_mux = elab_and_eval(des, scope, third_idx.msb, -1);
+			lv->set_part(bit_mux, 1);
+
+			return true;
+		  }
+	    }
       }
 
       // For now, only support single-dimension dynamic arrays (or nested handled above)
