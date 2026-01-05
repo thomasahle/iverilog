@@ -27,6 +27,7 @@
 # include  "parse_misc.h"
 # include  "compiler.h"
 # include  "pform.h"
+# include  "PExpr.h"
 # include  "Statement.h"
 # include  "PSpec.h"
 # include  "PTimingCheck.h"
@@ -104,6 +105,63 @@ static pform_name_t* pform_create_super(void)
    sub-rules may grab them. This makes parser rules a little easier to
    write in some cases. */
 static std::list<named_pexpr_t>*attributes_in_context = 0;
+
+/* Named property declarations - stored by name for use in assertions.
+   Maps property name to property_spec (clocking_event, expr). */
+struct stored_property_t {
+      PEventStatement* clocking_event;
+      PExpr* expr;
+};
+static std::map<perm_string, stored_property_t> named_properties;
+
+static void store_named_property(const char* name, PEventStatement* clk, PExpr* e)
+{
+      stored_property_t prop;
+      prop.clocking_event = clk;
+      prop.expr = e;
+      /* Use lex_strings.make() to properly copy the string - the parser will delete[]$2 */
+      perm_string key = lex_strings.make(name);
+      named_properties[key] = prop;
+}
+
+static stored_property_t* lookup_named_property(perm_string name)
+{
+      std::map<perm_string, stored_property_t>::iterator it = named_properties.find(name);
+      if (it != named_properties.end()) {
+	    return &(it->second);
+      }
+      return 0;
+}
+
+/* Check if an expression is a simple identifier that refers to a named property.
+   If so, resolve it and update the property_spec. Returns true if resolved. */
+static bool resolve_named_property(PExpr*& expr, PEventStatement*& clk)
+{
+      PEIdent* ident = dynamic_cast<PEIdent*>(expr);
+      if (ident == 0)
+	    return false;
+
+      /* Only match simple identifiers (single component, no indices) */
+      const pform_scoped_name_t& path = ident->path();
+      if (path.size() != 1 || path.package != 0)
+	    return false;
+
+      /* Get the base name of the identifier */
+      perm_string name = peek_head_name(path);
+      if (name == 0)
+	    return false;
+
+      stored_property_t* prop = lookup_named_property(name);
+      if (prop == 0)
+	    return false;
+
+      /* Found a named property - use its expression and clocking */
+      expr = prop->expr;
+      if (prop->clocking_event && clk == 0)
+	    clk = prop->clocking_event;
+
+      return true;
+}
 
 /* Later version of bison (including 1.35) will not compile in stack
    extension if the output is compiled with C++ and either the YYSTYPE
@@ -1548,18 +1606,23 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   : assert_or_assume K_property '(' property_spec ')' statement_or_null %prec less_than_K_else
       { /* Simple concurrent assertion: assert property (@clk expr) pass_action; */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* Try to resolve named property reference */
+	      PExpr* prop_expr = $4.expr;
+	      PEventStatement* prop_clk = $4.clocking_event;
+	      resolve_named_property(prop_expr, prop_clk);
+
 	      /* For simple property expressions, transform into:
 	         @(clk) if (!expr) $error("assertion failed"); else pass_action; */
 	      std::list<named_pexpr_t> arg_list;
 	      PCallTask*err_call = new PCallTask(lex_strings.make("$error"), arg_list);
 	      FILE_NAME(err_call, @1);
 	      /* Create conditional: if (expr) pass_action else $error */
-	      PCondit*cond = new PCondit($4.expr, $6, err_call);
+	      PCondit*cond = new PCondit(prop_expr, $6, err_call);
 	      FILE_NAME(cond, @1);
 	      /* If there's a clocking event, wrap with event wait */
-	      if ($4.clocking_event) {
-		    $4.clocking_event->set_statement(cond);
-		    $$ = $4.clocking_event;
+	      if (prop_clk) {
+		    prop_clk->set_statement(cond);
+		    $$ = prop_clk;
 	      } else {
 		    $$ = cond;
 	      }
@@ -1576,12 +1639,17 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   | assert_or_assume K_property '(' property_spec ')' K_else statement_or_null
       { /* Concurrent assertion with only fail action */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* Try to resolve named property reference */
+	      PExpr* prop_expr = $4.expr;
+	      PEventStatement* prop_clk = $4.clocking_event;
+	      resolve_named_property(prop_expr, prop_clk);
+
 	      /* Transform: if (!expr) fail_action */
-	      PCondit*cond = new PCondit($4.expr, 0, $7);
+	      PCondit*cond = new PCondit(prop_expr, 0, $7);
 	      FILE_NAME(cond, @1);
-	      if ($4.clocking_event) {
-		    $4.clocking_event->set_statement(cond);
-		    $$ = $4.clocking_event;
+	      if (prop_clk) {
+		    prop_clk->set_statement(cond);
+		    $$ = prop_clk;
 	      } else {
 		    $$ = cond;
 	      }
@@ -1598,12 +1666,17 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   | assert_or_assume K_property '(' property_spec ')' statement_or_null K_else statement_or_null
       { /* Concurrent assertion with both pass and fail actions */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* Try to resolve named property reference */
+	      PExpr* prop_expr = $4.expr;
+	      PEventStatement* prop_clk = $4.clocking_event;
+	      resolve_named_property(prop_expr, prop_clk);
+
 	      /* Transform: if (expr) pass_action else fail_action */
-	      PCondit*cond = new PCondit($4.expr, $6, $8);
+	      PCondit*cond = new PCondit(prop_expr, $6, $8);
 	      FILE_NAME(cond, @1);
-	      if ($4.clocking_event) {
-		    $4.clocking_event->set_statement(cond);
-		    $$ = $4.clocking_event;
+	      if (prop_clk) {
+		    prop_clk->set_statement(cond);
+		    $$ = prop_clk;
 	      } else {
 		    $$ = cond;
 	      }
@@ -1621,14 +1694,19 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   | K_cover K_property '(' property_spec ')' statement_or_null
       { /* cover property: execute pass action when property is true */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* Try to resolve named property reference */
+	      PExpr* prop_expr = $4.expr;
+	      PEventStatement* prop_clk = $4.clocking_event;
+	      resolve_named_property(prop_expr, prop_clk);
+
 	      /* Transform: if (expr) pass_action;
 	         Note: This is a simplified model - real coverage would track
 	         how many times the property was covered. */
-	      PCondit*cond = new PCondit($4.expr, $6, 0);
+	      PCondit*cond = new PCondit(prop_expr, $6, 0);
 	      FILE_NAME(cond, @1);
-	      if ($4.clocking_event) {
-		    $4.clocking_event->set_statement(cond);
-		    $$ = $4.clocking_event;
+	      if (prop_clk) {
+		    prop_clk->set_statement(cond);
+		    $$ = prop_clk;
 	      } else {
 		    $$ = cond;
 	      }
@@ -1647,14 +1725,19 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   | K_cover K_sequence '(' property_spec ')' statement_or_null
       { /* cover sequence: execute pass action when sequence matches */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* Try to resolve named property reference */
+	      PExpr* prop_expr = $4.expr;
+	      PEventStatement* prop_clk = $4.clocking_event;
+	      resolve_named_property(prop_expr, prop_clk);
+
 	      /* Transform: if (expr) pass_action;
 	         Note: This is a simplified model - real coverage would track
 	         how many times the sequence matched. */
-	      PCondit*cond = new PCondit($4.expr, $6, 0);
+	      PCondit*cond = new PCondit(prop_expr, $6, 0);
 	      FILE_NAME(cond, @1);
-	      if ($4.clocking_event) {
-		    $4.clocking_event->set_statement(cond);
-		    $$ = $4.clocking_event;
+	      if (prop_clk) {
+		    prop_clk->set_statement(cond);
+		    $$ = prop_clk;
 	      } else {
 		    $$ = cond;
 	      }
@@ -3520,8 +3603,10 @@ port_direction_opt
   /* Property declaration - IEEE1800-2012 A.2.10 */
 property_declaration
   : K_property IDENTIFIER ';' property_spec semicolon_opt K_endproperty label_opt
-      { /* Property declaration parsed but not elaborated */
-        if (gn_unsupported_assertions_flag) {
+      { /* Store property declaration for later use in assertions */
+        if (gn_supported_assertions_flag) {
+              store_named_property($2, $4.clocking_event, $4.expr);
+        } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: property declarations are parsed but not yet elaborated."
                       " Try -gno-assertions or -gsupported-assertions"
                       " to turn this message off.");
@@ -3536,8 +3621,11 @@ property_declaration
     tf_port_list_opt ')'
       { pform_end_sva_declaration(); }
     ';' property_spec semicolon_opt K_endproperty label_opt
-      { /* Property declaration with ports */
-        if (gn_unsupported_assertions_flag) {
+      { /* Property declaration with ports - store but parameters not yet supported */
+        if (gn_supported_assertions_flag) {
+              /* Store property, but parameter substitution not yet implemented */
+              store_named_property($2, $9.clocking_event, $9.expr);
+        } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: property declarations are parsed but not yet elaborated."
                       " Try -gno-assertions or -gsupported-assertions"
                       " to turn this message off.");
