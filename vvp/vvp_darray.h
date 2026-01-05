@@ -82,6 +82,12 @@ class vvp_darray_vec4 : public vvp_darray {
       vvp_object* duplicate(void) const override;
       vvp_vector4_t get_bitstream(bool as_vec4) override;
 
+	// Reduction methods
+      vvp_vector4_t sum_val(unsigned wid) const;
+      vvp_vector4_t product_val(unsigned wid) const;
+      vvp_vector4_t min_val(void) const;
+      vvp_vector4_t max_val(void) const;
+
     private:
       std::vector<vvp_vector4_t> array_;
       unsigned word_wid_;

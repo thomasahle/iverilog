@@ -1389,6 +1389,31 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    return;
       }
 
+      if (strcmp(ivl_expr_name(expr),"$ivl_darray_method$sum")==0 ||
+          strcmp(ivl_expr_name(expr),"$ivl_darray_method$product")==0) {
+	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+	    const char* op = (strcmp(ivl_expr_name(expr),"$ivl_darray_method$sum")==0)
+		  ? "sum" : "product";
+	    unsigned wid = ivl_expr_width(expr);
+
+	    /* Simple signal case - the signal is a darray variable */
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%d%s v%p_0, %u;\n", op, ivl_expr_signal(arg), wid);
+	    return;
+      }
+
+      if (strcmp(ivl_expr_name(expr),"$ivl_darray_method$min")==0 ||
+          strcmp(ivl_expr_name(expr),"$ivl_darray_method$max")==0) {
+	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+	    const char* op = (strcmp(ivl_expr_name(expr),"$ivl_darray_method$min")==0)
+		  ? "min" : "max";
+
+	    /* Simple signal case - the signal is a darray variable */
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%d%s v%p_0;\n", op, ivl_expr_signal(arg));
+	    return;
+      }
+
       if (strcmp(ivl_expr_name(expr),"$size")==0) {
 	    /* Special handling for $size on property expressions.
 	       For property expressions, we need to load the containing

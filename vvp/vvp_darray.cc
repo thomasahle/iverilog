@@ -225,6 +225,58 @@ vvp_vector4_t vvp_darray_vec4::get_bitstream(bool as_vec4)
       return vec;
 }
 
+vvp_vector4_t vvp_darray_vec4::sum_val(unsigned wid) const
+{
+      vvp_vector4_t result(wid, BIT4_0);
+      for (const auto& elem : array_) {
+	    result.add(elem);
+      }
+      return result;
+}
+
+vvp_vector4_t vvp_darray_vec4::product_val(unsigned wid) const
+{
+      if (array_.empty()) {
+	    return vvp_vector4_t(wid, BIT4_0);
+      }
+      vvp_vector4_t result(wid, BIT4_0);
+      result.set_bit(0, BIT4_1); // Start with 1
+      for (const auto& elem : array_) {
+	    result.mul(elem);
+      }
+      return result;
+}
+
+vvp_vector4_t vvp_darray_vec4::min_val(void) const
+{
+      if (array_.empty()) {
+	    return vvp_vector4_t();
+      }
+      vvp_vector4_t result = array_[0];
+      for (size_t i = 1; i < array_.size(); ++i) {
+	    // compare_gtge_signed(b, a) returns BIT4_1 if b > a, meaning a < b
+	    if (compare_gtge_signed(result, array_[i], BIT4_0) == BIT4_1) {
+		  result = array_[i];
+	    }
+      }
+      return result;
+}
+
+vvp_vector4_t vvp_darray_vec4::max_val(void) const
+{
+      if (array_.empty()) {
+	    return vvp_vector4_t();
+      }
+      vvp_vector4_t result = array_[0];
+      for (size_t i = 1; i < array_.size(); ++i) {
+	    // compare_gtge_signed(a, b) returns BIT4_1 if a > b
+	    if (compare_gtge_signed(array_[i], result, BIT4_0) == BIT4_1) {
+		  result = array_[i];
+	    }
+      }
+      return result;
+}
+
 vvp_darray_vec2::~vvp_darray_vec2()
 {
 }

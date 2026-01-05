@@ -6809,6 +6809,44 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
+	    // sum() and product() methods - return single element value
+	    if (method_name == "sum" || method_name == "product") {
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: " << method_name
+			     << "() method takes no arguments" << endl;
+			des->errors += 1;
+		  }
+		  // Return type is the element type of the darray
+		  const netdarray_t*darray_type = search_results.net->darray_type();
+		  ivl_type_t element_type = darray_type->element_type();
+		  perm_string fname = method_name == "sum"
+			? perm_string::literal("$ivl_darray_method$sum")
+			: perm_string::literal("$ivl_darray_method$product");
+		  NetESFunc*sys_expr = new NetESFunc(fname, element_type, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
+	    // min() and max() methods - return single element value
+	    if (method_name == "min" || method_name == "max") {
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: " << method_name
+			     << "() method takes no arguments" << endl;
+			des->errors += 1;
+		  }
+		  // Return type is the element type of the darray
+		  const netdarray_t*darray_type = search_results.net->darray_type();
+		  ivl_type_t element_type = darray_type->element_type();
+		  perm_string fname = method_name == "min"
+			? perm_string::literal("$ivl_darray_method$min")
+			: perm_string::literal("$ivl_darray_method$max");
+		  NetESFunc*sys_expr = new NetESFunc(fname, element_type, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
 	    cerr << get_fileline() << ": error: Method " << method_name
 		 << " is not a dynamic array method." << endl;
 	    return 0;

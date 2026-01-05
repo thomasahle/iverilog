@@ -7199,6 +7199,129 @@ bool of_QPRODUCT(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %dsum <var-label>, <width>
+ * Push the sum of all dynamic array elements to the vec4 stack.
+ */
+bool of_DSUM(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned wid = cp->bit_idx[0];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0 || darray->get_size() == 0) {
+	    vvp_vector4_t val(wid, BIT4_0);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      vvp_vector4_t result(wid, BIT4_0);
+      for (size_t i = 0; i < darray->get_size(); ++i) {
+	    vvp_vector4_t elem;
+	    darray->get_word(i, elem);
+	    result.add(elem);
+      }
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %dproduct <var-label>, <width>
+ * Push the product of all dynamic array elements to the vec4 stack.
+ */
+bool of_DPRODUCT(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned wid = cp->bit_idx[0];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0 || darray->get_size() == 0) {
+	    vvp_vector4_t val(wid, BIT4_0);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      vvp_vector4_t result(wid, BIT4_0);
+      result.set_bit(0, BIT4_1); // Start with 1
+      for (size_t i = 0; i < darray->get_size(); ++i) {
+	    vvp_vector4_t elem;
+	    darray->get_word(i, elem);
+	    result.mul(elem);
+      }
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %dmin <var-label>
+ * Push the minimum element of dynamic array to the vec4 stack.
+ */
+bool of_DMIN(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0 || darray->get_size() == 0) {
+	    vvp_vector4_t val(32, BIT4_0);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      vvp_vector4_t result;
+      darray->get_word(0, result);
+      for (size_t i = 1; i < darray->get_size(); ++i) {
+	    vvp_vector4_t elem;
+	    darray->get_word(i, elem);
+	    // compare_gtge_signed(a, b) returns BIT4_1 if a > b
+	    if (compare_gtge_signed(result, elem, BIT4_0) == BIT4_1) {
+		  result = elem;
+	    }
+      }
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %dmax <var-label>
+ * Push the maximum element of dynamic array to the vec4 stack.
+ */
+bool of_DMAX(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0 || darray->get_size() == 0) {
+	    vvp_vector4_t val(32, BIT4_0);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      vvp_vector4_t result;
+      darray->get_word(0, result);
+      for (size_t i = 1; i < darray->get_size(); ++i) {
+	    vvp_vector4_t elem;
+	    darray->get_word(i, elem);
+	    // compare_gtge_signed(a, b) returns BIT4_1 if a > b
+	    if (compare_gtge_signed(elem, result, BIT4_0) == BIT4_1) {
+		  result = elem;
+	    }
+      }
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
  * %qfind <mode>
  * Find elements in a queue matching a value.
  * Mode: 0=find_index (all), 1=find_first_index, 2=find_last_index
