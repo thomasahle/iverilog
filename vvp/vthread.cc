@@ -7322,6 +7322,125 @@ bool of_DMAX(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %dand <var-label>, <width>
+ * Push the bitwise AND of all dynamic array elements to the vec4 stack.
+ */
+bool of_DAND(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned wid = cp->bit_idx[0];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0 || darray->get_size() == 0) {
+	    // Return all 1s for empty array (AND identity)
+	    vvp_vector4_t val(wid, BIT4_1);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      vvp_vector4_t result;
+      darray->get_word(0, result);
+      for (size_t i = 1; i < darray->get_size(); ++i) {
+	    vvp_vector4_t elem;
+	    darray->get_word(i, elem);
+	    for (unsigned j = 0; j < result.size(); ++j) {
+		  vvp_bit4_t a = result.value(j);
+		  vvp_bit4_t b = elem.value(j);
+		  vvp_bit4_t r = BIT4_X;
+		  if (a == BIT4_0 || b == BIT4_0)
+			r = BIT4_0;
+		  else if (a == BIT4_1 && b == BIT4_1)
+			r = BIT4_1;
+		  result.set_bit(j, r);
+	    }
+      }
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %dor <var-label>, <width>
+ * Push the bitwise OR of all dynamic array elements to the vec4 stack.
+ */
+bool of_DOR(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned wid = cp->bit_idx[0];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0 || darray->get_size() == 0) {
+	    // Return all 0s for empty array (OR identity)
+	    vvp_vector4_t val(wid, BIT4_0);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      vvp_vector4_t result;
+      darray->get_word(0, result);
+      for (size_t i = 1; i < darray->get_size(); ++i) {
+	    vvp_vector4_t elem;
+	    darray->get_word(i, elem);
+	    for (unsigned j = 0; j < result.size(); ++j) {
+		  vvp_bit4_t a = result.value(j);
+		  vvp_bit4_t b = elem.value(j);
+		  vvp_bit4_t r = BIT4_X;
+		  if (a == BIT4_1 || b == BIT4_1)
+			r = BIT4_1;
+		  else if (a == BIT4_0 && b == BIT4_0)
+			r = BIT4_0;
+		  result.set_bit(j, r);
+	    }
+      }
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %dxor <var-label>, <width>
+ * Push the bitwise XOR of all dynamic array elements to the vec4 stack.
+ */
+bool of_DXOR(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned wid = cp->bit_idx[0];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_darray*darray = obj->get_object().peek<vvp_darray>();
+      if (darray == 0 || darray->get_size() == 0) {
+	    // Return all 0s for empty array (XOR identity)
+	    vvp_vector4_t val(wid, BIT4_0);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      vvp_vector4_t result;
+      darray->get_word(0, result);
+      for (size_t i = 1; i < darray->get_size(); ++i) {
+	    vvp_vector4_t elem;
+	    darray->get_word(i, elem);
+	    for (unsigned j = 0; j < result.size(); ++j) {
+		  vvp_bit4_t a = result.value(j);
+		  vvp_bit4_t b = elem.value(j);
+		  vvp_bit4_t r = BIT4_X;
+		  if ((a == BIT4_0 || a == BIT4_1) && (b == BIT4_0 || b == BIT4_1)) {
+			r = (a != b) ? BIT4_1 : BIT4_0;
+		  }
+		  result.set_bit(j, r);
+	    }
+      }
+      thr->push_vec4(result);
+      return true;
+}
+
+/*
  * %dreverse <var-label>
  * Reverse the dynamic array in place.
  */

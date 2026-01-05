@@ -6847,6 +6847,29 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
+	    // and(), or(), xor() methods - bitwise reduction
+	    if (method_name == "and" || method_name == "or" || method_name == "xor") {
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: " << method_name
+			     << "() method takes no arguments" << endl;
+			des->errors += 1;
+		  }
+		  // Return type is the element type of the darray
+		  const netdarray_t*darray_type = search_results.net->darray_type();
+		  ivl_type_t element_type = darray_type->element_type();
+		  perm_string fname;
+		  if (method_name == "and")
+			fname = perm_string::literal("$ivl_darray_method$and");
+		  else if (method_name == "or")
+			fname = perm_string::literal("$ivl_darray_method$or");
+		  else
+			fname = perm_string::literal("$ivl_darray_method$xor");
+		  NetESFunc*sys_expr = new NetESFunc(fname, element_type, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
 	    cerr << get_fileline() << ": error: Method " << method_name
 		 << " is not a dynamic array method." << endl;
 	    return 0;
@@ -9299,24 +9322,22 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
 			des->errors += 1;
 			return 0;
 // FIXME: Check this is only an integral type.
-		  } else if (member_comp.name == "and") {
-			cerr << get_fileline() << ": sorry: 'and()' "
-			        "array reduction method is not currently "
-			        "implemented." << endl;
-			des->errors += 1;
-			return 0;
-		  } else if (member_comp.name == "or") {
-			cerr << get_fileline() << ": sorry: 'or()' "
-			        "array reduction method is not currently "
-			        "implemented." << endl;
-			des->errors += 1;
-			return 0;
-		  } else if (member_comp.name == "xor") {
-			cerr << get_fileline() << ": sorry: 'xor()' "
-			        "array reduction method is not currently "
-			        "implemented." << endl;
-			des->errors += 1;
-			return 0;
+		  } else if (member_comp.name == "and" || member_comp.name == "or" || member_comp.name == "xor") {
+			const netdarray_t*darray_type = sr.net->darray_type();
+			ivl_type_t element_type = darray_type->element_type();
+			perm_string fname;
+			if (member_comp.name == "and")
+			      fname = perm_string::literal("$ivl_darray_method$and");
+			else if (member_comp.name == "or")
+			      fname = perm_string::literal("$ivl_darray_method$or");
+			else
+			      fname = perm_string::literal("$ivl_darray_method$xor");
+			NetESFunc*sys_expr = new NetESFunc(fname, element_type, 1);
+			sys_expr->set_line(*this);
+			NetESignal*arg = new NetESignal(sr.net);
+			arg->set_line(*sr.net);
+			sys_expr->parm(0, arg);
+			return sys_expr;
 		  }
 	    }
 

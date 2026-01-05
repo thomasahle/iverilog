@@ -1414,6 +1414,25 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    return;
       }
 
+      if (strcmp(ivl_expr_name(expr),"$ivl_darray_method$and")==0 ||
+          strcmp(ivl_expr_name(expr),"$ivl_darray_method$or")==0 ||
+          strcmp(ivl_expr_name(expr),"$ivl_darray_method$xor")==0) {
+	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+	    const char* op;
+	    if (strcmp(ivl_expr_name(expr),"$ivl_darray_method$and")==0)
+		  op = "and";
+	    else if (strcmp(ivl_expr_name(expr),"$ivl_darray_method$or")==0)
+		  op = "or";
+	    else
+		  op = "xor";
+	    unsigned wid = ivl_expr_width(expr);
+
+	    /* Simple signal case - the signal is a darray variable */
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%d%s v%p_0, %u;\n", op, ivl_expr_signal(arg), wid);
+	    return;
+      }
+
       if (strcmp(ivl_expr_name(expr),"$size")==0) {
 	    /* Special handling for $size on property expressions.
 	       For property expressions, we need to load the containing
