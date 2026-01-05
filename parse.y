@@ -317,6 +317,22 @@ static bool resolve_named_property(PExpr*& expr, PEventStatement*& clk)
       return true;
 }
 
+/* Check if a struct type has any string members.
+   Returns true if any member is a string type. */
+static bool struct_has_string_members(struct_type_t* stype)
+{
+      if (stype == 0 || stype->members.get() == 0)
+            return false;
+
+      for (struct_member_t* member : *(stype->members)) {
+            if (member && member->type.get()) {
+                  if (dynamic_cast<string_type_t*>(member->type.get()) != 0)
+                        return true;
+            }
+      }
+      return false;
+}
+
 /* Later version of bison (including 1.35) will not compile in stack
    extension if the output is compiled with C++ and either the YYSTYPE
    or YYLTYPE are provided by the source code. However, I can get the
@@ -2422,8 +2438,8 @@ packed_array_data_type /* IEEE1800-2005: A.2.2.1 */
   : enum_data_type
       { $$ = $1; }
   | struct_data_type
-      { if (!$1->packed_flag) {
-	      yywarn(@1, "warning: Unpacked structs: basic operations work, but string members are not supported.");
+      { if (!$1->packed_flag && struct_has_string_members($1)) {
+	      yywarn(@1, "warning: Unpacked struct with string members: string operations are not fully supported.");
         }
 	$$ = $1;
       }
