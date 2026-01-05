@@ -1,0 +1,63 @@
+// Test interface with UVM class that imports globals package
+// This mimics the AXI4 crash pattern more closely
+
+package globals_pkg;
+  parameter int DATA_WIDTH = 32;
+  parameter int ADDR_WIDTH = 16;
+
+  typedef struct {
+    bit [ADDR_WIDTH-1:0] addr;
+    bit [DATA_WIDTH-1:0] data;
+  } transfer_s;
+endpackage
+
+package master_pkg;
+  `include "uvm_macros.svh"
+  import uvm_pkg::*;
+  import globals_pkg::*;
+
+  class master_tx extends uvm_sequence_item;
+    `uvm_object_utils(master_tx)
+
+    bit [ADDR_WIDTH-1:0] addr;
+    bit [DATA_WIDTH-1:0] data;
+
+    function new(string name = "master_tx");
+      super.new(name);
+    endfunction
+  endclass
+
+  class master_agent extends uvm_agent;
+    `uvm_component_utils(master_agent)
+
+    function new(string name = "", uvm_component parent = null);
+      super.new(name, parent);
+    endfunction
+  endclass
+endpackage
+
+import globals_pkg::*;
+
+interface test_if(input clk, input rst);
+  logic [ADDR_WIDTH-1:0] addr;
+  logic [DATA_WIDTH-1:0] data;
+  logic valid;
+endinterface
+
+module top;
+  import master_pkg::*;
+
+  bit clk, rst;
+  test_if intf(clk, rst);
+  master_tx tx;
+
+  initial begin
+    tx = new("test");
+    tx.addr = 16'h1234;
+    if (tx.addr == 16'h1234)
+      $display("PASSED");
+    else
+      $display("FAILED");
+    $finish;
+  end
+endmodule

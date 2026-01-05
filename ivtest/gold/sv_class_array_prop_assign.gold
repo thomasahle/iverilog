@@ -1,0 +1,5 @@
+Assigning config[0] to child[0]
+Assigning config[1] to child[1]
+children[0].cfg_h.value = 0
+children[1].cfg_h.value = 10
+PASSED
