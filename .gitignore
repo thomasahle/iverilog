@@ -115,3 +115,4 @@ dep
 
 # Check output
 /check.vvp
+avip_tests/
