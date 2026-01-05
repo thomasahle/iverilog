@@ -3703,11 +3703,18 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	}
       }
   | K_if '(' expression ')' property_expr K_else property_expr
-      { /* if-then-else property - complex, needs runtime support */
-	delete $3;
-	delete $5;
-	delete $7;
-	$$ = 0;
+      { /* if-then-else property: if(cond) prop1 else prop2 = cond ? prop1 : prop2
+           Transform to ternary expression at parse time */
+	if ($5 && $7) {
+	      PETernary*result = new PETernary($3, $5, $7);
+	      FILE_NAME(result, @1);
+	      $$ = result;
+	} else {
+	      delete $3;
+	      if ($5) delete $5;
+	      if ($7) delete $7;
+	      $$ = 0;
+	}
       }
   ;
 
