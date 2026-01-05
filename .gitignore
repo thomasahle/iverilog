@@ -116,3 +116,27 @@ dep
 # Check output
 /check.vvp
 avip_tests/
+
+# Build artifacts and local installs
+local_install/
+*/local_install/
+lib/ivl/ivl
+lib/ivl/vvp
+*.vvp
+*.dSYM/
+
+# Generated parser files
+parse.hh
+parse.tab.h
+
+# Temporary test files
+test_*.sv
+test_*.vvp
+ivl.cc
+ivtest/a.out
+ivtest/ivltests/a.out
+ivtest/sv_psprintf
+vhdlpp/.stamp
+vhdlpp/*.d
+tgt-pcb/netlist.cc
+*.pp
