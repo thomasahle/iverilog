@@ -17,6 +17,7 @@
  */
 
 #include <assert.h>
+#include <stdlib.h>
 #include "vpi_user.h"
 #include "sys_priv.h"
 
@@ -277,6 +278,248 @@ static PLI_INT32 isunknown_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
       return 0;
 }
 
+/*
+ * Structure to hold previous value for $stable/$changed
+ */
+typedef struct stable_state_s {
+      int initialized;
+      PLI_INT32 prev_value;
+      int prev_size;
+} stable_state_t;
+
+/*
+ * $stable(expr) - returns 1 if expression hasn't changed since last sample
+ * This is a sampled value function used in assertions.
+ */
+static PLI_INT32 stable_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv = vpi_iterate(vpiArgument, callh);
+      vpiHandle expr_arg = vpi_scan(argv);
+      s_vpi_value val;
+      stable_state_t *state;
+      PLI_INT32 curr_value;
+      int result;
+      (void)name;  /* Parameter is not used. */
+
+      vpi_free_object(argv);
+
+      /* Get current value as integer */
+      val.format = vpiIntVal;
+      vpi_get_value(expr_arg, &val);
+      curr_value = val.value.integer;
+
+      /* Get or create state for this call site */
+      state = (stable_state_t *)vpi_get_userdata(callh);
+      if (state == NULL) {
+            state = (stable_state_t *)malloc(sizeof(stable_state_t));
+            state->initialized = 0;
+            vpi_put_userdata(callh, state);
+      }
+
+      /* First call: initialize with current value, return 1 (stable) */
+      if (!state->initialized) {
+            state->prev_value = curr_value;
+            state->initialized = 1;
+            result = 1;  /* Assume stable on first sample */
+      } else {
+            /* Compare current to previous */
+            result = (curr_value == state->prev_value) ? 1 : 0;
+            /* Update stored value */
+            state->prev_value = curr_value;
+      }
+
+      put_scalar_value(callh, result ? vpi1 : vpi0);
+
+      return 0;
+}
+
+/*
+ * $changed(expr) - returns 1 if expression has changed since last sample
+ * This is the opposite of $stable.
+ */
+static PLI_INT32 changed_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv = vpi_iterate(vpiArgument, callh);
+      vpiHandle expr_arg = vpi_scan(argv);
+      s_vpi_value val;
+      stable_state_t *state;
+      PLI_INT32 curr_value;
+      int result;
+      (void)name;  /* Parameter is not used. */
+
+      vpi_free_object(argv);
+
+      /* Get current value as integer */
+      val.format = vpiIntVal;
+      vpi_get_value(expr_arg, &val);
+      curr_value = val.value.integer;
+
+      /* Get or create state for this call site */
+      state = (stable_state_t *)vpi_get_userdata(callh);
+      if (state == NULL) {
+            state = (stable_state_t *)malloc(sizeof(stable_state_t));
+            state->initialized = 0;
+            vpi_put_userdata(callh, state);
+      }
+
+      /* First call: initialize with current value, return 0 (not changed yet) */
+      if (!state->initialized) {
+            state->prev_value = curr_value;
+            state->initialized = 1;
+            result = 0;  /* No change on first sample */
+      } else {
+            /* Compare current to previous */
+            result = (curr_value != state->prev_value) ? 1 : 0;
+            /* Update stored value */
+            state->prev_value = curr_value;
+      }
+
+      put_scalar_value(callh, result ? vpi1 : vpi0);
+
+      return 0;
+}
+
+/*
+ * $rose(expr) - returns 1 if expression transitioned from 0 to 1
+ */
+static PLI_INT32 rose_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv = vpi_iterate(vpiArgument, callh);
+      vpiHandle expr_arg = vpi_scan(argv);
+      s_vpi_value val;
+      stable_state_t *state;
+      PLI_INT32 curr_value;
+      int result;
+      (void)name;  /* Parameter is not used. */
+
+      vpi_free_object(argv);
+
+      /* Get current value - just need LSB for rose/fell */
+      val.format = vpiIntVal;
+      vpi_get_value(expr_arg, &val);
+      curr_value = val.value.integer & 1;
+
+      /* Get or create state for this call site */
+      state = (stable_state_t *)vpi_get_userdata(callh);
+      if (state == NULL) {
+            state = (stable_state_t *)malloc(sizeof(stable_state_t));
+            state->initialized = 0;
+            vpi_put_userdata(callh, state);
+      }
+
+      /* First call: initialize, return 0 (no transition yet) */
+      if (!state->initialized) {
+            state->prev_value = curr_value;
+            state->initialized = 1;
+            result = 0;
+      } else {
+            /* Rose = was 0, now 1 */
+            result = (state->prev_value == 0 && curr_value == 1) ? 1 : 0;
+            state->prev_value = curr_value;
+      }
+
+      put_scalar_value(callh, result ? vpi1 : vpi0);
+
+      return 0;
+}
+
+/*
+ * $fell(expr) - returns 1 if expression transitioned from 1 to 0
+ */
+static PLI_INT32 fell_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv = vpi_iterate(vpiArgument, callh);
+      vpiHandle expr_arg = vpi_scan(argv);
+      s_vpi_value val;
+      stable_state_t *state;
+      PLI_INT32 curr_value;
+      int result;
+      (void)name;  /* Parameter is not used. */
+
+      vpi_free_object(argv);
+
+      /* Get current value - just need LSB for rose/fell */
+      val.format = vpiIntVal;
+      vpi_get_value(expr_arg, &val);
+      curr_value = val.value.integer & 1;
+
+      /* Get or create state for this call site */
+      state = (stable_state_t *)vpi_get_userdata(callh);
+      if (state == NULL) {
+            state = (stable_state_t *)malloc(sizeof(stable_state_t));
+            state->initialized = 0;
+            vpi_put_userdata(callh, state);
+      }
+
+      /* First call: initialize, return 0 (no transition yet) */
+      if (!state->initialized) {
+            state->prev_value = curr_value;
+            state->initialized = 1;
+            result = 0;
+      } else {
+            /* Fell = was 1, now 0 */
+            result = (state->prev_value == 1 && curr_value == 0) ? 1 : 0;
+            state->prev_value = curr_value;
+      }
+
+      put_scalar_value(callh, result ? vpi1 : vpi0);
+
+      return 0;
+}
+
+/*
+ * $past(expr) - returns the previous value of the expression
+ * Note: This simplified version only works for integer-sized values.
+ */
+static PLI_INT32 past_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv = vpi_iterate(vpiArgument, callh);
+      vpiHandle expr_arg = vpi_scan(argv);
+      s_vpi_value val;
+      stable_state_t *state;
+      PLI_INT32 curr_value;
+      PLI_INT32 result_value;
+      (void)name;  /* Parameter is not used. */
+
+      vpi_free_object(argv);
+
+      /* Get current value as integer */
+      val.format = vpiIntVal;
+      vpi_get_value(expr_arg, &val);
+      curr_value = val.value.integer;
+
+      /* Get or create state for this call site */
+      state = (stable_state_t *)vpi_get_userdata(callh);
+      if (state == NULL) {
+            state = (stable_state_t *)malloc(sizeof(stable_state_t));
+            state->initialized = 0;
+            vpi_put_userdata(callh, state);
+      }
+
+      /* First call: return current value (no previous exists) */
+      if (!state->initialized) {
+            state->prev_value = curr_value;
+            state->initialized = 1;
+            result_value = curr_value;  /* Return current on first sample */
+      } else {
+            /* Return the previous value */
+            result_value = state->prev_value;
+            /* Update stored value for next time */
+            state->prev_value = curr_value;
+      }
+
+      val.format = vpiIntVal;
+      val.value.integer = result_value;
+      vpi_put_value(callh, &val, 0, vpiNoDelay);
+
+      return 0;
+}
+
 static PLI_INT32 bit_vec_sizetf(ICARUS_VPI_CONST PLI_BYTE8 *name)
 {
       (void)name;  /* Parameter is not used. */
@@ -339,6 +582,57 @@ void v2009_bitvec_register(void)
       tf_data.sizetf      = bit_vec_sizetf;
       tf_data.tfname      = "$isunknown";
       tf_data.user_data   = "$isunknown";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      /* Sampled value functions for assertions */
+      tf_data.type        = vpiSysFunc;
+      tf_data.sysfunctype = vpiSizedFunc;
+      tf_data.calltf      = stable_calltf;
+      tf_data.compiletf   = sys_one_numeric_arg_compiletf;
+      tf_data.sizetf      = bit_vec_sizetf;
+      tf_data.tfname      = "$stable";
+      tf_data.user_data   = "$stable";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type        = vpiSysFunc;
+      tf_data.sysfunctype = vpiSizedFunc;
+      tf_data.calltf      = changed_calltf;
+      tf_data.compiletf   = sys_one_numeric_arg_compiletf;
+      tf_data.sizetf      = bit_vec_sizetf;
+      tf_data.tfname      = "$changed";
+      tf_data.user_data   = "$changed";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type        = vpiSysFunc;
+      tf_data.sysfunctype = vpiSizedFunc;
+      tf_data.calltf      = rose_calltf;
+      tf_data.compiletf   = sys_one_numeric_arg_compiletf;
+      tf_data.sizetf      = bit_vec_sizetf;
+      tf_data.tfname      = "$rose";
+      tf_data.user_data   = "$rose";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type        = vpiSysFunc;
+      tf_data.sysfunctype = vpiSizedFunc;
+      tf_data.calltf      = fell_calltf;
+      tf_data.compiletf   = sys_one_numeric_arg_compiletf;
+      tf_data.sizetf      = bit_vec_sizetf;
+      tf_data.tfname      = "$fell";
+      tf_data.user_data   = "$fell";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type        = vpiSysFunc;
+      tf_data.sysfunctype = vpiIntFunc;
+      tf_data.calltf      = past_calltf;
+      tf_data.compiletf   = sys_one_numeric_arg_compiletf;
+      tf_data.sizetf      = 0;
+      tf_data.tfname      = "$past";
+      tf_data.user_data   = "$past";
       res = vpi_register_systf(&tf_data);
       vpip_make_systf_system_defined(res);
 }

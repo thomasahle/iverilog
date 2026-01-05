@@ -3625,8 +3625,26 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	}
       }
   | expression K_IMPLIES_NOV property_expr
-      { /* |=> non-overlapping implication - parsed but not elaborated */
-	$$ = 0;
+      { /* |=> non-overlapping implication: a |=> b means "if a was true on previous
+           clock cycle, then b must be true now" = !$past(a) || b
+           Transform to logical implication using $past at parse time */
+	if ($3) {
+	      /* Create $past($1) */
+	      std::vector<named_pexpr_t> past_parms(1);
+	      past_parms[0].parm = $1;
+	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	      FILE_NAME(past_call, @1);
+	      /* Create !$past($1) */
+	      PEUnary*not_past = new PEUnary('!', past_call);
+	      FILE_NAME(not_past, @1);
+	      /* Create !$past($1) || $3 */
+	      PEBLogic*impl = new PEBLogic('o', not_past, $3);
+	      FILE_NAME(impl, @1);
+	      $$ = impl;
+	} else {
+	      delete $1;
+	      $$ = 0;
+	}
       }
   | '(' expression K_IMPLIES_OV property_expr ')'
       { /* Parenthesized |-> implication: (a |-> b) = !a || b */
@@ -3642,7 +3660,25 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	}
       }
   | '(' expression K_IMPLIES_NOV property_expr ')'
-      { /* Parenthesized |=> implication */ $$ = 0; }
+      { /* Parenthesized |=> implication: (a |=> b) = !$past(a) || b */
+	if ($4) {
+	      /* Create $past($2) */
+	      std::vector<named_pexpr_t> past_parms(1);
+	      past_parms[0].parm = $2;
+	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	      FILE_NAME(past_call, @2);
+	      /* Create !$past($2) */
+	      PEUnary*not_past = new PEUnary('!', past_call);
+	      FILE_NAME(not_past, @2);
+	      /* Create !$past($2) || $4 */
+	      PEBLogic*impl = new PEBLogic('o', not_past, $4);
+	      FILE_NAME(impl, @2);
+	      $$ = impl;
+	} else {
+	      delete $2;
+	      $$ = 0;
+	}
+      }
   | expression K_IMPLIES_OV K_SEQ_DELAY DEC_NUMBER property_expr
       { /* |-> ##n sequence - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_NOV K_SEQ_DELAY DEC_NUMBER property_expr
@@ -3717,28 +3753,56 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	}
       }
   | expression K_s_until_with expression
-      { /* s_until_with - multi-cycle temporal operator - parsed but not elaborated */
-	delete $1;
-	delete $3;
-	$$ = 0;
+      { /* s_until_with (strong until with): a s_until_with b means a holds until b
+           (inclusive, b must eventually happen). For single-cycle: check both. */
+	if ($1 && $3) {
+	      PEBLogic*both = new PEBLogic('a', $1, $3);
+	      FILE_NAME(both, @1);
+	      $$ = both;
+	} else {
+	      delete $1;
+	      delete $3;
+	      $$ = 0;
+	}
       }
   | expression K_until_with expression
-      { /* until_with - multi-cycle temporal operator - parsed but not elaborated */
-	delete $1;
-	delete $3;
-	$$ = 0;
+      { /* until_with: a until_with b means a holds until b (inclusive).
+           For single-cycle evaluation: check both a and b. */
+	if ($1 && $3) {
+	      PEBLogic*both = new PEBLogic('a', $1, $3);
+	      FILE_NAME(both, @1);
+	      $$ = both;
+	} else {
+	      delete $1;
+	      delete $3;
+	      $$ = 0;
+	}
       }
   | expression K_s_until expression
-      { /* s_until - multi-cycle temporal operator - parsed but not elaborated */
-	delete $1;
-	delete $3;
-	$$ = 0;
+      { /* s_until (strong until): a s_until b means a holds until b.
+           For single-cycle: just check that 'a' holds. */
+	if ($1) {
+	      delete $3;
+	      $$ = $1;
+	} else {
+	      delete $3;
+	      $$ = 0;
+	}
       }
   | expression K_until expression
-      { /* until - multi-cycle temporal operator - parsed but not elaborated */
-	delete $1;
-	delete $3;
-	$$ = 0;
+      { /* until - multi-cycle temporal operator: a until b
+           For single-cycle evaluation, check that 'a' holds (the invariant).
+           True multi-cycle tracking would need state, but this allows
+           assertions to at least check the invariant condition. */
+	if ($1) {
+	      /* For single-cycle: just check that the invariant 'a' holds.
+	         Delete the 'until' condition since we can't track it across cycles. */
+	      delete $3;
+	      $$ = $1;
+	} else {
+	      delete $3;
+	      $$ = 0;
+	}
       }
   ;
 
