@@ -8350,6 +8350,55 @@ bool of_RAND_MODE_SET(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %constraint_mode/get "<constraint_name>"
+ *
+ * Pop object from stack, get constraint_mode for named constraint, push result (0 or 1).
+ */
+bool of_CONSTRAINT_MODE_GET(vthread_t thr, vvp_code_t cp)
+{
+      const char* constraint_name = cp->text ? cp->text : "";
+
+      vvp_object_t obj;
+      thr->pop_object(obj);
+      vvp_cobject* cobj = obj.peek<vvp_cobject>();
+
+      int mode = 1;  // Default: enabled
+      if (cobj != nullptr) {
+	    mode = cobj->get_constraint_mode(constraint_name);
+      }
+
+      // Push result as vec4
+      vvp_vector4_t res(32, BIT4_0);
+      if (mode)
+	    res.set_bit(0, BIT4_1);
+      thr->push_vec4(res);
+
+      return true;
+}
+
+/*
+ * %constraint_mode/set "<constraint_name>", <mode>
+ *
+ * Pop object from stack, set constraint_mode for named constraint.
+ * mode: 0 = disabled, 1 = enabled
+ */
+bool of_CONSTRAINT_MODE_SET(vthread_t thr, vvp_code_t cp)
+{
+      const char* constraint_name = cp->text ? cp->text : "";
+      int mode = cp->bit_idx[0];
+
+      vvp_object_t obj;
+      thr->pop_object(obj);
+      vvp_cobject* cobj = obj.peek<vvp_cobject>();
+
+      if (cobj != nullptr) {
+	    cobj->set_constraint_mode(constraint_name, mode);
+      }
+
+      return true;
+}
+
+/*
  * %push_rand_bound <prop_idx>, <op_encoded>, <bound_value>
  *
  * Push an inline constraint bound for the next randomize() call.

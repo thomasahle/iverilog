@@ -257,6 +257,8 @@ extern bool of_PUTC_STR_VEC4(vthread_t thr, vvp_code_t code);
 extern bool of_RANDOMIZE(vthread_t thr, vvp_code_t code);
 extern bool of_RAND_MODE_GET(vthread_t thr, vvp_code_t code);
 extern bool of_RAND_MODE_SET(vthread_t thr, vvp_code_t code);
+extern bool of_CONSTRAINT_MODE_GET(vthread_t thr, vvp_code_t code);
+extern bool of_CONSTRAINT_MODE_SET(vthread_t thr, vvp_code_t code);
 extern bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t code);
 extern bool of_CLEAR_RAND_BOUNDS(vthread_t thr, vvp_code_t code);
 extern bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t code);

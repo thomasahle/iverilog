@@ -1524,6 +1524,36 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    return;
       }
 
+      if (strcmp(ivl_expr_name(expr),"$ivl_constraint_mode_set")==0) {
+	      /* $ivl_constraint_mode_set(obj, "constraint_name", mode)
+	         Set constraint_mode for a named constraint on a class object. */
+	    ivl_expr_t obj_arg = ivl_expr_parm(expr, 0);
+	    ivl_expr_t name_arg = ivl_expr_parm(expr, 1);
+	    ivl_expr_t mode_arg = ivl_expr_parm(expr, 2);
+
+	    const char* cons_name = ivl_expr_string(name_arg);
+	    unsigned mode = (unsigned)ivl_expr_uvalue(mode_arg);
+
+	    draw_eval_object(obj_arg);
+	    fprintf(vvp_out, "    %%constraint_mode/set \"%s\", %u;\n", cons_name ? cons_name : "", mode);
+	      /* Push 1 to indicate success */
+	    fprintf(vvp_out, "    %%pushi/vec4 1, 0, 32;\n");
+	    return;
+      }
+
+      if (strcmp(ivl_expr_name(expr),"$ivl_constraint_mode_get")==0) {
+	      /* $ivl_constraint_mode_get(obj, "constraint_name")
+	         Get constraint_mode for a named constraint on a class object. Returns 0 or 1. */
+	    ivl_expr_t obj_arg = ivl_expr_parm(expr, 0);
+	    ivl_expr_t name_arg = ivl_expr_parm(expr, 1);
+
+	    const char* cons_name = ivl_expr_string(name_arg);
+
+	    draw_eval_object(obj_arg);
+	    fprintf(vvp_out, "    %%constraint_mode/get \"%s\";\n", cons_name ? cons_name : "");
+	    return;
+      }
+
       if (strcmp(ivl_expr_name(expr),"$ivl_randomize")==0) {
 	      /* The argument is a class object expression. Push it to the object
 	         stack, then call %randomize which will randomize its properties

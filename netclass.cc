@@ -298,10 +298,11 @@ NetExpr* netclass_t::get_constraint_expr(size_t idx) const
  * Simple bounds are extracted from constraint expressions during elaboration.
  * They represent efficient runtime-checkable bounds like: value > 0, value < limit
  */
-void netclass_t::add_simple_bound(size_t prop_idx, char op, bool is_soft,
+void netclass_t::add_simple_bound(perm_string constraint_name, size_t prop_idx, char op, bool is_soft,
                                   bool has_const, int64_t const_val, size_t bound_prop)
 {
       simple_bound_t bound;
+      bound.constraint_name = constraint_name;
       bound.property_idx = prop_idx;
       bound.op = op;
       bound.is_soft = is_soft;
@@ -315,4 +316,10 @@ const netclass_t::simple_bound_t& netclass_t::get_simple_bound(size_t idx) const
 {
       assert(idx < simple_bounds_.size());
       return simple_bounds_[idx];
+}
+
+perm_string netclass_t::get_simple_bound_constraint_name(size_t idx) const
+{
+      assert(idx < simple_bounds_.size());
+      return simple_bounds_[idx].constraint_name;
 }

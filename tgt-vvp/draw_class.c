@@ -155,18 +155,19 @@ void draw_class_in_scope(ivl_type_t classtype)
       }
 
       /* Emit simple bounds for constraint solver.
-       * Format: .constraint_bound <classptr>, <prop_idx>, "<op>", <soft>, <has_const>, <value/prop2_idx> ;
+       * Format: .constraint_bound <classptr>, "<constraint_name>", <prop_idx>, "<op>", <soft>, <has_const>, <value/prop2_idx> ;
        * These are runtime-enforceable bounds like: value > 0, value < limit
        */
       unsigned nbounds = ivl_type_simple_bounds(classtype);
       for (unsigned bidx = 0; bidx < nbounds; bidx++) {
+	    const char* cons_name = ivl_type_simple_bound_constraint_name(classtype, bidx);
 	    unsigned prop_idx = ivl_type_simple_bound_prop(classtype, bidx);
 	    char op = ivl_type_simple_bound_op(classtype, bidx);
 	    int soft = ivl_type_simple_bound_soft(classtype, bidx);
 	    int has_const = ivl_type_simple_bound_has_const(classtype, bidx);
 
-	    fprintf(vvp_out, ".constraint_bound C%p, %u, \"%c\", %d, %d, ",
-		    classtype, prop_idx, op, soft, has_const);
+	    fprintf(vvp_out, ".constraint_bound C%p, \"%s\", %u, \"%c\", %d, %d, ",
+		    classtype, cons_name ? cons_name : "", prop_idx, op, soft, has_const);
 	    if (has_const) {
 		  int64_t const_val = ivl_type_simple_bound_const(classtype, bidx);
 		  fprintf(vvp_out, "%" PRId64 " ;\n", const_val);

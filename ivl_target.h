@@ -2473,6 +2473,7 @@ extern int         ivl_type_constraint_soft(ivl_type_t net, unsigned idx);
  * Each bound has a property index, operator, and either a constant or property bound.
  */
 extern unsigned    ivl_type_simple_bounds(ivl_type_t net);
+extern const char* ivl_type_simple_bound_constraint_name(ivl_type_t net, unsigned idx);
 extern unsigned    ivl_type_simple_bound_prop(ivl_type_t net, unsigned idx);
 extern char        ivl_type_simple_bound_op(ivl_type_t net, unsigned idx);
 extern int         ivl_type_simple_bound_soft(ivl_type_t net, unsigned idx);

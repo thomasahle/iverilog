@@ -3565,6 +3565,15 @@ extern "C" unsigned ivl_type_simple_bounds(ivl_type_t net)
       return class_type->get_simple_bounds();
 }
 
+extern "C" const char* ivl_type_simple_bound_constraint_name(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      perm_string name = class_type->get_simple_bound_constraint_name(idx);
+      return name.nil() ? "" : name.str();
+}
+
 extern "C" unsigned ivl_type_simple_bound_prop(ivl_type_t net, unsigned idx)
 {
       const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);

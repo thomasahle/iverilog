@@ -5195,6 +5195,51 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  }
 	    }
 
+	    // Handle built-in constraint_mode() method on named constraint blocks
+	    // This handles the case: obj.constraint_name.constraint_mode(mode)
+	    if (method_name == "constraint_mode" && sr.path_tail.size() == 1) {
+		  perm_string constraint_name = sr.path_tail.front().name;
+		  // Constraint names are not properties, so property_idx_from_name returns -1
+		  // We just need to verify this is being used correctly and pass the name
+		  if (debug_elaborate) {
+			cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+			     << "Built-in constraint_mode() for constraint " << constraint_name
+			     << " of class " << class_type->get_name() << endl;
+		  }
+
+		  // Create signal expression for the class object
+		  NetESignal*obj_expr = new NetESignal(net);
+		  obj_expr->set_line(*this);
+
+		  // Check if we have an argument (setter) or not (getter)
+		  NetExpr*mode_arg = 0;
+		  if (parms_.size() > 0 && parms_[0].parm) {
+			mode_arg = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+		  }
+
+		  if (mode_arg) {
+			// constraint_mode(mode) - setter
+			// Generate $ivl_constraint_mode_set(obj, constraint_name, mode)
+			NetESFunc*sys_expr = new NetESFunc("$ivl_constraint_mode_set",
+						   &netvector_t::atom2s32, 3);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, obj_expr);
+			sys_expr->parm(1, new NetECString(std::string(constraint_name.str())));
+			sys_expr->parm(2, mode_arg);
+
+			// Create a temporary variable to hold the return value
+			NetNet*tmp = new NetNet(scope, scope->local_symbol(),
+					      NetNet::REG, &netvector_t::atom2s32);
+			tmp->set_line(*this);
+			NetAssign_*lv = new NetAssign_(tmp);
+
+			// Generate an assign for the return value
+			NetAssign*cur = new NetAssign(lv, sys_expr);
+			cur->set_line(*this);
+			return cur;
+		  }
+	    }
+
 	    NetScope*task = class_type->method_from_name(method_name);
 	    if (task == 0) {
 		    // If an implicit this was added it is not an error if we
@@ -8608,15 +8653,15 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value)
  * where OP is a relational operator (>, <, >=, <=, ==, !=).
  * Returns true if a simple bound was extracted, false otherwise.
  */
-static bool extract_simple_bound(netclass_t*cls, PExpr*expr, bool is_soft)
+static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr, bool is_soft)
 {
       // Check for logical AND expression (from 'inside' constraints)
       // e.g., (x >= 0) && (x <= 3) from "inside {[0:3]}"
       const PEBLogic* logic = dynamic_cast<const PEBLogic*>(expr);
       if (logic != nullptr && logic->get_op() == 'a') {
 	    // Recursively extract bounds from both sides of AND
-	    bool left_ok = extract_simple_bound(cls, logic->get_left(), is_soft);
-	    bool right_ok = extract_simple_bound(cls, logic->get_right(), is_soft);
+	    bool left_ok = extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft);
+	    bool right_ok = extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft);
 	    return left_ok || right_ok;
       }
 
@@ -8624,8 +8669,8 @@ static bool extract_simple_bound(netclass_t*cls, PExpr*expr, bool is_soft)
       // e.g., (x == 1) || (x == 2) from "inside {1, 2}"
       // For OR, we can't easily extract bounds, so just process each side
       if (logic != nullptr && logic->get_op() == 'o') {
-	    extract_simple_bound(cls, logic->get_left(), is_soft);
-	    extract_simple_bound(cls, logic->get_right(), is_soft);
+	    extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft);
+	    extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft);
 	    return false;  // OR constraints are harder to enforce as bounds
       }
 
@@ -8713,7 +8758,7 @@ static bool extract_simple_bound(netclass_t*cls, PExpr*expr, bool is_soft)
 		       << prop_name << " " << op << " " << const_val << endl;
 	    }
 
-	    cls->add_simple_bound(prop_idx, op, is_soft, true, const_val, 0);
+	    cls->add_simple_bound(constraint_name, prop_idx, op, is_soft, true, const_val, 0);
 	    return true;
       }
       else if (bound_ident != nullptr) {
@@ -8731,7 +8776,7 @@ static bool extract_simple_bound(netclass_t*cls, PExpr*expr, bool is_soft)
 		       << prop_name << " " << op << " " << bound_name << endl;
 	    }
 
-	    cls->add_simple_bound(prop_idx, op, is_soft, false, 0, bound_idx);
+	    cls->add_simple_bound(constraint_name, prop_idx, op, is_soft, false, 0, bound_idx);
 	    return true;
       }
 
@@ -8780,7 +8825,7 @@ void netclass_t::elaborate(Design*des, PClass*pclass)
 	      // Extract simple bounds from constraint expressions
 	    for (PExpr* expr : pcons->expressions) {
 		  if (expr != nullptr) {
-			extract_simple_bound(this, expr, pcons->is_soft);
+			extract_simple_bound(this, cons_name, expr, pcons->is_soft);
 		  }
 	    }
       }

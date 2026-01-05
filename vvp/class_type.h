@@ -105,6 +105,7 @@ class class_type : public __vpiHandle {
 
     public: // Constraint bounds for randomize()
       struct simple_bound_t {
+	    std::string constraint_name; // Name of the constraint block this bound belongs to
 	    size_t property_idx;  // Index of constrained rand property
 	    char op;              // '>' | '<' | 'G' (>=) | 'L' (<=) | '=' | '!'
 	    bool is_soft;         // Soft constraint (doesn't cause failure)
@@ -115,6 +116,8 @@ class class_type : public __vpiHandle {
 	    bool weight_per_value;// true for := (per value), false for :/ (per range)
       };
       void add_constraint_bound(const simple_bound_t& bound);
+	// Get constraint index from name, return -1 if not found
+      int constraint_idx_from_name(const std::string& name) const;
       size_t constraint_bound_count() const { return constraint_bounds_.size(); }
       const simple_bound_t& get_constraint_bound(size_t idx) const;
 	// Check if this class or any parent class has constraints

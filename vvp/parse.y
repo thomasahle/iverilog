@@ -917,11 +917,11 @@ statement
   | K_FACTORY T_STRING ',' T_SYMBOL ';'
       { compile_factory($2, $4); }
 
-  /* Constraint bound: .constraint_bound class_label, prop_idx, 'op', soft, has_const, value ; */
-  | K_CONSTRAINT_BOUND T_SYMBOL ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ';'
-      { compile_constraint_bound($2, $4, $6[0], $8, $10, $12); }
-  | K_CONSTRAINT_BOUND T_SYMBOL ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' '-' T_NUMBER ';'
-      { compile_constraint_bound($2, $4, $6[0], $8, $10, -$13); }
+  /* Constraint bound: .constraint_bound class_label, "constraint_name", prop_idx, 'op', soft, has_const, value ; */
+  | K_CONSTRAINT_BOUND T_SYMBOL ',' T_STRING ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ';'
+      { compile_constraint_bound($2, $4, $6, $8[0], $10, $12, $14); }
+  | K_CONSTRAINT_BOUND T_SYMBOL ',' T_STRING ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' '-' T_NUMBER ';'
+      { compile_constraint_bound($2, $4, $6, $8[0], $10, $12, -$15); }
 
   | enum_type
       { ; }

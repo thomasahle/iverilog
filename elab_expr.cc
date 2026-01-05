@@ -5481,6 +5481,45 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    // Find the property in this class
 	    int prop_idx = this_class->property_idx_from_name(prop_name);
 	    if (prop_idx < 0) {
+		  // Property not found - check if this is a constraint_mode call
+		  // For constraint_mode, the first element is a constraint name, not a property
+		  if (search_results.path_tail.size() >= 2) {
+			pform_name_t::const_iterator method_it = search_results.path_tail.begin();
+			++method_it;  // Skip constraint name
+			if (method_it->name == "constraint_mode") {
+			      // This is obj.constraint_name.constraint_mode()
+			      perm_string constraint_name = prop_name;
+
+			      // Create expression to load 'this' (the object)
+			      NetNet*this_net = search_results.net;
+			      NetESignal*obj_expr = new NetESignal(this_net);
+			      obj_expr->set_line(*this);
+
+			      // Check if we have an argument (setter) or not (getter)
+			      if (parms_.size() > 0 && parms_[0].parm) {
+				    // constraint_mode(mode) - setter
+				    NetExpr*mode_arg = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+
+				    // Generate $ivl_constraint_mode_set(obj, "constraint_name", mode)
+				    NetESFunc*sys_expr = new NetESFunc("$ivl_constraint_mode_set",
+							       &netvector_t::atom2s32, 3);
+				    sys_expr->set_line(*this);
+				    sys_expr->parm(0, obj_expr);
+				    sys_expr->parm(1, new NetECString(std::string(constraint_name.str())));
+				    sys_expr->parm(2, mode_arg);
+				    return sys_expr;
+			      } else {
+				    // constraint_mode() - getter
+				    // Generate $ivl_constraint_mode_get(obj, "constraint_name")
+				    NetESFunc*sys_expr = new NetESFunc("$ivl_constraint_mode_get",
+							       &netvector_t::atom2s32, 2);
+				    sys_expr->set_line(*this);
+				    sys_expr->parm(0, obj_expr);
+				    sys_expr->parm(1, new NetECString(std::string(constraint_name.str())));
+				    return sys_expr;
+			      }
+			}
+		  }
 		  cerr << get_fileline() << ": error: "
 		       << "Property " << prop_name << " not found in class "
 		       << this_class->get_name() << "." << endl;

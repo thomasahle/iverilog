@@ -173,6 +173,7 @@ class netclass_t : public ivl_type_s {
 	// or prop OP prop (e.g., value < limit).
 	// These can be efficiently enforced at runtime.
       struct simple_bound_t {
+	    perm_string constraint_name; // Name of the constraint block this bound belongs to
 	    size_t property_idx;  // Index of constrained rand property
 	    char op;              // '>' | '<' | 'G' (>=) | 'L' (<=) | '=' | '!'
 	    bool is_soft;         // Soft constraint (doesn't cause failure)
@@ -193,10 +194,11 @@ class netclass_t : public ivl_type_s {
       NetExpr* get_constraint_expr(size_t idx) const;
 
 	// Simple bounds API for constraint solver
-      void add_simple_bound(size_t prop_idx, char op, bool is_soft,
+      void add_simple_bound(perm_string constraint_name, size_t prop_idx, char op, bool is_soft,
                             bool has_const, int64_t const_val, size_t bound_prop);
       size_t get_simple_bounds() const { return simple_bounds_.size(); }
       const simple_bound_t& get_simple_bound(size_t idx) const;
+      perm_string get_simple_bound_constraint_name(size_t idx) const;
 
     private:
 	// This holds task/function definitions for methods.

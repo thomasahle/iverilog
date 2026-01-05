@@ -642,6 +642,23 @@ const class_type::simple_bound_t& class_type::get_constraint_bound(size_t idx) c
       return constraint_bounds_[idx];
 }
 
+int class_type::constraint_idx_from_name(const std::string& name) const
+{
+      // Constraint names are stored in constraint_bounds_, so we need to
+      // find a unique constraint index from the name. Since bounds can share
+      // the same constraint name, we return the first matching bound index.
+      // For constraint_mode, we track unique names.
+      for (size_t i = 0; i < constraint_bounds_.size(); ++i) {
+	    if (constraint_bounds_[i].constraint_name == name)
+		  return (int)i;
+      }
+      // Check parent class
+      if (parent_) {
+	    return parent_->constraint_idx_from_name(name);
+      }
+      return -1;
+}
+
 /*
  * Generate a constrained random value for a property.
  * Computes the valid range from all constraint bounds and generates
@@ -1054,10 +1071,10 @@ void compile_factory(char*type_name, char*class_label)
 }
 
 /*
- * Constraint bound: .constraint_bound class_label, prop_idx, "op", soft, has_const, value ;
+ * Constraint bound: .constraint_bound class_label, "constraint_name", prop_idx, "op", soft, has_const, value ;
  * This registers a simple constraint bound for the randomize() constraint solver.
  */
-void compile_constraint_bound(char*class_label, unsigned prop_idx,
+void compile_constraint_bound(char*class_label, char*constraint_name, unsigned prop_idx,
                               char op, int soft, int has_const, int64_t value)
 {
       // Look up the class definition from the label
@@ -1066,6 +1083,7 @@ void compile_constraint_bound(char*class_label, unsigned prop_idx,
 	    fprintf(stderr, "ERROR: .constraint_bound: class label '%s' not found\n",
 		    class_label);
 	    free(class_label);
+	    free(constraint_name);
 	    return;
       }
 
@@ -1074,11 +1092,13 @@ void compile_constraint_bound(char*class_label, unsigned prop_idx,
 	    fprintf(stderr, "ERROR: .constraint_bound: '%s' is not a class\n",
 		    class_label);
 	    free(class_label);
+	    free(constraint_name);
 	    return;
       }
 
       // Create and add the constraint bound
       class_type::simple_bound_t bound;
+      bound.constraint_name = constraint_name ? constraint_name : "";
       bound.property_idx = prop_idx;
       bound.op = op;
       bound.is_soft = (soft != 0);
@@ -1093,6 +1113,7 @@ void compile_constraint_bound(char*class_label, unsigned prop_idx,
       class_def->add_constraint_bound(bound);
 
       free(class_label);
+      free(constraint_name);
 }
 
 #ifdef CHECK_WITH_VALGRIND

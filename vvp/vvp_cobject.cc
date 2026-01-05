@@ -122,3 +122,27 @@ bool vvp_cobject::should_randomize(size_t pid) const
       // Check instance rand_mode
       return get_rand_mode(pid) != 0;
 }
+
+void vvp_cobject::set_constraint_mode(const std::string& constraint_name, int mode)
+{
+      if (mode == 0) {
+	    // Disable constraint
+	    constraint_mode_disabled_.insert(constraint_name);
+      } else {
+	    // Enable constraint
+	    constraint_mode_disabled_.erase(constraint_name);
+      }
+}
+
+int vvp_cobject::get_constraint_mode(const std::string& constraint_name) const
+{
+      // Default: enabled (1), disabled if in set (0)
+      if (constraint_mode_disabled_.count(constraint_name) > 0)
+	    return 0;
+      return 1;
+}
+
+bool vvp_cobject::is_constraint_enabled(const std::string& constraint_name) const
+{
+      return get_constraint_mode(constraint_name) != 0;
+}
