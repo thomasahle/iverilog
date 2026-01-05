@@ -856,7 +856,10 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <statement> compressed_statement
 %type <statement> loop_statement for_step for_step_opt jump_statement
 %type <statement> concurrent_assertion_statement
+%type <statement> concurrent_assertion_item
+%type <statement> assertion_item
 %type <statement> deferred_immediate_assertion_statement
+%type <statement> deferred_immediate_assertion_item
 %type <statement> simple_immediate_assertion_statement
 %type <statement> procedural_assertion_statement
 %type <statement_list> statement_or_null_list statement_or_null_list_opt
@@ -944,7 +947,9 @@ assert_or_assume
 
 assertion_item /* IEEE1800-2012: A.6.10 */
   : concurrent_assertion_item
+      { $$ = $1; }
   | deferred_immediate_assertion_item
+      { $$ = $1; }
   ;
 
 assignment_pattern /* IEEE1800-2005: A.6.7.1 */
@@ -1535,7 +1540,7 @@ class_new /* IEEE1800-2005 A.2.4 */
 concurrent_assertion_item /* IEEE1800-2012 A.2.10 */
   : block_identifier_opt concurrent_assertion_statement
       { delete $1;
-	delete $2;
+	$$ = $2;
       }
   ;
 
@@ -1614,24 +1619,54 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 	}
       }
   | K_cover K_property '(' property_spec ')' statement_or_null
-      { /* */
-	if (gn_unsupported_assertions_flag) {
-	      yyerror(@1, "sorry: concurrent_assertion_item not supported."
-		      " Try -gno-assertions or -gsupported-assertions"
-		      " to turn this message off.");
+      { /* cover property: execute pass action when property is true */
+	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* Transform: if (expr) pass_action;
+	         Note: This is a simplified model - real coverage would track
+	         how many times the property was covered. */
+	      PCondit*cond = new PCondit($4.expr, $6, 0);
+	      FILE_NAME(cond, @1);
+	      if ($4.clocking_event) {
+		    $4.clocking_event->set_statement(cond);
+		    $$ = $4.clocking_event;
+	      } else {
+		    $$ = cond;
+	      }
+	} else {
+	      if (gn_unsupported_assertions_flag) {
+		    yyerror(@1, "sorry: concurrent_assertion_item not supported."
+			    " Try -gno-assertions or -gsupported-assertions"
+			    " to turn this message off.");
+	      }
+	      delete $6;
+	      $$ = 0;
 	}
-        $$ = 0;
       }
       /* For now, cheat, and use property_spec for the sequence specification.
          They are syntactically identical. */
   | K_cover K_sequence '(' property_spec ')' statement_or_null
-      { /* */
-	if (gn_unsupported_assertions_flag) {
-	      yyerror(@1, "sorry: concurrent_assertion_item not supported."
-		      " Try -gno-assertions or -gsupported-assertions"
-		      " to turn this message off.");
+      { /* cover sequence: execute pass action when sequence matches */
+	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* Transform: if (expr) pass_action;
+	         Note: This is a simplified model - real coverage would track
+	         how many times the sequence matched. */
+	      PCondit*cond = new PCondit($4.expr, $6, 0);
+	      FILE_NAME(cond, @1);
+	      if ($4.clocking_event) {
+		    $4.clocking_event->set_statement(cond);
+		    $$ = $4.clocking_event;
+	      } else {
+		    $$ = cond;
+	      }
+	} else {
+	      if (gn_unsupported_assertions_flag) {
+		    yyerror(@1, "sorry: concurrent_assertion_item not supported."
+			    " Try -gno-assertions or -gsupported-assertions"
+			    " to turn this message off.");
+	      }
+	      delete $6;
+	      $$ = 0;
 	}
-        $$ = 0;
       }
   | K_restrict K_property '(' property_spec ')' ';'
       { /* */
@@ -2299,7 +2334,7 @@ data_type_or_implicit_or_void
 deferred_immediate_assertion_item /* IEEE1800-2012: A.6.10 */
   : block_identifier_opt deferred_immediate_assertion_statement
       { delete $1;
-	delete $2;
+	$$ = $2;
       }
   ;
 
@@ -7389,6 +7424,15 @@ module_item
       { pform_make_analog_behavior(@2, IVL_PR_ALWAYS, $3); }
 
   | attribute_list_opt assertion_item
+      { /* Concurrent assertion items need to be wrapped in an always block.
+           The assertion_item returns a statement (PCondit) that needs to
+           be executed repeatedly. Create an always block for it. */
+        Statement*stmt = $2;
+        if (stmt) {
+              PProcess*tmp = pform_make_behavior(IVL_PR_ALWAYS, stmt, $1);
+              FILE_NAME(tmp, @2);
+        }
+      }
 
   | timeunits_declaration
       { pform_error_in_generate(@1, "timeunit declaration"); }
