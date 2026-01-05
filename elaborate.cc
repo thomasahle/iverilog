@@ -8737,9 +8737,10 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    if (sysfunc != nullptr && extract_constant_value(right, const_val)) {
 		  // Get the system function name from the path
 		  const pform_scoped_name_t& func_path = sysfunc->path();
-		  if (func_path.name.empty())
+		  if (func_path.name.size() == 0)
 			return false;
-		  perm_string func_name = func_path.name.back().name;
+		  const name_component_t& last_comp = func_path.name.back();
+		  perm_string func_name = last_comp.name;
 		  if (func_name.nil())
 			return false;
 
@@ -8769,9 +8770,10 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 			return false;
 
 		  const pform_scoped_name_t& arg_path = arg_ident->path();
-		  if (arg_path.name.empty())
+		  if (arg_path.name.size() == 0)
 			return false;
-		  perm_string arg_name = arg_path.name.back().name;
+		  const name_component_t& arg_last_comp = arg_path.name.back();
+		  perm_string arg_name = arg_last_comp.name;
 
 		  // Look up property index for the argument
 		  int arg_idx = cls->property_idx_from_name(arg_name);

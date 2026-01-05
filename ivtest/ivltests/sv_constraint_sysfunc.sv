@@ -1,45 +1,44 @@
 // Test system functions in constraints
-// NOTE: This feature is NOT YET IMPLEMENTED
-// This test documents the current limitation
+// This tests that $countones(flags) == 1 constraint generates one-hot values
 
 class SysFuncConstraint;
   rand bit [7:0] flags;
 
-  // Constraint using $countones - want exactly one bit set
-  // Currently parsed but NOT enforced at runtime
+  // Constraint using $countones - want exactly one bit set (one-hot value)
   constraint c_onehot { $countones(flags) == 1; }
 endclass
 
 module test;
   SysFuncConstraint obj;
   int i;
-  int ones_count;
-  int success_count;
+  int pass_count;
+  bit is_power2;
 
   initial begin
     obj = new();
 
-    // Test: $countones constraint
+    // Test: $countones constraint should generate one-hot values
     $display("Test: $countones(flags) == 1 constraint");
-    $display("NOTE: System functions in constraints are NOT YET enforced");
+    $display("Verifying all generated values are one-hot (power of 2):");
     $display("");
 
-    success_count = 0;
+    pass_count = 0;
     for (i = 0; i < 10; i++) begin
       void'(obj.randomize());
-      ones_count = $countones(obj.flags);
-      if (ones_count == 1)
-        success_count++;
+      // Check if value is power of 2 (one-hot): v != 0 and v & (v-1) == 0
+      is_power2 = (obj.flags != 0) && ((obj.flags & (obj.flags - 1)) == 0);
+      if (is_power2)
+        pass_count++;
+      $display("  val=%3d (0x%02h) is_one_hot=%b", obj.flags, obj.flags, is_power2);
     end
 
-    $display("Result: %0d/10 values had exactly one bit set", success_count);
+    $display("");
+    $display("Result: %0d/10 values are one-hot (power of 2)", pass_count);
 
-    if (success_count == 10) begin
+    if (pass_count == 10) begin
       $display("PASSED: System function constraint is being enforced!");
     end else begin
-      $display("INFO: System function constraints require implementation");
-      $display("      The constraint syntax is accepted but not enforced yet.");
-      $display("      Random chance would give ~3% success rate for one-hot.");
+      $display("FAILED: Only %0d/10 values are one-hot", pass_count);
     end
   end
 endmodule

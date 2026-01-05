@@ -22,7 +22,9 @@
 # include  "factory_registry.h"
 # include  "vpi_priv.h"
 # include  "config.h"
+# include  <algorithm>
 # include  <map>
+# include  <vector>
 #ifdef CHECK_WITH_VALGRIND
 # include  "vvp_cleanup.h"
 #endif
@@ -31,6 +33,39 @@
 # include  <type_traits>
 
 using namespace std;
+
+/*
+ * Helper function to count the number of 1 bits in an int64_t.
+ * Used for $countones constraint evaluation.
+ */
+static int count_ones(int64_t val)
+{
+      int count = 0;
+      // Use unsigned to handle all 64 bits correctly
+      uint64_t uval = static_cast<uint64_t>(val);
+      while (uval) {
+	    count += (uval & 1);
+	    uval >>= 1;
+      }
+      return count;
+}
+
+/*
+ * Helper function to compute ceiling log base 2.
+ * Used for $clog2 constraint evaluation.
+ */
+static int clog2(int64_t val)
+{
+      if (val <= 0) return 0;
+      if (val == 1) return 0;
+      int result = 0;
+      val--;  // For ceiling, we need (val-1) and then add 1
+      while (val > 0) {
+	    result++;
+	    val >>= 1;
+      }
+      return result;
+}
 
 /*
  * This class_property_t class is an abstract base class for
@@ -694,9 +729,75 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
       int64_t min_val = type_min;
       int64_t max_val = type_max;
 
+      // Check for system function constraints on this property that we need
+      // to handle specially (e.g., $countones(x) == 1 requires one-hot value)
+      bool need_onehot = false;  // Generate one-hot value (exactly one bit set)
+      bool need_onehot0 = false; // Generate zero or one-hot value
+      int required_ones = -1;    // For $countones(x) == N
+
+      for (const auto& bound : constraint_bounds_) {
+	    // Only care about sysfunc constraints on this property
+	    if (bound.sysfunc_type == SYSFUNC_NONE)
+		  continue;
+	    if (bound.sysfunc_arg_idx != prop_idx)
+		  continue;
+	    if (bound.is_soft)
+		  continue;  // Skip soft constraints for value generation
+
+	    // Handle system function constraints
+	    if (bound.sysfunc_type == SYSFUNC_COUNTONES && bound.op == '=' &&
+		bound.has_const_bound) {
+		  required_ones = static_cast<int>(bound.const_bound);
+		  if (required_ones == 1) need_onehot = true;
+	    } else if (bound.sysfunc_type == SYSFUNC_ONEHOT && bound.op == '=' &&
+		       bound.has_const_bound && bound.const_bound == 1) {
+		  need_onehot = true;
+	    } else if (bound.sysfunc_type == SYSFUNC_ONEHOT0 && bound.op == '=' &&
+		       bound.has_const_bound && bound.const_bound == 1) {
+		  need_onehot0 = true;
+	    }
+      }
+
+      // If we need a special value (like one-hot), generate it directly
+      if (need_onehot) {
+	    // Generate a random power of 2 (exactly one bit set)
+	    unsigned bit_pos = rand() % wid;
+	    return int64_t(1) << bit_pos;
+      }
+
+      if (need_onehot0) {
+	    // Generate 0 or a random power of 2
+	    if (rand() % 2 == 0)
+		  return 0;
+	    unsigned bit_pos = rand() % wid;
+	    return int64_t(1) << bit_pos;
+      }
+
+      if (required_ones >= 0 && required_ones <= (int)wid) {
+	    // Generate a value with exactly required_ones bits set
+	    // Simple approach: shuffle bit positions and set first required_ones
+	    int64_t result = 0;
+	    std::vector<unsigned> positions;
+	    for (unsigned i = 0; i < wid; i++)
+		  positions.push_back(i);
+	    // Shuffle positions
+	    for (unsigned i = wid - 1; i > 0; i--) {
+		  unsigned j = rand() % (i + 1);
+		  std::swap(positions[i], positions[j]);
+	    }
+	    // Set required_ones bits
+	    for (int i = 0; i < required_ones && i < (int)positions.size(); i++) {
+		  result |= (int64_t(1) << positions[i]);
+	    }
+	    return result;
+      }
+
       // Apply all constraint bounds for this property
       for (const auto& bound : constraint_bounds_) {
 	    if (bound.property_idx != prop_idx)
+		  continue;
+	    // Skip system function constraints (handled above)
+	    if (bound.sysfunc_type != SYSFUNC_NONE)
 		  continue;
 
 	    // Get the bound value
@@ -855,15 +956,66 @@ bool class_type::check_constraints(inst_t inst) const
 		  continue;
 	    }
 
+	    // For system function constraints, we need to evaluate the function
+	    // on the argument property and compare the result to bound_val.
+	    // For non-sysfunc constraints, val is the property value to compare.
+	    int64_t compare_val = val;
+	    if (bound.sysfunc_type != SYSFUNC_NONE) {
+		  // Get the value of the system function argument property
+		  if (bound.sysfunc_arg_idx >= properties_.size())
+			continue;
+		  if (!properties_[bound.sysfunc_arg_idx].type->supports_vec4())
+			continue;
+
+		  vvp_vector4_t arg_val;
+		  get_vec4(inst, bound.sysfunc_arg_idx, arg_val);
+
+		  int64_t arg = 0;
+		  bool has_xz = false;
+		  if (arg_val.size() <= 64) {
+			for (unsigned i = 0; i < arg_val.size(); i++) {
+			      vvp_bit4_t bit = arg_val.value(i);
+			      if (bit == BIT4_1)
+				    arg |= (int64_t(1) << i);
+			      else if (bit == BIT4_X || bit == BIT4_Z)
+				    has_xz = true;
+			}
+		  }
+
+		  // Evaluate the system function
+		  switch (bound.sysfunc_type) {
+			case SYSFUNC_COUNTONES:
+			      compare_val = count_ones(arg);
+			      break;
+			case SYSFUNC_ONEHOT:
+			      // $onehot: exactly one bit set and no X/Z
+			      compare_val = (!has_xz && count_ones(arg) == 1) ? 1 : 0;
+			      break;
+			case SYSFUNC_ONEHOT0:
+			      // $onehot0: at most one bit set and no X/Z
+			      compare_val = (!has_xz && count_ones(arg) <= 1) ? 1 : 0;
+			      break;
+			case SYSFUNC_ISUNKNOWN:
+			      // $isunknown: true if any X/Z bits
+			      compare_val = has_xz ? 1 : 0;
+			      break;
+			case SYSFUNC_CLOG2:
+			      compare_val = clog2(arg);
+			      break;
+			default:
+			      continue;  // Unknown sysfunc, skip
+		  }
+	    }
+
 	    // Check the constraint based on operator
 	    bool satisfied = false;
 	    switch (bound.op) {
-		  case '>': satisfied = (val > bound_val); break;
-		  case '<': satisfied = (val < bound_val); break;
-		  case 'G': satisfied = (val >= bound_val); break;  // >=
-		  case 'L': satisfied = (val <= bound_val); break;  // <=
-		  case '=': satisfied = (val == bound_val); break;  // ==
-		  case '!': satisfied = (val != bound_val); break;  // !=
+		  case '>': satisfied = (compare_val > bound_val); break;
+		  case '<': satisfied = (compare_val < bound_val); break;
+		  case 'G': satisfied = (compare_val >= bound_val); break;  // >=
+		  case 'L': satisfied = (compare_val <= bound_val); break;  // <=
+		  case '=': satisfied = (compare_val == bound_val); break;  // ==
+		  case '!': satisfied = (compare_val != bound_val); break;  // !=
 		  default: satisfied = true; break;
 	    }
 
@@ -1071,11 +1223,13 @@ void compile_factory(char*type_name, char*class_label)
 }
 
 /*
- * Constraint bound: .constraint_bound class_label, "constraint_name", prop_idx, "op", soft, has_const, value ;
+ * Constraint bound: .constraint_bound class_label, "constraint_name", prop_idx, "op", soft, has_const, value, sysfunc_type, sysfunc_arg ;
  * This registers a simple constraint bound for the randomize() constraint solver.
+ * sysfunc_type: 0=NONE, 1=COUNTONES, 2=ONEHOT, 3=ONEHOT0, 4=ISUNKNOWN, 5=CLOG2
  */
 void compile_constraint_bound(char*class_label, char*constraint_name, unsigned prop_idx,
-                              char op, int soft, int has_const, int64_t value)
+                              char op, int soft, int has_const, int64_t value,
+                              unsigned sysfunc_type, unsigned sysfunc_arg)
 {
       // Look up the class definition from the label
       vpiHandle class_h = vvp_lookup_handle(class_label);
@@ -1110,6 +1264,8 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
 	    bound.const_bound = 0;
 	    bound.bound_prop_idx = static_cast<size_t>(value);
       }
+      bound.sysfunc_type = static_cast<class_type::sysfunc_type_t>(sysfunc_type);
+      bound.sysfunc_arg_idx = sysfunc_arg;
       class_def->add_constraint_bound(bound);
 
       free(class_label);

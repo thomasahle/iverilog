@@ -2480,6 +2480,13 @@ extern int         ivl_type_simple_bound_soft(ivl_type_t net, unsigned idx);
 extern int         ivl_type_simple_bound_has_const(ivl_type_t net, unsigned idx);
 extern int64_t     ivl_type_simple_bound_const(ivl_type_t net, unsigned idx);
 extern unsigned    ivl_type_simple_bound_prop2(ivl_type_t net, unsigned idx);
+/* System function constraint support (e.g., $countones(x) == 1).
+ * ivl_type_simple_bound_sysfunc_type returns the system function type:
+ *   0 = SYSFUNC_NONE, 1 = COUNTONES, 2 = ONEHOT, 3 = ONEHOT0, 4 = ISUNKNOWN, 5 = CLOG2
+ * ivl_type_simple_bound_sysfunc_arg returns the property index that is the function argument.
+ */
+extern unsigned    ivl_type_simple_bound_sysfunc_type(ivl_type_t net, unsigned idx);
+extern unsigned    ivl_type_simple_bound_sysfunc_arg(ivl_type_t net, unsigned idx);
 
 extern ivl_type_t  ivl_type_super(ivl_type_t net);
 

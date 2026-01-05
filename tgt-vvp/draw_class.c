@@ -155,8 +155,11 @@ void draw_class_in_scope(ivl_type_t classtype)
       }
 
       /* Emit simple bounds for constraint solver.
-       * Format: .constraint_bound <classptr>, "<constraint_name>", <prop_idx>, "<op>", <soft>, <has_const>, <value/prop2_idx> ;
+       * Format: .constraint_bound <classptr>, "<constraint_name>", <prop_idx>, "<op>", <soft>, <has_const>, <value/prop2_idx>, <sysfunc_type>, <sysfunc_arg> ;
        * These are runtime-enforceable bounds like: value > 0, value < limit
+       * For system function constraints (e.g., $countones(x) == 1):
+       *   sysfunc_type: 0=NONE, 1=COUNTONES, 2=ONEHOT, 3=ONEHOT0, 4=ISUNKNOWN, 5=CLOG2
+       *   sysfunc_arg: property index that is the function argument
        */
       unsigned nbounds = ivl_type_simple_bounds(classtype);
       for (unsigned bidx = 0; bidx < nbounds; bidx++) {
@@ -165,15 +168,17 @@ void draw_class_in_scope(ivl_type_t classtype)
 	    char op = ivl_type_simple_bound_op(classtype, bidx);
 	    int soft = ivl_type_simple_bound_soft(classtype, bidx);
 	    int has_const = ivl_type_simple_bound_has_const(classtype, bidx);
+	    unsigned sysfunc_type = ivl_type_simple_bound_sysfunc_type(classtype, bidx);
+	    unsigned sysfunc_arg = ivl_type_simple_bound_sysfunc_arg(classtype, bidx);
 
 	    fprintf(vvp_out, ".constraint_bound C%p, \"%s\", %u, \"%c\", %d, %d, ",
 		    classtype, cons_name ? cons_name : "", prop_idx, op, soft, has_const);
 	    if (has_const) {
 		  int64_t const_val = ivl_type_simple_bound_const(classtype, bidx);
-		  fprintf(vvp_out, "%" PRId64 " ;\n", const_val);
+		  fprintf(vvp_out, "%" PRId64 ", %u, %u ;\n", const_val, sysfunc_type, sysfunc_arg);
 	    } else {
 		  unsigned prop2_idx = ivl_type_simple_bound_prop2(classtype, bidx);
-		  fprintf(vvp_out, "%u ;\n", prop2_idx);
+		  fprintf(vvp_out, "%u, %u, %u ;\n", prop2_idx, sysfunc_type, sysfunc_arg);
 	    }
       }
 

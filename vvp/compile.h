@@ -570,8 +570,11 @@ extern void compile_class_resolve_parents(void);
 /* Factory registration */
 extern void compile_factory(char*type_name, char*class_label);
 
-/* Constraint bound for randomize() constraint solver */
+/* Constraint bound for randomize() constraint solver.
+ * sysfunc_type: 0=NONE, 1=COUNTONES, 2=ONEHOT, 3=ONEHOT0, 4=ISUNKNOWN, 5=CLOG2
+ * sysfunc_arg: property index that is the system function argument */
 extern void compile_constraint_bound(char*class_label, char*constraint_name, unsigned prop_idx,
-                                     char op, int soft, int has_const, int64_t value);
+                                     char op, int soft, int has_const, int64_t value,
+                                     unsigned sysfunc_type, unsigned sysfunc_arg);
 
 #endif /* IVL_compile_H */
