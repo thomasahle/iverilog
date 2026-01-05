@@ -21,6 +21,7 @@
 
 # include  <string>
 # include  <stdint.h>
+# include  <vector>
 # include  "vvp_object.h"
 # include  "class_type.h"
 
@@ -52,10 +53,20 @@ class vvp_cobject : public vvp_object {
       // Get the instance for constraint checking
       class_type::inst_t get_instance() const { return properties_; }
 
+      // rand_mode support: control randomization per property per instance
+      // mode=1 means randomization enabled (default), mode=0 means disabled
+      void set_rand_mode(size_t pid, int mode);
+      int get_rand_mode(size_t pid) const;
+      // Check if property should be randomized (respects rand_mode)
+      bool should_randomize(size_t pid) const;
+
     private:
       const class_type* defn_;
 	// For now, only support 32bit bool signed properties.
       class_type::inst_t properties_;
+      // Per-property rand_mode: empty means all enabled
+      // Only properties that have been explicitly disabled are tracked
+      std::vector<bool> rand_mode_disabled_;
 };
 
 #endif /* IVL_vvp_cobject_H */

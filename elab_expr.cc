@@ -3899,6 +3899,26 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 					  return sys_expr;
 				    }
 			      }
+			      // Check for built-in rand_mode() method called without parentheses
+			      // This only works for getting rand_mode when called without args
+			      if (member_comp.name == "rand_mode") {
+				    // This is rand_mode on the object itself (not a property)
+				    // Return 1 (enabled) as default - full object rand_mode
+				    NetExpr* obj_expr = current_expr;
+				    if (!obj_expr && sr.net) {
+					  obj_expr = new NetESignal(sr.net);
+					  obj_expr->set_line(*this);
+				    }
+				    if (obj_expr) {
+					  // Generate $ivl_rand_mode_get(obj, -1) where -1 means all properties
+					  NetESFunc*sys_expr = new NetESFunc("$ivl_rand_mode_get",
+					      IVL_VT_LOGIC, 32, 2);
+					  sys_expr->parm(0, obj_expr);
+					  sys_expr->parm(1, new NetEConst(verinum((uint64_t)0xFFFFFFFF, 32)));
+					  sys_expr->set_line(*this);
+					  return sys_expr;
+				    }
+			      }
 			}
 
 			cerr << get_fileline() << ": error: "
@@ -5470,6 +5490,43 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 
 	    // Get the type of that property
 	    ivl_type_t prop_type = this_class->get_prop_type(prop_idx);
+
+	    // Get the method name (second element) for built-in method checks
+	    pform_name_t::const_iterator method_it = search_results.path_tail.begin();
+	    ++method_it;  // Skip property name
+	    perm_string method_name_check = method_it->name;
+
+	    // Check for built-in rand_mode() method on any rand property
+	    if (method_name_check == "rand_mode") {
+		  // Create expression to load 'this' (the object)
+		  NetNet*this_net = search_results.net;
+		  NetESignal*obj_expr = new NetESignal(this_net);
+		  obj_expr->set_line(*this);
+
+		  // Check if we have an argument (setter) or not (getter)
+		  if (parms_.size() > 0 && parms_[0].parm) {
+			// rand_mode(mode) - setter
+			NetExpr*mode_arg = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+
+			// Generate $ivl_rand_mode_set(obj, prop_idx, mode)
+			NetESFunc*sys_expr = new NetESFunc("$ivl_rand_mode_set",
+						   &netvector_t::atom2s32, 3);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, obj_expr);
+			sys_expr->parm(1, new NetEConst(verinum((uint64_t)prop_idx, 32)));
+			sys_expr->parm(2, mode_arg);
+			return sys_expr;
+		  } else {
+			// rand_mode() - getter
+			// Generate $ivl_rand_mode_get(obj, prop_idx)
+			NetESFunc*sys_expr = new NetESFunc("$ivl_rand_mode_get",
+						   &netvector_t::atom2s32, 2);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, obj_expr);
+			sys_expr->parm(1, new NetEConst(verinum((uint64_t)prop_idx, 32)));
+			return sys_expr;
+		  }
+	    }
 
 	    // Check if property is a virtual interface type - handle VIF method calls
 	    if (const netvirtual_interface_t*vif_type =

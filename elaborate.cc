@@ -5147,6 +5147,54 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  return cur;
 	    }
 
+	    // Handle built-in rand_mode() method on class properties
+	    // This handles the case: obj.property.rand_mode(mode)
+	    if (method_name == "rand_mode" && sr.path_tail.size() == 1) {
+		  perm_string prop_name = sr.path_tail.front().name;
+		  int prop_idx = class_type->property_idx_from_name(prop_name);
+		  if (prop_idx >= 0) {
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+				   << "Built-in rand_mode() for property " << prop_name
+				   << " (idx=" << prop_idx << ") of class "
+				   << class_type->get_name() << endl;
+			}
+
+			// Create signal expression for the class object
+			NetESignal*obj_expr = new NetESignal(net);
+			obj_expr->set_line(*this);
+
+			// Check if we have an argument (setter) or not (getter)
+			// For task context, we expect one argument (the mode)
+			NetExpr*mode_arg = 0;
+			if (parms_.size() > 0 && parms_[0].parm) {
+			      mode_arg = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+			}
+
+			if (mode_arg) {
+			      // rand_mode(mode) - setter
+			      // Generate $ivl_rand_mode_set(obj, prop_idx, mode)
+			      NetESFunc*sys_expr = new NetESFunc("$ivl_rand_mode_set",
+							   &netvector_t::atom2s32, 3);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, obj_expr);
+			      sys_expr->parm(1, new NetEConst(verinum((uint64_t)prop_idx, 32)));
+			      sys_expr->parm(2, mode_arg);
+
+			      // Create a temporary variable to hold the return value
+			      NetNet*tmp = new NetNet(scope, scope->local_symbol(),
+						      NetNet::REG, &netvector_t::atom2s32);
+			      tmp->set_line(*this);
+			      NetAssign_*lv = new NetAssign_(tmp);
+
+			      // Generate an assign for the return value
+			      NetAssign*cur = new NetAssign(lv, sys_expr);
+			      cur->set_line(*this);
+			      return cur;
+			}
+		  }
+	    }
+
 	    NetScope*task = class_type->method_from_name(method_name);
 	    if (task == 0) {
 		    // If an implicit this was added it is not an error if we

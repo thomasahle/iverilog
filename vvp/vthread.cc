@@ -7841,7 +7841,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
 	    for (size_t i = 0; i < nprop; i++) {
 		  // Only randomize properties marked with 'rand' or 'randc'
-		  if (!defn->property_is_rand(i))
+		  // Also respects per-instance rand_mode setting
+		  if (!cobj->should_randomize(i))
 			continue;
 
 		  // Only randomize vec4-compatible properties (skip strings, objects, etc.)
@@ -8295,6 +8296,55 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       thr->clear_inline_constraints();
 
       thr->push_vec4(res);
+
+      return true;
+}
+
+/*
+ * %rand_mode/get <property_idx>
+ *
+ * Pop object from stack, get rand_mode for property, push result (0 or 1).
+ */
+bool of_RAND_MODE_GET(vthread_t thr, vvp_code_t cp)
+{
+      unsigned prop_idx = cp->number;
+
+      vvp_object_t obj;
+      thr->pop_object(obj);
+      vvp_cobject* cobj = obj.peek<vvp_cobject>();
+
+      int mode = 1;  // Default: enabled
+      if (cobj != nullptr) {
+	    mode = cobj->get_rand_mode(prop_idx);
+      }
+
+      // Push result as vec4
+      vvp_vector4_t res(32, BIT4_0);
+      if (mode)
+	    res.set_bit(0, BIT4_1);
+      thr->push_vec4(res);
+
+      return true;
+}
+
+/*
+ * %rand_mode/set <property_idx>, <mode>
+ *
+ * Pop object from stack, set rand_mode for property.
+ * mode: 0 = disabled, 1 = enabled
+ */
+bool of_RAND_MODE_SET(vthread_t thr, vvp_code_t cp)
+{
+      unsigned prop_idx = cp->number;
+      int mode = cp->bit_idx[0];
+
+      vvp_object_t obj;
+      thr->pop_object(obj);
+      vvp_cobject* cobj = obj.peek<vvp_cobject>();
+
+      if (cobj != nullptr) {
+	    cobj->set_rand_mode(prop_idx, mode);
+      }
 
       return true;
 }

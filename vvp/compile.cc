@@ -341,6 +341,8 @@ static const struct opcode_table_s opcode_table[] = {
       { "%qsort",      of_QSORT,      1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },
       { "%qsum",       of_QSUM,       2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
       { "%qunique",    of_QUNIQUE,    1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },
+      { "%rand_mode/get",of_RAND_MODE_GET,1,{OA_NUMBER,OA_NONE,OA_NONE} },
+      { "%rand_mode/set",of_RAND_MODE_SET,2,{OA_NUMBER,OA_BIT1,OA_NONE} },
       { "%randomize",  of_RANDOMIZE,   0, {OA_NONE,    OA_NONE,OA_NONE} },
       { "%release/net",of_RELEASE_NET,3,{OA_FUNC_PTR,OA_BIT1,OA_BIT2} },
       { "%release/reg",of_RELEASE_REG,3,{OA_FUNC_PTR,OA_BIT1,OA_BIT2} },

@@ -85,4 +85,40 @@ void vvp_cobject::shallow_copy(const vvp_object*obj)
       for (size_t idx = 0 ; idx < defn_->property_count() ; idx += 1)
 	    defn_->copy_property(properties_, idx, that->properties_);
 
+      // Copy rand_mode state
+      rand_mode_disabled_ = that->rand_mode_disabled_;
+}
+
+void vvp_cobject::set_rand_mode(size_t pid, int mode)
+{
+      size_t nprop = defn_->property_count();
+      if (pid >= nprop) return;
+
+      // Ensure vector is sized properly
+      if (rand_mode_disabled_.size() < nprop)
+	    rand_mode_disabled_.resize(nprop, false);
+
+      // mode=0 means disabled, mode=1 means enabled
+      rand_mode_disabled_[pid] = (mode == 0);
+}
+
+int vvp_cobject::get_rand_mode(size_t pid) const
+{
+      size_t nprop = defn_->property_count();
+      if (pid >= nprop) return 1;  // Default: enabled
+
+      if (rand_mode_disabled_.size() <= pid)
+	    return 1;  // Not in vector = enabled
+
+      return rand_mode_disabled_[pid] ? 0 : 1;
+}
+
+bool vvp_cobject::should_randomize(size_t pid) const
+{
+      // Check class definition: is property rand/randc?
+      if (!defn_->property_is_rand(pid))
+	    return false;
+
+      // Check instance rand_mode
+      return get_rand_mode(pid) != 0;
 }

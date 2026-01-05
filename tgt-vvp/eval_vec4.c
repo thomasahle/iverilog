@@ -1494,6 +1494,36 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    /* Fall through to generic VPI handling for signals */
       }
 
+      if (strcmp(ivl_expr_name(expr),"$ivl_rand_mode_set")==0) {
+	      /* $ivl_rand_mode_set(obj, prop_idx, mode)
+	         Set rand_mode for a property on a class object. */
+	    ivl_expr_t obj_arg = ivl_expr_parm(expr, 0);
+	    ivl_expr_t prop_arg = ivl_expr_parm(expr, 1);
+	    ivl_expr_t mode_arg = ivl_expr_parm(expr, 2);
+
+	    unsigned prop_idx = (unsigned)ivl_expr_uvalue(prop_arg);
+	    unsigned mode = (unsigned)ivl_expr_uvalue(mode_arg);
+
+	    draw_eval_object(obj_arg);
+	    fprintf(vvp_out, "    %%rand_mode/set %u, %u;\n", prop_idx, mode);
+	      /* Push 1 to indicate success */
+	    fprintf(vvp_out, "    %%pushi/vec4 1, 0, 32;\n");
+	    return;
+      }
+
+      if (strcmp(ivl_expr_name(expr),"$ivl_rand_mode_get")==0) {
+	      /* $ivl_rand_mode_get(obj, prop_idx)
+	         Get rand_mode for a property on a class object. Returns 0 or 1. */
+	    ivl_expr_t obj_arg = ivl_expr_parm(expr, 0);
+	    ivl_expr_t prop_arg = ivl_expr_parm(expr, 1);
+
+	    unsigned prop_idx = (unsigned)ivl_expr_uvalue(prop_arg);
+
+	    draw_eval_object(obj_arg);
+	    fprintf(vvp_out, "    %%rand_mode/get %u;\n", prop_idx);
+	    return;
+      }
+
       if (strcmp(ivl_expr_name(expr),"$ivl_randomize")==0) {
 	      /* The argument is a class object expression. Push it to the object
 	         stack, then call %randomize which will randomize its properties
