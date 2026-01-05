@@ -8731,7 +8731,70 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
                (bound_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
 	    prop_on_left = true;
       }
+      // Case 4: sysfunc(property) OP constant (e.g., $countones(flags) == 1)
       else {
+	    const PECallFunction* sysfunc = dynamic_cast<const PECallFunction*>(left);
+	    if (sysfunc != nullptr && extract_constant_value(right, const_val)) {
+		  // Get the system function name from the path
+		  const pform_scoped_name_t& func_path = sysfunc->path();
+		  if (func_path.name.empty())
+			return false;
+		  perm_string func_name = func_path.name.back().name;
+		  if (func_name.nil())
+			return false;
+
+		  // Check if it's a supported system function for constraints
+		  netclass_t::sysfunc_type_t sysfunc_type = netclass_t::SYSFUNC_NONE;
+		  if (func_name == "$countones")
+			sysfunc_type = netclass_t::SYSFUNC_COUNTONES;
+		  else if (func_name == "$onehot")
+			sysfunc_type = netclass_t::SYSFUNC_ONEHOT;
+		  else if (func_name == "$onehot0")
+			sysfunc_type = netclass_t::SYSFUNC_ONEHOT0;
+		  else if (func_name == "$isunknown")
+			sysfunc_type = netclass_t::SYSFUNC_ISUNKNOWN;
+		  else if (func_name == "$clog2")
+			sysfunc_type = netclass_t::SYSFUNC_CLOG2;
+
+		  if (sysfunc_type == netclass_t::SYSFUNC_NONE)
+			return false;  // Not a supported system function
+
+		  // Get the function argument - should be a single property identifier
+		  const std::vector<named_pexpr_t>& parms = sysfunc->parms();
+		  if (parms.size() != 1 || parms[0].parm == nullptr)
+			return false;
+
+		  const PEIdent* arg_ident = dynamic_cast<const PEIdent*>(parms[0].parm);
+		  if (arg_ident == nullptr)
+			return false;
+
+		  const pform_scoped_name_t& arg_path = arg_ident->path();
+		  if (arg_path.name.empty())
+			return false;
+		  perm_string arg_name = arg_path.name.back().name;
+
+		  // Look up property index for the argument
+		  int arg_idx = cls->property_idx_from_name(arg_name);
+		  if (arg_idx < 0)
+			return false;
+
+		  // Check if property is rand/randc
+		  property_qualifier_t qual = cls->get_prop_qual(arg_idx);
+		  if (!qual.test_rand() && !qual.test_randc())
+			return false;
+
+		  if (debug_elaborate) {
+			cerr << "netclass_t::elaborate: extracted system function bound "
+			     << func_name << "(" << arg_name << ") " << op << " "
+			     << const_val << endl;
+		  }
+
+		  // For sysfunc constraints, property_idx is set to arg_idx so constraint checking
+		  // knows which property to evaluate the function on
+		  cls->add_simple_bound(constraint_name, arg_idx, op, is_soft, true, const_val, 0,
+		                        sysfunc_type, arg_idx);
+		  return true;
+	    }
 	    return false;  // Not a simple bound
       }
 

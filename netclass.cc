@@ -299,7 +299,8 @@ NetExpr* netclass_t::get_constraint_expr(size_t idx) const
  * They represent efficient runtime-checkable bounds like: value > 0, value < limit
  */
 void netclass_t::add_simple_bound(perm_string constraint_name, size_t prop_idx, char op, bool is_soft,
-                                  bool has_const, int64_t const_val, size_t bound_prop)
+                                  bool has_const, int64_t const_val, size_t bound_prop,
+                                  sysfunc_type_t sysfunc, size_t sysfunc_arg)
 {
       simple_bound_t bound;
       bound.constraint_name = constraint_name;
@@ -309,6 +310,8 @@ void netclass_t::add_simple_bound(perm_string constraint_name, size_t prop_idx, 
       bound.has_const_bound = has_const;
       bound.const_bound = const_val;
       bound.bound_prop_idx = bound_prop;
+      bound.sysfunc_type = sysfunc;
+      bound.sysfunc_arg_idx = sysfunc_arg;
       simple_bounds_.push_back(bound);
 }
 

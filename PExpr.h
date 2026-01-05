@@ -1025,6 +1025,10 @@ class PECallFunction : public PExpr {
       void mark_constraint_soft(const PExpr* expr) { soft_constraints_.insert(expr); }
       bool is_constraint_soft(const PExpr* expr) const { return soft_constraints_.count(expr) > 0; }
 
+	// Access function path and parameters (for constraint extraction)
+      const pform_scoped_name_t& path() const { return path_; }
+      const std::vector<named_pexpr_t>& parms() const { return parms_; }
+
       virtual void dump(std::ostream &) const override;
 
       virtual void declare_implicit_nets(LexicalScope*scope, NetNet::Type type) override;

@@ -104,6 +104,16 @@ class class_type : public __vpiHandle {
       int get_type_code(void) const override;
 
     public: // Constraint bounds for randomize()
+      // System function types for constraints (e.g., $countones(x) == 1)
+      enum sysfunc_type_t {
+	    SYSFUNC_NONE = 0,     // Not a system function constraint
+	    SYSFUNC_COUNTONES,    // $countones(arg)
+	    SYSFUNC_ONEHOT,       // $onehot(arg)
+	    SYSFUNC_ONEHOT0,      // $onehot0(arg)
+	    SYSFUNC_ISUNKNOWN,    // $isunknown(arg)
+	    SYSFUNC_CLOG2         // $clog2(arg)
+      };
+
       struct simple_bound_t {
 	    std::string constraint_name; // Name of the constraint block this bound belongs to
 	    size_t property_idx;  // Index of constrained rand property
@@ -114,6 +124,9 @@ class class_type : public __vpiHandle {
 	    size_t bound_prop_idx;// Property index (if !has_const_bound)
 	    int64_t weight;       // Weight for dist constraints (default 1)
 	    bool weight_per_value;// true for := (per value), false for :/ (per range)
+	    // System function constraint support
+	    sysfunc_type_t sysfunc_type; // Type of system function (SYSFUNC_NONE if not applicable)
+	    size_t sysfunc_arg_idx;      // Property index that is argument to system function
       };
       void add_constraint_bound(const simple_bound_t& bound);
 	// Get constraint index from name, return -1 if not found

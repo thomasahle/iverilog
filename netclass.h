@@ -168,10 +168,23 @@ class netclass_t : public ivl_type_s {
       };
       std::vector<constraint_t> constraints_;
 
+    public:
 	// Simple bound constraints extracted from constraint blocks.
 	// These are bounds of the form: prop OP constant (e.g., value > 0)
 	// or prop OP prop (e.g., value < limit).
+	// Also supports system function constraints like $countones(prop) == 1.
 	// These can be efficiently enforced at runtime.
+
+	// System function types for constraints
+      enum sysfunc_type_t {
+	    SYSFUNC_NONE = 0,     // Not a system function constraint
+	    SYSFUNC_COUNTONES,    // $countones(arg)
+	    SYSFUNC_ONEHOT,       // $onehot(arg)
+	    SYSFUNC_ONEHOT0,      // $onehot0(arg)
+	    SYSFUNC_ISUNKNOWN,    // $isunknown(arg)
+	    SYSFUNC_CLOG2         // $clog2(arg)
+      };
+
       struct simple_bound_t {
 	    perm_string constraint_name; // Name of the constraint block this bound belongs to
 	    size_t property_idx;  // Index of constrained rand property
@@ -180,6 +193,9 @@ class netclass_t : public ivl_type_s {
 	    bool has_const_bound; // true if bound is a constant
 	    int64_t const_bound;  // Constant bound value (if has_const_bound)
 	    size_t bound_prop_idx;// Property index (if !has_const_bound)
+	    // System function constraint support
+	    sysfunc_type_t sysfunc_type; // Type of system function (SYSFUNC_NONE if not applicable)
+	    size_t sysfunc_arg_idx;      // Property index that is argument to system function
       };
       std::vector<simple_bound_t> simple_bounds_;
 
@@ -195,7 +211,8 @@ class netclass_t : public ivl_type_s {
 
 	// Simple bounds API for constraint solver
       void add_simple_bound(perm_string constraint_name, size_t prop_idx, char op, bool is_soft,
-                            bool has_const, int64_t const_val, size_t bound_prop);
+                            bool has_const, int64_t const_val, size_t bound_prop,
+                            sysfunc_type_t sysfunc = SYSFUNC_NONE, size_t sysfunc_arg = 0);
       size_t get_simple_bounds() const { return simple_bounds_.size(); }
       const simple_bound_t& get_simple_bound(size_t idx) const;
       perm_string get_simple_bound_constraint_name(size_t idx) const;
