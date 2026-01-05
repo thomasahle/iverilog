@@ -28,6 +28,7 @@ const char COPYRIGHT[] =
 # include  <cstdio>
 # include  <cstdlib>
 # include  <cstring>
+# include  <ctime>
 # include  <unistd.h>
 # include  <cassert>
 #ifdef CHECK_WITH_VALGRIND
@@ -277,6 +278,10 @@ void vvp_init(const char *logfile_name, int argc, char*argv[])
       struct rusage cycle;
       FILE *logfile = 0x0;
       extern void vpi_set_vlog_info(int, char**);
+
+	/* Seed the random number generator with current time so that
+	   randomize() produces different sequences each run. */
+      srand(static_cast<unsigned int>(time(NULL)));
 
       if (vvp_used++) {
           report_used();
