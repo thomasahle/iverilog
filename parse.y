@@ -3608,15 +3608,39 @@ property_expr /* IEEE1800-2012 A.2.10 */
   : expression
       { $$ = $1; }
   | expression K_IMPLIES_OV property_expr
-      { /* |-> overlapping implication - parsed but not elaborated */
-	$$ = 0;
+      { /* |-> overlapping implication: a |-> b means "if a then b" = !a || b
+           Transform to logical implication at parse time */
+	if ($3) {
+	      /* Create !$1 (negation of antecedent) */
+	      PEUnary*not_ante = new PEUnary('!', $1);
+	      FILE_NAME(not_ante, @1);
+	      /* Create !$1 || $3 (logical implication) */
+	      PEBLogic*impl = new PEBLogic('o', not_ante, $3);
+	      FILE_NAME(impl, @1);
+	      $$ = impl;
+	} else {
+	      /* If consequent couldn't be elaborated, whole implication fails */
+	      delete $1;
+	      $$ = 0;
+	}
       }
   | expression K_IMPLIES_NOV property_expr
       { /* |=> non-overlapping implication - parsed but not elaborated */
 	$$ = 0;
       }
   | '(' expression K_IMPLIES_OV property_expr ')'
-      { /* Parenthesized |-> implication */ $$ = 0; }
+      { /* Parenthesized |-> implication: (a |-> b) = !a || b */
+	if ($4) {
+	      PEUnary*not_ante = new PEUnary('!', $2);
+	      FILE_NAME(not_ante, @2);
+	      PEBLogic*impl = new PEBLogic('o', not_ante, $4);
+	      FILE_NAME(impl, @2);
+	      $$ = impl;
+	} else {
+	      delete $2;
+	      $$ = 0;
+	}
+      }
   | '(' expression K_IMPLIES_NOV property_expr ')'
       { /* Parenthesized |=> implication */ $$ = 0; }
   | expression K_IMPLIES_OV K_SEQ_DELAY DEC_NUMBER property_expr
@@ -3666,9 +3690,25 @@ property_expr /* IEEE1800-2012 A.2.10 */
   | K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
       { /* ##[m:$] unbounded sequence at start - parsed but not elaborated */ $$ = 0; }
   | K_if '(' expression ')' property_expr %prec less_than_K_else
-      { /* if-then property - not elaborated */ $$ = 0; }
+      { /* if-then property: if(cond) prop = !cond || prop */
+	if ($5) {
+	      PEUnary*not_cond = new PEUnary('!', $3);
+	      FILE_NAME(not_cond, @3);
+	      PEBLogic*impl = new PEBLogic('o', not_cond, $5);
+	      FILE_NAME(impl, @1);
+	      $$ = impl;
+	} else {
+	      delete $3;
+	      $$ = 0;
+	}
+      }
   | K_if '(' expression ')' property_expr K_else property_expr
-      { /* if-then-else property - not elaborated */ $$ = 0; }
+      { /* if-then-else property - complex, needs runtime support */
+	delete $3;
+	delete $5;
+	delete $7;
+	$$ = 0;
+      }
   ;
 
   /* Sequence expression for use inside first_match, etc.
