@@ -1378,26 +1378,41 @@ void PGModule::elaborate_mod_(Design*des, Module*rmod, NetScope*scope) const
 	// interface instance is bound to each port.
       for (unsigned idx = 0; idx < pins.size(); idx += 1) {
 	    const PEIdent*pin_ident = dynamic_cast<const PEIdent*>(pins[idx]);
-	    if (!pin_ident) continue;
+	    if (!pin_ident) {
+		  continue;
+	    }
 
 	    pform_name_t iface_path = pin_ident->path().name;
-	    symbol_search_results sr;
-	    symbol_search(pin_ident, des, scope, iface_path, UINT_MAX, &sr);
+	    if (iface_path.empty()) continue;
+
+	    // For simple interface port connections (e.g., agent_bfm agent_a(if_a)),
+	    // the path is just the interface instance name. Look it up as a child scope.
+	    perm_string iface_name = iface_path.front().name;
+	    const NetScope* iface_scope = scope->child(hname_t(iface_name));
+
+	    // If not found as child, try parent scope (for generate blocks)
+	    if (!iface_scope || !iface_scope->is_interface()) {
+		  NetScope* parent = scope->parent();
+		  while (parent && (!iface_scope || !iface_scope->is_interface())) {
+			iface_scope = parent->child(hname_t(iface_name));
+			parent = parent->parent();
+		  }
+	    }
 
 	    // Check if this pin refers to an interface instance (scope)
-	    if (sr.is_scope() && sr.scope && sr.scope->is_interface()) {
+	    if (iface_scope && iface_scope->is_interface()) {
 		  // This is an interface port connection - store binding
 		  perm_string port_name = rmod->get_port_name(idx);
 		  for (unsigned inst = 0; inst < instance.size(); inst++) {
 			NetScope*inst_scope = instance[instance.size()-inst-1];
-			inst_scope->set_interface_port_binding(port_name, sr.scope);
+			inst_scope->set_interface_port_binding(port_name, iface_scope);
 			if (debug_elaborate) {
 			      cerr << get_fileline() << ": debug: Bound interface port "
-			           << port_name << " to " << scope_path(sr.scope)
+			           << port_name << " to " << scope_path(iface_scope)
 			           << " for " << scope_path(inst_scope) << endl;
 			}
 		  }
-	    } else if (!iface_path.empty()) {
+	    } else {
 		  // The path might be an indexed interface array (e.g., intf_arr[i])
 		  // Evaluate the index for each instance
 		  name_component_t path_comp = iface_path.back();
