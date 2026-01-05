@@ -585,6 +585,11 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 
       verireal* realtime;
 
+      struct {
+	    PEventStatement* clocking_event;
+	    PExpr* expr;
+      } property_spec;
+
       PSpecPath* specpath;
       std::list<index_component_t> *dimensions;
 
@@ -844,7 +849,9 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 
 %type <event_exprs> event_expression_list
 %type <event_expr> event_expression
-%type <event_statement> event_control
+%type <event_statement> event_control clocking_event_opt
+%type <property_spec> property_spec
+%type <expr> property_expr
 %type <statement> statement statement_item statement_or_null
 %type <statement> compressed_statement
 %type <statement> loop_statement for_step for_step_opt jump_statement
@@ -1534,31 +1541,77 @@ concurrent_assertion_item /* IEEE1800-2012 A.2.10 */
 
 concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   : assert_or_assume K_property '(' property_spec ')' statement_or_null %prec less_than_K_else
-      { /* */
-	if (gn_unsupported_assertions_flag) {
-	      yyerror(@1, "sorry: concurrent_assertion_item not supported."
-		      " Try -gno-assertions or -gsupported-assertions"
-		      " to turn this message off.");
+      { /* Simple concurrent assertion: assert property (@clk expr) pass_action; */
+	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* For simple property expressions, transform into:
+	         @(clk) if (!expr) $error("assertion failed"); else pass_action; */
+	      std::list<named_pexpr_t> arg_list;
+	      PCallTask*err_call = new PCallTask(lex_strings.make("$error"), arg_list);
+	      FILE_NAME(err_call, @1);
+	      /* Create conditional: if (expr) pass_action else $error */
+	      PCondit*cond = new PCondit($4.expr, $6, err_call);
+	      FILE_NAME(cond, @1);
+	      /* If there's a clocking event, wrap with event wait */
+	      if ($4.clocking_event) {
+		    $4.clocking_event->set_statement(cond);
+		    $$ = $4.clocking_event;
+	      } else {
+		    $$ = cond;
+	      }
+	} else {
+	      if (gn_unsupported_assertions_flag) {
+		    yyerror(@1, "sorry: concurrent_assertion_item not supported."
+			    " Try -gno-assertions or -gsupported-assertions"
+			    " to turn this message off.");
+	      }
+	      delete $6;
+	      $$ = 0;
 	}
-        $$ = 0;
       }
   | assert_or_assume K_property '(' property_spec ')' K_else statement_or_null
-      { /* */
-	if (gn_unsupported_assertions_flag) {
-	      yyerror(@1, "sorry: concurrent_assertion_item not supported."
-		      " Try -gno-assertions or -gsupported-assertions"
-		      " to turn this message off.");
+      { /* Concurrent assertion with only fail action */
+	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* Transform: if (!expr) fail_action */
+	      PCondit*cond = new PCondit($4.expr, 0, $7);
+	      FILE_NAME(cond, @1);
+	      if ($4.clocking_event) {
+		    $4.clocking_event->set_statement(cond);
+		    $$ = $4.clocking_event;
+	      } else {
+		    $$ = cond;
+	      }
+	} else {
+	      if (gn_unsupported_assertions_flag) {
+		    yyerror(@1, "sorry: concurrent_assertion_item not supported."
+			    " Try -gno-assertions or -gsupported-assertions"
+			    " to turn this message off.");
+	      }
+	      delete $7;
+	      $$ = 0;
 	}
-        $$ = 0;
       }
   | assert_or_assume K_property '(' property_spec ')' statement_or_null K_else statement_or_null
-      { /* */
-	if (gn_unsupported_assertions_flag) {
-	      yyerror(@1, "sorry: concurrent_assertion_item not supported."
-		      " Try -gno-assertions or -gsupported-assertions"
-		      " to turn this message off.");
+      { /* Concurrent assertion with both pass and fail actions */
+	if (gn_supported_assertions_flag && $4.expr != 0) {
+	      /* Transform: if (expr) pass_action else fail_action */
+	      PCondit*cond = new PCondit($4.expr, $6, $8);
+	      FILE_NAME(cond, @1);
+	      if ($4.clocking_event) {
+		    $4.clocking_event->set_statement(cond);
+		    $$ = $4.clocking_event;
+	      } else {
+		    $$ = cond;
+	      }
+	} else {
+	      if (gn_unsupported_assertions_flag) {
+		    yyerror(@1, "sorry: concurrent_assertion_item not supported."
+			    " Try -gno-assertions or -gsupported-assertions"
+			    " to turn this message off.");
+	      }
+	      delete $6;
+	      delete $8;
+	      $$ = 0;
 	}
-        $$ = 0;
       }
   | K_cover K_property '(' property_spec ')' statement_or_null
       { /* */
@@ -3518,64 +3571,69 @@ procedural_assertion_statement /* IEEE1800-2012 A.6.10 */
 
 property_expr /* IEEE1800-2012 A.2.10 */
   : expression
+      { $$ = $1; }
   | expression K_IMPLIES_OV property_expr
-      { /* |-> overlapping implication - parsed but not elaborated */ }
+      { /* |-> overlapping implication - parsed but not elaborated */
+	$$ = 0;
+      }
   | expression K_IMPLIES_NOV property_expr
-      { /* |=> non-overlapping implication - parsed but not elaborated */ }
+      { /* |=> non-overlapping implication - parsed but not elaborated */
+	$$ = 0;
+      }
   | '(' expression K_IMPLIES_OV property_expr ')'
-      { /* Parenthesized |-> implication */ }
+      { /* Parenthesized |-> implication */ $$ = 0; }
   | '(' expression K_IMPLIES_NOV property_expr ')'
-      { /* Parenthesized |=> implication */ }
+      { /* Parenthesized |=> implication */ $$ = 0; }
   | expression K_IMPLIES_OV K_SEQ_DELAY DEC_NUMBER property_expr
-      { /* |-> ##n sequence - parsed but not elaborated */ }
+      { /* |-> ##n sequence - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_NOV K_SEQ_DELAY DEC_NUMBER property_expr
-      { /* |=> ##n sequence - parsed but not elaborated */ }
+      { /* |=> ##n sequence - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_OV K_SEQ_DELAY '[' expression ':' expression ']' property_expr
-      { /* |-> ##[m:n] sequence - parsed but not elaborated */ }
+      { /* |-> ##[m:n] sequence - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' expression ']' property_expr
-      { /* |=> ##[m:n] sequence - parsed but not elaborated */ }
+      { /* |=> ##[m:n] sequence - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_OV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
-      { /* |-> ##[m:$] unbounded sequence - parsed but not elaborated */ }
+      { /* |-> ##[m:$] unbounded sequence - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
-      { /* |=> ##[m:$] unbounded sequence - parsed but not elaborated */ }
+      { /* |=> ##[m:$] unbounded sequence - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_OV K_first_match '(' sequence_expr_in_parens ')'
-      { /* |-> first_match - parsed but not elaborated */ }
+      { /* |-> first_match - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_NOV K_first_match '(' sequence_expr_in_parens ')'
-      { /* |=> first_match - parsed but not elaborated */ }
+      { /* |=> first_match - parsed but not elaborated */ $$ = 0; }
   | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_OV property_expr
-      { /* seq ##n seq |-> prop - delay in antecedent - parsed but not elaborated */ }
+      { /* seq ##n seq |-> prop - delay in antecedent - parsed but not elaborated */ $$ = 0; }
   | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_NOV property_expr
-      { /* seq ##n seq |=> prop - delay in antecedent - parsed but not elaborated */ }
+      { /* seq ##n seq |=> prop - delay in antecedent - parsed but not elaborated */ $$ = 0; }
   | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_OV property_expr
-      { /* seq ##[m:n] seq |-> prop - range delay in antecedent */ }
+      { /* seq ##[m:n] seq |-> prop - range delay in antecedent */ $$ = 0; }
   | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_NOV property_expr
-      { /* seq ##[m:n] seq |=> prop - range delay in antecedent */ }
+      { /* seq ##[m:n] seq |=> prop - range delay in antecedent */ $$ = 0; }
   | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression K_IMPLIES_OV property_expr
-      { /* seq ##[m:$] seq |-> prop - unbounded delay in antecedent */ }
+      { /* seq ##[m:$] seq |-> prop - unbounded delay in antecedent */ $$ = 0; }
   | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression K_IMPLIES_NOV property_expr
-      { /* seq ##[m:$] seq |=> prop - unbounded delay in antecedent */ }
+      { /* seq ##[m:$] seq |=> prop - unbounded delay in antecedent */ $$ = 0; }
   | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')' K_IMPLIES_OV property_expr
-      { /* (seq ##n seq) |-> prop - parenthesized antecedent */ }
+      { /* (seq ##n seq) |-> prop - parenthesized antecedent */ $$ = 0; }
   | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')' K_IMPLIES_NOV property_expr
-      { /* (seq ##n seq) |=> prop - parenthesized antecedent */ }
+      { /* (seq ##n seq) |=> prop - parenthesized antecedent */ $$ = 0; }
   | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')' K_IMPLIES_OV property_expr
-      { /* (seq ##[m:n] seq) |-> prop - parenthesized antecedent with range */ }
+      { /* (seq ##[m:n] seq) |-> prop - parenthesized antecedent with range */ $$ = 0; }
   | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')' K_IMPLIES_NOV property_expr
-      { /* (seq ##[m:n] seq) |=> prop - parenthesized antecedent with range */ }
+      { /* (seq ##[m:n] seq) |=> prop - parenthesized antecedent with range */ $$ = 0; }
   | '(' expression K_SEQ_DELAY '[' expression ':' '$' ']' expression ')' K_IMPLIES_OV property_expr
-      { /* (seq ##[m:$] seq) |-> prop - parenthesized antecedent unbounded */ }
+      { /* (seq ##[m:$] seq) |-> prop - parenthesized antecedent unbounded */ $$ = 0; }
   | '(' expression K_SEQ_DELAY '[' expression ':' '$' ']' expression ')' K_IMPLIES_NOV property_expr
-      { /* (seq ##[m:$] seq) |=> prop - parenthesized antecedent unbounded */ }
+      { /* (seq ##[m:$] seq) |=> prop - parenthesized antecedent unbounded */ $$ = 0; }
   | K_SEQ_DELAY DEC_NUMBER property_expr
-      { /* ##n sequence at start - parsed but not elaborated */ }
+      { /* ##n sequence at start - parsed but not elaborated */ $$ = 0; }
   | K_SEQ_DELAY '[' expression ':' expression ']' property_expr
-      { /* ##[m:n] sequence at start - parsed but not elaborated */ }
+      { /* ##[m:n] sequence at start - parsed but not elaborated */ $$ = 0; }
   | K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
-      { /* ##[m:$] unbounded sequence at start - parsed but not elaborated */ }
+      { /* ##[m:$] unbounded sequence at start - parsed but not elaborated */ $$ = 0; }
   | K_if '(' expression ')' property_expr %prec less_than_K_else
-      { /* if-then property - not elaborated */ }
+      { /* if-then property - not elaborated */ $$ = 0; }
   | K_if '(' expression ')' property_expr K_else property_expr
-      { /* if-then-else property - not elaborated */ }
+      { /* if-then-else property - not elaborated */ $$ = 0; }
   ;
 
   /* Sequence expression for use inside first_match, etc.
@@ -3616,6 +3674,9 @@ property_qualifier_list /* IEEE1800-2005 A.1.8 */
 
 property_spec /* IEEE1800-2012 A.2.10 */
   : clocking_event_opt property_spec_disable_iff_opt property_expr
+      { $$.clocking_event = $1;
+	$$.expr = $3;
+      }
   ;
 
 property_spec_disable_iff_opt /* */
@@ -4990,7 +5051,9 @@ dr_strength1
 
 clocking_event_opt /* */
   : event_control
+      { $$ = $1; }
   |
+      { $$ = 0; }
   ;
 
 event_control /* A.K.A. clocking_event */
