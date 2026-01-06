@@ -705,7 +705,7 @@ sv_foreach1		normal,-g2009		ivltests
 sv_foreach2		normal,-g2009		ivltests
 sv_foreach3		normal,-g2009		ivltests
 sv_foreach4		normal,-g2009		ivltests
-sv_foreach5		normal,-g2009		ivltests
+sv_foreach5		normal,-g2012		ivltests
 sv_foreach6		normal,-g2009		ivltests
 sv_foreach7		normal,-g2009		ivltests
 sv_foreach8		normal,-g2009		ivltests gold=sv_foreach8.gold
@@ -810,9 +810,9 @@ sv_queue_parray_fail	CE,-g2009		ivltests gold=sv_queue_parray_fail.gold
 sv_queue_real		normal,-g2009,-pfileline=1	ivltests gold=sv_queue_real.gold
 sv_queue_real_bounded	normal,-g2009,-pfileline=1	ivltests gold=sv_queue_real_bounded.gold
 sv_queue_real_fail	CE,-g2009		ivltests gold=sv_queue_real_fail.gold
-sv_queue_method_signed1	normal,-g2009		ivltests
+sv_queue_method_signed1	normal,-g2012		ivltests
 sv_queue_method_signed2	normal,-g2009		ivltests
-sv_queue_method_signed3	normal,-g2009		ivltests
+sv_queue_method_signed3	normal,-g2012		ivltests
 sv_queue_method_signed4	normal,-g2009		ivltests
 sv_queue_string		normal,-g2009,-pfileline=1	ivltests gold=sv_queue_string.gold
 sv_queue_string_bounded	normal,-g2009,-pfileline=1	ivltests gold=sv_queue_string_bounded.gold
@@ -838,8 +838,8 @@ sv_queue_prop_shuffle	normal,-g2012		ivltests gold=sv_queue_prop_shuffle.gold
 sv_queue_size_no_paren	normal,-g2012		ivltests gold=sv_queue_size_no_paren.gold
 sv_for_multi_type	normal,-g2012		ivltests gold=sv_for_multi_type.gold
 sv_for_multi_var	normal,-g2012		ivltests gold=sv_for_multi_var.gold
-sv_uvm_tlm_analysis_port	normal,-g2012		ivltests gold=sv_uvm_tlm_analysis_port.gold
-sv_uvm_plusarg_testname	normal,-g2012		ivltests gold=sv_uvm_plusarg_testname.gold
+sv_uvm_tlm_analysis_port	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_uvm_tlm_analysis_port.gold
+sv_uvm_plusarg_testname	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_uvm_plusarg_testname.gold
 sv_array_locator_with1	normal,-g2012		ivltests
 sv_root_class		normal,-g2009		ivltests gold=sv_root_class.gold
 sv_root_func		normal,-g2009		ivltests gold=sv_root_func.gold
@@ -935,7 +935,7 @@ sv_unit3b		normal,-g2009,-u,\
 sv_unit4b		normal,-g2009,-u,\
   ./ivltests/sv_unit4a.v			ivltests gold=sv_unit3b.gold
 sv_unpacked_port	normal,-g2009		ivltests
-sv_unpacked_port2	normal,-g2009		ivltests
+sv_unpacked_port2	normal,-g2012		ivltests
 sv_unpacked_wire	normal,-g2009		ivltests
 sv_unpacked_wire2	normal,-g2009		ivltests
 sv_uwire1		normal,-g2009		ivltests
@@ -943,7 +943,7 @@ sv_uwire2		normal,-g2009		ivltests
 sv_uwire3		normal,-g2009		ivltests
 sv_uwire4		normal,-g2009		ivltests
 sv_var_block		normal,-g2005-sv	ivltests
-sv_var_for		normal,-g2005-sv	ivltests
+sv_var_for		normal,-g2012		ivltests
 sv_var_for_fail		CE,-g2005-sv		ivltests
 sv_var_function		normal,-g2005-sv	ivltests
 sv_var_init1		normal,-g2009		ivltests
