@@ -2319,6 +2319,8 @@ extern ivl_statement_t ivl_stmt_block_stmt(ivl_statement_t net, unsigned i);
 extern ivl_scope_t ivl_stmt_call(ivl_statement_t net);
   /* IVL_ST_UTASK - returns true if this is a super.method() call (no virtual dispatch) */
 extern int ivl_stmt_call_is_super(ivl_statement_t net);
+  /* IVL_ST_UTASK - returns true if the method was declared as 'virtual' */
+extern int ivl_stmt_call_is_virtual(ivl_statement_t net);
   /* IVL_ST_CASE,IVL_ST_CASER,IVL_ST_CASEX,IVL_ST_CASEZ */
 extern unsigned ivl_stmt_case_count(ivl_statement_t net);
   /* IVL_ST_CASE,IVL_ST_CASER,IVL_ST_CASEX,IVL_ST_CASEZ */

@@ -1761,34 +1761,38 @@ static int show_stmt_utask(ivl_statement_t net)
       show_stmt_file_line(net, "User task call.");
 
       /* Check if this is a class method call that needs virtual dispatch.
-       * IMPORTANT: super.method() calls should NOT use virtual dispatch -
-       * they must call the base class's version directly. */
+       * Virtual dispatch requires:
+       * 1. The method is a class method
+       * 2. The method is declared as 'virtual'
+       * 3. This is NOT a super.method() call
+       * Non-virtual methods use static binding based on the declared type. */
       ivl_scope_t parent = ivl_scope_parent(task);
       int is_class_method = (parent && ivl_scope_type(parent) == IVL_SCT_CLASS);
       int is_super_call = ivl_stmt_call_is_super(net);
+      int is_virtual = ivl_stmt_call_is_virtual(net);
 
       if (ivl_scope_type(task) == IVL_SCT_FUNCTION) {
 	      // A function called as a task is (presumably) a void function.
-	    if (is_class_method && !is_super_call) {
+	    if (is_class_method && is_virtual && !is_super_call) {
 		    // Virtual method call - emit opcode for runtime dispatch
 		    // The method name is obtained from the scope's basename at runtime
 		  fprintf(vvp_out, "    %%callf/virt/void TD_%s, S_%p;\n",
 			  vvp_mangle_id(ivl_scope_name(task)),
 			  task);
 	    } else {
-		    // Regular function call (or super.method() - no virtual dispatch)
+		    // Regular function call (or non-virtual/super.method() - no virtual dispatch)
 		  fprintf(vvp_out, "    %%callf/void TD_%s",
 			  vvp_mangle_id(ivl_scope_name(task)));
 		  fprintf(vvp_out, ", S_%p;\n", task);
 	    }
       } else {
 	    // Task call
-	    if (is_class_method && !is_super_call) {
+	    if (is_class_method && is_virtual && !is_super_call) {
 		    // Virtual task call - emit %fork/virt for runtime dispatch
 		  fprintf(vvp_out, "    %%fork/virt TD_%s",
 			  vvp_mangle_id(ivl_scope_name(task)));
 	    } else {
-		    // Regular task call
+		    // Regular task call (or non-virtual - use static binding)
 		  fprintf(vvp_out, "    %%fork TD_%s",
 			  vvp_mangle_id(ivl_scope_name(task)));
 	    }

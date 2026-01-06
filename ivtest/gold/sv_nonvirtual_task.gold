@@ -1,0 +1,22 @@
+Test 1: Non-virtual task on base handle (actual object: Derived)
+Expected: Base::t called
+Actual: 
+Base::t called
+
+Test 2: Non-virtual function on base handle
+Expected: Base
+Actual: Base
+-> PASSED
+
+Test 3: Non-virtual task on derived handle
+Expected: Derived::t called
+Actual: 
+Derived::t called
+
+Test 4: Non-virtual task on base handle (actual object: Base)
+Expected: Base::t called
+Actual: 
+Base::t called
+
+=== Summary ===
+PASSED

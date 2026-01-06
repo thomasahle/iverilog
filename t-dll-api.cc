@@ -2934,6 +2934,13 @@ extern "C" int ivl_stmt_call_is_super(ivl_statement_t net)
       return net->u_.utask_.is_super_call;
 }
 
+extern "C" int ivl_stmt_call_is_virtual(ivl_statement_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_ST_UTASK);
+      return net->u_.utask_.is_virtual;
+}
+
 extern "C" bool ivl_stmt_flow_control(ivl_statement_t net)
 {
       return net->u_.disable_.flow_control;
