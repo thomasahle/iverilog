@@ -1,0 +1,1 @@
+sv_covergroup_type_varname.sv

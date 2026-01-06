@@ -1,0 +1,1 @@
+sv_struct_array_bulk_copy.sv

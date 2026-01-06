@@ -1,0 +1,1 @@
+sv_wait_class_property.sv

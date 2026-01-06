@@ -1,0 +1,1 @@
+sv_cross_pkg_static2.sv

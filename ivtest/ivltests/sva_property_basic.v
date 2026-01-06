@@ -1,0 +1,1 @@
+sva_property_basic.sv

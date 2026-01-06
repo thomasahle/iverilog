@@ -1,0 +1,1 @@
+sv_struct_string_simple.sv

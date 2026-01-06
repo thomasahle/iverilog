@@ -1,0 +1,1 @@
+sv_struct_array_rvalue.sv

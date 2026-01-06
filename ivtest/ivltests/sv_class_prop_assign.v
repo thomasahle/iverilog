@@ -1,0 +1,1 @@
+sv_class_prop_assign.sv

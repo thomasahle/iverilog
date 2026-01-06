@@ -1,0 +1,1 @@
+sv_coverage_pattern.sv

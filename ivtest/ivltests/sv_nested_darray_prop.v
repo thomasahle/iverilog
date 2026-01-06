@@ -1,0 +1,1 @@
+sv_nested_darray_prop.sv

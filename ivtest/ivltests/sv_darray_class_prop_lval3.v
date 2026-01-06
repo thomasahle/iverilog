@@ -1,0 +1,1 @@
+sv_darray_class_prop_lval3.sv

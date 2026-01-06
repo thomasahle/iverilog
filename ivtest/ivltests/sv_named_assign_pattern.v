@@ -1,0 +1,1 @@
+sv_named_assign_pattern.sv

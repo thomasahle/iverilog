@@ -1,0 +1,1 @@
+sv_named_struct_agg.sv

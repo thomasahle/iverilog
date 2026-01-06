@@ -1,0 +1,1 @@
+sv_struct_member_var_lval.sv

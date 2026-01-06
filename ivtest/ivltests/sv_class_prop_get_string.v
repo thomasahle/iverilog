@@ -1,0 +1,1 @@
+sv_class_prop_get_string.sv

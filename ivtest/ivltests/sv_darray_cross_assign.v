@@ -1,0 +1,1 @@
+sv_darray_cross_assign.sv
