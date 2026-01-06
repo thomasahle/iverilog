@@ -1,0 +1,5 @@
+Test 1 PASSED: Property concat
+Test 2 PASSED: Method call concat
+Test 3 PASSED: Multiple method calls
+Test 4 PASSED: Variable then method
+PASSED

@@ -127,6 +127,15 @@ static void string_ex_select(ivl_expr_t expr)
 	    return;
       }
 
+	/* If the sub-expression has string type and there's no shift
+	   (just a width adjustment/pad), recursively evaluate as string.
+	   This handles string concatenations that have been wrapped in
+	   a SELECT for width adjustment. */
+      if (shift == 0 && ivl_expr_value(sube) == IVL_VT_STRING) {
+	    draw_eval_string(sube);
+	    return;
+      }
+
 	/* Assume the sub-expression is a signal */
       ivl_signal_t sig = ivl_expr_signal(sube);
       if (sig == 0 || (ivl_signal_data_type(sig) != IVL_VT_DARRAY

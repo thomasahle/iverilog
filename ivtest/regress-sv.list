@@ -1273,5 +1273,6 @@ sv_string_compare           normal,-g2012           ivltests gold=sv_string_comp
 sv_string_getc              normal,-g2012           ivltests gold=sv_string_getc.gold
 sv_string_putc              normal,-g2012           ivltests gold=sv_string_putc.gold
 sv_string_atooct_atobin     normal,-g2012           ivltests gold=sv_string_atooct_atobin.gold
+sv_string_concat_method     normal,-g2012           ivltests gold=sv_string_concat_method.gold
 sv_psprintf		normal,-g2012		ivltests
 sv_randcase		normal,-g2012		ivltests
