@@ -1,4 +1,4 @@
-./ivltests/sv_queue_compare.v:65: warning: Static variable initialization requires explicit lifetime in this context.
+ivltests/sv_queue_compare.v:65: warning: Static variable initialization requires explicit lifetime in this context.
 PASS: q1 == q2 (identical queues)
 PASS: q1 != q3 (different last element)
 PASS: q1 == q1 (same variable)
@@ -8,3 +8,4 @@ PASS: different size queues are not equal
 PASS: queue comparison works in if condition
 
 PASSED
+ivltests/sv_queue_compare.v:90: $finish called at 0 (1s)

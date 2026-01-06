@@ -826,18 +826,18 @@ sv_queue_last_offset2	normal,-g2012		ivltests
 sv_queue_compare	normal,-g2012		ivltests gold=sv_queue_compare.gold
 sv_queue_print		normal,-g2012		ivltests gold=sv_queue_print.gold
 sv_queue_enum		normal,-g2012		ivltests gold=sv_queue_enum.gold
-sv_queue_shuffle	normal,-g2012		ivltests
-sv_queue_reverse	normal,-g2012		ivltests
-sv_queue_sort		normal,-g2012		ivltests
-sv_queue_unique		normal,-g2012		ivltests
-sv_queue_minmax		normal,-g2012		ivltests
-sv_queue_nested		normal,-g2012		ivltests
-sv_queue_class_objects	normal,-g2012		ivltests
-sv_queue_prop_last	normal,-g2012		ivltests
-sv_queue_prop_shuffle	normal,-g2012		ivltests
-sv_queue_size_no_paren	normal,-g2012		ivltests
-sv_for_multi_type	normal,-g2012		ivltests
-sv_for_multi_var	normal,-g2012		ivltests
+sv_queue_shuffle	normal,-g2012		ivltests gold=sv_queue_shuffle.gold
+sv_queue_reverse	normal,-g2012		ivltests gold=sv_queue_reverse.gold
+sv_queue_sort		normal,-g2012		ivltests gold=sv_queue_sort.gold
+sv_queue_unique		normal,-g2012		ivltests gold=sv_queue_unique.gold
+sv_queue_minmax		normal,-g2012		ivltests gold=sv_queue_minmax.gold
+sv_queue_nested		normal,-g2012		ivltests gold=sv_queue_nested.gold
+sv_queue_class_objects	normal,-g2012		ivltests gold=sv_queue_class_objects.gold
+sv_queue_prop_last	normal,-g2012		ivltests gold=sv_queue_prop_last.gold
+sv_queue_prop_shuffle	normal,-g2012		ivltests gold=sv_queue_prop_shuffle.gold
+sv_queue_size_no_paren	normal,-g2012		ivltests gold=sv_queue_size_no_paren.gold
+sv_for_multi_type	normal,-g2012		ivltests gold=sv_for_multi_type.gold
+sv_for_multi_var	normal,-g2012		ivltests gold=sv_for_multi_var.gold
 sv_uvm_tlm_analysis_port	normal,-g2012		ivltests gold=sv_uvm_tlm_analysis_port.gold
 sv_uvm_plusarg_testname	normal,-g2012		ivltests gold=sv_uvm_plusarg_testname.gold
 sv_array_locator_with1	normal,-g2012		ivltests
