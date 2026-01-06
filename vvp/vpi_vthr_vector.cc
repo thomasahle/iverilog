@@ -391,8 +391,11 @@ void __vpiVThrVec4Stack::vpi_get_value(p_vpi_value vp)
 {
       vvp_vector4_t val;
 
-      if (vpip_current_vthread)
-	    val = vthread_get_vec4_stack(vpip_current_vthread, depth_);
+      if (vpip_current_vthread) {
+	    unsigned stack_size = vthread_get_vec4_stack_size(vpip_current_vthread);
+	    if (depth_ < stack_size)
+		  val = vthread_get_vec4_stack(vpip_current_vthread, depth_);
+      }
 
       switch (vp->format) {
 

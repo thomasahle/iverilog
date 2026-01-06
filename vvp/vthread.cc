@@ -154,6 +154,10 @@ struct vthread_s {
 		  cnt -= 1;
 	    }
       }
+      inline unsigned vec4_stack_size(void) const
+      {
+	    return stack_vec4_.size();
+      }
 
 
     private:
@@ -504,6 +508,11 @@ const string&vthread_get_str_stack(struct vthread_s*thr, unsigned depth)
 const vvp_vector4_t& vthread_get_vec4_stack(struct vthread_s*thr, unsigned depth)
 {
       return thr->peek_vec4(depth);
+}
+
+unsigned vthread_get_vec4_stack_size(struct vthread_s*thr)
+{
+      return thr->vec4_stack_size();
 }
 
 /*
