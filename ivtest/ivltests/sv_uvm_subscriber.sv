@@ -1,71 +1,99 @@
-// Test uvm_subscriber receives transactions via analysis_port
-// Requires: iverilog -g2012 uvm_pkg.sv sv_uvm_subscriber.sv
+// Test uvm_subscriber receives transactions via analysis_export
+// This verifies that the analysis_export is properly initialized
+// and forwards transactions to the subscriber's write() method.
+
+`include "uvm_macros.svh"
 import uvm_pkg::*;
 
-// Simple transaction class
-class my_tx extends uvm_sequence_item;
+// Transaction class
+class my_transaction extends uvm_sequence_item;
+  `uvm_object_utils(my_transaction)
+
   int value;
 
-  function new(string name = "my_tx");
+  function new(string name = "my_transaction");
     super.new(name);
   endfunction
 
-  function void set_value(int v);
-    value = v;
+  virtual function string convert2string();
+    return $sformatf("value=%0d", value);
   endfunction
 endclass
 
-// Subscriber that counts received transactions
-class my_subscriber extends uvm_subscriber #(my_tx);
+// Subscriber class
+class my_subscriber extends uvm_subscriber #(my_transaction);
+  `uvm_component_utils(my_subscriber)
+
   int received_count;
   int last_value;
 
   function new(string name = "", uvm_component parent = null);
     super.new(name, parent);
     received_count = 0;
-    last_value = 0;
+    last_value = -1;
   endfunction
 
-  virtual function void write(my_tx t);
+  virtual function void write(my_transaction t);
     received_count++;
     last_value = t.value;
-    $display("Subscriber received transaction with value=%0d", t.value);
+    `uvm_info(get_type_name(), $sformatf("Received transaction: %s (count=%0d)", t.convert2string(), received_count), UVM_NONE)
   endfunction
 endclass
 
+// Producer component with analysis port
+class my_producer extends uvm_component;
+  `uvm_component_utils(my_producer)
+
+  uvm_analysis_port #(my_transaction) ap;
+
+  function new(string name = "", uvm_component parent = null);
+    super.new(name, parent);
+    ap = new("ap", this);
+  endfunction
+endclass
+
+// Test module
 module test;
+  my_producer producer;
+  my_subscriber subscriber;
+  my_transaction tx;
+  int passed;
+
   initial begin
-    uvm_analysis_port #(my_tx) port;
-    my_subscriber sub;
-    my_tx tx;
+    passed = 1;
 
-    // Create the port and subscriber
-    port = new("port", null);
-    sub = new("sub", null);
+    // Create components
+    producer = new("producer", null);
+    subscriber = new("subscriber", null);
 
-    // Connect port to subscriber's analysis_export
-    port.connect(sub.analysis_export);
+    // Connect producer's analysis port to subscriber's analysis_export
+    producer.ap.connect(subscriber.analysis_export);
 
-    // Create and send transactions
+    // Send a transaction
     tx = new("tx");
-    tx.set_value(42);
-    port.write(tx);
+    tx.value = 42;
+    producer.ap.write(tx);
 
+    // Send another transaction
     tx = new("tx2");
-    tx.set_value(100);
-    port.write(tx);
+    tx.value = 100;
+    producer.ap.write(tx);
 
-    tx = new("tx3");
-    tx.set_value(255);
-    port.write(tx);
+    // Verify
+    if (subscriber.received_count != 2) begin
+      $display("FAILED: Expected 2 transactions, got %0d", subscriber.received_count);
+      passed = 0;
+    end
 
-    // Check results
-    $display("Received count: %0d", sub.received_count);
-    $display("Last value: %0d", sub.last_value);
+    if (subscriber.last_value != 100) begin
+      $display("FAILED: Expected last_value=100, got %0d", subscriber.last_value);
+      passed = 0;
+    end
 
-    if (sub.received_count == 3 && sub.last_value == 255)
-      $display("PASSED");
-    else
-      $display("FAILED - expected count=3, last_value=255");
+    if (passed) begin
+      $display("PASSED: uvm_subscriber received %0d transactions correctly", subscriber.received_count);
+    end
+
+    $finish;
   end
 endmodule

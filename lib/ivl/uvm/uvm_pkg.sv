@@ -1061,12 +1061,15 @@ package uvm_pkg;
   // ============================================================================
   class uvm_subscriber #(type T = uvm_sequence_item) extends uvm_component;
     // Analysis export for receiving transactions
-    // Note: Using uvm_object instead of full parameterized type to avoid Icarus elaboration issues
+    // The subscriber itself acts as the export - analysis_export points to 'this'
+    // so that analysis_port.write() -> analysis_export.tlm_write() -> this.tlm_write()
     uvm_object analysis_export;
 
     function new(string name = "", uvm_component parent = null);
       super.new(name, parent);
-      // analysis_export initialization deferred - user code should not rely on this
+      // Set analysis_export to point to ourselves
+      // When analysis_port calls analysis_export.tlm_write(), it calls our tlm_write()
+      analysis_export = this;
     endfunction
 
     virtual function string get_type_name();
@@ -1076,6 +1079,18 @@ package uvm_pkg;
     // Override this function to process received transactions
     virtual function void write(T t);
       // Base implementation - override in derived classes
+    endfunction
+
+    // Override tlm_write to receive transactions from analysis ports
+    // and forward to the write() method
+    virtual function void tlm_write(uvm_object t);
+      T item;
+      // Cast the uvm_object to type T and call write()
+      // Note: In Icarus, $cast returns 1 on success
+      if ($cast(item, t)) begin
+        write(item);
+      end
+      // If cast fails, silently ignore - type mismatch in subscriber
     endfunction
   endclass
 
