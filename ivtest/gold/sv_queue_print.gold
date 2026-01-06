@@ -1,6 +1,7 @@
-Test 1 result: Queue value: <%p>'<queue>
+Test 1 result: Queue value: <116>
 PASS: Queue can be passed to $sformatf
-Test 2 result: Object value: <%p>'<object>
+Test 2 result: Object value:     null
 PASS: Object can be passed to $sformatf
 
 PASSED
+ivltests/sv_queue_print.v:49: $finish called at 0 (1s)
