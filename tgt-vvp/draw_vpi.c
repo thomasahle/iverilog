@@ -232,7 +232,10 @@ static int get_vpi_taskfunc_signal_arg(struct args_info *result,
 
 	      /* This is a constant bit/part select. */
 	    } else if (number_is_immediate(bexpr, 64, 1)) {
-		  assert(! number_is_unknown(bexpr));
+		  /* Unknown (X/Z) constant indices should be handled at runtime */
+		  if (number_is_unknown(bexpr)) {
+			return 0;
+		  }
 		  snprintf(buffer, sizeof buffer, "&PV<v%p_0, %ld, %u>",
 		           ivl_expr_signal(vexpr),
 		           get_number_immediate(bexpr),
