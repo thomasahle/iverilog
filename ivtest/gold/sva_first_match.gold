@@ -1,0 +1,2 @@
+PASSED - SVA first_match operator parsed successfully
+ivltests/sva_first_match.v:27: $finish called at 0 (1s)

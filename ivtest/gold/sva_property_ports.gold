@@ -1,0 +1,2 @@
+PASSED - SVA properties with ports parsed successfully
+ivltests/sva_property_ports.v:32: $finish called at 0 (1s)

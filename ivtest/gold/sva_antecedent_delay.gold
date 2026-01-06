@@ -1,0 +1,2 @@
+PASSED - SVA antecedent delay patterns parsed successfully
+ivltests/sva_antecedent_delay.v:60: $finish called at 0 (1s)

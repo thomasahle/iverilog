@@ -1226,20 +1226,20 @@ sv_covergroup_type_varname	normal,-g2012,-gno-assertions	ivltests
 
 # SVA (SystemVerilog Assertions) parsing tests
 # These tests verify SVA syntax is parsed correctly (elaboration not yet supported)
-sva_property_basic	normal,-g2012,-gno-assertions	ivltests
-sva_property_ports	normal,-g2012,-gno-assertions	ivltests
-sva_sequence_basic	normal,-g2012,-gno-assertions	ivltests
-sva_sequence_ports	normal,-g2012,-gno-assertions	ivltests
-sva_implication		normal,-g2012,-gno-assertions	ivltests
-sva_delay		normal,-g2012,-gno-assertions	ivltests
-sva_first_match		normal,-g2012,-gno-assertions	ivltests
-sva_assert_cover	normal,-g2012,-gno-assertions	ivltests
-sva_comprehensive	normal,-g2012,-gno-assertions	ivltests
-sva_unbounded_delay	normal,-g2012,-gno-assertions	ivltests
-sva_antecedent_delay	normal,-g2012,-gno-assertions	ivltests
-sva_paren_antecedent	normal,-g2012,-gno-assertions	ivltests
-sva_paren_implication	normal,-g2012,-gno-assertions	ivltests
-sv_bind_parse		normal,-g2012,-gno-assertions	ivltests
+sva_property_basic	normal,-g2012,-gno-assertions	ivltests gold=sva_property_basic.gold
+sva_property_ports	normal,-g2012,-gno-assertions	ivltests gold=sva_property_ports.gold
+sva_sequence_basic	normal,-g2012,-gno-assertions	ivltests gold=sva_sequence_basic.gold
+sva_sequence_ports	normal,-g2012,-gno-assertions	ivltests gold=sva_sequence_ports.gold
+sva_implication		normal,-g2012,-gno-assertions	ivltests gold=sva_implication.gold
+sva_delay		normal,-g2012,-gno-assertions	ivltests gold=sva_delay.gold
+sva_first_match		normal,-g2012,-gno-assertions	ivltests gold=sva_first_match.gold
+sva_assert_cover	normal,-g2012,-gno-assertions	ivltests gold=sva_assert_cover.gold
+sva_comprehensive	normal,-g2012,-gno-assertions	ivltests gold=sva_comprehensive.gold
+sva_unbounded_delay	normal,-g2012,-gno-assertions	ivltests gold=sva_unbounded_delay.gold
+sva_antecedent_delay	normal,-g2012,-gno-assertions	ivltests gold=sva_antecedent_delay.gold
+sva_paren_antecedent	normal,-g2012,-gno-assertions	ivltests gold=sva_paren_antecedent.gold
+sva_paren_implication	normal,-g2012,-gno-assertions	ivltests gold=sva_paren_implication.gold
+sv_bind_parse		normal,-g2012,-gno-assertions	ivltests gold=sv_bind_parse.gold
 sv_property_seq_delay	normal,-g2012,-gsupported-assertions	ivltests
 sv_vif_class_access	normal,-g2012	ivltests
 sv_class_prop_chain	normal,-g2012	ivltests
@@ -1275,5 +1275,5 @@ sv_string_getc              normal,-g2012           ivltests gold=sv_string_getc
 sv_string_putc              normal,-g2012           ivltests gold=sv_string_putc.gold
 sv_string_atooct_atobin     normal,-g2012           ivltests gold=sv_string_atooct_atobin.gold
 sv_string_concat_method     normal,-g2012           ivltests gold=sv_string_concat_method.gold
-sv_psprintf		normal,-g2012		ivltests
-sv_randcase		normal,-g2012		ivltests
+sv_psprintf		normal,-g2012		ivltests gold=sv_psprintf.gold
+sv_randcase		normal,-g2012		ivltests gold=sv_randcase.gold

@@ -1,0 +1,4 @@
+data_checker instantiated
+reset_checker instantiated
+PASSED - bind directive parsed successfully
+ivltests/sv_bind_parse.v:73: $finish called at 40 (1s)
