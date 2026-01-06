@@ -1,0 +1,11 @@
+Test 1: Two int variables
+Test 1 PASSED: sum = 90
+Test 2: Variables as array indices
+Test 2 PASSED
+Test 3: Three variables
+Test 3 PASSED: sum = 45
+Test 4: Different initial values
+Test 4 PASSED: product = 1680
+Test 5: Nested loops
+Test 5 PASSED: sum = 12
+PASSED
