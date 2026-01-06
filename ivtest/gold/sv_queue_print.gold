@@ -4,4 +4,4 @@ Test 2 result: Object value:     null
 PASS: Object can be passed to $sformatf
 
 PASSED
-ivltests/sv_queue_print.v:49: $finish called at 0 (1s)
+./ivltests/sv_queue_print.v:49: $finish called at 0 (1s)
