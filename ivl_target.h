@@ -249,7 +249,8 @@ typedef enum ivl_expr_type_e {
       IVL_EX_ULONG = 13,
       IVL_EX_UNARY = 14,
       IVL_EX_VIFPROP = 27,  /* Virtual interface property access */
-      IVL_EX_ASSOC_METHOD = 28  /* Associative array method call */
+      IVL_EX_ASSOC_METHOD = 28,  /* Associative array method call */
+      IVL_EX_STRUCT_MEMBER = 29  /* Unpacked struct member access */
 } ivl_expr_type_t;
 
 /* Associative array method types for IVL_EX_ASSOC_METHOD */
@@ -999,6 +1000,10 @@ extern ivl_expr_t ivl_expr_assoc_base(ivl_expr_t net);  /* base expression for n
 extern int ivl_expr_assoc_property_idx(ivl_expr_t net);  /* property index */
 extern ivl_assoc_method_t ivl_expr_assoc_method(ivl_expr_t net);  /* method type */
 extern ivl_expr_t ivl_expr_assoc_key(ivl_expr_t net);  /* key expression */
+  /* IVL_EX_STRUCT_MEMBER - unpacked struct member access */
+extern ivl_signal_t ivl_expr_struct_signal(ivl_expr_t net);  /* struct signal */
+extern int ivl_expr_struct_member_idx(ivl_expr_t net);  /* member index */
+extern const char* ivl_expr_struct_member_name(ivl_expr_t net);  /* member name */
   /* IVL_EX_SCOPE */
 extern ivl_scope_t ivl_expr_scope(ivl_expr_t net);
   /* IVL_EX_PROPERTY IVL_EX_SIGNAL */

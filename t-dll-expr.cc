@@ -476,6 +476,22 @@ void dll_target::expr_property(const NetEProperty*net)
       expr_->u_.property_.index = index;
 }
 
+void dll_target::expr_struct_member(const NetEStructMember*net)
+{
+      assert(expr_ == 0);
+      expr_ = static_cast<ivl_expr_t>(calloc(1, sizeof(struct ivl_expr_s)));
+      expr_->width_  = net->expr_width();
+      expr_->signed_ = net->has_sign();
+      expr_->sized_  = 1;
+      expr_->type_   = IVL_EX_STRUCT_MEMBER;
+      FILE_NAME(expr_, net);
+      expr_->value_  = net->expr_type();
+      expr_->net_type= net->net_type();
+      expr_->u_.struct_member_.sig = find_signal(des_, net->get_sig());
+      expr_->u_.struct_member_.member_idx = net->member_idx();
+      expr_->u_.struct_member_.member_name = net->member_name().str();
+}
+
 void dll_target::expr_virtual_property(const NetEVirtualProperty*net)
 {
       // Scan the virtual interface expression (class property access to get vif)

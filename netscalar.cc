@@ -44,6 +44,14 @@ ivl_variable_type_t netstring_t::base_type() const
       return IVL_VT_STRING;
 }
 
+long netstring_t::packed_width() const
+{
+      // Strings don't have a fixed packed width, so return -1 to indicate
+      // this is not a packed type. This causes structs with string members
+      // to be correctly identified as having unpacked members.
+      return -1;
+}
+
 netvirtual_interface_t::~netvirtual_interface_t()
 {
 }

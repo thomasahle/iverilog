@@ -151,6 +151,7 @@ struct dll_target  : public target_t, public expr_scan_t {
       void expr_null(const NetENull*) override;
       void expr_param(const NetEConstParam*) override;
       void expr_property(const NetEProperty*) override;
+      void expr_struct_member(const NetEStructMember*) override;
       void expr_virtual_property(const NetEVirtualProperty*) override;
       void expr_assoc_method(const NetEAssocMethod*) override;
       void expr_rparam(const NetECRealParam*) override;
@@ -358,6 +359,12 @@ struct ivl_expr_s {
 		  unsigned prop_idx;
 		  ivl_expr_t index;
 	    } property_;
+
+	    struct {
+		  ivl_signal_t sig;        // Base struct signal
+		  int member_idx;          // Struct member index
+		  const char* member_name; // Struct member name
+	    } struct_member_;
 
 	    struct {
 		  ivl_expr_t vif_expr;     // Virtual interface expression

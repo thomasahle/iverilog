@@ -536,6 +536,12 @@ void expr_scan_t::expr_property(const NetEProperty*)
 	    "unhandled expr_property." << endl;
 }
 
+void expr_scan_t::expr_struct_member(const NetEStructMember*)
+{
+      cerr << "expr_scan_t (" << typeid(*this).name() << "): "
+	    "unhandled expr_struct_member." << endl;
+}
+
 void expr_scan_t::expr_virtual_property(const NetEVirtualProperty*)
 {
       cerr << "expr_scan_t (" << typeid(*this).name() << "): "

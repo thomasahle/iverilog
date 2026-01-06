@@ -1258,6 +1258,32 @@ static void draw_select_vec4(ivl_expr_t expr)
 	    return;
       }
 
+	// Special case: selecting a packed member from an unpacked struct
+	// with string members. The struct has IVL_VT_NO_TYPE but we can
+	// still select packed members from it using the signal.
+      if (ivl_expr_value(subexpr)==IVL_VT_NO_TYPE) {
+	    ivl_signal_t sig = ivl_expr_signal(subexpr);
+	    if (sig) {
+		  if (test_immediate_vec4_ok(base)) {
+			  // Constant base - use immediate part-select
+			unsigned long val0, valx;
+			unsigned base_wid;
+			make_immediate_vec4_words(base, &val0, &valx, &base_wid);
+			fprintf(vvp_out, "    %%load/vec4 v%p_0;\n", sig);
+			fprintf(vvp_out, "    %%parti/%c %u, %lu, %u;\n",
+				sign_suff, wid, val0, base_wid);
+		  } else {
+			  // Variable base - use stack-based part-select
+			fprintf(vvp_out, "    %%load/vec4 v%p_0;\n", sig);
+			draw_eval_vec4(base);
+			fprintf(vvp_out, "    %%part/%c %u;\n", sign_suff, wid);
+		  }
+		  if (ivl_expr_value(expr) == IVL_VT_BOOL)
+			fprintf(vvp_out, "    %%cast2;\n");
+		  return;
+	    }
+      }
+
       if (test_immediate_vec4_ok(base)) {
 	    unsigned long val0, valx;
 	    unsigned base_wid;
@@ -2245,6 +2271,14 @@ void draw_eval_vec4(ivl_expr_t expr)
 
 	  case IVL_EX_ASSOC_METHOD:
 	    draw_assoc_method_vec4(expr);
+	    return;
+
+	  case IVL_EX_STRUCT_MEMBER:
+	    /* String member access in unpacked struct.
+	       String members in structs are not yet fully supported. Push empty
+	       string and convert to vec4 for compatibility. */
+	    fprintf(vvp_out, "    %%pushi/str \"\"; String struct member placeholder\n");
+	    fprintf(vvp_out, "    %%pushv/str; Convert to vec4\n");
 	    return;
 
 	  case IVL_EX_NULL:

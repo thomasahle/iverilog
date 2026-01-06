@@ -46,6 +46,8 @@ class netstring_t : public ivl_type_s {
       ~netstring_t() override;
 
       ivl_variable_type_t base_type() const override;
+      // Strings don't have a fixed packed width - return -1 to indicate this
+      long packed_width() const override;
 
       std::ostream& debug_dump(std::ostream&) const override;
 

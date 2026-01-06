@@ -754,6 +754,27 @@ extern "C" ivl_expr_t ivl_expr_assoc_key(ivl_expr_t net)
       return net->u_.assoc_method_.key;
 }
 
+extern "C" ivl_signal_t ivl_expr_struct_signal(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_STRUCT_MEMBER);
+      return net->u_.struct_member_.sig;
+}
+
+extern "C" int ivl_expr_struct_member_idx(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_STRUCT_MEMBER);
+      return net->u_.struct_member_.member_idx;
+}
+
+extern "C" const char* ivl_expr_struct_member_name(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_STRUCT_MEMBER);
+      return net->u_.struct_member_.member_name;
+}
+
 extern "C" ivl_scope_t ivl_expr_scope(ivl_expr_t net)
 {
       assert(net);
@@ -782,6 +803,9 @@ extern "C" ivl_signal_t ivl_expr_signal(ivl_expr_t net)
 
 	  case IVL_EX_VIFPROP:
 	    return net->u_.vifprop_.member_sig;
+
+	  case IVL_EX_STRUCT_MEMBER:
+	    return net->u_.struct_member_.sig;
 
 	  default:
 	    assert(0);

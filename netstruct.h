@@ -75,6 +75,9 @@ class netstruct_t : public LineInfo, public ivl_type_s {
 	// Get total member count
       size_t member_count() const { return members_.size(); }
 
+	// Check if struct has any members with unpacked types (e.g., string)
+      bool has_unpacked_members() const;
+
 	// Return the width (in bits) of the packed record, or -1 if
 	// the record is not packed.
       long packed_width() const override;

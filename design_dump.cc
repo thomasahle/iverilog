@@ -1902,6 +1902,11 @@ void NetEProperty::dump(ostream&o) const
 	    o << "[" << *index_ << "]";
 }
 
+void NetEStructMember::dump(ostream&o) const
+{
+      o << net_->name() << "." << member_name_ << "<idx=" << member_idx_ << ">";
+}
+
 void NetEVirtualProperty::dump(ostream&o) const
 {
       o << "<vif:" << vif_type_->interface_name() << "." << member_name_ << ">";

@@ -448,6 +448,31 @@ NetEProperty::~NetEProperty()
 {
 }
 
+NetEStructMember::NetEStructMember(NetNet*net, int member_idx, perm_string member_name,
+                                   ivl_type_t member_type)
+: net_(net), member_idx_(member_idx), member_name_(member_name), member_type_(member_type)
+{
+      // Set the expression type based on the member type
+      // set_net_type handles width and signed flag for all types
+      set_net_type(member_type);
+}
+
+NetEStructMember::~NetEStructMember()
+{
+}
+
+NetEStructMember* NetEStructMember::dup_expr() const
+{
+      NetEStructMember*dup = new NetEStructMember(net_, member_idx_, member_name_, member_type_);
+      dup->set_line(*this);
+      return dup;
+}
+
+NexusSet* NetEStructMember::nex_input(bool, bool, bool) const
+{
+      return 0;
+}
+
 NetEAssocMethod::NetEAssocMethod(NetNet*net, size_t pidx, method_t method, NetExpr*key_expr)
 : net_(net), base_expr_(0), pidx_(pidx), method_(method), key_expr_(key_expr)
 {

@@ -2174,6 +2174,18 @@ static int show_stmt_assign_struct_member(ivl_statement_t net)
       /* Get member offset and width */
       unsigned member_off = ivl_type_struct_member_offset(struct_type, member_idx);
       ivl_type_t member_type = ivl_type_struct_member_type(struct_type, member_idx);
+
+      /* Check for string member - not yet supported for storage */
+      if (member_type && ivl_type_base(member_type) == IVL_VT_STRING) {
+            /* String members in unpacked structs cannot be stored because the
+               current struct storage model only supports packed members. Silently
+               skip the assignment - the compile-time warning already notified the user. */
+            fprintf(vvp_out, "    ; Skipping string struct member assignment (not supported)\n");
+            draw_eval_string(rval);  /* Evaluate rval for side effects */
+            fprintf(vvp_out, "    %%pop/str 1;\n");  /* Discard the result */
+            return 0;
+      }
+
       unsigned member_wid = member_type ? ivl_type_packed_width(member_type) : 0;
 
       if (member_wid == 0) {

@@ -4750,6 +4750,40 @@ class NetEProperty : public NetExpr {
 };
 
 /*
+ * NetEStructMember represents access to a member of an unpacked struct.
+ * This is used when the struct contains members that cannot be represented
+ * as simple bit selections (e.g., string members).
+ *
+ * Unlike NetESelect which uses bit offsets, this uses member indices
+ * and relies on the code generator to produce appropriate access code.
+ */
+class NetEStructMember : public NetExpr {
+    public:
+      NetEStructMember(NetNet*net, int member_idx, perm_string member_name,
+                       ivl_type_t member_type);
+      ~NetEStructMember() override;
+
+      inline const NetNet* get_sig() const { return net_; }
+      inline int member_idx() const { return member_idx_; }
+      inline perm_string member_name() const { return member_name_; }
+      inline ivl_type_t member_type() const { return member_type_; }
+
+    public: // Overridden methods
+      virtual void expr_scan(struct expr_scan_t*) const override;
+      virtual NetEStructMember* dup_expr() const override;
+      virtual NexusSet* nex_input(bool rem_out = true, bool always_sens = false,
+                                  bool nested_func = false) const override;
+
+      virtual void dump(std::ostream&os) const override;
+
+    private:
+      NetNet*net_;
+      int member_idx_;
+      perm_string member_name_;
+      ivl_type_t member_type_;
+};
+
+/*
  * NetEAssocMethod represents a method call on an associative array property.
  * Methods: exists(), delete(), first(), last(), next(), prev(), num()
  *

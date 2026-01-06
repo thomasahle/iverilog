@@ -3093,12 +3093,12 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
       bool is_packed_struct = struct_type->packed();
       bool has_unpacked_members = false;
       if (! is_packed_struct) {
-	    long pw = struct_type->packed_width();
-	    if (pw < 0) {
+	      // Check if struct has any unpacked members (e.g., string)
+	    has_unpacked_members = struct_type->has_unpacked_members();
+	    if (has_unpacked_members) {
 		    // Struct has some unpacked members. We can still access
-		    // packed members of such structs, but unpacked array members
+		    // packed members of such structs, but unpacked members
 		    // need special handling.
-		  has_unpacked_members = true;
 		  if (debug_elaborate) {
 			cerr << li->get_fileline() << ": check_for_struct_members: "
 			     << "Struct has unpacked members, will check specific member access."
@@ -3107,6 +3107,7 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 	    } else {
 		    // Unpacked struct but all members are packed - we can handle it
 		  if (debug_elaborate) {
+			long pw = struct_type->packed_width();
 			cerr << li->get_fileline() << ": check_for_struct_members: "
 			     << "Allowing unpacked struct with packed members, packed_width=" << pw
 			     << endl;
@@ -3163,8 +3164,12 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 		  tmp_off = 0;
 		  for (int i = 0; i < member_idx; i++) {
 			const netstruct_t::member_t* prev_member = struct_type->get_member(i);
-			if (prev_member && prev_member->net_type)
-			      tmp_off += prev_member->net_type->packed_width();
+			if (prev_member && prev_member->net_type) {
+			      long pw = prev_member->net_type->packed_width();
+			      // Skip members with negative packed_width (e.g., strings)
+			      if (pw > 0)
+				    tmp_off += pw;
+			}
 		  }
 	    }
 
@@ -3727,6 +3732,39 @@ static NetExpr* check_for_struct_members(const LineInfo*li,
 		    // and the element type should be a netstruct_t
 		    // that will wind up containing the member c.
 		  struct_type = dynamic_cast<const netstruct_t*> (element_type);
+
+	    } else if (dynamic_cast<const netstring_t*>(member_type)) {
+		    // String member - can't use bit-select, use struct member expression
+		    // String members are leaf types, can't be nested
+		  if (debug_elaborate) {
+			cerr << li->get_fileline() << ": check_for_struct_members: "
+			     << "String member '" << member_name << "' at index "
+			     << struct_type->member_idx_from_name(member_name)
+			     << endl;
+		  }
+
+		  if (!member_comp.index.empty()) {
+			cerr << li->get_fileline() << ": error: "
+			     << "String member '" << member_name
+			     << "' cannot be indexed." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		    // Look up member index for this string member
+		  int midx = struct_type->member_idx_from_name(member_name);
+		  if (midx < 0) {
+			cerr << li->get_fileline() << ": internal error: "
+			     << "Could not find member index for '" << member_name
+			     << "'" << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		    // Return a struct member expression for string access
+		  NetEStructMember*sel = new NetEStructMember(net, midx, member_name, member_type);
+		  sel->set_line(*li);
+		  return sel;
 
 	    } else {
 		    // Unknown type?

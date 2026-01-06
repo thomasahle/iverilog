@@ -694,6 +694,11 @@ void NetEProperty::expr_scan(struct expr_scan_t*tgt) const
       tgt->expr_property(this);
 }
 
+void NetEStructMember::expr_scan(struct expr_scan_t*tgt) const
+{
+      tgt->expr_struct_member(this);
+}
+
 void NetEVirtualProperty::expr_scan(struct expr_scan_t*tgt) const
 {
       tgt->expr_virtual_property(this);

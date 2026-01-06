@@ -104,18 +104,27 @@ long netstruct_t::packed_width(void) const
       if (union_)
 	    return members_.front().net_type->packed_width();
 
-	// The width of a struct (packed or unpacked) is the sum of member widths.
-	// For unpacked structs, this gives the total storage required when
-	// members are stored contiguously (as packed vectors).
+	// The width of a struct is the sum of member widths.
+	// For structs with unpacked members (like string), we sum only
+	// the packed member widths - the unpacked members are stored
+	// separately and don't contribute to the packed width.
       long res = 0;
+      bool has_unpacked = false;
       for (size_t idx = 0 ; idx < members_.size() ; idx += 1) {
 	    long mwid = members_[idx].net_type->packed_width();
 	    if (mwid < 0) {
-		    // If any member has unpacked type, can't compute total width
-		  return -1;
+		    // Member has unpacked type (e.g., string)
+		  has_unpacked = true;
+	    } else {
+		  res += mwid;
 	    }
-	    res += mwid;
       }
+
+	// For packed structs with unpacked members, return -1 (error case).
+	// For unpacked structs, return the sum of packed member widths,
+	// which is the width of the packed storage portion.
+      if (packed_ && has_unpacked)
+	    return -1;
 
       return res;
 }
@@ -130,16 +139,20 @@ netranges_t netstruct_t::slice_dimensions() const
 ivl_variable_type_t netstruct_t::base_type() const
 {
       if (! packed_) {
-	      // For unpacked structs, check if all members have packed types.
-	      // If so, we can treat it as IVL_VT_LOGIC since it's stored as
-	      // a contiguous bit vector.
+	      // For unpacked structs, check if we have packed members.
+	      // The base type is determined by the packed members only
+	      // (string and other unpacked members are stored separately).
 	    long pw = packed_width();
 	    if (pw > 0) {
-		    // Has a valid packed width - all members are packed
-		    // Return the most specific type found in members
+		    // Has some packed members - return the most specific
+		    // type found among the packed members (skip strings)
 		  for (size_t idx = 0 ; idx < members_.size() ; idx += 1) {
-			if (members_[idx].data_type() != IVL_VT_BOOL)
-			      return members_[idx].data_type();
+			ivl_variable_type_t mtype = members_[idx].data_type();
+			  // Skip unpacked types like STRING
+			if (mtype == IVL_VT_STRING)
+			      continue;
+			if (mtype != IVL_VT_BOOL)
+			      return mtype;
 		  }
 		  return IVL_VT_BOOL;
 	    }
@@ -229,4 +242,17 @@ const netstruct_t::member_t* netstruct_t::get_member(size_t idx) const
       if (idx >= members_.size())
 	    return 0;
       return &members_[idx];
+}
+
+/*
+ * Check if struct has any members with unpacked types (e.g., string).
+ * Unpacked types have packed_width() < 0.
+ */
+bool netstruct_t::has_unpacked_members() const
+{
+      for (size_t idx = 0 ; idx < members_.size() ; idx += 1) {
+	    if (members_[idx].net_type->packed_width() < 0)
+		  return true;
+      }
+      return false;
 }

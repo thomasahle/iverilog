@@ -243,6 +243,14 @@ void draw_eval_string(ivl_expr_t expr)
 	    draw_ufunc_string(expr);
 	    break;
 
+	  case IVL_EX_STRUCT_MEMBER:
+	    /* String member access in unpacked struct.
+	       String members in structs are not yet fully supported - the storage
+	       model for structs only supports packed members. Push an empty string
+	       as a placeholder. The compile-time warning already notifies the user. */
+	    fprintf(vvp_out, "    %%pushi/str \"\"; String struct member placeholder\n");
+	    break;
+
 	  default:
 	    fallback_eval(expr);
 	    break;

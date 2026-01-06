@@ -169,6 +169,7 @@ struct expr_scan_t {
       virtual void expr_null(const NetENull*);
       virtual void expr_param(const NetEConstParam*);
       virtual void expr_property(const NetEProperty*);
+      virtual void expr_struct_member(const NetEStructMember*);
       virtual void expr_virtual_property(const NetEVirtualProperty*);
       virtual void expr_assoc_method(const NetEAssocMethod*);
       virtual void expr_rparam(const NetECRealParam*);

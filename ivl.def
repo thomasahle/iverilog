@@ -78,6 +78,9 @@ ivl_expr_repeat
 ivl_expr_scope
 ivl_expr_sel_type
 ivl_expr_signal
+ivl_expr_struct_signal
+ivl_expr_struct_member_idx
+ivl_expr_struct_member_name
 ivl_expr_signed
 ivl_expr_sized
 ivl_expr_string
