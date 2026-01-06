@@ -1,0 +1,1 @@
+sv_class_virtual_inherit.sv
