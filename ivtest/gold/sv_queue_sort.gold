@@ -4,5 +4,7 @@ PASSED: Real queue sort
 PASSED: Real queue rsort
 PASSED: String queue sort
 PASSED: String queue rsort
+Warning: sort() on empty or nil queue.
+Warning: rsort() on empty or nil queue.
 PASSED: Empty queue sort/rsort (no crash)
 PASSED: Single element sort

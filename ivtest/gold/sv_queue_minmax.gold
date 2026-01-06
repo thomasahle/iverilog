@@ -1,0 +1,26 @@
+Test 1: q = '{5, 2, 8, 1, 9}
+PASS: min() = 1
+PASS: max() = 9
+PASS: sum() = 25
+PASS: product() = 720
+
+Test 2: q = '{-3, 5, -7, 2, 0}
+PASS: min() = -7
+PASS: max() = 5
+PASS: sum() = -3
+PASS: product() = 0
+
+Test 3: q = '{42}
+PASS: min() = 42
+PASS: max() = 42
+PASS: sum() = 42
+PASS: product() = 42
+
+Test 4: q = '{3, 1, 4, 1, 5, 9, 2, 6, 5}
+PASS: min() = 1
+PASS: max() = 9
+PASS: sum() = 36
+
+===================
+PASSED: All 15 tests passed
+===================
