@@ -1,0 +1,4 @@
+Int container: 42
+String container: test
+PASSED: int test
+PASSED: string test (no crash)

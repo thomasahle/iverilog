@@ -305,6 +305,12 @@ class property_string : public class_property_t {
       void set_string(char*buf, const string&) override;
       string get_string(char*buf) override;
 
+      // Support for parameterized class specialization where the code was
+      // generated for a base class method with T=int but actual type is string.
+      // Convert vec4 to string by treating it as packed ASCII characters.
+      void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx) override;
+      void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
+
       void copy(char*dst, char*src) override;
 };
 
@@ -464,6 +470,50 @@ void property_string::copy(char*dst, char*src)
       string*dst_obj = reinterpret_cast<string*> (dst+offset_);
       const string*src_obj = reinterpret_cast<string*> (src+offset_);
       *dst_obj = *src_obj;
+}
+
+// Support for parameterized class specialization: convert vec4 to string.
+// The vec4 value contains packed ASCII characters (MSB is first char).
+void property_string::set_vec4(char*buf, const vvp_vector4_t&val, uint64_t)
+{
+      string*tmp = reinterpret_cast<string*>(buf+offset_);
+
+      // Convert vec4 to string - extract ASCII bytes from packed value
+      size_t nbytes = (val.size() + 7) / 8;
+      string result;
+      result.reserve(nbytes);
+
+      for (size_t idx = 0; idx < nbytes; idx++) {
+	    // Extract each byte from the vec4 (MSB first like SystemVerilog strings)
+	    size_t bit_base = (nbytes - 1 - idx) * 8;
+	    unsigned char ch = 0;
+	    for (int bit = 7; bit >= 0 && (bit_base + bit) < val.size(); bit--) {
+		  vvp_bit4_t b = val.value(bit_base + bit);
+		  if (b == BIT4_1) ch |= (1 << bit);
+	    }
+	    if (ch != 0) result.push_back(ch);
+      }
+
+      *tmp = result;
+}
+
+// Convert string to vec4 (for when code expects vec4 but property is string)
+void property_string::get_vec4(char*buf, vvp_vector4_t&val, uint64_t)
+{
+      const string*tmp = reinterpret_cast<string*>(buf+offset_);
+
+      // Convert string to vec4 - pack ASCII bytes into vec4
+      size_t nbytes = tmp->size();
+      size_t nbits = nbytes * 8;
+      val = vvp_vector4_t(nbits > 0 ? nbits : 8, BIT4_0);
+
+      for (size_t idx = 0; idx < nbytes; idx++) {
+	    unsigned char ch = (*tmp)[idx];
+	    size_t bit_base = (nbytes - 1 - idx) * 8;
+	    for (int bit = 7; bit >= 0; bit--) {
+		  val.set_bit(bit_base + bit, (ch & (1 << bit)) ? BIT4_1 : BIT4_0);
+	    }
+      }
 }
 
 void property_object::construct(char*buf) const
