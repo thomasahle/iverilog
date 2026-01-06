@@ -3775,7 +3775,13 @@ property_declaration
   : K_property IDENTIFIER ';' property_spec semicolon_opt K_endproperty label_opt
       { /* Store property declaration for later use in assertions */
         if (gn_supported_assertions_flag) {
-              store_named_property($2, $4.clocking_event, $4.expr);
+              if ($4.expr != 0) {
+                    store_named_property($2, $4.clocking_event, $4.expr);
+              } else {
+                    /* Property contains unsupported sequence constructs */
+                    yywarn(@1, "sorry: property contains unsupported sequence constructs"
+                           " (##N delays, repetition). Property ignored.");
+              }
         } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: property declarations are parsed but not yet elaborated."
                       " Try -gno-assertions or -gsupported-assertions"
@@ -3793,8 +3799,14 @@ property_declaration
     ';' property_spec semicolon_opt K_endproperty label_opt
       { /* Property declaration with ports - store with parameter names */
         if (gn_supported_assertions_flag) {
-              /* Store property with port names for parameter substitution */
-              store_named_property($2, $9.clocking_event, $9.expr, $5);
+              if ($9.expr != 0) {
+                    /* Store property with port names for parameter substitution */
+                    store_named_property($2, $9.clocking_event, $9.expr, $5);
+              } else {
+                    /* Property contains unsupported sequence constructs */
+                    yywarn(@1, "sorry: property contains unsupported sequence constructs"
+                           " (##N delays, repetition). Property ignored.");
+              }
         } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: property declarations are parsed but not yet elaborated."
                       " Try -gno-assertions or -gsupported-assertions"

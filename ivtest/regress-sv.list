@@ -1240,6 +1240,7 @@ sva_antecedent_delay	normal,-g2012,-gno-assertions	ivltests
 sva_paren_antecedent	normal,-g2012,-gno-assertions	ivltests
 sva_paren_implication	normal,-g2012,-gno-assertions	ivltests
 sv_bind_parse		normal,-g2012,-gno-assertions	ivltests
+sv_property_seq_delay	normal,-g2012,-gsupported-assertions	ivltests
 sv_vif_class_access	normal,-g2012	ivltests
 sv_class_prop_chain	normal,-g2012	ivltests
 sv_class_array_prop_assign	normal,-g2012	ivltests
