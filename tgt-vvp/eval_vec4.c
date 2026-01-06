@@ -2208,14 +2208,15 @@ void draw_eval_vec4(ivl_expr_t expr)
 		    ivl_expr_type(expr));
       }
 
+      /* Allow STRING type to pass through - some expression types handle it specially */
       if (ivl_expr_value(expr) != IVL_VT_BOOL &&
-          ivl_expr_value(expr) != IVL_VT_VECTOR) {
+          ivl_expr_value(expr) != IVL_VT_VECTOR &&
+          ivl_expr_value(expr) != IVL_VT_STRING) {
 	    fprintf(stderr, "draw_eval_vec4: unexpected value type %d (expr_type=%d) at %s:%u\n",
 		    ivl_expr_value(expr), ivl_expr_type(expr),
 		    ivl_expr_file(expr), ivl_expr_lineno(expr));
+	    assert(0);
       }
-      assert(ivl_expr_value(expr) == IVL_VT_BOOL ||
-	     ivl_expr_value(expr) == IVL_VT_VECTOR);
 
       switch (ivl_expr_type(expr)) {
 	  case IVL_EX_BINARY:

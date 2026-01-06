@@ -1,5 +1,5 @@
 
-%define api.pure
+%pure-parser
 %parse-param {const char*file_path}
 
 %{

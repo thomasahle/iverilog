@@ -1,5 +1,5 @@
 
-%define api.pure
+%pure-parser
 %lex-param { yyscan_t yyscanner }
 %parse-param {yyscan_t yyscanner  }
 %parse-param {const char*file_path}

@@ -807,7 +807,20 @@ extern "C" ivl_signal_t ivl_expr_signal(ivl_expr_t net)
 	  case IVL_EX_STRUCT_MEMBER:
 	    return net->u_.struct_member_.sig;
 
+	  case IVL_EX_CONCAT:
+	  case IVL_EX_BINARY:
+	  case IVL_EX_UNARY:
+	  case IVL_EX_SELECT:
+	  case IVL_EX_TERNARY:
+	  case IVL_EX_SFUNC:
+	  case IVL_EX_UFUNC:
+	  case IVL_EX_NUMBER:
+	  case IVL_EX_STRING:
+	    /* These expression types don't have associated signals */
+	    return 0;
+
 	  default:
+	    fprintf(stderr, "ERROR: ivl_expr_signal called with unsupported expression type %d\n", net->type_);
 	    assert(0);
 	    return 0;
       }
