@@ -4884,7 +4884,7 @@ block_item_decl
 		   Since we're in block_item_decl, we're inside a begin/end block
 		   and the block is on current_block_stack. */
 		if (!current_block_stack.empty()) {
-		    current_block_stack.top()->push_statement_front(tmp);
+		    current_block_stack.top()->push_statement_back(tmp);
 		} else {
 		    yywarn(@1, "uvm_config_db call outside block context - call ignored.");
 		}
@@ -4915,7 +4915,7 @@ block_item_decl
 
         /* Add to current block's statement list if available */
         if (!current_block_stack.empty()) {
-            current_block_stack.top()->push_statement_front(tmp);
+            current_block_stack.top()->push_statement_back(tmp);
         } else {
             /* Outside explicit block - statement may not be reachable but
                compilation should continue. Emit debug info if needed. */
