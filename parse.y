@@ -2592,39 +2592,51 @@ deferred_immediate_assertion_item /* IEEE1800-2012: A.6.10 */
   ;
 
 deferred_immediate_assertion_statement /* IEEE1800-2012 A.6.10 */
+    /* NOTE: Deferred assertions (#0, final) are treated as immediate assertions.
+       This is a simplification - true deferred evaluation would require
+       scheduling the check at the end of the time step. */
   : assert_or_assume deferred_mode '(' expression ')' statement_or_null %prec less_than_K_else
       {
-	if (gn_unsupported_assertions_flag) {
-	      yyerror(@1, "sorry: Deferred assertions are not supported."
-		      " Try -gno-assertions or -gsupported-assertions"
-		      " to turn this message off.");
+	if (gn_supported_assertions_flag) {
+	      /* Treat like immediate assertion: if (!expr) $error; else pass_stmt */
+	      std::list<named_pexpr_t> arg_list;
+	      PCallTask*tmp1 = new PCallTask(lex_strings.make("$error"), arg_list);
+	      FILE_NAME(tmp1, @1);
+	      PCondit*tmp2 = new PCondit($4, $6, tmp1);
+	      FILE_NAME(tmp2, @1);
+	      $$ = tmp2;
+	} else {
+	      delete $4;
+	      delete $6;
+	      $$ = 0;
 	}
-	delete $4;
-	delete $6;
-	$$ = 0;
       }
   | assert_or_assume deferred_mode '(' expression ')' K_else statement_or_null
       {
-	if (gn_unsupported_assertions_flag) {
-	      yyerror(@1, "sorry: Deferred assertions are not supported."
-		      " Try -gno-assertions or -gsupported-assertions"
-		      " to turn this message off.");
+	if (gn_supported_assertions_flag) {
+	      /* Treat like immediate assertion: if (expr) ; else fail_stmt */
+	      PCondit*tmp = new PCondit($4, 0, $7);
+	      FILE_NAME(tmp, @1);
+	      $$ = tmp;
+	} else {
+	      delete $4;
+	      delete $7;
+	      $$ = 0;
 	}
-	delete $4;
-	delete $7;
-	$$ = 0;
       }
   | assert_or_assume deferred_mode '(' expression ')' statement_or_null K_else statement_or_null
       {
-	if (gn_unsupported_assertions_flag) {
-	      yyerror(@1, "sorry: Deferred assertions are not supported."
-		      " Try -gno-assertions or -gsupported-assertions"
-		      " to turn this message off.");
+	if (gn_supported_assertions_flag) {
+	      /* Treat like immediate assertion: if (expr) pass_stmt else fail_stmt */
+	      PCondit*tmp = new PCondit($4, $6, $8);
+	      FILE_NAME(tmp, @1);
+	      $$ = tmp;
+	} else {
+	      delete $4;
+	      delete $6;
+	      delete $8;
+	      $$ = 0;
 	}
-	delete $4;
-	delete $6;
-	delete $8;
-	$$ = 0;
       }
   | K_cover deferred_mode '(' expression ')' statement_or_null
       {

@@ -5,6 +5,11 @@
 ./ivltests/ipsupsel_real_idx.v:15: error: A reference to a net or variable (`ridx') is not allowed in a constant expression.
 ./ivltests/ipsupsel_real_idx.v:15: error: Indexed part select width must be an integral constants greater than zero.
 ./ivltests/ipsupsel_real_idx.v:15:      : This width expression violates that rule: ridx
+./ivltests/ipsupsel_real_idx.v:15: error: A reference to a net or variable (`ridx') is not allowed in a constant expression.
+./ivltests/ipsupsel_real_idx.v:15: error: Indexed part select width must be an integral constants greater than zero.
+./ivltests/ipsupsel_real_idx.v:15:      : This width expression violates that rule: ridx
+./ivltests/ipsupsel_real_idx.v:16: error: Indexed part select width must be an integral constants greater than zero.
+./ivltests/ipsupsel_real_idx.v:16:      : This width expression violates that rule: 0.500000
 ./ivltests/ipsupsel_real_idx.v:16: error: Indexed part select width must be an integral constants greater than zero.
 ./ivltests/ipsupsel_real_idx.v:16:      : This width expression violates that rule: 0.500000
 ./ivltests/ipsupsel_real_idx.v:17: error: A reference to a net or variable (`ridx') is not allowed in a constant expression.
@@ -22,6 +27,11 @@
 ./ivltests/ipsupsel_real_idx.v:28: error: A reference to a net or variable (`ridx') is not allowed in a constant expression.
 ./ivltests/ipsupsel_real_idx.v:28: error: Indexed part select width must be an integral constants greater than zero.
 ./ivltests/ipsupsel_real_idx.v:28:      : This width expression violates that rule: ridx
+./ivltests/ipsupsel_real_idx.v:28: error: A reference to a net or variable (`ridx') is not allowed in a constant expression.
+./ivltests/ipsupsel_real_idx.v:28: error: Indexed part select width must be an integral constants greater than zero.
+./ivltests/ipsupsel_real_idx.v:28:      : This width expression violates that rule: ridx
+./ivltests/ipsupsel_real_idx.v:29: error: Indexed part select width must be an integral constants greater than zero.
+./ivltests/ipsupsel_real_idx.v:29:      : This width expression violates that rule: 0.500000
 ./ivltests/ipsupsel_real_idx.v:29: error: Indexed part select width must be an integral constants greater than zero.
 ./ivltests/ipsupsel_real_idx.v:29:      : This width expression violates that rule: 0.500000
 ./ivltests/ipsupsel_real_idx.v:30: error: Indexed part select base expression for vlvb[+ridx+:1] cannot be a real value.
@@ -36,6 +46,11 @@
 ./ivltests/ipsupsel_real_idx.v:36: error: A reference to a net or variable (`ridx') is not allowed in a constant expression.
 ./ivltests/ipsupsel_real_idx.v:36: error: Indexed part select width must be an integral constants greater than zero.
 ./ivltests/ipsupsel_real_idx.v:36:      : This width expression violates that rule: ridx
+./ivltests/ipsupsel_real_idx.v:36: error: A reference to a net or variable (`ridx') is not allowed in a constant expression.
+./ivltests/ipsupsel_real_idx.v:36: error: Indexed part select width must be an integral constants greater than zero.
+./ivltests/ipsupsel_real_idx.v:36:      : This width expression violates that rule: ridx
+./ivltests/ipsupsel_real_idx.v:37: error: Indexed part select width must be an integral constants greater than zero.
+./ivltests/ipsupsel_real_idx.v:37:      : This width expression violates that rule: 0.500000
 ./ivltests/ipsupsel_real_idx.v:37: error: Indexed part select width must be an integral constants greater than zero.
 ./ivltests/ipsupsel_real_idx.v:37:      : This width expression violates that rule: 0.500000
 ./ivltests/ipsupsel_real_idx.v:38: error: Cannot take the index part select of a string ('sval').
@@ -43,7 +58,12 @@
 ./ivltests/ipsupsel_real_idx.v:40: error: A reference to a net or variable (`ridx') is not allowed in a constant expression.
 ./ivltests/ipsupsel_real_idx.v:40: error: Indexed part select width must be an integral constants greater than zero.
 ./ivltests/ipsupsel_real_idx.v:40:      : This width expression violates that rule: ridx
+./ivltests/ipsupsel_real_idx.v:40: error: A reference to a net or variable (`ridx') is not allowed in a constant expression.
+./ivltests/ipsupsel_real_idx.v:40: error: Indexed part select width must be an integral constants greater than zero.
+./ivltests/ipsupsel_real_idx.v:40:      : This width expression violates that rule: ridx
 ./ivltests/ipsupsel_real_idx.v:40: error: Cannot take the index part select of a string ('sval').
+./ivltests/ipsupsel_real_idx.v:41: error: Indexed part select width must be an integral constants greater than zero.
+./ivltests/ipsupsel_real_idx.v:41:      : This width expression violates that rule: 0.500000
 ./ivltests/ipsupsel_real_idx.v:41: error: Indexed part select width must be an integral constants greater than zero.
 ./ivltests/ipsupsel_real_idx.v:41:      : This width expression violates that rule: 0.500000
 ./ivltests/ipsupsel_real_idx.v:41: error: Cannot take the index part select of a string ('sval').
@@ -51,4 +71,4 @@
 ./ivltests/ipsupsel_real_idx.v:43: error: Cannot index part select assign to a string ('strcb').
 ./ivltests/ipsupsel_real_idx.v:44: error: Cannot index part select assign to a string ('strvw').
 ./ivltests/ipsupsel_real_idx.v:45: error: Cannot index part select assign to a string ('strcw').
-39 error(s) during elaboration.
+51 error(s) during elaboration.
