@@ -144,24 +144,25 @@ const config_db_entry* vvp_config_db_find_entry(
             }
       }
 
-      // Fallback: If field names match and the stored inst_name contains "*",
-      // treat it as a global match. This simplifies UVM config_db behavior
-      // for cases where context hierarchies don't match exactly.
+      // Fallback: If field names match and stored path is EXACTLY "*",
+      // this is a true global pattern that matches anything.
+      // More specific patterns like "*env*" should already be handled
+      // by uvm_pattern_match above and should NOT match arbitrary paths.
       for (auto& entry : db) {
             size_t field_pos = entry.first.rfind("::");
             if (field_pos != std::string::npos) {
                   std::string stored_field = entry.first.substr(field_pos + 2);
                   if (stored_field == field_name) {
                         std::string stored_path = entry.first.substr(0, field_pos);
-                        // If the stored path contains "*", consider it a global pattern
-                        if (stored_path.find('*') != std::string::npos) {
+                        // Only "*" alone matches everything - not "*env*" etc.
+                        if (stored_path == "*") {
                               return &entry.second;
                         }
                   }
             }
       }
 
-      // Final fallback: Try prefix matching on field names
+      // Final fallback: Try prefix matching on field names with "*" global path only
       // This handles cases where $sformatf produces truncated field names
       // (e.g., "apb_slave_monitor_bfm_" instead of "apb_slave_monitor_bfm_0")
       for (auto& entry : db) {
@@ -173,7 +174,8 @@ const config_db_entry* vvp_config_db_find_entry(
                                     field_name.find(stored_field) == 0);
                   if (is_prefix && !field_name.empty() && !stored_field.empty()) {
                         std::string stored_path = entry.first.substr(0, field_pos);
-                        if (stored_path.find('*') != std::string::npos) {
+                        // Only global "*" pattern matches - not "*env*" etc.
+                        if (stored_path == "*") {
                               return &entry.second;
                         }
                   }
