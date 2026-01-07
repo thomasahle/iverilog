@@ -151,6 +151,9 @@ ivl_type_t enum_type_t::elaborate_type_raw(Design *des, NetScope *scope) const
 		 << "Invalid enum base type `" << *base << "`."
 		 << endl;
 	    des->errors++;
+	    // Use default int type to allow continued elaboration without crash
+	    base = netvector_t::integer_type();
+	    vec_type = dynamic_cast<const netvector_t*>(base);
       } else if (base->slice_dimensions().size() > 1) {
 	    cerr << get_fileline() << ": error: "
 		 << "Enum type must not have more than 1 packed dimension."
