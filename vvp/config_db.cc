@@ -66,6 +66,20 @@ void vvp_config_db::set_object(const std::string& context_path,
       db_[key] = config_db_entry(value);
 }
 
+// Escape square brackets for fnmatch (UVM uses [] literally, not as character class)
+static std::string escape_brackets(const std::string& s)
+{
+      std::string result;
+      result.reserve(s.size() * 2);
+      for (char c : s) {
+            if (c == '[' || c == ']') {
+                  result += '\\';
+            }
+            result += c;
+      }
+      return result;
+}
+
 // Check if a pattern matches a path using UVM-style glob matching
 // UVM patterns use * as wildcard (like shell glob, not regex)
 static bool uvm_pattern_match(const std::string& pattern, const std::string& path)
@@ -80,9 +94,13 @@ static bool uvm_pattern_match(const std::string& pattern, const std::string& pat
             return true;
       }
 
+      // Escape brackets in pattern (UVM treats [] as literal, not fnmatch character class)
+      // Don't escape the path - we want to match the literal brackets in it
+      std::string esc_pattern = escape_brackets(pattern);
+
       // Use fnmatch for glob-style matching
       // FNM_PATHNAME is not set so * matches /
-      if (fnmatch(pattern.c_str(), path.c_str(), 0) == 0) {
+      if (fnmatch(esc_pattern.c_str(), path.c_str(), 0) == 0) {
             return true;
       }
 
