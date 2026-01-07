@@ -1,2 +1,0 @@
-ivtest/ivltests/sv_struct_member_varindex.v:17: error: A reference to a net or variable (`idx') is not allowed in a constant expression.
-ivtest/ivltests/sv_struct_member_varindex.v:17: error: Array/part index expressions must be constant here.

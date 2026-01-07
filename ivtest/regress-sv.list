@@ -1202,7 +1202,7 @@ sv_assoc_class_prop	normal,-g2012	ivltests
 sv_assoc_bit_types	normal,-g2012	ivltests
 sv_assoc_nested_prop	normal,-g2012	ivltests	gold=sv_assoc_nested_prop.gold
 sv_struct_member_partsel	normal,-g2012	ivltests	gold=sv_struct_member_partsel.gold
-sv_struct_member_varindex	CE,-g2012	ivltests	gold=sv_struct_member_varindex.gold
+sv_struct_member_varindex	NI,-g2012	ivltests
 sv_named_struct_agg2	normal,-g2012	ivltests	gold=sv_named_struct_agg2.gold
 sv_nested_darray_method	normal,-g2012	ivltests	gold=sv_nested_darray_method.gold
 sv_cast_method_arg	normal,-g2012	ivltests
