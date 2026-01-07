@@ -1636,40 +1636,93 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
       }
 
       if (strcmp(ivl_expr_name(expr),"$ivl_std_randomize")==0) {
-	      /* std::randomize(var) with optional inline constraints.
-	         Arguments: arg0 = signal, followed by quadruplets of (op_code, const_val, weight, weight_per_value).
-	         Generate random bits, check constraints, retry if needed. */
-	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+	      /* std::randomize(var1, var2, ...) with optional inline constraints.
+	         New format: arg0 = num_signals, then for each signal:
+	           - signal expression
+	           - num_bounds for this signal
+	           - bounds as quadruplets (op_code, const_val, weight, weight_per_value) */
 	    unsigned nparms = ivl_expr_parms(expr);
-	    unsigned num_bounds = (nparms - 1) / 4;
-
-	    if (ivl_expr_type(arg) == IVL_EX_SIGNAL) {
-		  ivl_signal_t sig = ivl_expr_signal(arg);
-		  unsigned wid = ivl_signal_width(sig);
-
-		  /* Extract constraint bounds if any */
-		  if (num_bounds > 0) {
-			/* Emit bounds using existing push_rand_bound with property_idx=0 */
-			for (unsigned i = 0; i < num_bounds; i++) {
-			      ivl_expr_t op_expr = ivl_expr_parm(expr, 1 + i*4);
-			      ivl_expr_t val_expr = ivl_expr_parm(expr, 2 + i*4);
-			      /* weight and weight_per_value at 3+i*4 and 4+i*4 - not yet used */
-			      int op_code = (int)ivl_expr_uvalue(op_expr);
-			      int64_t const_val = (int64_t)(int32_t)ivl_expr_uvalue(val_expr);
-			      /* Use property_idx=0 since std::randomize has just one variable */
-			      fprintf(vvp_out, "    %%push_rand_bound 0, %d, %lld;\n",
-				      op_code, (long long)const_val);
-			}
-		  }
-
-		  /* Generate random value within constraints and store to signal */
-		  fprintf(vvp_out, "    %%std_randomize v%p_0, %u, %u;\n", sig, wid, num_bounds);
-	    } else {
-		  fprintf(vvp_out, "; WARNING: $ivl_std_randomize argument is not a simple signal\n");
-		  /* Push 0 (failure) if we can't randomize */
+	    if (nparms == 0) {
+		  fprintf(vvp_out, "; WARNING: $ivl_std_randomize has no arguments\n");
 		  fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
 		  return;
 	    }
+
+	    /* Get number of signals from first parameter */
+	    ivl_expr_t nsig_expr = ivl_expr_parm(expr, 0);
+	    unsigned num_signals = (unsigned)ivl_expr_uvalue(nsig_expr);
+
+	    if (num_signals == 0) {
+		  fprintf(vvp_out, "; WARNING: $ivl_std_randomize called with 0 signals\n");
+		  fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");
+		  return;
+	    }
+
+	    /* First pass: push all bounds for all signals */
+	    unsigned parm_idx = 1;
+	    for (unsigned sig_idx = 0; sig_idx < num_signals; sig_idx++) {
+		  if (parm_idx >= nparms) break;
+
+		  /* Skip signal expression */
+		  parm_idx++;
+		  if (parm_idx >= nparms) break;
+
+		  /* Get number of bounds for this signal */
+		  ivl_expr_t nbounds_expr = ivl_expr_parm(expr, parm_idx++);
+		  unsigned num_bounds = (unsigned)ivl_expr_uvalue(nbounds_expr);
+
+		  /* Emit bounds for this signal using property_idx = sig_idx */
+		  for (unsigned i = 0; i < num_bounds; i++) {
+			if (parm_idx + 3 >= nparms) break;
+			ivl_expr_t op_expr = ivl_expr_parm(expr, parm_idx++);
+			ivl_expr_t val_expr = ivl_expr_parm(expr, parm_idx++);
+			/* Skip weight and weight_per_value for now */
+			parm_idx += 2;
+
+			int op_code = (int)ivl_expr_uvalue(op_expr);
+			int64_t const_val = (int64_t)(int32_t)ivl_expr_uvalue(val_expr);
+			/* Cast to uint32_t for VVP output - VVP interprets as signed at runtime */
+			fprintf(vvp_out, "    %%push_rand_bound %u, %d, %u;\n",
+				sig_idx, op_code, (uint32_t)const_val);
+		  }
+	    }
+
+	    /* Second pass: randomize each signal */
+	    parm_idx = 1;
+	    for (unsigned sig_idx = 0; sig_idx < num_signals; sig_idx++) {
+		  if (parm_idx >= nparms) {
+			fprintf(vvp_out, "; ERROR: Not enough parameters for signal %u\n", sig_idx);
+			break;
+		  }
+
+		  /* Get signal expression */
+		  ivl_expr_t sig_expr = ivl_expr_parm(expr, parm_idx++);
+		  if (parm_idx >= nparms) {
+			fprintf(vvp_out, "; ERROR: Missing num_bounds for signal %u\n", sig_idx);
+			break;
+		  }
+
+		  /* Get number of bounds for this signal */
+		  ivl_expr_t nbounds_expr = ivl_expr_parm(expr, parm_idx++);
+		  unsigned num_bounds = (unsigned)ivl_expr_uvalue(nbounds_expr);
+		  /* Skip bound parameters (already processed in first pass) */
+		  parm_idx += num_bounds * 4;
+
+		  if (ivl_expr_type(sig_expr) == IVL_EX_SIGNAL) {
+			ivl_signal_t sig = ivl_expr_signal(sig_expr);
+			unsigned wid = ivl_signal_width(sig);
+
+			/* Generate random value within constraints and store to signal.
+			   Third parameter is sig_idx to filter bounds. */
+			fprintf(vvp_out, "    %%std_randomize v%p_0, %u, %u;\n", sig, wid, sig_idx);
+		  } else {
+			fprintf(vvp_out, "; WARNING: std::randomize arg %u is not a simple signal\n", sig_idx);
+		  }
+	    }
+
+	    /* Clear all bounds after all signals are processed */
+	    fprintf(vvp_out, "    %%clear_rand_bounds;\n");
+
 	    /* Push 1 (success) */
 	    fprintf(vvp_out, "    %%pushi/vec4 1, 0, 32;\n");
 	    return;

@@ -95,7 +95,18 @@ static bool analyze_constraint_expr(const PExpr*expr,
             return true;
       }
 
-      // Second try: named constant (enum value, parameter, etc.)
+      // Second try: unary minus on a number (e.g., -50)
+      const PEUnary*unary = dynamic_cast<const PEUnary*>(rhs);
+      if (unary && unary->get_op() == '-') {
+            const PENumber*inner_num = dynamic_cast<const PENumber*>(unary->get_expr());
+            if (inner_num) {
+                  const verinum& val = inner_num->value();
+                  const_value = -val.as_long();
+                  return true;
+            }
+      }
+
+      // Third try: named constant (enum value, parameter, etc.)
       // If we have scope information, try to elaborate the RHS as a constant
       // First check if it's an identifier (could be a named constant)
       const PEIdent* rhs_ident = dynamic_cast<const PEIdent*>(rhs);
@@ -2599,56 +2610,70 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 	    return sys_expr;
       }
 
-	/* Handle $ivl_std_randomize - Randomize a standalone variable with optional
-	   inline constraints. std::randomize(var) with { var >= 0; var < 100; } */
+	/* Handle $ivl_std_randomize - Randomize standalone variables with optional
+	   inline constraints. std::randomize(var1, var2, ...) with { constraints } */
       if (name=="$ivl_std_randomize") {
-	    if ((parms_.size() != 1) || !parms_[0].parm) {
-		  cerr << get_fileline() << ": error: $ivl_std_randomize "
-		       << "takes exactly one signal argument." << endl;
+	    if (parms_.size() == 0 || !parms_[0].parm) {
+		  cerr << get_fileline() << ": error: std::randomize() "
+		       << "requires at least one signal argument." << endl;
 		  des->errors += 1;
 		  return 0;
 	    }
 
-	    // Get the signal being randomized
-	    PExpr *sig_expr = parms_[0].parm;
-	    const PEIdent *sig_ident = dynamic_cast<const PEIdent*>(sig_expr);
-	    if (!sig_ident) {
-		  cerr << get_fileline() << ": error: $ivl_std_randomize "
-		       << "argument must be a simple signal identifier." << endl;
-		  des->errors += 1;
-		  return 0;
+	    // Count valid signal arguments
+	    unsigned num_signals = 0;
+	    for (unsigned i = 0; i < parms_.size(); i++) {
+		  if (parms_[i].parm) num_signals++;
 	    }
 
-	    // Get the signal name for constraint matching
-	    const pform_scoped_name_t& scoped_path = sig_ident->path();
-	    if (scoped_path.size() != 1) {
-		  cerr << get_fileline() << ": error: $ivl_std_randomize "
-		       << "argument must be a simple identifier." << endl;
-		  des->errors += 1;
-		  return 0;
-	    }
-	    perm_string sig_name = scoped_path.name.front().name;
+	    // Collect signal names and elaborate each signal
+	    std::vector<perm_string> sig_names;
+	    std::vector<NetExpr*> sig_nets;
 
-	    // Elaborate the signal argument
-	    NetExpr*sig_net = elab_and_eval(des, scope, sig_expr, -1);
-	    if (!sig_net) {
-		  cerr << get_fileline() << ": error: $ivl_std_randomize "
-		       << "failed to elaborate signal argument." << endl;
-		  des->errors += 1;
-		  return 0;
+	    for (unsigned i = 0; i < parms_.size(); i++) {
+		  if (!parms_[i].parm) continue;
+
+		  PExpr *sig_expr = parms_[i].parm;
+		  const PEIdent *sig_ident = dynamic_cast<const PEIdent*>(sig_expr);
+		  if (!sig_ident) {
+			cerr << get_fileline() << ": error: std::randomize() "
+			     << "argument " << (i+1) << " must be a simple signal identifier." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Get the signal name for constraint matching
+		  const pform_scoped_name_t& scoped_path = sig_ident->path();
+		  if (scoped_path.size() != 1) {
+			cerr << get_fileline() << ": error: std::randomize() "
+			     << "argument " << (i+1) << " must be a simple identifier." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  perm_string sig_name = scoped_path.name.front().name;
+		  sig_names.push_back(sig_name);
+
+		  // Elaborate the signal argument
+		  NetExpr*sig_net = elab_and_eval(des, scope, sig_expr, -1);
+		  if (!sig_net) {
+			cerr << get_fileline() << ": error: std::randomize() "
+			     << "failed to elaborate signal argument " << (i+1) << "." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+		  sig_nets.push_back(sig_net);
 	    }
 
-	    // Check for inline constraints (including 'inside' constraints which
-	    // become AND expressions)
+	    // Check for inline constraints and collect bounds for each signal
 	    const std::list<PExpr*>& constraints = get_inline_constraints();
-	    std::vector<std::tuple<int, int64_t, int64_t, bool>> bounds;  // (op_code with soft flag, const_val, weight, weight_per_value)
+	    // bounds_per_sig[signal_idx] = vector of (op_code, const_val, weight, weight_per_value)
+	    std::vector<std::vector<std::tuple<int, int64_t, int64_t, bool>>> bounds_per_sig(num_signals);
 
 	    for (const PExpr* cons : constraints) {
-		  // Use recursive extraction to handle AND expressions from 'inside'
 		  std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool>> extracted;
 		  analyze_constraint_expr_recursive(cons, extracted, des, scope);
 
-		  // Filter to only include bounds for our signal
+		  // Match each bound to the appropriate signal
 		  for (const auto& ex : extracted) {
 			perm_string cons_name = std::get<0>(ex);
 			int op_code = std::get<1>(ex);
@@ -2656,41 +2681,61 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 			bool is_soft = std::get<3>(ex);
 			int64_t weight = std::get<4>(ex);
 			bool weight_per_value = std::get<5>(ex);
-			// Check if this constraint is for our signal
-			if (cons_name == sig_name) {
-			      // Encode soft flag in bit 3 of op_code
-			      if (is_soft) op_code |= 8;
-			      bounds.push_back(std::make_tuple(op_code, const_val, weight, weight_per_value));
+
+			// Find which signal this constraint applies to
+			for (unsigned sig_idx = 0; sig_idx < sig_names.size(); sig_idx++) {
+			      if (cons_name == sig_names[sig_idx]) {
+				    if (is_soft) op_code |= 8;
+				    bounds_per_sig[sig_idx].push_back(
+					  std::make_tuple(op_code, const_val, weight, weight_per_value));
+				    break;
+			      }
 			}
 		  }
 	    }
 
-	    // Create system function with bounds as additional parameters
-	    // 4 parameters per bound: op_code, const_val, weight, weight_per_value
-	    unsigned num_parms = 1 + bounds.size() * 4;
-	    NetESFunc*sys_expr = new NetESFunc("$ivl_std_randomize",
-					       &netvector_t::atom2s32, num_parms);
-	    sys_expr->set_line(*this);
-	    sys_expr->parm(0, sig_net);
+	    // Calculate total parameters needed:
+	    // - num_signals (count)
+	    // - For each signal: signal_expr, num_bounds, then 4 params per bound
+	    unsigned total_parms = 1;  // num_signals count
+	    for (unsigned i = 0; i < num_signals; i++) {
+		  total_parms += 2;  // signal_expr + num_bounds
+		  total_parms += bounds_per_sig[i].size() * 4;  // 4 per bound
+	    }
 
-	    // Add inline constraint bounds as constant integer parameters
-	    unsigned parm_idx = 1;
-	    for (const auto& bound : bounds) {
-		  // Operator code (with soft flag in bit 3)
-		  NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
-		  sys_expr->parm(parm_idx++, op_const);
-		  // Constant bound value
-		  int64_t val = std::get<1>(bound);
-		  NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
-		  sys_expr->parm(parm_idx++, val_const);
-		  // Weight
-		  int64_t weight = std::get<2>(bound);
-		  NetEConst* weight_const = new NetEConst(verinum((uint64_t)weight, 32));
-		  sys_expr->parm(parm_idx++, weight_const);
-		  // Weight per value flag
-		  bool wpv = std::get<3>(bound);
-		  NetEConst* wpv_const = new NetEConst(verinum((uint64_t)(wpv ? 1 : 0), 32));
-		  sys_expr->parm(parm_idx++, wpv_const);
+	    NetESFunc*sys_expr = new NetESFunc("$ivl_std_randomize",
+					       &netvector_t::atom2s32, total_parms);
+	    sys_expr->set_line(*this);
+
+	    unsigned parm_idx = 0;
+	    // First parameter: number of signals
+	    NetEConst* nsig_const = new NetEConst(verinum((uint64_t)num_signals, 32));
+	    sys_expr->parm(parm_idx++, nsig_const);
+
+	    // For each signal: signal_expr, num_bounds, then bounds
+	    for (unsigned sig_idx = 0; sig_idx < num_signals; sig_idx++) {
+		  // Signal expression
+		  sys_expr->parm(parm_idx++, sig_nets[sig_idx]);
+
+		  // Number of bounds for this signal
+		  NetEConst* nbounds_const = new NetEConst(
+			verinum((uint64_t)bounds_per_sig[sig_idx].size(), 32));
+		  sys_expr->parm(parm_idx++, nbounds_const);
+
+		  // Add bounds for this signal
+		  for (const auto& bound : bounds_per_sig[sig_idx]) {
+			NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
+			sys_expr->parm(parm_idx++, op_const);
+			int64_t val = std::get<1>(bound);
+			NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
+			sys_expr->parm(parm_idx++, val_const);
+			int64_t weight = std::get<2>(bound);
+			NetEConst* weight_const = new NetEConst(verinum((uint64_t)weight, 32));
+			sys_expr->parm(parm_idx++, weight_const);
+			bool wpv = std::get<3>(bound);
+			NetEConst* wpv_const = new NetEConst(verinum((uint64_t)(wpv ? 1 : 0), 32));
+			sys_expr->parm(parm_idx++, wpv_const);
+		  }
 	    }
 
 	    return sys_expr;

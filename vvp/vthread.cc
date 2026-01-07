@@ -8456,32 +8456,33 @@ bool of_CLEAR_RAND_BOUNDS(vthread_t thr, vvp_code_t)
 }
 
 /*
- * %std_randomize <sig>, <wid>, <num_bounds>
+ * %std_randomize <sig>, <wid>, <prop_idx>
  * Randomize a standalone signal (for std::randomize function).
- * If num_bounds > 0, uses inline constraints from the constraint stack.
+ * Uses inline constraints from the constraint stack filtered by prop_idx.
  * Does NOT push any result - that's handled by the code generator.
+ * Does NOT clear bounds - caller should emit %clear_rand_bounds when done.
  */
 bool of_STD_RANDOMIZE(vthread_t thr, vvp_code_t cp)
 {
       vvp_net_t*net = cp->net;
       unsigned wid = cp->bit_idx[0];
-      unsigned num_bounds = cp->bit_idx[1];
+      unsigned prop_idx = cp->bit_idx[1];
 
       if (net == 0) {
 	    return true;
       }
 
-      // Get the inline constraints if any (property_idx=0 for std::randomize)
+      // Get the inline constraints if any
       const std::vector<class_type::simple_bound_t>& bounds = thr->get_inline_constraints();
 
-      // Collect bounds for property index 0 (the std::randomize variable)
+      // Collect bounds matching our prop_idx
       int64_t min_val = INT64_MIN;
       int64_t max_val = INT64_MAX;
       bool has_eq = false;
       int64_t eq_val = 0;
 
       for (const auto& b : bounds) {
-	    if (b.property_idx != 0) continue;
+	    if (b.property_idx != prop_idx) continue;
 	    switch (b.op) {
 		  case '>':  // value > const
 			if (b.const_bound >= min_val) min_val = b.const_bound + 1;
@@ -8500,11 +8501,6 @@ bool of_STD_RANDOMIZE(vthread_t thr, vvp_code_t cp)
 			eq_val = b.const_bound;
 			break;
 	    }
-      }
-
-      // Clear the inline constraints after use
-      if (num_bounds > 0) {
-	    thr->clear_inline_constraints();
       }
 
       int64_t generated_val;
