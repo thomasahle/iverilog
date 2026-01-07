@@ -1,0 +1,7 @@
+auto_var = deadbeef, auto_int = 42
+call_count = 1
+call_count = 2
+data = ab, valid = 1
+get_value = 100
+PASSED - Variable lifetime override parsed successfully
+./ivltests/sv_var_lifetime.v:40: $finish called at 0 (1s)

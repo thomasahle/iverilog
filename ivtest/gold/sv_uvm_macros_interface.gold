@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.v:2096: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2524: note: Detected run_test() call.
 UVM_INFO @ 0: test.bfm [BFM] Interface initialized
 UVM_INFO @ 5: test.bfm.drive [BFM] Driving data: ab
 PASSED
