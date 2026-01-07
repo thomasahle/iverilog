@@ -1,6 +1,6 @@
 // Test UVM TLM FIFO functionality
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 import uvm_pkg::*;
 
 class my_transaction extends uvm_sequence_item;

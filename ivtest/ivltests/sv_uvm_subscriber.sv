@@ -2,7 +2,7 @@
 // This verifies that the analysis_export is properly initialized
 // and forwards transactions to the subscriber's write() method.
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 import uvm_pkg::*;
 
 // Transaction class

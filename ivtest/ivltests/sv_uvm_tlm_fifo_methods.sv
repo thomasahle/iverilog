@@ -1,5 +1,5 @@
 // Test for UVM TLM FIFO is_full/is_empty methods
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 
 package test_pkg;
   import uvm_pkg::*;

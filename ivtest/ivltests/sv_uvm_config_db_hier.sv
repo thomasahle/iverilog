@@ -2,7 +2,7 @@
 // This tests the suffix matching feature where "env" matches "uvm_test_top.env"
 // This is the key pattern used for passing virtual interfaces to child components
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 
 
 interface simple_if;

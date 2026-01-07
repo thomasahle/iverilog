@@ -2,7 +2,7 @@
 // This test verifies that run_test() uses +UVM_TESTNAME when called with no argument
 // and the plusarg is available.
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 import uvm_pkg::*;
 
 class plusarg_test extends uvm_test;

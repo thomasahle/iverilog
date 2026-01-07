@@ -1,7 +1,7 @@
 // Test TLM analysis port forwarding to FIFO
 // Verifies that analysis_port.write() forwards to connected FIFOs
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 
 import uvm_pkg::*;
 

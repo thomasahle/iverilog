@@ -5,11 +5,12 @@
 // Include UVM package directly for Icarus
 `include "uvm_pkg.sv"
 
+import uvm_pkg::*;
+
 module test;
-  import uvm_pkg::*;
 
   // Use default type parameter (uvm_object)
-  uvm_tlm_analysis_fifo #(uvm_object) fifo;
+  uvm_tlm_analysis_fifo fifo;
   int errors = 0;
 
   initial begin

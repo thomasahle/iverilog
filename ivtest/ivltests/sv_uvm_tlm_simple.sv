@@ -1,6 +1,6 @@
 // Simple test for TLM - uses uvm_object directly without parameterization
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 import uvm_pkg::*;
 
 class my_transaction extends uvm_object;

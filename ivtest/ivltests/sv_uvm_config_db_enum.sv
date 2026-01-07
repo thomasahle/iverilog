@@ -2,7 +2,7 @@
 // This tests the fix where config_db::set stores vec4 values
 // and config_db::get retrieves them into class properties
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 
 import uvm_pkg::*;
 

@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2524: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2569: note: Detected run_test() call.
 PASSED: Test 1 - Wildcard pattern match
 PASSED: Test 2 - Pattern *env* matches my_env
 PASSED

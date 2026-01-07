@@ -3,7 +3,7 @@
 // that doesn't override build_phase should still execute the base
 // test class's build_phase which creates child components.
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 
 
 module test;

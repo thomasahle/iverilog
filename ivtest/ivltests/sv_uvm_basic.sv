@@ -1,5 +1,8 @@
 // Test basic UVM class inheritance and macros
-// Compile with: iverilog -g2012 uvm_pkg.sv sv_uvm_basic.sv
+// Compile with: iverilog -g2012 -I<uvm_dir> sv_uvm_basic.sv
+
+`include "uvm_pkg.sv"
+
 import uvm_pkg::*;
 
 class my_object extends uvm_object;

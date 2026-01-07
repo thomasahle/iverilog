@@ -10,6 +10,51 @@
 // 4. No self-referential typedef patterns (causes segfault)
 // 5. Queues of class objects cause segfaults - use fixed arrays instead
 
+// ============================================================================
+// UVM Messaging Macros
+// These must be defined before the package since macros are global
+// ============================================================================
+
+`define uvm_info(ID, MSG, VERBOSITY) \
+  $display("UVM_INFO %s [%s] %s", ID, "%m", MSG);
+
+`define uvm_warning(ID, MSG) \
+  $display("UVM_WARNING %s [%s] %s", ID, "%m", MSG);
+
+`define uvm_error(ID, MSG) \
+  $display("UVM_ERROR %s [%s] %s", ID, "%m", MSG);
+
+`define uvm_fatal(ID, MSG) \
+  begin $display("UVM_FATAL %s [%s] %s", ID, "%m", MSG); $finish; end
+
+// ============================================================================
+// UVM Component/Object Utility Macros
+// ============================================================================
+
+`define uvm_component_utils(TYPE) \
+  typedef uvm_component_registry#(TYPE) type_id; \
+  virtual function string get_type_name(); return `"TYPE`"; endfunction
+
+`define uvm_object_utils(TYPE) \
+  typedef uvm_object_registry#(TYPE) type_id; \
+  virtual function string get_type_name(); return `"TYPE`"; endfunction
+
+`define uvm_field_int(ARG, FLAG) // Stub - field macros not implemented
+`define uvm_field_object(ARG, FLAG) // Stub - field macros not implemented
+`define uvm_field_string(ARG, FLAG) // Stub - field macros not implemented
+`define uvm_field_enum(T, ARG, FLAG) // Stub - field macros not implemented
+
+// ============================================================================
+// UVM P-Sequencer Macro
+// ============================================================================
+`define uvm_declare_p_sequencer(SEQUENCER) \
+  SEQUENCER p_sequencer; \
+  virtual function void m_set_p_sequencer(); \
+    if (!$cast(p_sequencer, m_sequencer)) begin \
+      `uvm_fatal("SEQTYPE", "Failed to cast sequencer to p_sequencer type") \
+    end \
+  endfunction
+
 package uvm_pkg;
 
   // ============================================================================

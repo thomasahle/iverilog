@@ -2,7 +2,7 @@
 // Tests that "env" matches "uvm_test_top.env" etc.
 // Uses virtual interface (object) config_db which properly extracts component context
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
 
 
 interface simple_if;

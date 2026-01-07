@@ -2,7 +2,6 @@
 // This macro should declare a p_sequencer handle of the specified type
 
 `include "uvm_pkg.sv"
-`include "uvm_macros.svh"
 
 import uvm_pkg::*;
 

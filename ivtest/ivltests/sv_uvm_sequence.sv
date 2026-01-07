@@ -2,7 +2,7 @@
 
 package test_pkg;
   import uvm_pkg::*;
-  `include "uvm_macros.svh"
+  `include "uvm_pkg.sv"
 
   class my_item extends uvm_sequence_item;
     `uvm_object_utils(my_item)

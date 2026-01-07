@@ -1,5 +1,6 @@
 // Test uvm_config_db with various types including enums
 
+`include "uvm_pkg.sv"
 
 import uvm_pkg::*;
 

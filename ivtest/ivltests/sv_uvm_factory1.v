@@ -1,7 +1,6 @@
 // Test UVM factory pattern
 // Tests type_id::create and run_test
 
-`include "uvm_macros.svh"
 `include "uvm_pkg.sv"
 
 import uvm_pkg::*;

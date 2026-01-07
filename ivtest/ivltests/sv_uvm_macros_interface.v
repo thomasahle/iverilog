@@ -1,7 +1,6 @@
 // Test UVM macros work in interfaces (not just classes)
 // The macros should use %m format specifier to get hierarchical path
 
-`include "uvm_macros.svh"
 `include "uvm_pkg.sv"
 
 // Simple interface that uses UVM macros
