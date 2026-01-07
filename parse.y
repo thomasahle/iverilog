@@ -6832,6 +6832,19 @@ expr_primary
   | streaming_concatenation
       { $$ = $1; }
 
+  /* Typed constructor call: C::new or C::new(args)
+     We need explicit rule since class_scope in class_new causes conflicts */
+  | TYPE_IDENTIFIER K_SCOPE_RES K_new argument_list_parens_opt
+      { pform_set_type_referenced(@1, $1.text);
+        data_type_t*class_type = new typeref_t($1.type);
+        FILE_NAME(class_type, @1);
+        PENewClass*tmp = new PENewClass(*$4, class_type);
+        FILE_NAME(tmp, @3);
+        delete[]$1.text;
+        delete $4;
+        $$ = tmp;
+      }
+
   | K_null
       { PENull*tmp = new PENull;
 	FILE_NAME(tmp, @1);
