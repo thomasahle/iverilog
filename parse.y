@@ -3978,9 +3978,54 @@ property_expr /* IEEE1800-2012 A.2.10 */
   | expression K_IMPLIES_NOV K_first_match '(' sequence_expr_in_parens ')'
       { /* |=> first_match - parsed but not elaborated */ $$ = 0; }
   | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_OV property_expr
-      { /* seq ##n seq |-> prop - delay in antecedent - parsed but not elaborated */ $$ = 0; }
+      { /* seq ##N seq |-> prop: transform to $past(seq1) && seq2 |-> prop for N=1 */
+	if ($6 && $3->as_long() == 1) {
+	      /* Create $past($1) */
+	      std::vector<named_pexpr_t> past_parms(1);
+	      past_parms[0].parm = $1;
+	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	      FILE_NAME(past_call, @1);
+	      /* Create $past($1) && $4 */
+	      PEBLogic*and_expr = new PEBLogic('a', past_call, $4);
+	      FILE_NAME(and_expr, @1);
+	      /* Create !($past($1) && $4) || $6 for overlapping implication */
+	      PEUnary*not_and = new PEUnary('!', and_expr);
+	      FILE_NAME(not_and, @1);
+	      PEBLogic*impl = new PEBLogic('o', not_and, $6);
+	      FILE_NAME(impl, @1);
+	      $$ = impl;
+	} else {
+	      /* N != 1, not yet supported */
+	      $$ = 0;
+	}
+      }
   | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_NOV property_expr
-      { /* seq ##n seq |=> prop - delay in antecedent - parsed but not elaborated */ $$ = 0; }
+      { /* seq ##N seq |=> prop: transform to $past($past(seq1) && seq2) |-> prop for N=1 */
+	if ($6 && $3->as_long() == 1) {
+	      /* Create $past($1) for first element delayed by 1 cycle */
+	      std::vector<named_pexpr_t> past_parms1(1);
+	      past_parms1[0].parm = $1;
+	      PECallFunction*past1 = new PECallFunction(perm_string::literal("$past"), past_parms1);
+	      FILE_NAME(past1, @1);
+	      /* Create $past($4) for second element (also from previous cycle for |=>) */
+	      std::vector<named_pexpr_t> past_parms2(1);
+	      past_parms2[0].parm = $4;
+	      PECallFunction*past2 = new PECallFunction(perm_string::literal("$past"), past_parms2);
+	      FILE_NAME(past2, @4);
+	      /* Create $past($1) && $past($4) (sequence matched on previous cycle) */
+	      PEBLogic*and_expr = new PEBLogic('a', past1, past2);
+	      FILE_NAME(and_expr, @1);
+	      /* Create !($past($1) && $past($4)) || $6 */
+	      PEUnary*not_and = new PEUnary('!', and_expr);
+	      FILE_NAME(not_and, @1);
+	      PEBLogic*impl = new PEBLogic('o', not_and, $6);
+	      FILE_NAME(impl, @1);
+	      $$ = impl;
+	} else {
+	      /* N != 1, not yet supported */
+	      $$ = 0;
+	}
+      }
   | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_OV property_expr
       { /* seq ##[m:n] seq |-> prop - range delay in antecedent */ $$ = 0; }
   | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_NOV property_expr
@@ -3990,9 +4035,48 @@ property_expr /* IEEE1800-2012 A.2.10 */
   | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression K_IMPLIES_NOV property_expr
       { /* seq ##[m:$] seq |=> prop - unbounded delay in antecedent */ $$ = 0; }
   | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')' K_IMPLIES_OV property_expr
-      { /* (seq ##n seq) |-> prop - parenthesized antecedent */ $$ = 0; }
+      { /* (seq ##N seq) |-> prop: transform to $past(seq1) && seq2 |-> prop for N=1 */
+	if ($8 && $4->as_long() == 1) {
+	      /* Create $past($2) */
+	      std::vector<named_pexpr_t> past_parms(1);
+	      past_parms[0].parm = $2;
+	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	      FILE_NAME(past_call, @2);
+	      /* Create $past($2) && $5 */
+	      PEBLogic*and_expr = new PEBLogic('a', past_call, $5);
+	      FILE_NAME(and_expr, @2);
+	      /* Create !($past($2) && $5) || $8 */
+	      PEUnary*not_and = new PEUnary('!', and_expr);
+	      FILE_NAME(not_and, @2);
+	      PEBLogic*impl = new PEBLogic('o', not_and, $8);
+	      FILE_NAME(impl, @2);
+	      $$ = impl;
+	} else {
+	      $$ = 0;
+	}
+      }
   | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')' K_IMPLIES_NOV property_expr
-      { /* (seq ##n seq) |=> prop - parenthesized antecedent */ $$ = 0; }
+      { /* (seq ##N seq) |=> prop: transform for N=1 */
+	if ($8 && $4->as_long() == 1) {
+	      std::vector<named_pexpr_t> past_parms1(1);
+	      past_parms1[0].parm = $2;
+	      PECallFunction*past1 = new PECallFunction(perm_string::literal("$past"), past_parms1);
+	      FILE_NAME(past1, @2);
+	      std::vector<named_pexpr_t> past_parms2(1);
+	      past_parms2[0].parm = $5;
+	      PECallFunction*past2 = new PECallFunction(perm_string::literal("$past"), past_parms2);
+	      FILE_NAME(past2, @5);
+	      PEBLogic*and_expr = new PEBLogic('a', past1, past2);
+	      FILE_NAME(and_expr, @2);
+	      PEUnary*not_and = new PEUnary('!', and_expr);
+	      FILE_NAME(not_and, @2);
+	      PEBLogic*impl = new PEBLogic('o', not_and, $8);
+	      FILE_NAME(impl, @2);
+	      $$ = impl;
+	} else {
+	      $$ = 0;
+	}
+      }
   | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')' K_IMPLIES_OV property_expr
       { /* (seq ##[m:n] seq) |-> prop - parenthesized antecedent with range */ $$ = 0; }
   | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')' K_IMPLIES_NOV property_expr
