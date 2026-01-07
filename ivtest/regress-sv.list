@@ -551,7 +551,7 @@ sv_array_cassign_fail9	CE,-g2005-sv		ivltests
 sv_array_cassign_fail10	CE,-g2005-sv		ivltests
 sv_array_cassign_fail11	CE,-g2005-sv		ivltests
 sv_array_query		normal,-g2005-sv	ivltests
-sv_bind_simple		CE,-g2012		ivltests
+sv_bind_simple		normal,-g2012		ivltests gold=sv_bind_simple.gold
 sv_cast_integer		normal,-g2005-sv	ivltests
 sv_cast_integer2		normal,-g2005-sv	ivltests
 sv_cast_packed_array	normal,-g2005-sv	ivltests
