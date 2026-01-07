@@ -321,6 +321,20 @@ void draw_ufunc_vec4(ivl_expr_t expr)
 	/* Take in arguments to function and call function code. */
       draw_ufunc_preamble(expr);
 
+	/* If the function returns a string but we're in a vec4 context,
+	   convert the string result to vec4. This happens when a string
+	   function is used in a concatenation. Use a large width since
+	   we don't know the string length at compile time. The actual
+	   conversion will use the string's actual length. */
+      if (ivl_expr_value(expr) == IVL_VT_STRING) {
+	    unsigned wid = ivl_expr_width(expr);
+	    /* String expressions often have 0 or invalid width. Use a
+	       reasonable default that handles typical strings. 2048 bits
+	       allows strings up to 256 characters. */
+	    if (wid == 0 || wid > 0x80000000) wid = 2048;
+	    fprintf(vvp_out, "    %%cast/vec4/str %u; Convert string to vec4\n", wid);
+      }
+
       draw_ufunc_epilogue(expr);
 }
 

@@ -136,6 +136,14 @@ static void string_ex_select(ivl_expr_t expr)
 	    return;
       }
 
+	/* If the sub-expression is a concatenation and there's no shift,
+	   evaluate as string. This handles concatenations that include
+	   string function calls but were elaborated with vec4 type. */
+      if (shift == 0 && ivl_expr_type(sube) == IVL_EX_CONCAT) {
+	    draw_eval_string(sube);
+	    return;
+      }
+
 	/* Assume the sub-expression is a signal */
       ivl_signal_t sig = ivl_expr_signal(sube);
       if (sig == 0 || (ivl_signal_data_type(sig) != IVL_VT_DARRAY
