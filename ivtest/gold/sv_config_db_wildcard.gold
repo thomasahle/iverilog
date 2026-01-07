@@ -1,3 +1,5 @@
+../lib/ivl/uvm/uvm_pkg.sv:2524: note: Detected run_test() call.
 PASSED: Test 1 - Wildcard pattern match
 PASSED: Test 2 - Pattern *env* matches my_env
 PASSED
+./ivltests/sv_config_db_wildcard.v:54: $finish called at 0 (1s)

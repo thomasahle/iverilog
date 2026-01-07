@@ -1,7 +1,8 @@
 // Test config_db wildcard pattern matching with simple int values
 // This tests the fallback matching for wildcards like "*"
 
-`include "uvm_macros.svh"
+`include "uvm_pkg.sv"
+
 import uvm_pkg::*;
 
 module test;
