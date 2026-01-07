@@ -1207,7 +1207,7 @@ sv_named_struct_agg2	normal,-g2012	ivltests	gold=sv_named_struct_agg2.gold
 sv_nested_darray_method	normal,-g2012	ivltests	gold=sv_nested_darray_method.gold
 sv_cast_method_arg	normal,-g2012	ivltests
 sv_vif_class_assign	normal,-g2012	ivltests
-sv_vif_class_member	normal,-g2012	ivltests
+sv_vif_class_member	normal,-g2012	ivltests gold=sv_vif_class_member.gold
 sv_vif_task_object_create	normal,-g2012	ivltests
 sv_class_darray_prop_lval	normal,-g2012	ivltests
 sv_nested_darray_prop	normal,-g2012	ivltests	gold=sv_nested_darray_prop.gold
@@ -1221,7 +1221,7 @@ sv_extern_this_test	normal,-g2012	ivltests
 sv_fork_virt_nested_this	normal,-g2012	ivltests
 sv_uvm_phase_test	normal,-g2012	ivltests
 sv_class_prop_assign	normal,-g2012	ivltests
-sv_var_lifetime		normal,-g2012	ivltests
+sv_var_lifetime		normal,-g2012	ivltests gold=sv_var_lifetime.gold
 sv_covergroup_type_varname	normal,-g2012,-gno-assertions	ivltests
 
 # SVA (SystemVerilog Assertions) parsing tests
