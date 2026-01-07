@@ -125,12 +125,20 @@ static int eval_darray_new(ivl_expr_t ex)
 		  errors += 1;
 		  break;
 	    }
-      } else if (init_expr && (ivl_expr_value(init_expr) == IVL_VT_DARRAY)) {
+      } else if (init_expr) {
+	    if (ivl_expr_value(init_expr) == IVL_VT_DARRAY ||
+		ivl_expr_value(init_expr) == IVL_VT_QUEUE) {
+		  /* Copy from another dynamic array or queue */
 		  ivl_signal_t sig = ivl_expr_signal(init_expr);
-		  fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
-		  fprintf(vvp_out, "    %%scopy;\n");
-
-      } else if (init_expr && number_is_immediate(size_expr,32,0)) {
+		  if (sig) {
+			fprintf(vvp_out, "    %%load/obj v%p_0;\n", sig);
+			fprintf(vvp_out, "    %%scopy;\n");
+		  } else {
+			/* Handle the case where init_expr is not a simple signal */
+			draw_eval_object(init_expr);
+			fprintf(vvp_out, "    %%scopy;\n");
+		  }
+	    } else if (number_is_immediate(size_expr,32,0)) {
 	      /* In this case, there is an init expression, the
 		 expression is NOT an array_pattern, and the size
 		 expression used to calculate the size of the array is
@@ -172,10 +180,10 @@ static int eval_darray_new(ivl_expr_t ex)
 		  errors += 1;
 		  break;
 	    }
-
-      } else if (init_expr) {
-	    fprintf(vvp_out, "; ERROR: Sorry, I don't know how to work with this size expr.\n");
-	    errors += 1;
+	    } else {
+		fprintf(vvp_out, "; ERROR: Sorry, I don't know how to work with this size expr.\n");
+		errors += 1;
+	    }
       }
 
       return errors;
