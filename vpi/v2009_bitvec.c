@@ -288,6 +288,19 @@ typedef struct stable_state_s {
 } stable_state_t;
 
 /*
+ * Structure to hold history buffer for $past(expr, N)
+ * Supports up to MAX_PAST_DEPTH cycles
+ */
+#define MAX_PAST_DEPTH 32
+typedef struct past_state_s {
+      int initialized;
+      int depth;  /* Actual depth requested (1 to MAX_PAST_DEPTH) */
+      int count;  /* Number of values stored */
+      int write_idx;  /* Next write position in circular buffer */
+      PLI_INT32 history[MAX_PAST_DEPTH];
+} past_state_t;
+
+/*
  * $stable(expr) - returns 1 if expression hasn't changed since last sample
  * This is a sampled value function used in assertions.
  */
@@ -472,7 +485,8 @@ static PLI_INT32 fell_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
 }
 
 /*
- * $past(expr) - returns the previous value of the expression
+ * $past(expr) or $past(expr, N) - returns the value of expression from N cycles ago
+ * N defaults to 1 if not specified. N must be 1 to MAX_PAST_DEPTH.
  * Note: This simplified version only works for integer-sized values.
  */
 static PLI_INT32 past_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
@@ -480,13 +494,24 @@ static PLI_INT32 past_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
       vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
       vpiHandle argv = vpi_iterate(vpiArgument, callh);
       vpiHandle expr_arg = vpi_scan(argv);
+      vpiHandle depth_arg = vpi_scan(argv);  /* Optional second argument */
       s_vpi_value val;
-      stable_state_t *state;
+      past_state_t *state;
       PLI_INT32 curr_value;
       PLI_INT32 result_value;
+      int depth = 1;  /* Default depth */
+      int read_idx;
       (void)name;  /* Parameter is not used. */
 
-      vpi_free_object(argv);
+      /* Get optional depth argument */
+      if (depth_arg) {
+            val.format = vpiIntVal;
+            vpi_get_value(depth_arg, &val);
+            depth = val.value.integer;
+            if (depth < 1) depth = 1;
+            if (depth > MAX_PAST_DEPTH) depth = MAX_PAST_DEPTH;
+            vpi_free_object(argv);
+      }
 
       /* Get current value as integer */
       val.format = vpiIntVal;
@@ -494,28 +519,99 @@ static PLI_INT32 past_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
       curr_value = val.value.integer;
 
       /* Get or create state for this call site */
-      state = (stable_state_t *)vpi_get_userdata(callh);
+      state = (past_state_t *)vpi_get_userdata(callh);
       if (state == NULL) {
-            state = (stable_state_t *)malloc(sizeof(stable_state_t));
+            int i;
+            state = (past_state_t *)malloc(sizeof(past_state_t));
             state->initialized = 0;
+            state->depth = depth;
+            state->count = 0;
+            state->write_idx = 0;
+            for (i = 0; i < MAX_PAST_DEPTH; i++)
+                  state->history[i] = 0;
             vpi_put_userdata(callh, state);
       }
 
-      /* First call: return current value (no previous exists) */
-      if (!state->initialized) {
-            state->prev_value = curr_value;
-            state->initialized = 1;
-            result_value = curr_value;  /* Return current on first sample */
+      /* First few calls: not enough history yet */
+      if (state->count < state->depth) {
+            /* Store current value and return it (no real past available) */
+            state->history[state->write_idx] = curr_value;
+            state->write_idx = (state->write_idx + 1) % MAX_PAST_DEPTH;
+            state->count++;
+            result_value = curr_value;  /* Return current when not enough history */
       } else {
-            /* Return the previous value */
-            result_value = state->prev_value;
-            /* Update stored value for next time */
-            state->prev_value = curr_value;
+            /* Read value from 'depth' cycles ago (oldest in the requested range) */
+            read_idx = (state->write_idx - state->depth + MAX_PAST_DEPTH) % MAX_PAST_DEPTH;
+            result_value = state->history[read_idx];
+            /* Store current value for future */
+            state->history[state->write_idx] = curr_value;
+            state->write_idx = (state->write_idx + 1) % MAX_PAST_DEPTH;
       }
 
       val.format = vpiIntVal;
       val.value.integer = result_value;
       vpi_put_value(callh, &val, 0, vpiNoDelay);
+
+      return 0;
+}
+
+/*
+ * Compiletf for $past - allows 1 or 2 numeric arguments
+ */
+static PLI_INT32 past_compiletf(ICARUS_VPI_CONST PLI_BYTE8 *name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv = vpi_iterate(vpiArgument, callh);
+      vpiHandle arg;
+
+      (void)name;
+
+      /* Must have at least one argument */
+      if (argv == 0) {
+            vpi_printf("ERROR: %s:%d: ", vpi_get_str(vpiFile, callh),
+                       (int)vpi_get(vpiLineNo, callh));
+            vpi_printf("$past requires at least one argument.\n");
+            vpip_set_return_value(1);
+            vpi_control(vpiFinish, 1);
+            return 0;
+      }
+
+      /* First argument must be numeric */
+      arg = vpi_scan(argv);
+      if (!is_numeric_obj(arg)) {
+            vpi_printf("ERROR: %s:%d: ", vpi_get_str(vpiFile, callh),
+                       (int)vpi_get(vpiLineNo, callh));
+            vpi_printf("$past first argument must be numeric.\n");
+            vpip_set_return_value(1);
+            vpi_control(vpiFinish, 1);
+            vpi_free_object(argv);
+            return 0;
+      }
+
+      /* Optional second argument must be numeric (depth) */
+      arg = vpi_scan(argv);
+      if (arg) {
+            if (!is_numeric_obj(arg)) {
+                  vpi_printf("ERROR: %s:%d: ", vpi_get_str(vpiFile, callh),
+                             (int)vpi_get(vpiLineNo, callh));
+                  vpi_printf("$past second argument (depth) must be numeric.\n");
+                  vpip_set_return_value(1);
+                  vpi_control(vpiFinish, 1);
+                  vpi_free_object(argv);
+                  return 0;
+            }
+            /* Check for too many arguments */
+            arg = vpi_scan(argv);
+            if (arg) {
+                  vpi_printf("ERROR: %s:%d: ", vpi_get_str(vpiFile, callh),
+                             (int)vpi_get(vpiLineNo, callh));
+                  vpi_printf("$past takes at most 2 arguments.\n");
+                  vpip_set_return_value(1);
+                  vpi_control(vpiFinish, 1);
+                  vpi_free_object(argv);
+                  return 0;
+            }
+      }
 
       return 0;
 }
@@ -629,7 +725,7 @@ void v2009_bitvec_register(void)
       tf_data.type        = vpiSysFunc;
       tf_data.sysfunctype = vpiIntFunc;
       tf_data.calltf      = past_calltf;
-      tf_data.compiletf   = sys_one_numeric_arg_compiletf;
+      tf_data.compiletf   = past_compiletf;
       tf_data.sizetf      = 0;
       tf_data.tfname      = "$past";
       tf_data.user_data   = "$past";
