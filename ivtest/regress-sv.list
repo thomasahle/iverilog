@@ -158,7 +158,7 @@ br_gh112c		normal,-g2009		ivltests
 br_gh112d		normal,-g2009		ivltests
 br_gh112e		normal,-g2009		ivltests
 br_gh112f		normal,-g2009		ivltests
-br_gh129		normal,-g2009		ivltests
+br_gh129		normal,-g2012		ivltests
 br_gh130a		CE,-g2009		ivltests
 br_gh130b		normal,-g2009		ivltests
 br_gh165		normal,-g2009		ivltests gold=br_gh165.gold
@@ -668,7 +668,7 @@ sv_darray_copy_empty2	normal,-g2009		ivltests
 sv_darray_copy_empty3	normal,-g2009		ivltests
 sv_darray_copy_empty4	normal,-g2009		ivltests
 sv_darray_decl_assign	normal,-g2009		ivltests
-sv_darray_function	normal,-g2009		ivltests
+sv_darray_function	normal,-g2012		ivltests
 sv_darray_oob_real	normal,-g2009		ivltests
 sv_darray_oob_string	normal,-g2009		ivltests
 sv_darray_oob_vec2	normal,-g2009		ivltests
