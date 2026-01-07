@@ -1399,7 +1399,15 @@ static void PV_get_value(vpiHandle ref, p_vpi_value vp)
       assert(rfp);
 
       vvp_signal_value*sig = dynamic_cast<vvp_signal_value*>(rfp->net->fil);
-      assert(sig);
+      if (sig == 0) {
+	    // Queue elements don't use signal_value filter.
+	    // This happens when calling methods on queue elements like q[i].len().
+	    // Workaround: assign queue element to temp var first, then call method.
+	    fprintf(stderr, "vvp sorry: Queue element method calls like q[i].method() "
+		    "are not yet supported.\n"
+		    "  Workaround: assign to temp var first: temp = q[i]; temp.method();\n");
+	    exit(1);
+      }
 
       switch (vp->format) {
 
@@ -1456,7 +1464,12 @@ static vpiHandle PV_put_value(vpiHandle ref, p_vpi_value vp, int flags)
       struct __vpiPV*rfp = dynamic_cast<__vpiPV*>(ref);
       assert(rfp);
       vvp_signal_value*sig = dynamic_cast<vvp_signal_value*>(rfp->net->fil);
-      assert(sig);
+      if (sig == 0) {
+	    // Queue elements don't use signal_value filter.
+	    fprintf(stderr, "vvp sorry: Queue element assignment via PV handle "
+		    "is not yet supported.\n");
+	    exit(1);
+      }
 
       unsigned sig_size = sig->value_size();
       unsigned width = rfp->width;
