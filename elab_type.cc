@@ -489,13 +489,19 @@ ivl_type_t elaborate_array_type(Design *des, NetScope *scope,
 		    // Special case: Detect the mark for a QUEUE declaration,
 		    // which is the dimensions [null:max_idx].
 		    // Also detect wildcard associative array [*] which is
-		    // marked as [PENull:PENumber(1)].
-		  if (ridx && dynamic_cast<PENumber*>(ridx)) {
-			// Wildcard associative array [*]
-			type = elaborate_static_array_type(des, li, type, dimensions);
-			type = elaborate_darray_check_type(des, li, type, "Associative array");
-			pending_assoc_wildcard = true;
-			continue;
+		    // marked as [PENull:PENumber(1)] where value is EXACTLY 1.
+		    // Bounded queues like [$:2] have ridx as PENumber(2).
+		  if (PENumber *pnum = dynamic_cast<PENumber*>(ridx)) {
+			// Check if this is the wildcard marker (value == 1)
+			const verinum &val = pnum->value();
+			if (val.is_defined() && val.as_long() == 1 &&
+			    val.len() == 1) {
+			      // Wildcard associative array [*]
+			      type = elaborate_static_array_type(des, li, type, dimensions);
+			      type = elaborate_darray_check_type(des, li, type, "Associative array");
+			      pending_assoc_wildcard = true;
+			      continue;
+			}
 		  }
 		  type = elaborate_static_array_type(des, li, type, dimensions);
 		  type = elaborate_queue_type(des, scope, li, type, ridx);
