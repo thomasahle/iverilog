@@ -616,6 +616,56 @@ static PLI_INT32 past_compiletf(ICARUS_VPI_CONST PLI_BYTE8 *name)
       return 0;
 }
 
+/*
+ * $sampled(expr) - returns the value of expression from the previous time step
+ * In SVA, $sampled returns the value at the preponed region of the current time step,
+ * which is essentially the same as the previous sample.
+ */
+static PLI_INT32 sampled_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv = vpi_iterate(vpiArgument, callh);
+      vpiHandle expr_arg = vpi_scan(argv);
+      s_vpi_value val;
+      stable_state_t *state;
+      PLI_INT32 curr_value;
+      PLI_INT32 result_value;
+      (void)name;  /* Parameter is not used. */
+
+      vpi_free_object(argv);
+
+      /* Get current value as integer */
+      val.format = vpiIntVal;
+      vpi_get_value(expr_arg, &val);
+      curr_value = val.value.integer;
+
+      /* Get or create state for this call site */
+      state = (stable_state_t *)vpi_get_userdata(callh);
+      if (state == NULL) {
+            state = (stable_state_t *)malloc(sizeof(stable_state_t));
+            state->initialized = 0;
+            vpi_put_userdata(callh, state);
+      }
+
+      /* First call: return current value (no previous exists) */
+      if (!state->initialized) {
+            state->prev_value = curr_value;
+            state->initialized = 1;
+            result_value = curr_value;  /* Return current on first sample */
+      } else {
+            /* Return the sampled (previous) value */
+            result_value = state->prev_value;
+            /* Update stored value for next time */
+            state->prev_value = curr_value;
+      }
+
+      val.format = vpiIntVal;
+      val.value.integer = result_value;
+      vpi_put_value(callh, &val, 0, vpiNoDelay);
+
+      return 0;
+}
+
 static PLI_INT32 bit_vec_sizetf(ICARUS_VPI_CONST PLI_BYTE8 *name)
 {
       (void)name;  /* Parameter is not used. */
@@ -729,6 +779,16 @@ void v2009_bitvec_register(void)
       tf_data.sizetf      = 0;
       tf_data.tfname      = "$past";
       tf_data.user_data   = "$past";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type        = vpiSysFunc;
+      tf_data.sysfunctype = vpiIntFunc;
+      tf_data.calltf      = sampled_calltf;
+      tf_data.compiletf   = sys_one_numeric_arg_compiletf;
+      tf_data.sizetf      = 0;
+      tf_data.tfname      = "$sampled";
+      tf_data.user_data   = "$sampled";
       res = vpi_register_systf(&tf_data);
       vpip_make_systf_system_defined(res);
 }
