@@ -101,7 +101,7 @@ static int eval_darray_new(ivl_expr_t ex)
 			draw_eval_vec4(ivl_expr_parm(init_expr,idx));
 			fprintf(vvp_out, "    %%ix/load 3, %u, 0;\n", idx);
 			fprintf(vvp_out, "    %%set/dar/obj/vec4 3;\n");
-			fprintf(vvp_out, "    %%pop/vec4 1;\n");
+			// Note: %set/dar/obj/vec4 pops the vec4 value, no %pop/vec4 needed
 		  }
 		  break;
 		case IVL_VT_REAL:
@@ -109,7 +109,7 @@ static int eval_darray_new(ivl_expr_t ex)
 			draw_eval_real(ivl_expr_parm(init_expr,idx));
 			fprintf(vvp_out, "    %%ix/load 3, %u, 0;\n", idx);
 			fprintf(vvp_out, "    %%set/dar/obj/real 3;\n");
-			fprintf(vvp_out, "    %%pop/real 1;\n");
+			// Note: %set/dar/obj/real pops the real value, no %pop/real needed
 		  }
 		  break;
 		case IVL_VT_STRING:
@@ -117,7 +117,7 @@ static int eval_darray_new(ivl_expr_t ex)
 			draw_eval_string(ivl_expr_parm(init_expr,idx));
 			fprintf(vvp_out, "    %%ix/load 3, %u, 0;\n", idx);
 			fprintf(vvp_out, "    %%set/dar/obj/str 3;\n");
-			fprintf(vvp_out, "    %%pop/str 1;\n");
+			// Note: %set/dar/obj/str pops the string value, no %pop/str needed
 		  }
 		  break;
 		default:
