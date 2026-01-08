@@ -1,0 +1,5 @@
+String 'hello' has length >= 5
+String 'world' has length >= 5
+String 'test' has length < 5
+PASSED
+./ivltests/sv_string_queue_method.sv:51: $finish called at 0 (1s)

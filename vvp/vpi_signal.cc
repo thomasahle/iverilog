@@ -25,6 +25,7 @@
 # include  "compile.h"
 # include  "vpi_priv.h"
 # include  "vvp_net_sig.h"
+# include  "vvp_darray.h"
 # include  "vvp_island.h"
 # include  "schedule.h"
 # include  "statistics.h"
@@ -1335,6 +1336,21 @@ static int PV_get(int code, vpiHandle ref)
 	    return 0;  // A part/bit select is always unsigned!
 
 	case vpiSize:
+	    // For string queue elements, width is 0xFFFFFFFF (marker)
+	    // We need to get the actual string length from the queue
+	    if (rfp->width == 0xFFFFFFFF && rfp->net) {
+		  vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*>(rfp->net->fun);
+		  if (obj) {
+			vvp_queue_string*queue = obj->get_object().peek<vvp_queue_string>();
+			if (queue) {
+			      // Get the index from sbase
+			      int idx = PV_get_base(rfp);
+			      std::string value;
+			      queue->get_word(idx, value);
+			      return value.length();
+			}
+		  }
+	    }
 	    return rfp->width;
 
 	  /* This is like the &A<> in array.cc. */
@@ -1401,12 +1417,36 @@ static void PV_get_value(vpiHandle ref, p_vpi_value vp)
       vvp_signal_value*sig = dynamic_cast<vvp_signal_value*>(rfp->net->fil);
       if (sig == 0) {
 	    // Queue elements don't use signal_value filter.
-	    // This happens when calling methods on queue elements like q[i].len().
-	    // Workaround: assign queue element to temp var first, then call method.
+	    // Try to handle string queue elements.
+	    if (rfp->net && rfp->width == 0xFFFFFFFF) {
+		  vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*>(rfp->net->fun);
+		  if (obj) {
+			vvp_queue_string*queue = obj->get_object().peek<vvp_queue_string>();
+			if (queue) {
+			      int idx = PV_get_base(rfp);
+			      std::string str_value;
+			      queue->get_word(idx, str_value);
+
+			      switch (vp->format) {
+				  case vpiStringVal:
+				      vp->value.str = simple_set_rbuf_str(str_value.c_str());
+				      return;
+				  case vpiIntVal:
+				      // Return string length for vpiIntVal
+				      vp->value.integer = str_value.length();
+				      return;
+				  default:
+				      break;
+			      }
+			}
+		  }
+	    }
+	    // Still unsupported - give a helpful error
 	    fprintf(stderr, "vvp sorry: Queue element method calls like q[i].method() "
-		    "are not yet supported.\n"
-		    "  Workaround: assign to temp var first: temp = q[i]; temp.method();\n");
-	    exit(1);
+		    "are not yet fully supported for this type.\n"
+		    "  Workaround: assign queue element to temp var first: temp = q[i]; temp.method();\n");
+	    vp->format = vpiSuppressVal;
+	    return;
       }
 
       switch (vp->format) {
