@@ -550,7 +550,7 @@ NexusSet* NetForLoop::nex_input(bool rem_out, bool always_sens, bool nested_func
 	    delete tmp;
       }
 
-      if (gn_shared_loop_index_flag) {
+      if (gn_shared_loop_index_flag && index_) {
 	    NexusSet*tmp = new NexusSet();
 	    for (unsigned idx = 0 ; idx < index_->pin_count() ; idx += 1)
 		tmp->add(index_->pin(idx).nexus(), 0, index_->vector_width());

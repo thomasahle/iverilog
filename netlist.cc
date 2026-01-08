@@ -3426,6 +3426,9 @@ bool NetForLoop::check_synth(ivl_process_type_t pr_type,
                  << get_process_type_as_string(pr_type) << endl;
       }
 
+	// For loops with locally declared index variables (e.g., for (int i=0; ...))
+	// have null index_. Skip the index-specific checks in this case.
+      if (index_) {
 // FIXME: Do the following also need to be supported in the condition?
 //        It would seem like they are hard to use to find the bounds.
 //          From NetEBinary
@@ -3433,22 +3436,23 @@ bool NetForLoop::check_synth(ivl_process_type_t pr_type,
 //          From NetEUnary
 //            What about NetEUBits ! sig or ! (sig == constat)
 //            What about NetEUReduce &signal
-      if (const NetESignal*tmp = dynamic_cast<const NetESignal*>(condition_)) {
-	    if (tmp->sig() != index_) {
+	    if (const NetESignal*tmp = dynamic_cast<const NetESignal*>(condition_)) {
+		  if (tmp->sig() != index_) {
+			print_for_idx_warning(this, "condition", pr_type, index_);
+		  }
+	    } else if (const NetEBComp*cmp = dynamic_cast<const NetEBComp*>(condition_)) {
+		  check_for_bin_synth(cmp->left(), cmp->right(),
+	                              "compare against a constant", "condition",
+		                      this, pr_type, index_);
+	    } else {
 		  print_for_idx_warning(this, "condition", pr_type, index_);
 	    }
-      } else if (const NetEBComp*cmp = dynamic_cast<const NetEBComp*>(condition_)) {
-	    check_for_bin_synth(cmp->left(), cmp->right(),
-                                "compare against a constant", "condition",
-	                        this, pr_type, index_);
-      } else {
-	    print_for_idx_warning(this, "condition", pr_type, index_);
-      }
 
-      if (const NetAssign*tmp = dynamic_cast<const NetAssign*>(step_statement_)) {
-	    check_for_step_synth(tmp, this, pr_type, index_);
-      } else {
-	    print_for_step_warning(this, pr_type);
+	    if (const NetAssign*tmp = dynamic_cast<const NetAssign*>(step_statement_)) {
+		  check_for_step_synth(tmp, this, pr_type, index_);
+	    } else {
+		  print_for_step_warning(this, pr_type);
+	    }
       }
 
       if (statement_) result |= statement_->check_synth(pr_type, scope);
