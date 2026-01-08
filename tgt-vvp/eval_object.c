@@ -421,6 +421,43 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    ivl_expr_t queue_arg = ivl_expr_parm(ex, 0);
 	    unsigned nparms = ivl_expr_parms(ex);
 
+	    /* Handle "inside" variants: find_index_inside, find_first_index_inside, etc.
+	     * Args: queue, count, val1, val2, ..., valN
+	     * These check if item is in the set {val1, val2, ..., valN}
+	     */
+	    if (strstr(method, "_inside") != NULL) {
+		  int mode = 0;
+		  if (strncmp(method, "find_first_index_inside", 23) == 0) mode = 1;
+		  else if (strncmp(method, "find_last_index_inside", 22) == 0) mode = 2;
+		  else if (strncmp(method, "find_inside", 11) == 0) mode = 3;
+		  else if (strncmp(method, "find_first_inside", 17) == 0) mode = 4;
+		  else if (strncmp(method, "find_last_inside", 16) == 0) mode = 5;
+
+		  /* Get the count of values (second parameter) */
+		  ivl_expr_t count_arg = ivl_expr_parm(ex, 1);
+		  unsigned count = 0;
+		  if (ivl_expr_type(count_arg) == IVL_EX_NUMBER) {
+			const char*bits = ivl_expr_bits(count_arg);
+			unsigned wid = ivl_expr_width(count_arg);
+			for (unsigned i = 0; i < wid; i++) {
+			      if (bits[i] == '1') count |= (1 << i);
+			}
+		  }
+
+		  /* Evaluate the queue onto object stack */
+		  draw_eval_object(queue_arg);
+
+		  /* Push each value in the set onto vec4 stack */
+		  for (unsigned i = 0; i < count; i++) {
+			ivl_expr_t val_arg = ivl_expr_parm(ex, 2 + i);
+			draw_eval_vec4(val_arg);
+		  }
+
+		  /* Emit qfind_inside opcode with mode and count */
+		  fprintf(vvp_out, "    %%qfind_inside %d, %u; // %s\n", mode, count, method);
+		  return 0;
+	    }
+
 	    /* Determine the locator mode:
 	     * 0=find_index, 1=find_first_index, 2=find_last_index (return indices)
 	     * 3=find, 4=find_first, 5=find_last (return elements)

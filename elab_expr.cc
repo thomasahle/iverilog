@@ -270,6 +270,58 @@ bool type_is_vectorable(ivl_variable_type_t type)
       }
 }
 
+/*
+ * Helper to detect "item inside {...}" pattern in array locator 'with' clause.
+ * The parser transforms "item inside {1, 3, 5}" into:
+ * (item == 1) || (item == 3) || (item == 5)
+ * This function recursively traverses the OR tree and collects all values
+ * where each leaf is "item == constant".
+ * Returns true if the pattern matches, false otherwise.
+ */
+static bool extract_inside_values(const PExpr*expr,
+                                  std::vector<const PExpr*>& values)
+{
+      // Check for logical OR (chain of comparisons)
+      const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
+      if (bin && bin->get_op() == 'o') {
+            // Recursively process both sides of OR
+            bool left_ok = extract_inside_values(bin->get_left(), values);
+            bool right_ok = extract_inside_values(bin->get_right(), values);
+            return left_ok && right_ok;
+      }
+
+      // Check for equality comparison: item == value
+      if (bin && bin->get_op() == 'e') {
+            const PEIdent*left_id = dynamic_cast<const PEIdent*>(bin->get_left());
+            const PEIdent*right_id = dynamic_cast<const PEIdent*>(bin->get_right());
+
+            // Check if one side is 'item' and other side is a value
+            if (left_id) {
+                  perm_string head = peek_head_name(left_id->path());
+                  if (head == perm_string::literal("item")) {
+                        values.push_back(bin->get_right());
+                        return true;
+                  }
+            }
+            if (right_id) {
+                  perm_string head = peek_head_name(right_id->path());
+                  if (head == perm_string::literal("item")) {
+                        values.push_back(bin->get_left());
+                        return true;
+                  }
+            }
+      }
+
+      // Check for logical AND (from range: item >= low && item <= high)
+      // For now, we don't support ranges in inside - just discrete values
+      if (bin && bin->get_op() == 'a') {
+            // This could be a range pattern, which we don't support yet
+            return false;
+      }
+
+      return false;
+}
+
 static ivl_nature_t find_access_function(const pform_scoped_name_t &path)
 {
       if (path.package || path.name.size() != 1)
@@ -7092,7 +7144,6 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
       // QUEUE object, and there is a method.
       if (search_results.net && search_results.net->data_type()==IVL_VT_QUEUE
 	  && search_results.path_head.back().index.size()==0) {
-
 	    // Get the method name that we are looking for.
 	    perm_string method_name = search_results.path_tail.back().name;
 	    if (method_name == "size") {
@@ -7157,6 +7208,35 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			fname = perm_string::literal("$ivl_array_locator$find_first_index");
 		  else
 			fname = perm_string::literal("$ivl_array_locator$find_index");
+
+		  // First, try to detect "item inside {...}" pattern
+		  // The parser transforms this into (item == v1) || (item == v2) || ...
+		  std::vector<const PExpr*> inside_values;
+		  if (extract_inside_values(with_expr_, inside_values) && !inside_values.empty()) {
+			// Build function call with set of values
+			// Use mode 6 to indicate "inside" set membership check
+			perm_string inside_fname;
+			if (method_name == "find_last_index")
+			      inside_fname = perm_string::literal("$ivl_array_locator$find_last_index_inside");
+			else if (method_name == "find_first_index")
+			      inside_fname = perm_string::literal("$ivl_array_locator$find_first_index_inside");
+			else
+			      inside_fname = perm_string::literal("$ivl_array_locator$find_index_inside");
+
+			// Create function with queue + count + values as arguments
+			unsigned nparms = 2 + inside_values.size();
+			NetESFunc*sys_expr = new NetESFunc(inside_fname, &int_queue_type, nparms);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, sub_expr);  // The queue
+			sys_expr->parm(1, new NetEConst(verinum((int)inside_values.size())));  // Value count
+
+			// Add each value in the inside set
+			for (size_t i = 0; i < inside_values.size(); i++) {
+			      NetExpr*val_expr = elab_and_eval(des, scope, const_cast<PExpr*>(inside_values[i]), -1, false);
+			      sys_expr->parm(2 + i, val_expr);
+			}
+			return sys_expr;
+		  }
 
 		  // Try to analyze the 'with' clause for simple cases like 'item == value',
 		  // 'item > value', 'item < value', etc. or 'item.property == value'

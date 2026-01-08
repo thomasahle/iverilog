@@ -7716,6 +7716,129 @@ bool of_QFIND(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qfind_inside <mode>, <count>
+ * Find elements in a queue that match any value in a set.
+ * Mode: 0=find_index (all), 1=find_first_index, 2=find_last_index
+ *       3=find (all), 4=find_first, 5=find_last
+ * Count: number of values in the set
+ * The values are on the vec4 stack (popped in reverse order).
+ * Queue is on object stack.
+ * Pushes result queue (of indices or elements) onto object stack.
+ */
+bool of_QFIND_INSIDE(vthread_t thr, vvp_code_t cp)
+{
+      unsigned mode = cp->number;
+      unsigned count = cp->bit_idx[0];
+
+      // Pop all comparison values from vec4 stack into a vector
+      // Note: values are pushed in order, so we pop in reverse order
+      std::vector<vvp_vector4_t> inside_values(count);
+      for (unsigned i = count; i > 0; i--) {
+	    inside_values[i-1] = thr->pop_vec4();
+      }
+
+      // Pop queue from object stack
+      vvp_object_t queue_obj;
+      thr->pop_object(queue_obj);
+
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return empty result queue
+	    vvp_object_t result;
+	    result.reset(new vvp_queue_vec4);
+	    thr->push_object(result);
+	    return true;
+      }
+
+      // Create result queue to hold matching indices or elements
+      vvp_queue_vec4*result = new vvp_queue_vec4;
+      size_t qsize = queue->get_size();
+
+      // Helper lambda to convert index to vvp_vector4_t
+      auto make_idx_vec = [](size_t idx) {
+	    vvp_vector4_t vec(32);
+	    for (unsigned i = 0; i < 32; i++) {
+		  vec.set_bit(i, (idx >> i) & 1 ? BIT4_1 : BIT4_0);
+	    }
+	    return vec;
+      };
+
+      // Helper lambda to check if element is in the inside set
+      auto is_inside = [&inside_values](const vvp_vector4_t& elem) {
+	    for (const auto& val : inside_values) {
+		  if (vec4_compare(elem, val, 0)) // 0 = equality check
+			return true;
+	    }
+	    return false;
+      };
+
+      if (mode == 0) {
+	    // find_index: return all matching indices
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i, elem);
+		  if (is_inside(elem)) {
+			result->push_back(make_idx_vec(i), 0);
+		  }
+	    }
+      } else if (mode == 1) {
+	    // find_first_index: return first matching index
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i, elem);
+		  if (is_inside(elem)) {
+			result->push_back(make_idx_vec(i), 0);
+			break;
+		  }
+	    }
+      } else if (mode == 2) {
+	    // find_last_index: return last matching index
+	    for (size_t i = qsize; i > 0; i--) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i - 1, elem);
+		  if (is_inside(elem)) {
+			result->push_back(make_idx_vec(i - 1), 0);
+			break;
+		  }
+	    }
+      } else if (mode == 3) {
+	    // find: return all matching elements
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i, elem);
+		  if (is_inside(elem)) {
+			result->push_back(elem, 0);
+		  }
+	    }
+      } else if (mode == 4) {
+	    // find_first: return first matching element
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i, elem);
+		  if (is_inside(elem)) {
+			result->push_back(elem, 0);
+			break;
+		  }
+	    }
+      } else if (mode == 5) {
+	    // find_last: return last matching element
+	    for (size_t i = qsize; i > 0; i--) {
+		  vvp_vector4_t elem;
+		  queue->get_word(i - 1, elem);
+		  if (is_inside(elem)) {
+			result->push_back(elem, 0);
+			break;
+		  }
+	    }
+      }
+
+      vvp_object_t result_obj;
+      result_obj.reset(result);
+      thr->push_object(result_obj);
+      return true;
+}
+
+/*
  * %qfind_prop <mode>, <property_index>, <cmp_op>
  * Find elements in an object queue where item.property matches a value.
  * Mode: 0=find_index (all), 1=find_first_index, 2=find_last_index
