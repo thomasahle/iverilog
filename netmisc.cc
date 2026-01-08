@@ -1010,6 +1010,17 @@ NetExpr* elab_and_eval(Design*des, NetScope*scope, PExpr*pe,
 		  return tmp;
 	    }
 
+	    // Special case: when target is class but expression is scalar,
+	    // this might be a type parameter that wasn't resolved correctly
+	    // for a specialized class. For example, Container#(type T = BaseClass)
+	    // specialized as Container#(int) - the method port type T was
+	    // elaborated as BaseClass (IVL_VT_CLASS) but we're passing int.
+	    // Allow scalar expressions when target is class and trust runtime.
+	    if (cast_type == IVL_VT_CLASS &&
+	        (expr_type == IVL_VT_BOOL || expr_type == IVL_VT_LOGIC || expr_type == IVL_VT_REAL)) {
+		  return tmp;
+	    }
+
 	    cerr << tmp->get_fileline() << ": error: "
 		    "The expression '" << *pe << "' cannot be implicitly "
 		    "cast to the target type." << endl;

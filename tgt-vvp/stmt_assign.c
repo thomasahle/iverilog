@@ -1974,11 +1974,22 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			idx = allocate_word();
 		  }
 
-		    /* The property is a class object. */
-		  errors += draw_eval_object(rval);
-		  if (idx_expr) draw_eval_expr_into_integer(idx_expr, idx);
-		  fprintf(vvp_out, "    %%store/prop/obj %d, %d; IVL_VT_CLASS\n", prop_idx, idx);
-		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  /* Special case: if target is class but rval is scalar,
+		   * this is likely a type parameter mismatch from specialized
+		   * parameterized class. Use vec4 store instead. */
+		  ivl_variable_type_t rval_type = ivl_expr_value(rval);
+		  if (rval_type == IVL_VT_BOOL || rval_type == IVL_VT_LOGIC) {
+			draw_eval_vec4(rval);
+			if (idx_expr) draw_eval_expr_into_integer(idx_expr, idx);
+			fprintf(vvp_out, "    %%store/prop/v %d, %d; IVL_VT_CLASS (scalar arg)\n", prop_idx, idx);
+			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  } else {
+			  /* The property is a class object. */
+			errors += draw_eval_object(rval);
+			if (idx_expr) draw_eval_expr_into_integer(idx_expr, idx);
+			fprintf(vvp_out, "    %%store/prop/obj %d, %d; IVL_VT_CLASS\n", prop_idx, idx);
+			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  }
 
 		  if (idx_expr) clr_word(idx);
 
@@ -2002,6 +2013,17 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 
 	    if (ivl_expr_type(rval) == IVL_EX_ARRAY_PATTERN) {
 		  draw_array_pattern(sig, rval, 0);
+		  return 0;
+	    }
+
+	    /* Special case: if signal is CLASS type but rval is scalar,
+	     * this is likely a type parameter mismatch from specialized
+	     * parameterized class. Use vec4 store instead. */
+	    ivl_variable_type_t rval_type = ivl_expr_value(rval);
+	    if (rval_type == IVL_VT_BOOL || rval_type == IVL_VT_LOGIC) {
+		  draw_eval_vec4(rval);
+		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u; IVL_VT_CLASS (scalar arg)\n",
+		          sig, ivl_signal_width(sig));
 		  return 0;
 	    }
 

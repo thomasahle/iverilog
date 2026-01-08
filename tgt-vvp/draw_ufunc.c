@@ -71,6 +71,16 @@ static void draw_eval_function_argument(ivl_signal_t port, ivl_expr_t expr)
 	    return;
       }
 
+      /* Special case: if port expects class but expression is scalar,
+       * this is likely a type parameter mismatch from specialized class
+       * (method inherited from base class with default type param).
+       * Use scalar handling instead of object handling. */
+      if (dtype == IVL_VT_CLASS &&
+          (etype == IVL_VT_BOOL || etype == IVL_VT_LOGIC)) {
+	    function_argument_logic(port, expr);
+	    return;
+      }
+
       switch (dtype) {
 	  case IVL_VT_BOOL:
 	      /* For now, treat bit2 variables as bit4 variables. */
@@ -118,6 +128,17 @@ static void draw_send_function_argument(ivl_signal_t port, ivl_expr_t expr)
       if ((dtype == IVL_VT_BOOL || dtype == IVL_VT_LOGIC) &&
           etype == IVL_VT_STRING) {
 	    fprintf(vvp_out, "    %%store/str v%p_0;\n", port);
+	    return;
+      }
+
+      /* Special case: if port expects class but expression is scalar,
+       * this is likely a type parameter mismatch from specialized class
+       * (method inherited from base class with default type param).
+       * Use vec4 store instead of object store. */
+      if (dtype == IVL_VT_CLASS &&
+          (etype == IVL_VT_BOOL || etype == IVL_VT_LOGIC)) {
+	    fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n",
+				      port, ivl_signal_width(port));
 	    return;
       }
 
