@@ -7367,10 +7367,28 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  else
 			fname = perm_string::literal("$ivl_array_locator$find");
 
-		  // Try to analyze the 'with' clause for simple cases like 'item == value'
+		  // Try to analyze the 'with' clause for comparison patterns:
+		  // 'item == value', 'item > value', 'item < value', etc.
 		  NetExpr*cmp_value = nullptr;
+		  int cmp_op = 0;  // Comparison operator: 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge
 		  PEBinary*bin_with = dynamic_cast<PEBinary*>(with_expr_);
-		  if (bin_with && bin_with->get_op() == 'e') {
+
+		  // Check for supported comparison operators
+		  char bin_op = bin_with ? bin_with->get_op() : 0;
+		  bool is_cmp_op = (bin_op == 'e' || bin_op == 'n' || bin_op == '<' ||
+		                   bin_op == '>' || bin_op == 'L' || bin_op == 'G');
+
+		  if (bin_with && is_cmp_op) {
+			// Map operator to VVP comparison code
+			switch (bin_op) {
+			      case 'e': cmp_op = 0; break;  // ==
+			      case 'n': cmp_op = 1; break;  // !=
+			      case '<': cmp_op = 2; break;  // <
+			      case 'L': cmp_op = 3; break;  // <=
+			      case '>': cmp_op = 4; break;  // >
+			      case 'G': cmp_op = 5; break;  // >=
+			}
+
 			// Check if left or right side is 'item'
 			PEIdent*left_id = dynamic_cast<PEIdent*>(bin_with->get_left());
 			PEIdent*right_id = dynamic_cast<PEIdent*>(bin_with->get_right());
@@ -7382,6 +7400,15 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			} else if (right_id && peek_head_name(right_id->path()) == perm_string::literal("item")
 			           && right_id->path().name.size() == 1) {
 			      value_expr = bin_with->get_left();
+			      // Swap comparison direction if item is on right side
+			      // e.g., "25 < item" becomes "item > 25"
+			      switch (cmp_op) {
+				    case 2: cmp_op = 4; break;  // < becomes >
+				    case 3: cmp_op = 5; break;  // <= becomes >=
+				    case 4: cmp_op = 2; break;  // > becomes <
+				    case 5: cmp_op = 3; break;  // >= becomes <=
+				    // == and != are symmetric, no change needed
+			      }
 			}
 
 			if (value_expr) {
@@ -7390,11 +7417,12 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  }
 
 		  if (cmp_value) {
-			// Simple 'item == value' case - pass queue and value to VVP
-			NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 2);
+			// 'item OP value' case - pass queue, cmp_op, and value to VVP
+			NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 3);
 			sys_expr->set_line(*this);
 			sys_expr->parm(0, sub_expr);
-			sys_expr->parm(1, cmp_value);
+			sys_expr->parm(1, new NetEConst(verinum(cmp_op)));
+			sys_expr->parm(2, cmp_value);
 			return sys_expr;
 		  }
 
