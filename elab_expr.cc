@@ -7398,6 +7398,33 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			return sys_expr;
 		  }
 
+		  // Try to detect "item inside {...}" pattern
+		  std::vector<const PExpr*> inside_values;
+		  if (extract_inside_values(with_expr_, inside_values) && !inside_values.empty()) {
+			// Build function call with set of values
+			perm_string inside_fname;
+			if (method_name == "find_last")
+			      inside_fname = perm_string::literal("$ivl_array_locator$find_last_inside");
+			else if (method_name == "find_first")
+			      inside_fname = perm_string::literal("$ivl_array_locator$find_first_inside");
+			else
+			      inside_fname = perm_string::literal("$ivl_array_locator$find_inside");
+
+			// Create function with queue + count + values as arguments
+			unsigned nparms = 2 + inside_values.size();
+			NetESFunc*sys_expr = new NetESFunc(inside_fname, queue_type, nparms);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, sub_expr);  // The queue
+			sys_expr->parm(1, new NetEConst(verinum((int)inside_values.size())));  // Value count
+
+			// Add each value in the inside set
+			for (size_t i = 0; i < inside_values.size(); i++) {
+			      NetExpr*val_expr = elab_and_eval(des, scope, const_cast<PExpr*>(inside_values[i]), -1, false);
+			      sys_expr->parm(2 + i, val_expr);
+			}
+			return sys_expr;
+		  }
+
 		  // Complex 'with' clause - emit warning and return empty queue
 		  cerr << get_fileline() << ": warning: Array locator method '"
 		       << method_name << "' with complex 'with' clause is not fully implemented. "
