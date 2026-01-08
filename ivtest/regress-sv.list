@@ -1150,7 +1150,7 @@ sv_interface_inst5		normal,-g2012		ivltests
 sv_class_type_param_inherit1 normal,-g2012 ivltests
 sv_class_type_param_inherit2 normal,-g2012 ivltests
 sv_covergroup_binsof3		normal,-g2012		ivltests
-sv_array_locator_with2		normal,-g2012		ivltests
+sv_array_locator_with2		normal,-g2012		ivltests gold=sv_array_locator_with2.gold
 sv_uvm_reg_field1	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_reg1		normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_reg_block1	normal,-g2012,-I../lib/ivl/uvm		ivltests
@@ -1281,3 +1281,4 @@ sv_string_concat_method     normal,-g2012           ivltests gold=sv_string_conc
 sv_psprintf		normal,-g2012		ivltests gold=sv_psprintf.gold
 sv_randcase		normal,-g2012		ivltests gold=sv_randcase.gold
 sv_std_randomize_multi	normal,-g2012	ivltests
+sv_array_locator_cmp		normal,-g2012		ivltests gold=sv_array_locator_cmp.gold

@@ -432,10 +432,12 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    else if (strcmp(method, "find_first") == 0) mode = 4;
 	    else if (strcmp(method, "find_last") == 0) mode = 5;
 
-	    if (nparms >= 3) {
-		  /* item.property == value pattern - use %qfind_prop opcode */
+	    if (nparms >= 4) {
+		  /* item.property OP value pattern - use %qfind_prop opcode */
+		  /* Args: queue, prop_idx, cmp_op, value */
 		  ivl_expr_t prop_idx_arg = ivl_expr_parm(ex, 1);
-		  ivl_expr_t cmp_arg = ivl_expr_parm(ex, 2);
+		  ivl_expr_t cmp_op_arg = ivl_expr_parm(ex, 2);
+		  ivl_expr_t cmp_arg = ivl_expr_parm(ex, 3);
 
 		  /* Evaluate the queue onto object stack */
 		  draw_eval_object(queue_arg);
@@ -453,13 +455,50 @@ static int eval_object_sfunc(ivl_expr_t ex)
 			}
 		  }
 
-		  /* Emit the find_prop opcode with mode and property index */
-		  fprintf(vvp_out, "    %%qfind_prop %d, %d; // %s (item.property pattern)\n", mode, prop_idx, method);
+		  /* Get the comparison operator (should be a constant) */
+		  int cmp_op = 0;  /* 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge */
+		  if (ivl_expr_type(cmp_op_arg) == IVL_EX_NUMBER) {
+			const char*bits = ivl_expr_bits(cmp_op_arg);
+			unsigned wid = ivl_expr_width(cmp_op_arg);
+			for (unsigned i = 0; i < wid; i++) {
+			      if (bits[i] == '1') cmp_op |= (1 << i);
+			}
+		  }
+
+		  /* Emit the find_prop opcode with mode, property index, and cmp_op */
+		  fprintf(vvp_out, "    %%qfind_prop %d, %d, %d; // %s (item.property pattern)\n", mode, prop_idx, cmp_op, method);
+		  return 0;
+	    }
+
+	    if (nparms >= 3) {
+		  /* item OP value pattern - use %qfind opcode with cmp_op */
+		  /* Args: queue, cmp_op, value */
+		  ivl_expr_t cmp_op_arg = ivl_expr_parm(ex, 1);
+		  ivl_expr_t cmp_arg = ivl_expr_parm(ex, 2);
+
+		  /* Evaluate the queue onto object stack */
+		  draw_eval_object(queue_arg);
+
+		  /* Evaluate the comparison value onto vec4 stack */
+		  draw_eval_vec4(cmp_arg);
+
+		  /* Get the comparison operator (should be a constant) */
+		  int cmp_op = 0;  /* 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge */
+		  if (ivl_expr_type(cmp_op_arg) == IVL_EX_NUMBER) {
+			const char*bits = ivl_expr_bits(cmp_op_arg);
+			unsigned wid = ivl_expr_width(cmp_op_arg);
+			for (unsigned i = 0; i < wid; i++) {
+			      if (bits[i] == '1') cmp_op |= (1 << i);
+			}
+		  }
+
+		  /* Emit the find opcode with mode and cmp_op */
+		  fprintf(vvp_out, "    %%qfind %d, %d; // %s\n", mode, cmp_op, method);
 		  return 0;
 	    }
 
 	    if (nparms >= 2) {
-		  /* We have a comparison value - use the %qfind opcode */
+		  /* Legacy: item == value (no cmp_op parameter) - use default equality */
 		  ivl_expr_t cmp_arg = ivl_expr_parm(ex, 1);
 
 		  /* Evaluate the queue onto object stack */
@@ -468,8 +507,8 @@ static int eval_object_sfunc(ivl_expr_t ex)
 		  /* Evaluate the comparison value onto vec4 stack */
 		  draw_eval_vec4(cmp_arg);
 
-		  /* Emit the find opcode with mode */
-		  fprintf(vvp_out, "    %%qfind %d; // %s\n", mode, method);
+		  /* Emit the find opcode with mode and default cmp_op=0 (equality) */
+		  fprintf(vvp_out, "    %%qfind %d, 0; // %s (equality)\n", mode, method);
 		  return 0;
 	    }
 
