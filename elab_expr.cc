@@ -291,19 +291,24 @@ static bool extract_inside_values(const PExpr*expr,
       }
 
       // Check for equality comparison: item == value
+      // NOTE: This is specifically for "item inside {v1, v2, ...}" patterns
+      // which the parser transforms to "(item == v1) || (item == v2) || ..."
+      // We should NOT match "item.property == value" patterns here, as those
+      // should be handled by the property comparison code path.
       if (bin && bin->get_op() == 'e') {
             const PEIdent*left_id = dynamic_cast<const PEIdent*>(bin->get_left());
             const PEIdent*right_id = dynamic_cast<const PEIdent*>(bin->get_right());
 
-            // Check if one side is 'item' and other side is a value
-            if (left_id) {
+            // Check if one side is exactly 'item' (not 'item.property')
+            // and other side is a value
+            if (left_id && left_id->path().name.size() == 1) {
                   perm_string head = peek_head_name(left_id->path());
                   if (head == perm_string::literal("item")) {
                         values.push_back(bin->get_right());
                         return true;
                   }
             }
-            if (right_id) {
+            if (right_id && right_id->path().name.size() == 1) {
                   perm_string head = peek_head_name(right_id->path());
                   if (head == perm_string::literal("item")) {
                         values.push_back(bin->get_left());
