@@ -591,6 +591,23 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    return 0;
       }
 
+      /* Queue unique_index() method - returns queue of indices of first unique occurrences */
+      if (strcmp(name, "$ivl_queue_method$unique_index") == 0) {
+	    ivl_expr_t arg = ivl_expr_parm(ex, 0);
+
+	    /* Handle property expressions (obj.queue_prop.unique_index()) */
+	    if (ivl_expr_type(arg) == IVL_EX_PROPERTY) {
+		  draw_eval_object(arg);
+		  fprintf(vvp_out, "    %%qprop/unique_index; // Queue property unique_index\n");
+		  return 0;
+	    }
+
+	    /* Simple signal case - the signal is a queue variable */
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%qunique_index v%p_0;\n", ivl_expr_signal(arg));
+	    return 0;
+      }
+
       fprintf(vvp_out, "; ERROR: eval_object_sfunc: Unknown system function '%s'\n", name);
       return 1;
 }

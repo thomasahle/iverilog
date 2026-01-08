@@ -1194,6 +1194,44 @@ vvp_object_t vvp_queue_vec4::unique_val(void)
       return obj;
 }
 
+vvp_object_t vvp_queue_vec4::unique_index(void)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+
+      // Create result queue with indices of first occurrence of each unique value
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      std::vector<vvp_vector4_t> seen;  // Track values we've already seen
+
+      for (size_t idx = 0; idx < queue.size(); idx++) {
+	    const vvp_vector4_t& elem = queue[idx];
+
+	    // Check if elem already exists in seen values
+	    bool found = false;
+	    for (const auto& existing : seen) {
+		  if (elem.eeq(existing)) {
+			found = true;
+			break;
+		  }
+	    }
+	    if (!found) {
+		  // First occurrence of this value - add index to result
+		  seen.push_back(elem);
+		  // Convert index to vvp_vector4_t (32-bit int)
+		  vvp_vector4_t idx_vec(32);
+		  for (unsigned i = 0; i < 32; i++) {
+			idx_vec.set_bit(i, (idx >> i) & 1 ? BIT4_1 : BIT4_0);
+		  }
+		  result->queue.push_back(idx_vec);
+	    }
+      }
+
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
 /*
  * vvp_queue_object - Queue of class/object references
  */
@@ -1372,6 +1410,14 @@ vvp_object_t vvp_queue::unique_val(void)
       // Default: return empty (not supported)
       cerr << get_fileline()
            << "Warning: unique() not supported for this queue type." << endl;
+      return vvp_object_t();
+}
+
+vvp_object_t vvp_queue::unique_index(void)
+{
+      // Default: return empty (not supported)
+      cerr << get_fileline()
+           << "Warning: unique_index() not supported for this queue type." << endl;
       return vvp_object_t();
 }
 
