@@ -11801,3 +11801,66 @@ bool of_QPROP_SHUFFLE(vthread_t thr, vvp_code_t)
       }
       return true;
 }
+
+/*
+ * %qprop/unique_index - return queue of indices of first unique occurrences
+ * Queue object is on top of the object stack, result replaces it.
+ */
+bool of_QPROP_UNIQUE_INDEX(vthread_t thr, vvp_code_t)
+{
+      // Get queue from object stack (peek to access, then pop and push result)
+      vvp_object_t&queue_obj = thr->peek_object();
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+
+      vvp_object_t result;
+      if (queue && queue->get_size() > 0) {
+	    result = queue->unique_index();
+      }
+      // Pop the original queue and push the result
+      vvp_object_t discard;
+      thr->pop_object(discard);
+      thr->push_object(result);
+      return true;
+}
+
+/*
+ * %qprop/min_index - return queue of indices of minimum elements
+ * Queue object is on top of the object stack, result replaces it.
+ */
+bool of_QPROP_MIN_INDEX(vthread_t thr, vvp_code_t)
+{
+      // Get queue from object stack
+      vvp_object_t&queue_obj = thr->peek_object();
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+
+      vvp_object_t result;
+      if (queue && queue->get_size() > 0) {
+	    result = queue->min_index();
+      }
+      // Pop the original queue and push the result
+      vvp_object_t discard;
+      thr->pop_object(discard);
+      thr->push_object(result);
+      return true;
+}
+
+/*
+ * %qprop/max_index - return queue of indices of maximum elements
+ * Queue object is on top of the object stack, result replaces it.
+ */
+bool of_QPROP_MAX_INDEX(vthread_t thr, vvp_code_t)
+{
+      // Get queue from object stack
+      vvp_object_t&queue_obj = thr->peek_object();
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+
+      vvp_object_t result;
+      if (queue && queue->get_size() > 0) {
+	    result = queue->max_index();
+      }
+      // Pop the original queue and push the result
+      vvp_object_t discard;
+      thr->pop_object(discard);
+      thr->push_object(result);
+      return true;
+}
