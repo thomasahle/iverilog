@@ -7533,6 +7533,24 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
+	    // min_index() and max_index() methods - returns queue of indices of min/max elements
+	    if (method_name == "min_index" || method_name == "max_index") {
+		  if (parms_.size() != 0) {
+			cerr << get_fileline() << ": error: " << method_name
+			     << "() method takes no arguments" << endl;
+			des->errors += 1;
+		  }
+		  // Return type is queue of int (indices)
+		  static netqueue_t int_queue_type(&netvector_t::atom2s32, -1);
+		  perm_string fname = method_name == "min_index"
+			? perm_string::literal("$ivl_queue_method$min_index")
+			: perm_string::literal("$ivl_queue_method$max_index");
+		  NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  return sys_expr;
+	    }
+
 	    cerr << get_fileline() << ": error: Method " << method_name
 		 << " is not a queue method." << endl;
 	    des->errors += 1;

@@ -1232,6 +1232,68 @@ vvp_object_t vvp_queue_vec4::unique_index(void)
       return obj;
 }
 
+vvp_object_t vvp_queue_vec4::min_index(void)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+
+      // Find the minimum value first
+      vvp_vector4_t min_elem = queue[0];
+      for (size_t i = 1; i < queue.size(); i++) {
+	    if (vec4_less(queue[i], min_elem))
+		  min_elem = queue[i];
+      }
+
+      // Return indices of all elements equal to min
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      for (size_t idx = 0; idx < queue.size(); idx++) {
+	    if (queue[idx].eeq(min_elem)) {
+		  // Convert index to vvp_vector4_t (32-bit int)
+		  vvp_vector4_t idx_vec(32);
+		  for (unsigned i = 0; i < 32; i++) {
+			idx_vec.set_bit(i, (idx >> i) & 1 ? BIT4_1 : BIT4_0);
+		  }
+		  result->queue.push_back(idx_vec);
+	    }
+      }
+
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
+vvp_object_t vvp_queue_vec4::max_index(void)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+
+      // Find the maximum value first
+      vvp_vector4_t max_elem = queue[0];
+      for (size_t i = 1; i < queue.size(); i++) {
+	    if (vec4_greater(queue[i], max_elem))
+		  max_elem = queue[i];
+      }
+
+      // Return indices of all elements equal to max
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      for (size_t idx = 0; idx < queue.size(); idx++) {
+	    if (queue[idx].eeq(max_elem)) {
+		  // Convert index to vvp_vector4_t (32-bit int)
+		  vvp_vector4_t idx_vec(32);
+		  for (unsigned i = 0; i < 32; i++) {
+			idx_vec.set_bit(i, (idx >> i) & 1 ? BIT4_1 : BIT4_0);
+		  }
+		  result->queue.push_back(idx_vec);
+	    }
+      }
+
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
 /*
  * vvp_queue_object - Queue of class/object references
  */
@@ -1418,6 +1480,22 @@ vvp_object_t vvp_queue::unique_index(void)
       // Default: return empty (not supported)
       cerr << get_fileline()
            << "Warning: unique_index() not supported for this queue type." << endl;
+      return vvp_object_t();
+}
+
+vvp_object_t vvp_queue::min_index(void)
+{
+      // Default: return empty (not supported)
+      cerr << get_fileline()
+           << "Warning: min_index() not supported for this queue type." << endl;
+      return vvp_object_t();
+}
+
+vvp_object_t vvp_queue::max_index(void)
+{
+      // Default: return empty (not supported)
+      cerr << get_fileline()
+           << "Warning: max_index() not supported for this queue type." << endl;
       return vvp_object_t();
 }
 

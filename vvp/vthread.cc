@@ -7983,6 +7983,54 @@ bool of_QUNIQUE_INDEX(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qmin_index <var-label>
+ * Push a queue of indices of minimum elements to the object stack.
+ */
+bool of_QMIN_INDEX(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue*queue = obj->get_object().peek<vvp_queue>();
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return an empty queue
+	    vvp_object_t result;
+	    thr->push_object(result);
+	    return true;
+      }
+
+      vvp_object_t result = queue->min_index();
+      thr->push_object(result);
+      return true;
+}
+
+/*
+ * %qmax_index <var-label>
+ * Push a queue of indices of maximum elements to the object stack.
+ */
+bool of_QMAX_INDEX(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue*queue = obj->get_object().peek<vvp_queue>();
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return an empty queue
+	    vvp_object_t result;
+	    thr->push_object(result);
+	    return true;
+      }
+
+      vvp_object_t result = queue->max_index();
+      thr->push_object(result);
+      return true;
+}
+
+/*
  * These implement the %release/net and %release/reg instructions. The
  * %release/net instruction applies to a net kind of functor by
  * sending the release/net command to the command port. (See vvp_net.h

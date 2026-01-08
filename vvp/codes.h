@@ -241,6 +241,8 @@ extern bool of_QRSORT(vthread_t thr, vvp_code_t code);
 extern bool of_QSUM(vthread_t thr, vvp_code_t code);
 extern bool of_QUNIQUE(vthread_t thr, vvp_code_t code);
 extern bool of_QUNIQUE_INDEX(vthread_t thr, vvp_code_t code);
+extern bool of_QMIN_INDEX(vthread_t thr, vvp_code_t code);
+extern bool of_QMAX_INDEX(vthread_t thr, vvp_code_t code);
 extern bool of_OBJ_DAR_SIZE(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_DAR_SIZE(vthread_t thr, vvp_code_t code);
 extern bool of_PROP_Q_POPB(vthread_t thr, vvp_code_t code);
