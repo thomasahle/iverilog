@@ -1578,7 +1578,6 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
       unsigned lwid = ivl_lval_width(lval);
       int prop_idx = ivl_lval_property_idx(lval);
 
-
       if (prop_idx >= 0) {
 	    ivl_type_t sig_type = draw_lval_expr(lval);
 

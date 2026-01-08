@@ -723,6 +723,18 @@ int draw_eval_object(ivl_expr_t ex)
 	  case IVL_EX_SELECT:
 	    return eval_object_select(ex);
 
+	  case IVL_EX_ARRAY_PATTERN:
+	    /* Array pattern as object - for queue/darray initialization.
+	       Empty patterns {} become null objects.
+	       Non-empty patterns need element-by-element handling in the
+	       assignment code, not here. For now, treat as null with warning. */
+	    if (ivl_expr_parms(ex) > 0) {
+		  fprintf(vvp_out, "; WARNING: Non-empty array pattern as object "
+		          "- queue property auto-vivification not yet supported\n");
+	    }
+	    fprintf(vvp_out, "    %%null;\n");
+	    return 0;
+
 	  default:
 	    fprintf(vvp_out, "; ERROR: draw_eval_object: Invalid expression type %d\n", ivl_expr_type(ex));
 	    return 1;

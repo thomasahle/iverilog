@@ -6068,6 +6068,40 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			return sys_expr;
 		  }
 
+		  // Handle unique_index() method on queue/darray properties
+		  if (method_name == "unique_index") {
+			// Create expression to load the property from 'this'
+			NetNet*this_net = search_results.net;
+			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+			prop_expr->set_line(*this);
+
+			// Returns queue of int (indices)
+			static netqueue_t int_queue_type(&netvector_t::atom2s32, -1);
+			perm_string fname = perm_string::literal("$ivl_queue_method$unique_index");
+			NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 1);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			return sys_expr;
+		  }
+
+		  // Handle min_index() and max_index() methods on queue/darray properties
+		  if (method_name == "min_index" || method_name == "max_index") {
+			// Create expression to load the property from 'this'
+			NetNet*this_net = search_results.net;
+			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+			prop_expr->set_line(*this);
+
+			// Returns queue of int (indices)
+			static netqueue_t int_queue_type(&netvector_t::atom2s32, -1);
+			perm_string fname = method_name == "min_index"
+			      ? perm_string::literal("$ivl_queue_method$min_index")
+			      : perm_string::literal("$ivl_queue_method$max_index");
+			NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 1);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			return sys_expr;
+		  }
+
 		  // General handling for chained property/function access on darray properties
 		  // Handles patterns like: arr[i].func(), arr[i].member.func(), etc.
 		  // Build the initial property expression
