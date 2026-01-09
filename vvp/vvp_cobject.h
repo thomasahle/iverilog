@@ -23,6 +23,7 @@
 # include  <stdint.h>
 # include  <vector>
 # include  <set>
+# include  <map>
 # include  "vvp_object.h"
 # include  "class_type.h"
 
@@ -68,6 +69,18 @@ class vvp_cobject : public vvp_object {
       // Check if a constraint is enabled (for use in check_constraints)
       bool is_constraint_enabled(const std::string& constraint_name) const;
 
+      // randc support: track used values for cyclic randomization
+      // Returns true if value has been used in this cycle
+      bool randc_value_used(size_t pid, int64_t value) const;
+      // Mark a value as used for this property
+      void randc_mark_used(size_t pid, int64_t value);
+      // Get the set of used values for a randc property
+      const std::set<int64_t>& randc_get_used(size_t pid) const;
+      // Clear used values (start new cycle) for a property
+      void randc_clear(size_t pid);
+      // Check if property is randc (vs rand)
+      bool is_randc(size_t pid) const;
+
     private:
       const class_type* defn_;
 	// For now, only support 32bit bool signed properties.
@@ -77,6 +90,10 @@ class vvp_cobject : public vvp_object {
       std::vector<bool> rand_mode_disabled_;
       // Per-constraint constraint_mode: tracks disabled constraint names
       std::set<std::string> constraint_mode_disabled_;
+      // Per-property randc used values: tracks values used in current cycle
+      mutable std::map<size_t, std::set<int64_t>> randc_used_values_;
+      // Empty set for returning when no values used
+      static const std::set<int64_t> empty_set_;
 };
 
 #endif /* IVL_vvp_cobject_H */

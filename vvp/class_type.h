@@ -64,6 +64,8 @@ class class_type : public __vpiHandle {
 
 	// Check if property is rand/randc (for randomize())
       bool property_is_rand(size_t pid) const;
+	// Check if property is specifically randc (cyclic)
+      bool property_is_randc(size_t pid) const;
 
 	// This method is called after all the properties are
 	// defined. This calculates information about the definition.

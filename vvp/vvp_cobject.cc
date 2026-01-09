@@ -146,3 +146,37 @@ bool vvp_cobject::is_constraint_enabled(const std::string& constraint_name) cons
 {
       return get_constraint_mode(constraint_name) != 0;
 }
+
+// Static empty set for randc_get_used when property has no used values
+const std::set<int64_t> vvp_cobject::empty_set_;
+
+bool vvp_cobject::randc_value_used(size_t pid, int64_t value) const
+{
+      auto it = randc_used_values_.find(pid);
+      if (it == randc_used_values_.end())
+	    return false;
+      return it->second.count(value) > 0;
+}
+
+void vvp_cobject::randc_mark_used(size_t pid, int64_t value)
+{
+      randc_used_values_[pid].insert(value);
+}
+
+const std::set<int64_t>& vvp_cobject::randc_get_used(size_t pid) const
+{
+      auto it = randc_used_values_.find(pid);
+      if (it == randc_used_values_.end())
+	    return empty_set_;
+      return it->second;
+}
+
+void vvp_cobject::randc_clear(size_t pid)
+{
+      randc_used_values_.erase(pid);
+}
+
+bool vvp_cobject::is_randc(size_t pid) const
+{
+      return defn_->property_is_randc(pid);
+}

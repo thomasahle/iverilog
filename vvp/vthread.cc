@@ -8124,6 +8124,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  if (!defn->property_supports_vec4(i))
 			continue;
 
+		  // Check if this is a randc property (cyclic randomization)
+		  bool is_randc = cobj->is_randc(i);
+
 		  // Get array size for this property (1 for scalars)
 		  uint64_t array_size = defn->property_array_size(i);
 
@@ -8148,6 +8151,23 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			// Track discrete allowed values for == constraints (from inside/dist)
 			// Track range pairs for multiple disjoint ranges (from dist with ranges)
 			std::vector<int64_t> excluded_values;
+
+			// For randc properties, add previously used values to exclusion list
+			if (is_randc) {
+			      const std::set<int64_t>& used_vals = cobj->randc_get_used(i);
+			      // Check if all possible values have been used (cycle complete)
+			      // For small widths, we can calculate total possible values
+			      uint64_t total_values = (wid < 64) ? (1ULL << wid) : UINT64_MAX;
+			      if (used_vals.size() >= total_values) {
+				    // All values used - clear and start new cycle
+				    cobj->randc_clear(i);
+			      } else {
+				    // Add used values to exclusion list
+				    for (int64_t used : used_vals) {
+					  excluded_values.push_back(used);
+				    }
+			      }
+			}
 			// Discrete values with weights: (value, weight)
 			std::vector<std::pair<int64_t, int64_t>> discrete_values;
 			std::vector<class_type::simple_bound_t> ge_bounds;  // >= bounds
@@ -8379,11 +8399,35 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      generated = true;
 			}
 			// Priority 5: No constraints - purely random
+			// For randc, still need to exclude used values
 			else {
-			      // Generate purely random bits
-			      for (unsigned b = 0; b < wid; b++) {
-				    new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
-			      }
+			      int avoid_tries = 0;
+			      do {
+				    // Generate purely random bits
+				    for (unsigned b = 0; b < wid; b++) {
+					  new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+				    }
+				    // For randc, check if value is in excluded_values
+				    if (is_randc && !excluded_values.empty()) {
+					  // Extract generated value
+					  rval = 0;
+					  for (unsigned b = 0; b < wid && b < 64; b++) {
+						if (new_val.value(b) == BIT4_1)
+						      rval |= (1LL << b);
+					  }
+					  bool is_excluded = false;
+					  for (auto excl : excluded_values) {
+						if (rval == excl) { is_excluded = true; break; }
+					  }
+					  if (!is_excluded) {
+						generated = true;
+						break;
+					  }
+					  avoid_tries++;
+				    } else {
+					  break;  // No randc exclusions to check
+				    }
+			      } while (avoid_tries < 100);
 			}
 
 			// Apply generated value to new_val
@@ -8393,6 +8437,22 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      }
 			}
 			cobj->set_vec4(i, new_val, arr_idx);
+
+			// For randc properties, mark the generated value as used
+			if (is_randc) {
+			      int64_t used_val;
+			      if (generated) {
+				    used_val = rval;
+			      } else {
+				    // Extract value from new_val for purely random generation
+				    used_val = 0;
+				    for (unsigned b = 0; b < wid && b < 64; b++) {
+					  if (new_val.value(b) == BIT4_1)
+						used_val |= (1LL << b);
+				    }
+			      }
+			      cobj->randc_mark_used(i, used_val);
+			}
 		  }
 		  } // end for arr_idx
 	    }

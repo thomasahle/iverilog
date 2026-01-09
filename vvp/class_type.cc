@@ -727,6 +727,13 @@ bool class_type::property_is_rand(size_t pid) const
       return properties_[pid].rand_flag != 0;  // 1=rand, 2=randc
 }
 
+bool class_type::property_is_randc(size_t pid) const
+{
+      if (pid >= properties_.size())
+	    return false;
+      return properties_[pid].rand_flag == 2;  // specifically randc
+}
+
 void class_type::add_constraint_bound(const simple_bound_t& bound)
 {
       constraint_bounds_.push_back(bound);
