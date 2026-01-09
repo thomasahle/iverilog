@@ -3698,6 +3698,54 @@ extern "C" int ivl_type_simple_bound_weight_per_value(ivl_type_t net, unsigned i
       return class_type->get_simple_bound(idx).weight_per_value ? 1 : 0;
 }
 
+extern "C" int ivl_type_simple_bound_has_cond(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      return class_type->get_simple_bound(idx).has_condition ? 1 : 0;
+}
+
+extern "C" unsigned ivl_type_simple_bound_cond_prop(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      return class_type->get_simple_bound(idx).cond_prop_idx;
+}
+
+extern "C" char ivl_type_simple_bound_cond_op(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return '=';
+      return class_type->get_simple_bound(idx).cond_op;
+}
+
+extern "C" int ivl_type_simple_bound_cond_has_const(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 1;
+      return class_type->get_simple_bound(idx).cond_has_const ? 1 : 0;
+}
+
+extern "C" int64_t ivl_type_simple_bound_cond_const(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      return class_type->get_simple_bound(idx).cond_const;
+}
+
+extern "C" unsigned ivl_type_simple_bound_cond_prop2(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      return class_type->get_simple_bound(idx).cond_prop2_idx;
+}
+
 extern "C" ivl_type_t ivl_type_super(ivl_type_t net)
 {
       const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);

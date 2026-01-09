@@ -917,7 +917,16 @@ statement
   | K_FACTORY T_STRING ',' T_SYMBOL ';'
       { compile_factory($2, $4); }
 
-  /* Constraint bound: .constraint_bound class_label, "constraint_name", prop_idx, 'op', soft, has_const, value, sysfunc_type, sysfunc_arg, weight, weight_per_value ; */
+  /* Constraint bound with condition: .constraint_bound class_label, "constraint_name", prop_idx, 'op', soft, has_const, value, sysfunc_type, sysfunc_arg, weight, weight_per_value, has_cond, cond_prop, 'cond_op', cond_has_const, cond_value ; */
+  | K_CONSTRAINT_BOUND T_SYMBOL ',' T_STRING ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ';'
+      { compile_constraint_bound($2, $4, $6, $8[0], $10, $12, $14, $16, $18, $20, $22, $24, $26, $28[0], $30, $32); }
+  | K_CONSTRAINT_BOUND T_SYMBOL ',' T_STRING ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' '-' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ';'
+      { compile_constraint_bound($2, $4, $6, $8[0], $10, $12, -$15, $17, $19, $21, $23, $25, $27, $29[0], $31, $33); }
+  | K_CONSTRAINT_BOUND T_SYMBOL ',' T_STRING ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' '-' T_NUMBER ';'
+      { compile_constraint_bound($2, $4, $6, $8[0], $10, $12, $14, $16, $18, $20, $22, $24, $26, $28[0], $30, -$33); }
+  | K_CONSTRAINT_BOUND T_SYMBOL ',' T_STRING ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' '-' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' '-' T_NUMBER ';'
+      { compile_constraint_bound($2, $4, $6, $8[0], $10, $12, -$15, $17, $19, $21, $23, $25, $27, $29[0], $31, -$34); }
+  /* Old format without condition for backwards compatibility */
   | K_CONSTRAINT_BOUND T_SYMBOL ',' T_STRING ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ';'
       { compile_constraint_bound($2, $4, $6, $8[0], $10, $12, $14, $16, $18, $20, $22); }
   | K_CONSTRAINT_BOUND T_SYMBOL ',' T_STRING ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' '-' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ',' T_NUMBER ';'

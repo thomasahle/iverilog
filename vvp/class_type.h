@@ -129,6 +129,14 @@ class class_type : public __vpiHandle {
 	    // System function constraint support
 	    sysfunc_type_t sysfunc_type; // Type of system function (SYSFUNC_NONE if not applicable)
 	    size_t sysfunc_arg_idx;      // Property index that is argument to system function
+	    // Implication constraint condition support
+	    // For "cond -> body": bound only applies when condition is true
+	    bool has_condition;   // true if this bound has a guard condition
+	    size_t cond_prop_idx; // Property index for condition expression
+	    char cond_op;         // Condition comparison operator ('=' for ==, '!' for !=, etc.)
+	    bool cond_has_const;  // true if condition compares to constant
+	    int64_t cond_const;   // Constant value for condition (if cond_has_const)
+	    size_t cond_prop2_idx;// Property index for condition (if !cond_has_const)
       };
       void add_constraint_bound(const simple_bound_t& bound);
 	// Get constraint index from name, return -1 if not found

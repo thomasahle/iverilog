@@ -2500,6 +2500,20 @@ extern unsigned    ivl_type_simple_bound_sysfunc_arg(ivl_type_t net, unsigned id
  */
 extern int64_t     ivl_type_simple_bound_weight(ivl_type_t net, unsigned idx);
 extern int         ivl_type_simple_bound_weight_per_value(ivl_type_t net, unsigned idx);
+/* Implication constraint condition support (cond -> body).
+ * ivl_type_simple_bound_has_cond returns 1 if this bound has a guard condition.
+ * ivl_type_simple_bound_cond_prop returns the property index for the condition.
+ * ivl_type_simple_bound_cond_op returns the condition comparison operator.
+ * ivl_type_simple_bound_cond_has_const returns 1 if condition compares to constant.
+ * ivl_type_simple_bound_cond_const returns the constant value for condition.
+ * ivl_type_simple_bound_cond_prop2 returns the property index for condition (if not const).
+ */
+extern int         ivl_type_simple_bound_has_cond(ivl_type_t net, unsigned idx);
+extern unsigned    ivl_type_simple_bound_cond_prop(ivl_type_t net, unsigned idx);
+extern char        ivl_type_simple_bound_cond_op(ivl_type_t net, unsigned idx);
+extern int         ivl_type_simple_bound_cond_has_const(ivl_type_t net, unsigned idx);
+extern int64_t     ivl_type_simple_bound_cond_const(ivl_type_t net, unsigned idx);
+extern unsigned    ivl_type_simple_bound_cond_prop2(ivl_type_t net, unsigned idx);
 
 extern ivl_type_t  ivl_type_super(ivl_type_t net);
 

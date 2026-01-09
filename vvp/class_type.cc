@@ -829,6 +829,54 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 	    if (bound.sysfunc_type != SYSFUNC_NONE)
 		  continue;
 
+	    // For implication constraints, check the condition first
+	    // If condition is false, skip this bound
+	    if (bound.has_condition) {
+		  if (bound.cond_prop_idx >= properties_.size())
+			continue;
+		  if (!properties_[bound.cond_prop_idx].type->supports_vec4())
+			continue;
+
+		  vvp_vector4_t cond_prop_val;
+		  get_vec4(inst, bound.cond_prop_idx, cond_prop_val);
+
+		  int64_t cond_val = 0;
+		  if (cond_prop_val.size() <= 64) {
+			for (unsigned i = 0; i < cond_prop_val.size(); i++) {
+			      if (cond_prop_val.value(i) == BIT4_1)
+				    cond_val |= (int64_t(1) << i);
+			}
+		  }
+
+		  int64_t cond_bound_val = bound.cond_has_const ? bound.cond_const : 0;
+		  if (!bound.cond_has_const && bound.cond_prop2_idx < properties_.size() &&
+		      properties_[bound.cond_prop2_idx].type->supports_vec4()) {
+			vvp_vector4_t cond_prop2_val;
+			get_vec4(inst, bound.cond_prop2_idx, cond_prop2_val);
+			if (cond_prop2_val.size() <= 64) {
+			      for (unsigned i = 0; i < cond_prop2_val.size(); i++) {
+				    if (cond_prop2_val.value(i) == BIT4_1)
+					  cond_bound_val |= (int64_t(1) << i);
+			      }
+			}
+		  }
+
+		  // Evaluate the condition
+		  bool cond_satisfied = false;
+		  switch (bound.cond_op) {
+			case '>': cond_satisfied = (cond_val > cond_bound_val); break;
+			case '<': cond_satisfied = (cond_val < cond_bound_val); break;
+			case 'G': cond_satisfied = (cond_val >= cond_bound_val); break;
+			case 'L': cond_satisfied = (cond_val <= cond_bound_val); break;
+			case '=': cond_satisfied = (cond_val == cond_bound_val); break;
+			case '!': cond_satisfied = (cond_val != cond_bound_val); break;
+			default: cond_satisfied = true; break;
+		  }
+
+		  if (!cond_satisfied)
+			continue;
+	    }
+
 	    // Get the bound value
 	    int64_t bval = 0;
 	    if (bound.has_const_bound) {
@@ -999,6 +1047,58 @@ bool class_type::check_constraints(inst_t inst) const
 
 	    if (!properties_[bound.property_idx].type->supports_vec4())
 		  continue;
+
+	    // For implication constraints, check the condition first
+	    // If condition is false, skip this bound (it doesn't apply)
+	    if (bound.has_condition) {
+		  if (bound.cond_prop_idx >= properties_.size())
+			continue;
+		  if (!properties_[bound.cond_prop_idx].type->supports_vec4())
+			continue;
+
+		  vvp_vector4_t cond_prop_val;
+		  get_vec4(inst, bound.cond_prop_idx, cond_prop_val);
+
+		  int64_t cond_val = 0;
+		  if (cond_prop_val.size() <= 64) {
+			for (unsigned i = 0; i < cond_prop_val.size(); i++) {
+			      if (cond_prop_val.value(i) == BIT4_1)
+				    cond_val |= (int64_t(1) << i);
+			}
+		  }
+
+		  // Get the condition bound value
+		  int64_t cond_bound_val = 0;
+		  if (bound.cond_has_const) {
+			cond_bound_val = bound.cond_const;
+		  } else if (bound.cond_prop2_idx < properties_.size() &&
+		             properties_[bound.cond_prop2_idx].type->supports_vec4()) {
+			vvp_vector4_t cond_prop2_val;
+			get_vec4(inst, bound.cond_prop2_idx, cond_prop2_val);
+			if (cond_prop2_val.size() <= 64) {
+			      for (unsigned i = 0; i < cond_prop2_val.size(); i++) {
+				    if (cond_prop2_val.value(i) == BIT4_1)
+					  cond_bound_val |= (int64_t(1) << i);
+			      }
+			}
+		  }
+
+		  // Evaluate the condition
+		  bool cond_satisfied = false;
+		  switch (bound.cond_op) {
+			case '>': cond_satisfied = (cond_val > cond_bound_val); break;
+			case '<': cond_satisfied = (cond_val < cond_bound_val); break;
+			case 'G': cond_satisfied = (cond_val >= cond_bound_val); break;
+			case 'L': cond_satisfied = (cond_val <= cond_bound_val); break;
+			case '=': cond_satisfied = (cond_val == cond_bound_val); break;
+			case '!': cond_satisfied = (cond_val != cond_bound_val); break;
+			default: cond_satisfied = true; break;
+		  }
+
+		  // If condition is false, skip this bound
+		  if (!cond_satisfied)
+			continue;
+	    }
 
 	    vvp_vector4_t prop_val;
 	    get_vec4(inst, bound.property_idx, prop_val);
@@ -1312,16 +1412,23 @@ void compile_factory(char*type_name, char*class_label)
 }
 
 /*
- * Constraint bound: .constraint_bound class_label, "constraint_name", prop_idx, "op", soft, has_const, value, sysfunc_type, sysfunc_arg, weight, weight_per_value ;
+ * Constraint bound: .constraint_bound class_label, "constraint_name", prop_idx, "op", soft, has_const, value, sysfunc_type, sysfunc_arg, weight, weight_per_value, has_cond, cond_prop, "cond_op", cond_has_const, cond_value ;
  * This registers a simple constraint bound for the randomize() constraint solver.
  * sysfunc_type: 0=NONE, 1=COUNTONES, 2=ONEHOT, 3=ONEHOT0, 4=ISUNKNOWN, 5=CLOG2
  * weight: weight for weighted dist constraints (default 1)
  * weight_per_value: 1 for := (per value), 0 for :/ (per range)
+ * has_cond: 1 if this bound has a guard condition (implication constraint)
+ * cond_prop: property index for condition expression
+ * cond_op: condition comparison operator
+ * cond_has_const: 1 if condition compares to constant
+ * cond_value: constant value or property index for condition
  */
 void compile_constraint_bound(char*class_label, char*constraint_name, unsigned prop_idx,
                               char op, int soft, int has_const, int64_t value,
                               unsigned sysfunc_type, unsigned sysfunc_arg,
-                              int64_t weight, int weight_per_value)
+                              int64_t weight, int weight_per_value,
+                              int has_cond, unsigned cond_prop, char cond_op,
+                              int cond_has_const, int64_t cond_value)
 {
       // Look up the class definition from the label
       vpiHandle class_h = vvp_lookup_handle(class_label);
@@ -1360,6 +1467,18 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
       bound.sysfunc_arg_idx = sysfunc_arg;
       bound.weight = weight;
       bound.weight_per_value = (weight_per_value != 0);
+      // Condition fields for implication constraints
+      bound.has_condition = (has_cond != 0);
+      bound.cond_prop_idx = cond_prop;
+      bound.cond_op = cond_op;
+      bound.cond_has_const = (cond_has_const != 0);
+      if (cond_has_const) {
+	    bound.cond_const = cond_value;
+	    bound.cond_prop2_idx = 0;
+      } else {
+	    bound.cond_const = 0;
+	    bound.cond_prop2_idx = static_cast<size_t>(cond_value);
+      }
       class_def->add_constraint_bound(bound);
 
       free(class_label);

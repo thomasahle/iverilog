@@ -199,6 +199,14 @@ class netclass_t : public ivl_type_s {
 	    // Weighted dist constraint support
 	    int64_t weight;       // Weight for dist constraints (default 1)
 	    bool weight_per_value;// true for := (per value), false for :/ (per range)
+	    // Implication constraint condition support
+	    // For "cond -> body": bound only applies when condition is true
+	    bool has_condition;   // true if this bound has a guard condition
+	    size_t cond_prop_idx; // Property index for condition expression
+	    char cond_op;         // Condition comparison operator ('=' for ==, '!' for !=, etc.)
+	    bool cond_has_const;  // true if condition compares to constant
+	    int64_t cond_const;   // Constant value for condition (if cond_has_const)
+	    size_t cond_prop2_idx;// Property index for condition (if !cond_has_const)
       };
       std::vector<simple_bound_t> simple_bounds_;
 
@@ -216,7 +224,9 @@ class netclass_t : public ivl_type_s {
       void add_simple_bound(perm_string constraint_name, size_t prop_idx, char op, bool is_soft,
                             bool has_const, int64_t const_val, size_t bound_prop,
                             sysfunc_type_t sysfunc = SYSFUNC_NONE, size_t sysfunc_arg = 0,
-                            int64_t weight = 1, bool weight_per_value = true);
+                            int64_t weight = 1, bool weight_per_value = true,
+                            bool has_cond = false, size_t cond_prop = 0, char cond_op = '=',
+                            bool cond_has_const = true, int64_t cond_const = 0, size_t cond_prop2 = 0);
       size_t get_simple_bounds() const { return simple_bounds_.size(); }
       const simple_bound_t& get_simple_bound(size_t idx) const;
       perm_string get_simple_bound_constraint_name(size_t idx) const;

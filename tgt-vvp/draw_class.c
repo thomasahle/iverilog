@@ -155,7 +155,7 @@ void draw_class_in_scope(ivl_type_t classtype)
       }
 
       /* Emit simple bounds for constraint solver.
-       * Format: .constraint_bound <classptr>, "<constraint_name>", <prop_idx>, "<op>", <soft>, <has_const>, <value/prop2_idx>, <sysfunc_type>, <sysfunc_arg>, <weight>, <weight_per_value> ;
+       * Format: .constraint_bound <classptr>, "<constraint_name>", <prop_idx>, "<op>", <soft>, <has_const>, <value/prop2_idx>, <sysfunc_type>, <sysfunc_arg>, <weight>, <weight_per_value>, <has_cond>, <cond_prop>, "<cond_op>", <cond_has_const>, <cond_value> ;
        * These are runtime-enforceable bounds like: value > 0, value < limit
        * For system function constraints (e.g., $countones(x) == 1):
        *   sysfunc_type: 0=NONE, 1=COUNTONES, 2=ONEHOT, 3=ONEHOT0, 4=ISUNKNOWN, 5=CLOG2
@@ -163,6 +163,12 @@ void draw_class_in_scope(ivl_type_t classtype)
        * For weighted dist constraints:
        *   weight: the weight value (default 1)
        *   weight_per_value: 1 for := (per value), 0 for :/ (per range)
+       * For implication constraints (cond -> body):
+       *   has_cond: 1 if this bound has a guard condition
+       *   cond_prop: property index for condition expression
+       *   cond_op: condition comparison operator
+       *   cond_has_const: 1 if condition compares to constant
+       *   cond_value: constant value or property index for condition
        */
       unsigned nbounds = ivl_type_simple_bounds(classtype);
       for (unsigned bidx = 0; bidx < nbounds; bidx++) {
@@ -175,17 +181,31 @@ void draw_class_in_scope(ivl_type_t classtype)
 	    unsigned sysfunc_arg = ivl_type_simple_bound_sysfunc_arg(classtype, bidx);
 	    int64_t weight = ivl_type_simple_bound_weight(classtype, bidx);
 	    int weight_per_value = ivl_type_simple_bound_weight_per_value(classtype, bidx);
+	    int has_cond = ivl_type_simple_bound_has_cond(classtype, bidx);
+	    unsigned cond_prop = ivl_type_simple_bound_cond_prop(classtype, bidx);
+	    char cond_op = ivl_type_simple_bound_cond_op(classtype, bidx);
+	    int cond_has_const = ivl_type_simple_bound_cond_has_const(classtype, bidx);
 
 	    fprintf(vvp_out, ".constraint_bound C%p, \"%s\", %u, \"%c\", %d, %d, ",
 		    classtype, cons_name ? cons_name : "", prop_idx, op, soft, has_const);
 	    if (has_const) {
 		  int64_t const_val = ivl_type_simple_bound_const(classtype, bidx);
-		  fprintf(vvp_out, "%" PRId64 ", %u, %u, %" PRId64 ", %d ;\n",
+		  fprintf(vvp_out, "%" PRId64 ", %u, %u, %" PRId64 ", %d, ",
 			  const_val, sysfunc_type, sysfunc_arg, weight, weight_per_value);
 	    } else {
 		  unsigned prop2_idx = ivl_type_simple_bound_prop2(classtype, bidx);
-		  fprintf(vvp_out, "%u, %u, %u, %" PRId64 ", %d ;\n",
+		  fprintf(vvp_out, "%u, %u, %u, %" PRId64 ", %d, ",
 			  prop2_idx, sysfunc_type, sysfunc_arg, weight, weight_per_value);
+	    }
+	    /* Emit condition fields */
+	    if (cond_has_const) {
+		  int64_t cond_const = ivl_type_simple_bound_cond_const(classtype, bidx);
+		  fprintf(vvp_out, "%d, %u, \"%c\", %d, %" PRId64 " ;\n",
+			  has_cond, cond_prop, cond_op, cond_has_const, cond_const);
+	    } else {
+		  unsigned cond_prop2 = ivl_type_simple_bound_cond_prop2(classtype, bidx);
+		  fprintf(vvp_out, "%d, %u, \"%c\", %d, %u ;\n",
+			  has_cond, cond_prop, cond_op, cond_has_const, cond_prop2);
 	    }
       }
 

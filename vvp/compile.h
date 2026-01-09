@@ -574,10 +574,17 @@ extern void compile_factory(char*type_name, char*class_label);
  * sysfunc_type: 0=NONE, 1=COUNTONES, 2=ONEHOT, 3=ONEHOT0, 4=ISUNKNOWN, 5=CLOG2
  * sysfunc_arg: property index that is the system function argument
  * weight: weight for weighted dist constraints (default 1)
- * weight_per_value: 1 for := (per value), 0 for :/ (per range) */
+ * weight_per_value: 1 for := (per value), 0 for :/ (per range)
+ * has_cond: 1 if this bound has a guard condition (implication constraint)
+ * cond_prop: property index for condition expression
+ * cond_op: condition comparison operator
+ * cond_has_const: 1 if condition compares to constant
+ * cond_value: constant value or property index for condition */
 extern void compile_constraint_bound(char*class_label, char*constraint_name, unsigned prop_idx,
                                      char op, int soft, int has_const, int64_t value,
                                      unsigned sysfunc_type, unsigned sysfunc_arg,
-                                     int64_t weight = 1, int weight_per_value = 1);
+                                     int64_t weight, int weight_per_value,
+                                     int has_cond = 0, unsigned cond_prop = 0, char cond_op = '=',
+                                     int cond_has_const = 1, int64_t cond_value = 0);
 
 #endif /* IVL_compile_H */
