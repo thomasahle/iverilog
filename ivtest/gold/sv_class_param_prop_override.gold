@@ -1,2 +1,2 @@
 PASSED
-ivltests/sv_class_param_prop_override.v:124: $finish called at 0 (1s)
+./ivltests/sv_class_param_prop_override.v:124: $finish called at 0 (1s)

@@ -1,2 +1,4 @@
+./ivltests/sv_interface_port_member.v:10: warning: Interface port `intf` of type `simple_if` has limited support. Some features may not work.
+./ivltests/sv_interface_port_member.v:30: warning: Interface port `intf` of type `simple_if` has limited support. Some features may not work.
 PASSED
-ivltests/sv_interface_port_member.v:60: $finish called at 3 (1s)
+./ivltests/sv_interface_port_member.v:60: $finish called at 3 (1s)

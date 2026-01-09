@@ -1,2 +1,2 @@
 PASSED: ##1 sequence delay test completed
-ivltests/sv_sva_seq_delay1.v:43: $finish called at 110 (1s)
+./ivltests/sv_sva_seq_delay1.v:43: $finish called at 110 (1s)

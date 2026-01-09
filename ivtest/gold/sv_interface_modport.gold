@@ -1,1 +1,3 @@
+./ivltests/sv_interface_modport.v:26: warning: Interface port `bus` of type `bus_if` has limited support. Some features may not work.
+./ivltests/sv_interface_modport.v:36: warning: Interface port `bus` of type `bus_if` has limited support. Some features may not work.
 PASSED

@@ -6,4 +6,4 @@ find_first_index with (item != 10) = 1 (expected 1)
 find_index with (item > 25) = {2, 3, 4} (expected {2, 3, 4})
 find_first_index with (25 < item) = 2 (expected 2)
 PASSED
-ivltests/sv_array_locator_cmp.v:78: $finish called at 0 (1s)
+./ivltests/sv_array_locator_cmp.v:78: $finish called at 0 (1s)

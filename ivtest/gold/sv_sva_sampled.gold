@@ -4,4 +4,4 @@ Sample 3 PASSED: data=bb, sampled=aa (expected aa)
 Sample 4 PASSED: data=cc, sampled=bb (expected bb)
 Sample 5 PASSED: data=cc, sampled=cc (expected cc)
 PASSED: $sampled() test completed successfully
-ivltests/sv_sva_sampled.v:47: $finish called at 52 (1s)
+./ivltests/sv_sva_sampled.v:47: $finish called at 52 (1s)

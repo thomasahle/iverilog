@@ -1,2 +1,2 @@
 PASSED - SVA assert and cover statements parsed successfully
-ivltests/sva_assert_cover.v:32: $finish called at 0 (1s)
+./ivltests/sva_assert_cover.v:32: $finish called at 0 (1s)

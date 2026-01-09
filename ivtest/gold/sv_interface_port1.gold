@@ -1,1 +1,2 @@
+./ivltests/sv_interface_port1.v:11: warning: Interface port `iface_port` of type `TestIface` has limited support. Some features may not work.
 PASSED
