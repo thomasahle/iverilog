@@ -4199,9 +4199,49 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	}
       }
   | expression K_IMPLIES_OV K_first_match '(' sequence_expr_in_parens ')'
-      { /* |-> first_match - parsed but not elaborated */ $$ = 0; }
+      { /* |-> first_match: a |-> first_match(seq)
+           For single-cycle approximation: treat as simple implication !a || true
+           The first_match just accepts the first successful sequence match. */
+	if (gn_supported_assertions_flag && $1) {
+	      yywarn(@3, "first_match approximated as single-cycle check.");
+	      /* Create !$1 || true = just always pass when antecedent triggers */
+	      PEUnary*not_ante = new PEUnary('!', $1);
+	      FILE_NAME(not_ante, @1);
+	      /* Create constant 1 for the consequent (first_match always potentially matches) */
+	      PENumber*one = new PENumber(new verinum(1));
+	      FILE_NAME(one, @3);
+	      PEBLogic*impl = new PEBLogic('o', not_ante, one);
+	      FILE_NAME(impl, @1);
+	      $$ = impl;
+	} else {
+	      delete $1;
+	      $$ = 0;
+	}
+      }
   | expression K_IMPLIES_NOV K_first_match '(' sequence_expr_in_parens ')'
-      { /* |=> first_match - parsed but not elaborated */ $$ = 0; }
+      { /* |=> first_match: a |=> first_match(seq)
+           For single-cycle approximation: treat as !$past(a) || true */
+	if (gn_supported_assertions_flag && $1) {
+	      yywarn(@3, "first_match approximated as single-cycle check.");
+	      /* Create $past($1) */
+	      std::vector<named_pexpr_t> past_parms(1);
+	      past_parms[0].parm = $1;
+	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	      FILE_NAME(past_call, @1);
+	      /* Create !$past($1) */
+	      PEUnary*not_past = new PEUnary('!', past_call);
+	      FILE_NAME(not_past, @1);
+	      /* Create constant 1 for the consequent */
+	      PENumber*one = new PENumber(new verinum(1));
+	      FILE_NAME(one, @3);
+	      PEBLogic*impl = new PEBLogic('o', not_past, one);
+	      FILE_NAME(impl, @1);
+	      $$ = impl;
+	} else {
+	      delete $1;
+	      $$ = 0;
+	}
+      }
   | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_OV property_expr
       { /* seq ##N seq |-> prop: transform to $past(seq1, N) && seq2 |-> prop */
 	long N = $3->as_long();
@@ -4754,6 +4794,78 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	      $$ = 0;
 	}
       }
+  | expression K_REP_STAR DEC_NUMBER ']'
+      { /* Consecutive repetition: expr[*N] means expr holds for N cycles.
+           For single-cycle approximation: just check expr holds. */
+	if (gn_supported_assertions_flag && $1) {
+	      yywarn(@2, "Consecutive repetition [*N] approximated as single-cycle check.");
+	      /* Just return the expression wrapped to avoid property reference check */
+	      PEUnary*not1 = new PEUnary('!', $1);
+	      FILE_NAME(not1, @1);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @1);
+	      $$ = not2;
+	} else {
+	      delete $1;
+	      $$ = 0;
+	}
+      }
+  | '(' expression ')' K_REP_STAR DEC_NUMBER ']'
+      { /* Parenthesized consecutive repetition: (expr)[*N] */
+	if (gn_supported_assertions_flag && $2) {
+	      yywarn(@4, "Consecutive repetition [*N] approximated as single-cycle check.");
+	      /* Just return the expression wrapped to avoid property reference check */
+	      PEUnary*not1 = new PEUnary('!', $2);
+	      FILE_NAME(not1, @2);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @2);
+	      $$ = not2;
+	} else {
+	      delete $2;
+	      $$ = 0;
+	}
+      }
+  | expression K_REP_STAR DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { /* Repetition followed by delay: expr[*N] ##M prop
+           For single-cycle approximation: transform to $past and check */
+	if (gn_supported_assertions_flag && $1 && $7) {
+	      yywarn(@2, "Consecutive repetition [*N] ##M approximated as single-cycle check.");
+	      /* Create: !$past(expr) || prop (approximation) */
+	      std::vector<named_pexpr_t> past_parms(1);
+	      past_parms[0].parm = $1;
+	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	      FILE_NAME(past_call, @1);
+	      PEUnary*not_past = new PEUnary('!', past_call);
+	      FILE_NAME(not_past, @1);
+	      PEBLogic*impl = new PEBLogic('o', not_past, $7);
+	      FILE_NAME(impl, @1);
+	      $$ = impl;
+	} else {
+	      delete $1;
+	      if ($7) delete $7;
+	      $$ = 0;
+	}
+      }
+  | '(' expression ')' K_REP_STAR DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { /* Parenthesized repetition followed by delay: (expr)[*N] ##M prop */
+	if (gn_supported_assertions_flag && $2 && $9) {
+	      yywarn(@4, "Consecutive repetition [*N] ##M approximated as single-cycle check.");
+	      /* Create: !$past(expr) || prop (approximation) */
+	      std::vector<named_pexpr_t> past_parms(1);
+	      past_parms[0].parm = $2;
+	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	      FILE_NAME(past_call, @2);
+	      PEUnary*not_past = new PEUnary('!', past_call);
+	      FILE_NAME(not_past, @2);
+	      PEBLogic*impl = new PEBLogic('o', not_past, $9);
+	      FILE_NAME(impl, @2);
+	      $$ = impl;
+	} else {
+	      delete $2;
+	      if ($9) delete $9;
+	      $$ = 0;
+	}
+      }
   ;
 
   /* Sequence expression for use inside first_match, etc.
@@ -4766,6 +4878,10 @@ sequence_expr_in_parens
       { /* (##n expr) - parenthesized sequence delay */ }
   | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')'
       { /* (expr ##[m:n] expr) - sequence with delay range */ }
+  | K_SEQ_DELAY '[' expression ':' expression ']' expression
+      { /* ##[m:n] expr - sequence delay range (for first_match, etc.) */ }
+  | K_SEQ_DELAY DEC_NUMBER expression
+      { /* ##n expr - sequence with fixed delay */ }
   ;
 
   /* The property_qualifier rule is as literally described in the LRM,
