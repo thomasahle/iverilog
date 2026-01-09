@@ -1,0 +1,6 @@
+./ivltests/sv_sva_rep_star.v:15: Consecutive repetition [*N] approximated as single-cycle check.
+./ivltests/sv_sva_rep_star.v:20: Consecutive repetition [*N] approximated as single-cycle check.
+./ivltests/sv_sva_rep_star.v:26: Consecutive repetition [*N] ##M approximated as single-cycle check.
+./ivltests/sv_sva_rep_star.v:31: Consecutive repetition [*N] approximated as single-cycle check.
+PASSED: consecutive repetition operator working correctly
+./ivltests/sv_sva_rep_star.v:51: $finish called at 45 (1s)

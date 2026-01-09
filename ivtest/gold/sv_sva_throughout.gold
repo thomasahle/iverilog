@@ -1,0 +1,6 @@
+./ivltests/sv_sva_throughout.v:17: throughout operator approximated as single-cycle check.
+./ivltests/sv_sva_throughout.v:22: throughout operator approximated as single-cycle check.
+./ivltests/sv_sva_throughout.v:28: throughout operator approximated as single-cycle check.
+./ivltests/sv_sva_throughout.v:33: throughout operator approximated as single-cycle check.
+PASSED: throughout operator working correctly
+./ivltests/sv_sva_throughout.v:60: $finish called at 65 (1s)
