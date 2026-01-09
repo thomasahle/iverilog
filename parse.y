@@ -4551,6 +4551,141 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	      $$ = 0;
 	}
       }
+  | expression K_throughout expression
+      { /* throughout: a throughout seq means 'a' holds during entire sequence.
+           For single-cycle approximation: just check that 'a' holds.
+           The sequence is ignored since we can't track multi-cycle.
+           Wrap in !!expr to avoid being treated as unresolved property reference. */
+	if (gn_supported_assertions_flag && $1) {
+	      yywarn(@2, "throughout operator approximated as single-cycle check.");
+	      delete $3;
+	      /* Wrap in double negation to avoid bare identifier check */
+	      PEUnary*not1 = new PEUnary('!', $1);
+	      FILE_NAME(not1, @1);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @1);
+	      $$ = not2;
+	} else {
+	      delete $1;
+	      delete $3;
+	      $$ = 0;
+	}
+      }
+  | expression K_throughout '(' expression ')'
+      { /* throughout with parenthesized sequence: a throughout (seq)
+           For single-cycle approximation: just check that 'a' holds.
+           Wrap in !!expr to avoid being treated as unresolved property reference. */
+	if (gn_supported_assertions_flag && $1) {
+	      yywarn(@2, "throughout operator approximated as single-cycle check.");
+	      delete $4;
+	      /* Wrap in double negation to avoid bare identifier check */
+	      PEUnary*not1 = new PEUnary('!', $1);
+	      FILE_NAME(not1, @1);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @1);
+	      $$ = not2;
+	} else {
+	      delete $1;
+	      delete $4;
+	      $$ = 0;
+	}
+      }
+  | '(' expression K_throughout expression ')'
+      { /* Parenthesized throughout: (a throughout seq)
+           Wrap in !!expr to avoid being treated as unresolved property reference. */
+	if (gn_supported_assertions_flag && $2) {
+	      yywarn(@3, "throughout operator approximated as single-cycle check.");
+	      delete $4;
+	      /* Wrap in double negation to avoid bare identifier check */
+	      PEUnary*not1 = new PEUnary('!', $2);
+	      FILE_NAME(not1, @2);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @2);
+	      $$ = not2;
+	} else {
+	      delete $2;
+	      delete $4;
+	      $$ = 0;
+	}
+      }
+  | expression K_throughout '(' K_SEQ_DELAY '[' expression ':' expression ']' expression ')'
+      { /* throughout with ##[m:n] sequence: a throughout (##[m:n] b)
+           For single-cycle approximation: just check that 'a' holds. */
+	if (gn_supported_assertions_flag && $1) {
+	      yywarn(@2, "throughout operator approximated as single-cycle check.");
+	      delete $6;
+	      delete $8;
+	      delete $10;
+	      /* Wrap in double negation to avoid bare identifier check */
+	      PEUnary*not1 = new PEUnary('!', $1);
+	      FILE_NAME(not1, @1);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @1);
+	      $$ = not2;
+	} else {
+	      delete $1;
+	      delete $6;
+	      delete $8;
+	      delete $10;
+	      $$ = 0;
+	}
+      }
+  | expression K_throughout '(' K_SEQ_DELAY DEC_NUMBER expression ')'
+      { /* throughout with ##N sequence: a throughout (##N b)
+           For single-cycle approximation: just check that 'a' holds. */
+	if (gn_supported_assertions_flag && $1) {
+	      yywarn(@2, "throughout operator approximated as single-cycle check.");
+	      delete $6;
+	      /* Wrap in double negation to avoid bare identifier check */
+	      PEUnary*not1 = new PEUnary('!', $1);
+	      FILE_NAME(not1, @1);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @1);
+	      $$ = not2;
+	} else {
+	      delete $1;
+	      delete $6;
+	      $$ = 0;
+	}
+      }
+  | '(' expression K_throughout '(' K_SEQ_DELAY '[' expression ':' expression ']' expression ')' ')'
+      { /* Parenthesized throughout with ##[m:n] sequence: (a throughout (##[m:n] b)) */
+	if (gn_supported_assertions_flag && $2) {
+	      yywarn(@3, "throughout operator approximated as single-cycle check.");
+	      delete $7;
+	      delete $9;
+	      delete $11;
+	      /* Wrap in double negation to avoid bare identifier check */
+	      PEUnary*not1 = new PEUnary('!', $2);
+	      FILE_NAME(not1, @2);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @2);
+	      $$ = not2;
+	} else {
+	      delete $2;
+	      delete $7;
+	      delete $9;
+	      delete $11;
+	      $$ = 0;
+	}
+      }
+  | '(' expression K_throughout '(' K_SEQ_DELAY DEC_NUMBER expression ')' ')'
+      { /* Parenthesized throughout with ##N sequence: (a throughout (##N b)) */
+	if (gn_supported_assertions_flag && $2) {
+	      yywarn(@3, "throughout operator approximated as single-cycle check.");
+	      delete $7;
+	      /* Wrap in double negation to avoid bare identifier check */
+	      PEUnary*not1 = new PEUnary('!', $2);
+	      FILE_NAME(not1, @2);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @2);
+	      $$ = not2;
+	} else {
+	      delete $2;
+	      delete $7;
+	      $$ = 0;
+	}
+      }
   ;
 
   /* Sequence expression for use inside first_match, etc.
