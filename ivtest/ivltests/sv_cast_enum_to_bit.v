@@ -1,0 +1,1 @@
+sv_cast_enum_to_bit.sv

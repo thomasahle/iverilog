@@ -808,40 +808,8 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 	    }
       }
 
-      // If we need a special value (like one-hot), generate it directly
-      if (need_onehot) {
-	    // Generate a random power of 2 (exactly one bit set)
-	    unsigned bit_pos = rand() % wid;
-	    return int64_t(1) << bit_pos;
-      }
-
-      if (need_onehot0) {
-	    // Generate 0 or a random power of 2
-	    if (rand() % 2 == 0)
-		  return 0;
-	    unsigned bit_pos = rand() % wid;
-	    return int64_t(1) << bit_pos;
-      }
-
-      if (required_ones >= 0 && required_ones <= (int)wid) {
-	    // Generate a value with exactly required_ones bits set
-	    // Simple approach: shuffle bit positions and set first required_ones
-	    int64_t result = 0;
-	    std::vector<unsigned> positions;
-	    for (unsigned i = 0; i < wid; i++)
-		  positions.push_back(i);
-	    // Shuffle positions
-	    for (unsigned i = wid - 1; i > 0; i--) {
-		  unsigned j = rand() % (i + 1);
-		  std::swap(positions[i], positions[j]);
-	    }
-	    // Set required_ones bits
-	    for (int i = 0; i < required_ones && i < (int)positions.size(); i++) {
-		  result |= (int64_t(1) << positions[i]);
-	    }
-	    return result;
-      }
-
+      // First, collect all range constraints for this property
+      // We need to do this BEFORE generating special values like one-hot
       // Apply all constraint bounds for this property
       for (const auto& bound : constraint_bounds_) {
 	    if (bound.property_idx != prop_idx)
@@ -895,6 +863,66 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 		      break;
 		  // '!' (!=) can't be easily range-bounded, skip for now
 	    }
+      }
+
+      // Now handle special value generation (like one-hot) WITH range constraints
+      if (need_onehot) {
+	    // Generate a random power of 2 (exactly one bit set)
+	    // But respect the range constraints [min_val, max_val]
+	    // Find which bit positions produce values in range
+	    std::vector<unsigned> valid_positions;
+	    for (unsigned i = 0; i < wid; i++) {
+		  int64_t val = int64_t(1) << i;
+		  if (val >= min_val && val <= max_val)
+			valid_positions.push_back(i);
+	    }
+	    if (!valid_positions.empty()) {
+		  unsigned idx = rand() % valid_positions.size();
+		  return int64_t(1) << valid_positions[idx];
+	    }
+	    // No valid one-hot value in range - fall through to normal generation
+      }
+
+      if (need_onehot0) {
+	    // Generate 0 or a random power of 2, respecting range
+	    std::vector<int64_t> valid_values;
+	    if (0 >= min_val && 0 <= max_val)
+		  valid_values.push_back(0);
+	    for (unsigned i = 0; i < wid; i++) {
+		  int64_t val = int64_t(1) << i;
+		  if (val >= min_val && val <= max_val)
+			valid_values.push_back(val);
+	    }
+	    if (!valid_values.empty()) {
+		  unsigned idx = rand() % valid_values.size();
+		  return valid_values[idx];
+	    }
+	    // No valid value in range - fall through
+      }
+
+      if (required_ones >= 0 && required_ones <= (int)wid) {
+	    // Generate a value with exactly required_ones bits set
+	    // This is harder to combine with range constraints
+	    // For now, generate and retry up to 100 times
+	    for (int attempt = 0; attempt < 100; attempt++) {
+		  int64_t result = 0;
+		  std::vector<unsigned> positions;
+		  for (unsigned i = 0; i < wid; i++)
+			positions.push_back(i);
+		  // Shuffle positions
+		  for (unsigned i = wid - 1; i > 0; i--) {
+			unsigned j = rand() % (i + 1);
+			std::swap(positions[i], positions[j]);
+		  }
+		  // Set required_ones bits
+		  for (int i = 0; i < required_ones && i < (int)positions.size(); i++) {
+			result |= (int64_t(1) << positions[i]);
+		  }
+		  // Check if result is in range
+		  if (result >= min_val && result <= max_val)
+			return result;
+	    }
+	    // Couldn't find valid value - fall through to normal generation
       }
 
       // Generate random value in [min_val, max_val]
