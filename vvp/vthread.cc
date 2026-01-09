@@ -8124,9 +8124,14 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  if (!defn->property_supports_vec4(i))
 			continue;
 
+		  // Get array size for this property (1 for scalars)
+		  uint64_t array_size = defn->property_array_size(i);
+
+		  // Randomize all array elements
+		  for (uint64_t arr_idx = 0; arr_idx < array_size; arr_idx++) {
 		  // Try to get the property as vec4 and randomize it
 		  vvp_vector4_t val;
-		  cobj->get_vec4(i, val);
+		  cobj->get_vec4(i, val, arr_idx);
 
 		  // Generate random value
 		  unsigned wid = val.size();
@@ -8387,8 +8392,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    new_val.set_bit(b, (rval & (1LL << b)) ? BIT4_1 : BIT4_0);
 			      }
 			}
-			cobj->set_vec4(i, new_val);
+			cobj->set_vec4(i, new_val, arr_idx);
 		  }
+		  } // end for arr_idx
 	    }
 
 	    // Check constraints (handles != and cross-property constraints)

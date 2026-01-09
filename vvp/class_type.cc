@@ -90,6 +90,7 @@ class class_property_t {
       virtual bool supports_vec4() const { return false; }
       virtual bool is_signed() const { return false; }
       virtual unsigned bit_width() const { return 0; }
+      virtual uint64_t array_size() const { return 1; }
 
       virtual void set_real(char*buf, double val);
       virtual double get_real(char*buf);
@@ -182,6 +183,7 @@ template <class T> class property_atom : public class_property_t {
       bool supports_vec4() const override { return true; }
       bool is_signed() const override { return std::is_signed<T>::value; }
       unsigned bit_width() const override { return sizeof(T) * 8; }
+      uint64_t array_size() const override { return array_size_; }
 
       string get_string(char*buf) override
       { T*tmp = reinterpret_cast<T*> (buf+offset_);
@@ -218,6 +220,7 @@ class property_bit : public class_property_t {
       void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
       bool supports_vec4() const override { return true; }
       unsigned bit_width() const override { return wid_; }
+      uint64_t array_size() const override { return array_size_; }
 
       string get_string(char*buf) override;
 
@@ -252,6 +255,7 @@ class property_logic : public class_property_t {
       void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
       bool supports_vec4() const override { return true; }
       unsigned bit_width() const override { return wid_; }
+      uint64_t array_size() const override { return array_size_; }
 
       string get_string(char*buf) override;
 
@@ -707,6 +711,13 @@ bool class_type::property_supports_vec4(size_t pid) const
       if (pid >= properties_.size())
 	    return false;
       return properties_[pid].type->supports_vec4();
+}
+
+uint64_t class_type::property_array_size(size_t pid) const
+{
+      if (pid >= properties_.size())
+	    return 1;
+      return properties_[pid].type->array_size();
 }
 
 bool class_type::property_is_rand(size_t pid) const

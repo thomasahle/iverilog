@@ -87,6 +87,8 @@ class class_type : public __vpiHandle {
 
 	// Check if property supports vec4 operations (for randomize())
       bool property_supports_vec4(size_t pid) const;
+	// Get array size for a property (1 for scalars)
+      uint64_t property_array_size(size_t pid) const;
 
     public: // Virtual method dispatch
       struct method_info {
