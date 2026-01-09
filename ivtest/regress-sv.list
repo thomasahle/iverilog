@@ -1289,3 +1289,5 @@ sv_sva_throughout	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_thro
 sv_sva_goto_rep		normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_goto_rep.gold
 sv_sva_rep_star		normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_rep_star.gold
 sv_sva_first_match	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_first_match.gold
+sv_sva_paren_antecedent	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_paren_antecedent.gold
+sv_sva_delay_in_property	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_delay_in_property.gold

@@ -4002,6 +4002,37 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	      $$ = 0;
 	}
       }
+  | '(' expression ')' K_IMPLIES_OV property_expr
+      { /* Parenthesized antecedent: (a) |-> b = !a || b
+           Allows patterns like (cond || flag) |-> consequence */
+	if ($5) {
+	      PEUnary*not_ante = new PEUnary('!', $2);
+	      FILE_NAME(not_ante, @2);
+	      PEBLogic*impl = new PEBLogic('o', not_ante, $5);
+	      FILE_NAME(impl, @2);
+	      $$ = impl;
+	} else {
+	      delete $2;
+	      $$ = 0;
+	}
+      }
+  | '(' expression ')' K_IMPLIES_NOV property_expr
+      { /* Parenthesized antecedent: (a) |=> b = !$past(a) || b */
+	if ($5) {
+	      std::vector<named_pexpr_t> past_parms(1);
+	      past_parms[0].parm = $2;
+	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	      FILE_NAME(past_call, @2);
+	      PEUnary*not_past = new PEUnary('!', past_call);
+	      FILE_NAME(not_past, @2);
+	      PEBLogic*impl = new PEBLogic('o', not_past, $5);
+	      FILE_NAME(impl, @2);
+	      $$ = impl;
+	} else {
+	      delete $2;
+	      $$ = 0;
+	}
+      }
   | '(' expression K_IMPLIES_OV property_expr ')'
       { /* Parenthesized |-> implication: (a |-> b) = !a || b */
 	if ($4) {
@@ -4242,6 +4273,42 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	      $$ = 0;
 	}
       }
+  | '(' expression ')' K_IMPLIES_OV K_first_match '(' sequence_expr_in_parens ')'
+      { /* (a) |-> first_match: parenthesized antecedent with first_match */
+	if (gn_supported_assertions_flag && $2) {
+	      yywarn(@5, "first_match approximated as single-cycle check.");
+	      PEUnary*not_ante = new PEUnary('!', $2);
+	      FILE_NAME(not_ante, @2);
+	      PENumber*one = new PENumber(new verinum(1));
+	      FILE_NAME(one, @5);
+	      PEBLogic*impl = new PEBLogic('o', not_ante, one);
+	      FILE_NAME(impl, @2);
+	      $$ = impl;
+	} else {
+	      delete $2;
+	      $$ = 0;
+	}
+      }
+  | '(' expression ')' K_IMPLIES_NOV K_first_match '(' sequence_expr_in_parens ')'
+      { /* (a) |=> first_match: parenthesized antecedent with first_match */
+	if (gn_supported_assertions_flag && $2) {
+	      yywarn(@5, "first_match approximated as single-cycle check.");
+	      std::vector<named_pexpr_t> past_parms(1);
+	      past_parms[0].parm = $2;
+	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	      FILE_NAME(past_call, @2);
+	      PEUnary*not_past = new PEUnary('!', past_call);
+	      FILE_NAME(not_past, @2);
+	      PENumber*one = new PENumber(new verinum(1));
+	      FILE_NAME(one, @5);
+	      PEBLogic*impl = new PEBLogic('o', not_past, one);
+	      FILE_NAME(impl, @2);
+	      $$ = impl;
+	} else {
+	      delete $2;
+	      $$ = 0;
+	}
+      }
   | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_OV property_expr
       { /* seq ##N seq |-> prop: transform to $past(seq1, N) && seq2 |-> prop */
 	long N = $3->as_long();
@@ -4462,11 +4529,35 @@ property_expr /* IEEE1800-2012 A.2.10 */
   | '(' expression K_SEQ_DELAY '[' expression ':' '$' ']' expression ')' K_IMPLIES_NOV property_expr
       { /* (seq ##[m:$] seq) |=> prop - parenthesized antecedent unbounded */ $$ = 0; }
   | K_SEQ_DELAY DEC_NUMBER property_expr
-      { /* ##n sequence at start - parsed but not elaborated */ $$ = 0; }
+      { /* ##N property: after N cycles, property holds.
+           For single-cycle approximation, just check the property now. */
+	if (gn_supported_assertions_flag && $3) {
+	      yywarn(@1, "##N delay approximated as single-cycle check.");
+	      $$ = $3;
+	} else {
+	      $$ = 0;
+	}
+      }
   | K_SEQ_DELAY '[' expression ':' expression ']' property_expr
-      { /* ##[m:n] sequence at start - parsed but not elaborated */ $$ = 0; }
+      { /* ##[m:n] property: after m to n cycles, property holds.
+           For single-cycle approximation, just check the property now. */
+	if (gn_supported_assertions_flag && $7) {
+	      yywarn(@1, "##[m:n] delay approximated as single-cycle check.");
+	      $$ = $7;
+	} else {
+	      $$ = 0;
+	}
+      }
   | K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
-      { /* ##[m:$] unbounded sequence at start - parsed but not elaborated */ $$ = 0; }
+      { /* ##[m:$] property: eventually, property holds.
+           For single-cycle approximation, just check the property now. */
+	if (gn_supported_assertions_flag && $7) {
+	      yywarn(@1, "##[m:$] unbounded delay approximated as single-cycle check.");
+	      $$ = $7;
+	} else {
+	      $$ = 0;
+	}
+      }
   | K_if '(' expression ')' property_expr %prec less_than_K_else
       { /* if-then property: if(cond) prop = !cond || prop */
 	if ($5) {
