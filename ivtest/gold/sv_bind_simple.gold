@@ -1,4 +1,4 @@
-./ivltests/sv_bind_simple.v:20: sorry: bind directive not yet supported. Bound module instance will be ignored.
+ivltests/sv_bind_simple.v:20: sorry: bind directive not yet supported. Bound module instance will be ignored.
 checker_mod instantiated
 PASSED
-./ivltests/sv_bind_simple.v:26: $finish called at 100 (1s)
+ivltests/sv_bind_simple.v:26: $finish called at 100 (1s)

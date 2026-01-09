@@ -17,4 +17,4 @@ time=70000 a=0 b=1 c=1 d=1
 time=70450 a=0 b=1 c=1 d=0
 time=80000 a=1 b=1 c=1 d=0
 time=80560 a=1 b=1 c=1 d=1
-./ivltests/sdf_interconnect3.v:132: $finish called at 90000 (1ps)
+ivltests/sdf_interconnect3.v:132: $finish called at 90000 (1ps)

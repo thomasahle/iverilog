@@ -1,2 +1,2 @@
 PASSED - SVA sequence delay operators parsed successfully
-./ivltests/sva_delay.v:45: $finish called at 0 (1s)
+ivltests/sva_delay.v:45: $finish called at 0 (1s)

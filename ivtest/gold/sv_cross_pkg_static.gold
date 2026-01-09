@@ -1,3 +1,3 @@
-./ivltests/sv_cross_pkg_static.v:82: warning: Static variable initialization requires explicit lifetime in this context.
+ivltests/sv_cross_pkg_static.v:82: warning: Static variable initialization requires explicit lifetime in this context.
 PASSED
-./ivltests/sv_cross_pkg_static.v:85: $finish called at 0 (1s)
+ivltests/sv_cross_pkg_static.v:85: $finish called at 0 (1s)

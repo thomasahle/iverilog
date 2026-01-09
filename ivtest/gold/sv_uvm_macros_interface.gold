@@ -2,4 +2,4 @@
 UVM_INFO BFM [%m] Interface initialized
 UVM_INFO BFM [%m] Driving data: ab
 PASSED
-./ivltests/sv_uvm_macros_interface.v:43: $finish called at 35 (1s)
+ivltests/sv_uvm_macros_interface.v:43: $finish called at 35 (1s)

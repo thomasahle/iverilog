@@ -5,4 +5,4 @@ PASS: pop_front returned correct value
 PASS: Queue size after pop is correct
 
 PASSED
-./ivltests/sv_queue_enum.v:71: $finish called at 0 (1s)
+ivltests/sv_queue_enum.v:71: $finish called at 0 (1s)

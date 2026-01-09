@@ -1,6 +1,4 @@
-./ivltests/sv_sva_delay_in_property.v:16: ##N delay approximated as single-cycle check.
-./ivltests/sv_sva_delay_in_property.v:22: ##N delay approximated as single-cycle check.
-ERROR: ./ivltests/sv_sva_delay_in_property.v:26: 
+ERROR: ivltests/sv_sva_delay_in_property.v:26: 
        Time: 5  Scope: test
 PASSED: ##N delay in property if-then works
-./ivltests/sv_sva_delay_in_property.v:55: $finish called at 36 (1s)
+ivltests/sv_sva_delay_in_property.v:55: $finish called at 36 (1s)

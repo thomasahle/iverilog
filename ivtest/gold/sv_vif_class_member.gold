@@ -1,2 +1,2 @@
 PASSED: VIF class member assignment works
-./ivltests/sv_vif_class_member.v:65: $finish called at 0 (1s)
+ivltests/sv_vif_class_member.v:65: $finish called at 0 (1s)

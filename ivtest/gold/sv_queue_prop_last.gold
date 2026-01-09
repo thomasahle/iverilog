@@ -1,2 +1,2 @@
 PASSED
-./ivltests/sv_queue_prop_last.v:35: $finish called at 0 (1s)
+ivltests/sv_queue_prop_last.v:35: $finish called at 0 (1s)

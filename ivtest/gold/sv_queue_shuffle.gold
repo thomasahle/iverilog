@@ -1,2 +1,2 @@
 PASSED: Queue shuffled successfully (sum preserved, order changed)
-./ivltests/sv_queue_shuffle.v:56: $finish called at 0 (1s)
+ivltests/sv_queue_shuffle.v:56: $finish called at 0 (1s)

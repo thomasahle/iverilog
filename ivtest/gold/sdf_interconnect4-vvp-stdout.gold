@@ -7,4 +7,4 @@ time=15000 a=111 b=000
 time=15140 a=111 b=001
 time=15160 a=111 b=011
 time=15200 a=111 b=111
-./ivltests/sdf_interconnect4.v:58: $finish called at 25000 (1ps)
+ivltests/sdf_interconnect4.v:58: $finish called at 25000 (1ps)

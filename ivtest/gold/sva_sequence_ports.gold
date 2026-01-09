@@ -1,2 +1,2 @@
 PASSED - SVA sequences with ports parsed successfully
-./ivltests/sva_sequence_ports.v:24: $finish called at 0 (1s)
+ivltests/sva_sequence_ports.v:24: $finish called at 0 (1s)

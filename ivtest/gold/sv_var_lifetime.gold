@@ -4,4 +4,4 @@ call_count = 2
 data = ab, valid = 1
 get_value = 100
 PASSED - Variable lifetime override parsed successfully
-./ivltests/sv_var_lifetime.v:40: $finish called at 0 (1s)
+ivltests/sv_var_lifetime.v:40: $finish called at 0 (1s)

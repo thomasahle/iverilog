@@ -1,2 +1,2 @@
 PASSED - SVA sequence declarations parsed successfully
-./ivltests/sva_sequence_basic.v:29: $finish called at 0 (1s)
+ivltests/sva_sequence_basic.v:29: $finish called at 0 (1s)

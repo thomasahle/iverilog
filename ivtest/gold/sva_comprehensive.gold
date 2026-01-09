@@ -1,2 +1,2 @@
 PASSED - Comprehensive SVA test parsed successfully
-./ivltests/sva_comprehensive.v:84: $finish called at 0 (1s)
+ivltests/sva_comprehensive.v:84: $finish called at 0 (1s)

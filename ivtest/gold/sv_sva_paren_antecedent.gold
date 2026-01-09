@@ -1,3 +1,2 @@
-./ivltests/sv_sva_paren_antecedent.v:26: first_match approximated as single-cycle check.
 PASSED: Parenthesized antecedent assertions work
-./ivltests/sv_sva_paren_antecedent.v:63: $finish called at 26 (1s)
+ivltests/sv_sva_paren_antecedent.v:63: $finish called at 26 (1s)

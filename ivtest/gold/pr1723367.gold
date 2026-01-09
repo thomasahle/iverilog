@@ -1,23 +1,23 @@
-./ivltests/pr1723367.v:132: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:140: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:141: warning: Scalar port ``b'' has a vectored net declaration [15:0].
-./ivltests/pr1723367.v:149: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:157: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:168: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:176: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:177: warning: Scalar port ``b'' has a vectored net declaration [15:0].
-./ivltests/pr1723367.v:185: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:193: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:204: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:214: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:215: warning: Scalar port ``b'' has a vectored net declaration [31:0].
-./ivltests/pr1723367.v:247: warning: Scalar port ``a'' has a vectored net declaration [15:0].
-./ivltests/pr1723367.v:255: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:256: warning: Scalar port ``b'' has a vectored net declaration [31:0].
-./ivltests/pr1723367.v:283: warning: Scalar port ``a'' has a vectored net declaration [15:0].
-./ivltests/pr1723367.v:291: warning: Scalar port ``a'' has a vectored net declaration [7:0].
-./ivltests/pr1723367.v:292: warning: Scalar port ``b'' has a vectored net declaration [15:0].
-./ivltests/pr1723367.v:308: warning: Scalar port ``a'' has a vectored net declaration [15:0].
+ivltests/pr1723367.v:132: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:140: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:141: warning: Scalar port ``b'' has a vectored net declaration [15:0].
+ivltests/pr1723367.v:149: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:157: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:168: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:176: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:177: warning: Scalar port ``b'' has a vectored net declaration [15:0].
+ivltests/pr1723367.v:185: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:193: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:204: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:214: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:215: warning: Scalar port ``b'' has a vectored net declaration [31:0].
+ivltests/pr1723367.v:247: warning: Scalar port ``a'' has a vectored net declaration [15:0].
+ivltests/pr1723367.v:255: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:256: warning: Scalar port ``b'' has a vectored net declaration [31:0].
+ivltests/pr1723367.v:283: warning: Scalar port ``a'' has a vectored net declaration [15:0].
+ivltests/pr1723367.v:291: warning: Scalar port ``a'' has a vectored net declaration [7:0].
+ivltests/pr1723367.v:292: warning: Scalar port ``b'' has a vectored net declaration [15:0].
+ivltests/pr1723367.v:308: warning: Scalar port ``a'' has a vectored net declaration [15:0].
 sum[          1] = 0101010101100000
 sum[          2] = 0101010101100000
 sum[          3] = 0101010101100000

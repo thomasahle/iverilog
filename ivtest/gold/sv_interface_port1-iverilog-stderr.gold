@@ -1,2 +1,2 @@
-./ivltests/sv_interface_port1.sv:11: sorry: Interface port `iface_port` of type `TestIface` is not yet supported. Use explicit signal ports instead.
+ivltests/sv_interface_port1.sv:11: sorry: Interface port `iface_port` of type `TestIface` is not yet supported. Use explicit signal ports instead.
 1 error(s) during elaboration.
