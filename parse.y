@@ -1167,7 +1167,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %left '*' '/' '%'
 %left K_POW
 %left UNARY_PREC
-
+%nonassoc K_INCR K_DECR
 
  /* to resolve dangling else ambiguity. */
 %nonassoc less_than_K_else
@@ -6465,6 +6465,18 @@ expression
       { $$ = $1; }
   | inc_or_dec_expression
       { $$ = $1; }
+  | expr_primary K_INCR %prec K_INCR
+      { /* Post-increment: expr++ returns expr then increments */
+        PEUnary*tmp = new PEUnary('i', $1);
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+  | expr_primary K_DECR %prec K_DECR
+      { /* Post-decrement: expr-- returns expr then decrements */
+        PEUnary*tmp = new PEUnary('d', $1);
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
   | inside_expression
       { $$ = $1; }
   | '+' attribute_list_opt expr_primary %prec UNARY_PREC
