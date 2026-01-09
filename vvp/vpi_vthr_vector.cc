@@ -593,10 +593,17 @@ void __vpiVThrVec4Stack::vpi_get_value_string_(p_vpi_value vp, const vvp_vector4
 void __vpiVThrVec4Stack::vpi_get_value_vector_(p_vpi_value vp, const vvp_vector4_t&val)
 {
       unsigned wid = val.size();
+      unsigned words = (wid+31)/32;
 
       vp->value.vector = static_cast<s_vpi_vecval*>
-                         (need_result_buf((wid+31)/32*sizeof(s_vpi_vecval), RBUF_VAL));
+                         (need_result_buf(words*sizeof(s_vpi_vecval), RBUF_VAL));
       assert(vp->value.vector);
+
+      // Initialize all words to 0 before setting bits
+      for (unsigned w = 0; w < words; w++) {
+	    vp->value.vector[w].aval = 0;
+	    vp->value.vector[w].bval = 0;
+      }
 
       for (unsigned idx = 0 ;  idx < wid ;  idx += 1) {
 	    int word = idx/32;
@@ -604,19 +611,16 @@ void __vpiVThrVec4Stack::vpi_get_value_vector_(p_vpi_value vp, const vvp_vector4
 
 	    switch (val.value(idx)) {
 		case BIT4_0:
-		  vp->value.vector[word].aval &= ~mask;
-		  vp->value.vector[word].bval &= ~mask;
+		  // Already 0, no action needed
 		  break;
 		case BIT4_1:
 		  vp->value.vector[word].aval |=  mask;
-		  vp->value.vector[word].bval &= ~mask;
 		  break;
 		case BIT4_X:
 		  vp->value.vector[word].aval |=  mask;
 		  vp->value.vector[word].bval |=  mask;
 		  break;
 		case BIT4_Z:
-		  vp->value.vector[word].aval &= ~mask;
 		  vp->value.vector[word].bval |=  mask;
 		  break;
 	    }
