@@ -8663,7 +8663,7 @@ static bool lookup_enum_constant(LexicalScope*scope, perm_string name, int64_t&v
  * negative constants like -10 which are represented as PEUnary('-', PENumber(10)).
  * Returns true if a constant was extracted, false otherwise.
  */
-static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope*scope = nullptr, netclass_t*cls = nullptr)
+static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope*scope = nullptr, netclass_t*cls = nullptr, Design*des = nullptr)
 {
       // Direct number
       const PENumber* num = dynamic_cast<const PENumber*>(expr);
@@ -8680,6 +8680,12 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope
 		  value = -inner_num->value().as_long();
 		  return true;
 	    }
+	    // Also try unary minus on parameter or enum constant
+	    int64_t inner_val;
+	    if (extract_constant_value(unary->get_expr(), inner_val, scope, cls, des)) {
+		  value = -inner_val;
+		  return true;
+	    }
       }
 
       // Unary plus on a number: +N (less common but valid)
@@ -8689,18 +8695,39 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope
 		  value = inner_num->value().as_long();
 		  return true;
 	    }
+	    // Also try unary plus on parameter or enum constant
+	    int64_t inner_val;
+	    if (extract_constant_value(unary->get_expr(), inner_val, scope, cls, des)) {
+		  value = inner_val;
+		  return true;
+	    }
       }
 
-      // Identifier that might be an enum constant
-      if (scope != nullptr) {
-	    const PEIdent* ident = dynamic_cast<const PEIdent*>(expr);
-	    if (ident != nullptr) {
-		  const pform_scoped_name_t& path = ident->path();
-		  // Only handle simple names (not hierarchical)
-		  if (path.name.size() == 1 && path.name.front().index.empty()) {
-			perm_string name = path.name.front().name;
+      // Identifier that might be an enum constant or class parameter
+      const PEIdent* ident = dynamic_cast<const PEIdent*>(expr);
+      if (ident != nullptr) {
+	    const pform_scoped_name_t& path = ident->path();
+	    // Only handle simple names (not hierarchical)
+	    if (path.name.size() == 1 && path.name.front().index.empty()) {
+		  perm_string name = path.name.front().name;
+
+		  // First try enum constant lookup in pform scope
+		  if (scope != nullptr) {
 			if (lookup_enum_constant(scope, name, value)) {
 			      return true;
+			}
+		  }
+
+		  // Then try class parameter lookup
+		  if (cls != nullptr && des != nullptr) {
+			ivl_type_t par_type;
+			const NetExpr* par_expr = cls->get_parameter(des, name, par_type);
+			if (par_expr != nullptr) {
+			      const NetEConst* econ = dynamic_cast<const NetEConst*>(par_expr);
+			      if (econ != nullptr) {
+				    value = econ->value().as_long();
+				    return true;
+			      }
 			}
 		  }
 	    }
@@ -8764,17 +8791,18 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope
  * where OP is a relational operator (>, <, >=, <=, ==, !=).
  * The scope parameter is used to look up enum constants when the constraint
  * uses enum values like "val == VAL_1".
+ * The des parameter is needed to look up class parameters.
  * Returns true if a simple bound was extracted, false otherwise.
  */
-static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr, bool is_soft, LexicalScope*scope = nullptr)
+static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr, bool is_soft, LexicalScope*scope = nullptr, Design*des = nullptr)
 {
       // Check for logical AND expression (from 'inside' constraints)
       // e.g., (x >= 0) && (x <= 3) from "inside {[0:3]}"
       const PEBLogic* logic = dynamic_cast<const PEBLogic*>(expr);
       if (logic != nullptr && logic->get_op() == 'a') {
 	    // Recursively extract bounds from both sides of AND
-	    bool left_ok = extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft, scope);
-	    bool right_ok = extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft, scope);
+	    bool left_ok = extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft, scope, des);
+	    bool right_ok = extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft, scope, des);
 	    return left_ok || right_ok;
       }
 
@@ -8782,8 +8810,8 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       // e.g., (x == 1) || (x == 2) from "inside {1, 2}"
       // For OR, we can't easily extract bounds, so just process each side
       if (logic != nullptr && logic->get_op() == 'o') {
-	    extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft, scope);
-	    extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft, scope);
+	    extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft, scope, des);
+	    extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft, scope, des);
 	    return false;  // OR constraints are harder to enforce as bounds
       }
 
@@ -8865,14 +8893,14 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       bool has_const = false;
       bool prop_on_left = false;
 
-      // Case 1: property OP constant (including negative constants, enum constants, and $size())
+      // Case 1: property OP constant (including negative constants, enum constants, parameters, and $size())
       if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr &&
-          extract_constant_value(right, const_val, scope, cls)) {
+          extract_constant_value(right, const_val, scope, cls, des)) {
 	    prop_on_left = true;
 	    has_const = true;
       }
-      // Case 2: constant OP property (e.g., 0 < value, -10 < value, VAL_1 < value, $size(arr) > value)
-      else if (extract_constant_value(left, const_val, scope, cls) &&
+      // Case 2: constant OP property (e.g., 0 < value, -10 < value, VAL_1 < value, $size(arr) > value, MAX_VAL > value)
+      else if (extract_constant_value(left, const_val, scope, cls, des) &&
                (prop_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
 	    prop_on_left = false;
 	    has_const = true;
@@ -8893,7 +8921,7 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       // Case 4: sysfunc(property) OP constant (e.g., $countones(flags) == 1)
       else {
 	    const PECallFunction* sysfunc = dynamic_cast<const PECallFunction*>(left);
-	    if (sysfunc != nullptr && extract_constant_value(right, const_val, scope, cls)) {
+	    if (sysfunc != nullptr && extract_constant_value(right, const_val, scope, cls, des)) {
 		  // Get the system function name from the path
 		  const pform_scoped_name_t& func_path = sysfunc->path();
 		  if (func_path.name.size() == 0)
@@ -9048,9 +9076,10 @@ void netclass_t::elaborate(Design*des, PClass*pclass)
 
 	      // Extract simple bounds from constraint expressions
 	      // Pass pclass as scope for looking up enum constants in constraints
+	      // Pass des for looking up class parameters in constraints
 	    for (PExpr* expr : pcons->expressions) {
 		  if (expr != nullptr) {
-			extract_simple_bound(this, cons_name, expr, pcons->is_soft, pclass);
+			extract_simple_bound(this, cons_name, expr, pcons->is_soft, pclass, des);
 		  }
 	    }
       }
