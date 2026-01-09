@@ -4378,11 +4378,12 @@ property_expr /* IEEE1800-2012 A.2.10 */
       }
   | expression K_s_until_with expression
       { /* s_until_with (strong until with): a s_until_with b means a holds until b
-           (inclusive, b must eventually happen). For single-cycle: check both. */
+           (inclusive, b must eventually happen).
+           For single-cycle approximation: b || a (either we've reached b, or a still holds) */
 	if ($1 && $3) {
-	      PEBLogic*both = new PEBLogic('a', $1, $3);
-	      FILE_NAME(both, @1);
-	      $$ = both;
+	      PEBLogic*either = new PEBLogic('o', $3, $1);
+	      FILE_NAME(either, @1);
+	      $$ = either;
 	} else {
 	      delete $1;
 	      delete $3;
@@ -4391,11 +4392,11 @@ property_expr /* IEEE1800-2012 A.2.10 */
       }
   | expression K_until_with expression
       { /* until_with: a until_with b means a holds until b (inclusive).
-           For single-cycle evaluation: check both a and b. */
+           For single-cycle approximation: b || a (either we've reached b, or a still holds) */
 	if ($1 && $3) {
-	      PEBLogic*both = new PEBLogic('a', $1, $3);
-	      FILE_NAME(both, @1);
-	      $$ = both;
+	      PEBLogic*either = new PEBLogic('o', $3, $1);
+	      FILE_NAME(either, @1);
+	      $$ = either;
 	} else {
 	      delete $1;
 	      delete $3;
@@ -4461,11 +4462,11 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	}
       }
   | '(' expression K_s_until_with expression ')'
-      { /* Parenthesized s_until_with */
+      { /* Parenthesized s_until_with: single-cycle approximation b || a */
 	if ($2 && $4) {
-	      PEBLogic*both = new PEBLogic('a', $2, $4);
-	      FILE_NAME(both, @2);
-	      $$ = both;
+	      PEBLogic*either = new PEBLogic('o', $4, $2);
+	      FILE_NAME(either, @2);
+	      $$ = either;
 	} else {
 	      delete $2;
 	      delete $4;
