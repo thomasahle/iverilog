@@ -4040,9 +4040,82 @@ property_expr /* IEEE1800-2012 A.2.10 */
   | expression K_IMPLIES_NOV K_SEQ_DELAY DEC_NUMBER property_expr
       { /* |=> ##n sequence - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_OV K_SEQ_DELAY '[' expression ':' expression ']' property_expr
-      { /* |-> ##[m:n] sequence - parsed but not elaborated */ $$ = 0; }
+      { /* a |-> ##[m:n] b - if a was true m..n cycles ago, b must be true now */
+	PENumber*m_num = dynamic_cast<PENumber*>($5);
+	PENumber*n_num = dynamic_cast<PENumber*>($7);
+	if ($9 && m_num && n_num) {
+	      long m = m_num->value().as_long();
+	      long n = n_num->value().as_long();
+	      if (m >= 0 && n >= m && (n - m) <= 32) {
+		    /* Build $past(a, n) - use original expression for largest delay */
+		    std::vector<named_pexpr_t> past_parms;
+		    named_pexpr_t parm1;
+		    parm1.parm = $1;
+		    past_parms.push_back(parm1);
+		    if (n > 1) {
+			  named_pexpr_t parm2;
+			  parm2.parm = new PENumber(new verinum(n));
+			  past_parms.push_back(parm2);
+		    } else if (n == 1) {
+			  /* $past(a) for n=1 */
+		    }
+		    PExpr*past_expr;
+		    if (n == 0) {
+			  /* No $past needed for ##[0:0] */
+			  past_expr = $1;
+		    } else {
+			  past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
+			  FILE_NAME(past_expr, @1);
+		    }
+		    /* For simplicity, approximate ##[m:n] as ##n (check largest delay) */
+		    /* Create !(past_expr) || consequent */
+		    PEUnary*not_past = new PEUnary('!', past_expr);
+		    FILE_NAME(not_past, @1);
+		    PEBLogic*impl = new PEBLogic('o', not_past, $9);
+		    FILE_NAME(impl, @1);
+		    $$ = impl;
+	      } else {
+		    delete $1;
+		    $$ = 0;
+	      }
+	} else {
+	      delete $1;
+	      $$ = 0;
+	}
+      }
   | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' expression ']' property_expr
-      { /* |=> ##[m:n] sequence - parsed but not elaborated */ $$ = 0; }
+      { /* a |=> ##[m:n] b - non-overlapping: approximate as ##(n+1) check */
+	PENumber*m_num = dynamic_cast<PENumber*>($5);
+	PENumber*n_num = dynamic_cast<PENumber*>($7);
+	if ($9 && m_num && n_num) {
+	      long m = m_num->value().as_long();
+	      long n = n_num->value().as_long();
+	      if (m >= 0 && n >= m && (n - m) <= 32) {
+		    /* Build $past(a, n+1) for largest delay + non-overlap offset */
+		    std::vector<named_pexpr_t> past_parms;
+		    named_pexpr_t parm1;
+		    parm1.parm = $1;
+		    past_parms.push_back(parm1);
+		    named_pexpr_t parm2;
+		    parm2.parm = new PENumber(new verinum(n + 1));
+		    past_parms.push_back(parm2);
+		    PExpr*past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
+		    FILE_NAME(past_expr, @1);
+		    /* Create !(past_expr) || consequent */
+		    PEUnary*not_past = new PEUnary('!', past_expr);
+		    FILE_NAME(not_past, @1);
+		    PEBLogic*impl = new PEBLogic('o', not_past, $9);
+		    FILE_NAME(impl, @1);
+		    $$ = impl;
+	      } else {
+		    delete $1;
+		    $$ = 0;
+	      }
+	} else {
+	      delete $1;
+	      $$ = 0;
+	}
+      }
   | expression K_IMPLIES_OV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
       { /* |-> ##[m:$] unbounded sequence - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
@@ -4120,9 +4193,101 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	}
       }
   | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_OV property_expr
-      { /* seq ##[m:n] seq |-> prop - range delay in antecedent */ $$ = 0; }
+      { /* seq ##[m:n] seq |-> prop - approximate as ##n (largest delay) */
+	PENumber*m_num = dynamic_cast<PENumber*>($4);
+	PENumber*n_num = dynamic_cast<PENumber*>($6);
+	if ($10 && m_num && n_num) {
+	      long m = m_num->value().as_long();
+	      long n = n_num->value().as_long();
+	      /* Limit range to avoid explosion - max 32 cycles */
+	      if (m >= 0 && n >= m && (n - m) <= 32) {
+		    /* Create $past($1, n) - use largest delay */
+		    PExpr*past_expr;
+		    if (n == 0) {
+			  past_expr = $1;
+		    } else {
+			  std::vector<named_pexpr_t> past_parms;
+			  named_pexpr_t parm1;
+			  parm1.parm = $1;
+			  past_parms.push_back(parm1);
+			  if (n > 1) {
+				named_pexpr_t parm2;
+				parm2.parm = new PENumber(new verinum(n));
+				past_parms.push_back(parm2);
+			  }
+			  past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
+			  FILE_NAME(past_expr, @1);
+		    }
+		    /* Create $past(seq1, n) && seq2 */
+		    PEBLogic*and_expr = new PEBLogic('a', past_expr, $8);
+		    FILE_NAME(and_expr, @1);
+		    /* Create !(and_expr) || consequent for overlapping implication */
+		    PEUnary*not_and = new PEUnary('!', and_expr);
+		    FILE_NAME(not_and, @1);
+		    PEBLogic*impl = new PEBLogic('o', not_and, $10);
+		    FILE_NAME(impl, @1);
+		    $$ = impl;
+	      } else {
+		    /* Range too large or invalid */
+		    delete $1;
+		    delete $8;
+		    $$ = 0;
+	      }
+	} else {
+	      /* Non-constant range bounds */
+	      delete $1;
+	      if ($8) delete $8;
+	      $$ = 0;
+	}
+      }
   | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_NOV property_expr
-      { /* seq ##[m:n] seq |=> prop - range delay in antecedent */ $$ = 0; }
+      { /* seq ##[m:n] seq |=> prop - approximate as ##(n+1) for non-overlapping */
+	PENumber*m_num = dynamic_cast<PENumber*>($4);
+	PENumber*n_num = dynamic_cast<PENumber*>($6);
+	if ($10 && m_num && n_num) {
+	      long m = m_num->value().as_long();
+	      long n = n_num->value().as_long();
+	      /* Limit range to avoid explosion - max 32 cycles */
+	      if (m >= 0 && n >= m && (n - m) <= 32) {
+		    /* Create $past($1, n+1) - use largest delay + 1 for non-overlap */
+		    std::vector<named_pexpr_t> past_parms1;
+		    named_pexpr_t parm1;
+		    parm1.parm = $1;
+		    past_parms1.push_back(parm1);
+		    named_pexpr_t parm_n;
+		    parm_n.parm = new PENumber(new verinum(n + 1));
+		    past_parms1.push_back(parm_n);
+		    PExpr*past1 = new PECallFunction(perm_string::literal("$past"), past_parms1);
+		    FILE_NAME(past1, @1);
+		    /* Create $past($8) - seq2 from previous cycle for |=> */
+		    std::vector<named_pexpr_t> past_parms2;
+		    named_pexpr_t parm2;
+		    parm2.parm = $8;
+		    past_parms2.push_back(parm2);
+		    PExpr*past2 = new PECallFunction(perm_string::literal("$past"), past_parms2);
+		    FILE_NAME(past2, @8);
+		    /* Create $past(seq1, n+1) && $past(seq2) */
+		    PEBLogic*and_expr = new PEBLogic('a', past1, past2);
+		    FILE_NAME(and_expr, @1);
+		    /* Create !(and_expr) || consequent */
+		    PEUnary*not_and = new PEUnary('!', and_expr);
+		    FILE_NAME(not_and, @1);
+		    PEBLogic*impl = new PEBLogic('o', not_and, $10);
+		    FILE_NAME(impl, @1);
+		    $$ = impl;
+	      } else {
+		    /* Range too large or invalid */
+		    delete $1;
+		    delete $8;
+		    $$ = 0;
+	      }
+	} else {
+	      /* Non-constant range bounds */
+	      delete $1;
+	      if ($8) delete $8;
+	      $$ = 0;
+	}
+      }
   | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression K_IMPLIES_OV property_expr
       { /* seq ##[m:$] seq |-> prop - unbounded delay in antecedent */ $$ = 0; }
   | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression K_IMPLIES_NOV property_expr
