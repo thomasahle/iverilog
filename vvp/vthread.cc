@@ -8686,7 +8686,17 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 {
       class_type::simple_bound_t bound;
       bound.property_idx = cp->number;
-      int op_code = cp->bit_idx[0];
+      unsigned encoded_op = cp->bit_idx[0];
+
+      // Decode weight and weight_per_value from upper bits:
+      //   bits 0-3: op_code (including soft flag in bit 3)
+      //   bits 4-19: weight (up to 65535)
+      //   bit 31: weight_per_value flag
+      bound.weight = (encoded_op >> 4) & 0xFFFF;
+      bound.weight_per_value = (encoded_op & (1u << 31)) != 0;
+      if (bound.weight == 0) bound.weight = 1;  // Default weight if not specified
+
+      int op_code = encoded_op & 0xF;
       // Extract soft flag from bit 3
       bool is_soft = (op_code & 8) != 0;
       op_code &= 7;  // Mask off soft flag to get operator
@@ -8703,8 +8713,6 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
       bound.has_const_bound = true;
       bound.const_bound = (int64_t)(int32_t)cp->bit_idx[1];  // Sign-extend
       bound.bound_prop_idx = 0;
-      bound.weight = 1;  // Default weight
-      bound.weight_per_value = true;
 
       thr->push_inline_constraint(bound);
       return true;
@@ -8744,8 +8752,8 @@ bool of_STD_RANDOMIZE(vthread_t thr, vvp_code_t cp)
       // Collect bounds matching our prop_idx
       int64_t min_val = INT64_MIN;
       int64_t max_val = INT64_MAX;
-      bool has_eq = false;
-      int64_t eq_val = 0;
+      // Collect discrete values with weights for == constraints (from dist)
+      std::vector<std::pair<int64_t, int64_t>> discrete_values;  // (value, weight)
 
       for (const auto& b : bounds) {
 	    if (b.property_idx != prop_idx) continue;
@@ -8762,17 +8770,30 @@ bool of_STD_RANDOMIZE(vthread_t thr, vvp_code_t cp)
 		  case 'L':  // value <= const
 			if (b.const_bound < max_val) max_val = b.const_bound;
 			break;
-		  case '=':  // value == const
-			has_eq = true;
-			eq_val = b.const_bound;
+		  case '=':  // value == const - collect for weighted selection
+			discrete_values.push_back({b.const_bound, b.weight});
 			break;
 	    }
       }
 
       int64_t generated_val;
-      if (has_eq) {
-	    // Equality constraint - use exact value
-	    generated_val = eq_val;
+      if (!discrete_values.empty()) {
+	    // Weighted random selection from discrete values
+	    int64_t total_weight = 0;
+	    for (const auto& dv : discrete_values) {
+		  total_weight += dv.second;
+	    }
+	    int64_t pick = rand() % total_weight;
+	    int64_t cumulative = 0;
+	    size_t selected = 0;
+	    for (size_t j = 0; j < discrete_values.size(); j++) {
+		  cumulative += discrete_values[j].second;
+		  if (pick < cumulative) {
+			selected = j;
+			break;
+		  }
+	    }
+	    generated_val = discrete_values[selected].first;
       } else if (max_val >= min_val) {
 	    // Generate value in range [min_val, max_val]
 	    int64_t range = max_val - min_val + 1;

@@ -1593,7 +1593,8 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 		  ivl_expr_t prop_expr = ivl_expr_parm(expr, idx);
 		  ivl_expr_t op_expr = ivl_expr_parm(expr, idx+1);
 		  ivl_expr_t val_expr = ivl_expr_parm(expr, idx+2);
-		  /* weight and weight_per_value at idx+3 and idx+4 - not yet used by opcode */
+		  ivl_expr_t weight_expr = ivl_expr_parm(expr, idx+3);
+		  ivl_expr_t wpv_expr = ivl_expr_parm(expr, idx+4);
 
 		  /* Extract constant values */
 		  if (ivl_expr_type(prop_expr) == IVL_EX_NUMBER &&
@@ -1623,8 +1624,32 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			      const_val |= (-1LL << ivl_expr_width(val_expr));
 			}
 
+			/* Decode weight and weight_per_value */
+			unsigned weight = 1;
+			bool weight_per_value = true;
+			if (ivl_expr_type(weight_expr) == IVL_EX_NUMBER) {
+			      const char *w_bits = ivl_expr_bits(weight_expr);
+			      weight = 0;
+			      for (unsigned b = 0; b < ivl_expr_width(weight_expr) && b < 32; b++) {
+				    if (w_bits[b] == '1') weight |= (1u << b);
+			      }
+			}
+			if (ivl_expr_type(wpv_expr) == IVL_EX_NUMBER) {
+			      const char *wpv_bits = ivl_expr_bits(wpv_expr);
+			      weight_per_value = (wpv_bits[0] == '1');
+			}
+
+			/* Encode weight in upper bits of op_code:
+			   bits 0-3: op_code (including soft flag)
+			   bits 4-19: weight (up to 65535)
+			   bit 31: weight_per_value flag */
+			unsigned encoded_op = op_code;
+			if (weight > 65535) weight = 65535;
+			encoded_op |= (weight << 4);
+			if (weight_per_value) encoded_op |= (1u << 31);
+
 			fprintf(vvp_out, "    %%push_rand_bound %u, %u, %lld;\n",
-			        prop_idx, op_code, (long long)const_val);
+			        prop_idx, encoded_op, (long long)const_val);
 		  }
 	    }
 
@@ -1676,14 +1701,24 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			if (parm_idx + 3 >= nparms) break;
 			ivl_expr_t op_expr = ivl_expr_parm(expr, parm_idx++);
 			ivl_expr_t val_expr = ivl_expr_parm(expr, parm_idx++);
-			/* Skip weight and weight_per_value for now */
-			parm_idx += 2;
+			ivl_expr_t weight_expr = ivl_expr_parm(expr, parm_idx++);
+			ivl_expr_t wpv_expr = ivl_expr_parm(expr, parm_idx++);
 
 			int op_code = (int)ivl_expr_uvalue(op_expr);
 			int64_t const_val = (int64_t)(int32_t)ivl_expr_uvalue(val_expr);
+			unsigned weight = (unsigned)ivl_expr_uvalue(weight_expr);
+			bool weight_per_value = ivl_expr_uvalue(wpv_expr) != 0;
+			/* Encode weight in upper bits of op_code:
+			   bits 0-3: op_code (including soft flag)
+			   bits 4-19: weight (up to 65535)
+			   bit 31: weight_per_value flag */
+			unsigned encoded_op = (unsigned)op_code;
+			if (weight > 65535) weight = 65535;  /* Clamp to 16 bits */
+			encoded_op |= (weight << 4);
+			if (weight_per_value) encoded_op |= (1u << 31);
 			/* Cast to uint32_t for VVP output - VVP interprets as signed at runtime */
-			fprintf(vvp_out, "    %%push_rand_bound %u, %d, %u;\n",
-				sig_idx, op_code, (uint32_t)const_val);
+			fprintf(vvp_out, "    %%push_rand_bound %u, %u, %u;\n",
+				sig_idx, encoded_op, (uint32_t)const_val);
 		  }
 	    }
 
