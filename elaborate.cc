@@ -8738,6 +8738,52 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    return false;  // OR constraints are harder to enforce as bounds
       }
 
+      // Check for standalone system function call (e.g., $onehot(value) without comparison)
+      // These are boolean-valued functions that must be true
+      const PECallFunction* standalone_sysfunc = dynamic_cast<const PECallFunction*>(expr);
+      if (standalone_sysfunc != nullptr) {
+	    const pform_scoped_name_t& func_path = standalone_sysfunc->path();
+	    if (func_path.name.size() > 0) {
+		  const name_component_t& last_comp = func_path.name.back();
+		  perm_string func_name = last_comp.name;
+		  if (!func_name.nil()) {
+			// Check if it's a boolean system function
+			netclass_t::sysfunc_type_t sysfunc_type = netclass_t::SYSFUNC_NONE;
+			if (func_name == "$onehot")
+			      sysfunc_type = netclass_t::SYSFUNC_ONEHOT;
+			else if (func_name == "$onehot0")
+			      sysfunc_type = netclass_t::SYSFUNC_ONEHOT0;
+			// Note: $countones alone doesn't make sense as a boolean constraint
+			// It needs a comparison like $countones(x) == 1
+
+			if (sysfunc_type != netclass_t::SYSFUNC_NONE) {
+			      // Get the function argument
+			      const std::vector<named_pexpr_t>& parms = standalone_sysfunc->parms();
+			      if (parms.size() == 1 && parms[0].parm != nullptr) {
+				    const PEIdent* arg_ident = dynamic_cast<const PEIdent*>(parms[0].parm);
+				    if (arg_ident != nullptr) {
+					  const pform_scoped_name_t& arg_path = arg_ident->path();
+					  if (arg_path.name.size() > 0) {
+						const name_component_t& arg_last_comp = arg_path.name.back();
+						perm_string arg_name = arg_last_comp.name;
+						int arg_idx = cls->property_idx_from_name(arg_name);
+						if (arg_idx >= 0) {
+						      property_qualifier_t qual = cls->get_prop_qual(arg_idx);
+						      if (qual.test_rand() || qual.test_randc()) {
+							    // Treat standalone $onehot(x) as $onehot(x) == 1
+							    cls->add_simple_bound(constraint_name, arg_idx, '=', is_soft,
+							                          true, 1, 0, sysfunc_type, arg_idx);
+							    return true;
+						      }
+						}
+					  }
+				    }
+			      }
+			}
+		  }
+	    }
+      }
+
       // Check if this is a comparison expression
       const PEBComp* cmp = dynamic_cast<const PEBComp*>(expr);
       if (cmp == nullptr) {

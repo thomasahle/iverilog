@@ -1295,3 +1295,4 @@ sv_cast_enum_to_bit	normal,-g2012	ivltests
 sv_enum_name_print	normal,-g2012	ivltests
 sv_queue_prop_index_methods	normal,-g2012	ivltests
 sv_countones_range_constraint	normal,-g2012	ivltests
+sv_constraint_onehot_standalone normal,-g2012 ivltests
