@@ -8627,11 +8627,43 @@ bool Module::elaborate(Design*des, NetScope*scope) const
 }
 
 /*
+ * Helper function to look up an enum constant value from a lexical scope.
+ * Searches through enum_sets in the scope and parent scopes for a matching name.
+ * Returns true if found and sets value, false otherwise.
+ */
+static bool lookup_enum_constant(LexicalScope*scope, perm_string name, int64_t&value)
+{
+      LexicalScope* ss = scope;
+      while (ss != nullptr) {
+	    for (auto* enum_type : ss->enum_sets) {
+		  if (enum_type->names == nullptr)
+			continue;
+		  for (const auto& named : *(enum_type->names)) {
+			if (named.name == name) {
+			      // Found the enum constant
+			      if (named.parm != nullptr) {
+				    const PENumber* num = dynamic_cast<const PENumber*>(named.parm);
+				    if (num != nullptr) {
+					  value = num->value().as_long();
+					  return true;
+				    }
+			      }
+			      // Auto-assigned value - can't extract at parse time
+			      return false;
+			}
+		  }
+	    }
+	    ss = ss->parent_scope();
+      }
+      return false;
+}
+
+/*
  * Helper function to extract a constant value from a PExpr, including
  * negative constants like -10 which are represented as PEUnary('-', PENumber(10)).
  * Returns true if a constant was extracted, false otherwise.
  */
-static bool extract_constant_value(const PExpr*expr, int64_t&value)
+static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope*scope = nullptr)
 {
       // Direct number
       const PENumber* num = dynamic_cast<const PENumber*>(expr);
@@ -8659,6 +8691,21 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value)
 	    }
       }
 
+      // Identifier that might be an enum constant
+      if (scope != nullptr) {
+	    const PEIdent* ident = dynamic_cast<const PEIdent*>(expr);
+	    if (ident != nullptr) {
+		  const pform_scoped_name_t& path = ident->path();
+		  // Only handle simple names (not hierarchical)
+		  if (path.name.size() == 1 && path.name.front().index.empty()) {
+			perm_string name = path.name.front().name;
+			if (lookup_enum_constant(scope, name, value)) {
+			      return true;
+			}
+		  }
+	    }
+      }
+
       return false;
 }
 
@@ -8666,17 +8713,19 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value)
  * Helper function to extract simple bounds from constraint expressions.
  * Handles expressions of the form: property OP constant or property OP property
  * where OP is a relational operator (>, <, >=, <=, ==, !=).
+ * The scope parameter is used to look up enum constants when the constraint
+ * uses enum values like "val == VAL_1".
  * Returns true if a simple bound was extracted, false otherwise.
  */
-static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr, bool is_soft)
+static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr, bool is_soft, LexicalScope*scope = nullptr)
 {
       // Check for logical AND expression (from 'inside' constraints)
       // e.g., (x >= 0) && (x <= 3) from "inside {[0:3]}"
       const PEBLogic* logic = dynamic_cast<const PEBLogic*>(expr);
       if (logic != nullptr && logic->get_op() == 'a') {
 	    // Recursively extract bounds from both sides of AND
-	    bool left_ok = extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft);
-	    bool right_ok = extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft);
+	    bool left_ok = extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft, scope);
+	    bool right_ok = extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft, scope);
 	    return left_ok || right_ok;
       }
 
@@ -8684,8 +8733,8 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       // e.g., (x == 1) || (x == 2) from "inside {1, 2}"
       // For OR, we can't easily extract bounds, so just process each side
       if (logic != nullptr && logic->get_op() == 'o') {
-	    extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft);
-	    extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft);
+	    extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft, scope);
+	    extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft, scope);
 	    return false;  // OR constraints are harder to enforce as bounds
       }
 
@@ -8721,14 +8770,14 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       bool has_const = false;
       bool prop_on_left = false;
 
-      // Case 1: property OP constant (including negative constants)
+      // Case 1: property OP constant (including negative constants and enum constants)
       if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr &&
-          extract_constant_value(right, const_val)) {
+          extract_constant_value(right, const_val, scope)) {
 	    prop_on_left = true;
 	    has_const = true;
       }
-      // Case 2: constant OP property (e.g., 0 < value, -10 < value)
-      else if (extract_constant_value(left, const_val) &&
+      // Case 2: constant OP property (e.g., 0 < value, -10 < value, VAL_1 < value)
+      else if (extract_constant_value(left, const_val, scope) &&
                (prop_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
 	    prop_on_left = false;
 	    has_const = true;
@@ -8749,7 +8798,7 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       // Case 4: sysfunc(property) OP constant (e.g., $countones(flags) == 1)
       else {
 	    const PECallFunction* sysfunc = dynamic_cast<const PECallFunction*>(left);
-	    if (sysfunc != nullptr && extract_constant_value(right, const_val)) {
+	    if (sysfunc != nullptr && extract_constant_value(right, const_val, scope)) {
 		  // Get the system function name from the path
 		  const pform_scoped_name_t& func_path = sysfunc->path();
 		  if (func_path.name.size() == 0)
@@ -8903,9 +8952,10 @@ void netclass_t::elaborate(Design*des, PClass*pclass)
 	    add_constraint(cons_name, pcons->is_soft, nullptr);
 
 	      // Extract simple bounds from constraint expressions
+	      // Pass pclass as scope for looking up enum constants in constraints
 	    for (PExpr* expr : pcons->expressions) {
 		  if (expr != nullptr) {
-			extract_simple_bound(this, cons_name, expr, pcons->is_soft);
+			extract_simple_bound(this, cons_name, expr, pcons->is_soft, pclass);
 		  }
 	    }
       }
