@@ -317,6 +317,34 @@ static bool resolve_named_property(PExpr*& expr, PEventStatement*& clk)
       return true;
 }
 
+/* Check if an expression looks like a potential property reference that wasn't found.
+   This helps detect when an assertion references a property that was skipped due
+   to unsupported sequence constructs. */
+static bool is_unresolved_property_reference(PExpr* expr)
+{
+      /* Check for simple identifier */
+      PEIdent* ident = dynamic_cast<PEIdent*>(expr);
+      if (ident) {
+            const pform_scoped_name_t& path = ident->path();
+            if (path.size() == 1 && path.package == 0) {
+                  /* Simple identifier with no selects - could be property name */
+                  return true;
+            }
+      }
+
+      /* Check for function call (parameterized property) */
+      PECallFunction* call = dynamic_cast<PECallFunction*>(expr);
+      if (call) {
+            const pform_scoped_name_t& call_path = call->path();
+            if (call_path.size() == 1 && call_path.package == 0) {
+                  /* Simple function call - could be parameterized property */
+                  return true;
+            }
+      }
+
+      return false;
+}
+
 /* Check if a struct type has any string members.
    Returns true if any member is a string type. */
 static bool struct_has_string_members(struct_type_t* stype)
@@ -1779,22 +1807,31 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 	      /* Try to resolve named property reference */
 	      PExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      resolve_named_property(prop_expr, prop_clk);
+	      bool resolved = resolve_named_property(prop_expr, prop_clk);
 
-	      /* For simple property expressions, transform into:
-	         @(clk) if (!expr) $error("assertion failed"); else pass_action; */
-	      std::list<named_pexpr_t> arg_list;
-	      PCallTask*err_call = new PCallTask(lex_strings.make("$error"), arg_list);
-	      FILE_NAME(err_call, @1);
-	      /* Create conditional: if (expr) pass_action else $error */
-	      PCondit*cond = new PCondit(prop_expr, $6, err_call);
-	      FILE_NAME(cond, @1);
-	      /* If there's a clocking event, wrap with event wait */
-	      if (prop_clk) {
-		    prop_clk->set_statement(cond);
-		    $$ = prop_clk;
+	      /* Check if this looks like an unresolved property reference */
+	      if (!resolved && is_unresolved_property_reference($4.expr)) {
+		    yywarn(@1, "assertion references undefined property"
+			   " (possibly skipped due to unsupported sequence constructs)."
+			   " Assertion ignored.");
+		    delete $6;
+		    $$ = 0;
 	      } else {
-		    $$ = cond;
+		    /* For simple property expressions, transform into:
+		       @(clk) if (!expr) $error("assertion failed"); else pass_action; */
+		    std::list<named_pexpr_t> arg_list;
+		    PCallTask*err_call = new PCallTask(lex_strings.make("$error"), arg_list);
+		    FILE_NAME(err_call, @1);
+		    /* Create conditional: if (expr) pass_action else $error */
+		    PCondit*cond = new PCondit(prop_expr, $6, err_call);
+		    FILE_NAME(cond, @1);
+		    /* If there's a clocking event, wrap with event wait */
+		    if (prop_clk) {
+			  prop_clk->set_statement(cond);
+			  $$ = prop_clk;
+		    } else {
+			  $$ = cond;
+		    }
 	      }
 	} else {
 	      if (gn_unsupported_assertions_flag) {
@@ -1812,16 +1849,25 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 	      /* Try to resolve named property reference */
 	      PExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      resolve_named_property(prop_expr, prop_clk);
+	      bool resolved = resolve_named_property(prop_expr, prop_clk);
 
-	      /* Transform: if (!expr) fail_action */
-	      PCondit*cond = new PCondit(prop_expr, 0, $7);
-	      FILE_NAME(cond, @1);
-	      if (prop_clk) {
-		    prop_clk->set_statement(cond);
-		    $$ = prop_clk;
+	      /* Check if this looks like an unresolved property reference */
+	      if (!resolved && is_unresolved_property_reference($4.expr)) {
+		    yywarn(@1, "assertion references undefined property"
+			   " (possibly skipped due to unsupported sequence constructs)."
+			   " Assertion ignored.");
+		    delete $7;
+		    $$ = 0;
 	      } else {
-		    $$ = cond;
+		    /* Transform: if (!expr) fail_action */
+		    PCondit*cond = new PCondit(prop_expr, 0, $7);
+		    FILE_NAME(cond, @1);
+		    if (prop_clk) {
+			  prop_clk->set_statement(cond);
+			  $$ = prop_clk;
+		    } else {
+			  $$ = cond;
+		    }
 	      }
 	} else {
 	      if (gn_unsupported_assertions_flag) {
@@ -1839,16 +1885,26 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 	      /* Try to resolve named property reference */
 	      PExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      resolve_named_property(prop_expr, prop_clk);
+	      bool resolved = resolve_named_property(prop_expr, prop_clk);
 
-	      /* Transform: if (expr) pass_action else fail_action */
-	      PCondit*cond = new PCondit(prop_expr, $6, $8);
-	      FILE_NAME(cond, @1);
-	      if (prop_clk) {
-		    prop_clk->set_statement(cond);
-		    $$ = prop_clk;
+	      /* Check if this looks like an unresolved property reference */
+	      if (!resolved && is_unresolved_property_reference($4.expr)) {
+		    yywarn(@1, "assertion references undefined property"
+			   " (possibly skipped due to unsupported sequence constructs)."
+			   " Assertion ignored.");
+		    delete $6;
+		    delete $8;
+		    $$ = 0;
 	      } else {
-		    $$ = cond;
+		    /* Transform: if (expr) pass_action else fail_action */
+		    PCondit*cond = new PCondit(prop_expr, $6, $8);
+		    FILE_NAME(cond, @1);
+		    if (prop_clk) {
+			  prop_clk->set_statement(cond);
+			  $$ = prop_clk;
+		    } else {
+			  $$ = cond;
+		    }
 	      }
 	} else {
 	      if (gn_unsupported_assertions_flag) {
@@ -1867,18 +1923,27 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 	      /* Try to resolve named property reference */
 	      PExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      resolve_named_property(prop_expr, prop_clk);
+	      bool resolved = resolve_named_property(prop_expr, prop_clk);
 
-	      /* Transform: if (expr) pass_action;
-	         Note: This is a simplified model - real coverage would track
-	         how many times the property was covered. */
-	      PCondit*cond = new PCondit(prop_expr, $6, 0);
-	      FILE_NAME(cond, @1);
-	      if (prop_clk) {
-		    prop_clk->set_statement(cond);
-		    $$ = prop_clk;
+	      /* Check if this looks like an unresolved property reference */
+	      if (!resolved && is_unresolved_property_reference($4.expr)) {
+		    yywarn(@1, "cover references undefined property"
+			   " (possibly skipped due to unsupported sequence constructs)."
+			   " Cover ignored.");
+		    delete $6;
+		    $$ = 0;
 	      } else {
-		    $$ = cond;
+		    /* Transform: if (expr) pass_action;
+		       Note: This is a simplified model - real coverage would track
+		       how many times the property was covered. */
+		    PCondit*cond = new PCondit(prop_expr, $6, 0);
+		    FILE_NAME(cond, @1);
+		    if (prop_clk) {
+			  prop_clk->set_statement(cond);
+			  $$ = prop_clk;
+		    } else {
+			  $$ = cond;
+		    }
 	      }
 	} else {
 	      if (gn_unsupported_assertions_flag) {
@@ -1898,18 +1963,27 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 	      /* Try to resolve named property reference */
 	      PExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      resolve_named_property(prop_expr, prop_clk);
+	      bool resolved = resolve_named_property(prop_expr, prop_clk);
 
-	      /* Transform: if (expr) pass_action;
-	         Note: This is a simplified model - real coverage would track
-	         how many times the sequence matched. */
-	      PCondit*cond = new PCondit(prop_expr, $6, 0);
-	      FILE_NAME(cond, @1);
-	      if (prop_clk) {
-		    prop_clk->set_statement(cond);
-		    $$ = prop_clk;
+	      /* Check if this looks like an unresolved property reference */
+	      if (!resolved && is_unresolved_property_reference($4.expr)) {
+		    yywarn(@1, "cover references undefined sequence"
+			   " (possibly skipped due to unsupported constructs)."
+			   " Cover ignored.");
+		    delete $6;
+		    $$ = 0;
 	      } else {
-		    $$ = cond;
+		    /* Transform: if (expr) pass_action;
+		       Note: This is a simplified model - real coverage would track
+		       how many times the sequence matched. */
+		    PCondit*cond = new PCondit(prop_expr, $6, 0);
+		    FILE_NAME(cond, @1);
+		    if (prop_clk) {
+			  prop_clk->set_statement(cond);
+			  $$ = prop_clk;
+		    } else {
+			  $$ = cond;
+		    }
 	      }
 	} else {
 	      if (gn_unsupported_assertions_flag) {
