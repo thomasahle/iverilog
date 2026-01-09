@@ -11696,15 +11696,70 @@ bool of_QPROP_INSERT_O(vthread_t thr, vvp_code_t)
 }
 
 /*
+ * %qprop/set/v <pidx> - set element at index in queue property with vec4 value
+ * Stack: [class_obj, queue_obj] + vec4 stack top, index in word reg 3
+ * This opcode includes auto-vivification - creates queue if null.
+ */
+bool of_QPROP_SET_V(vthread_t thr, vvp_code_t cp)
+{
+      size_t pidx = cp->number;
+
+      // Pop the value to set
+      vvp_vector4_t value = thr->pop_vec4();
+
+      // Get index from word register 3
+      int64_t idx = thr->words[3].w_int;
+
+      // Top of object stack is the queue, second is the class object
+      vvp_object_t&queue_obj = thr->peek_object(0);
+      vvp_object_t&class_obj = thr->peek_object(1);
+
+      // Get or create the queue (auto-vivification)
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+      if (queue == 0 && queue_obj.test_nil()) {
+	    // Queue was nil - create new queue
+	    queue = new vvp_queue_vec4;
+	    queue_obj.reset(queue);
+
+	    // Store the new queue back to the class property
+	    vvp_cobject*cobj = class_obj.peek<vvp_cobject>();
+	    if (cobj) {
+		  cobj->set_object(pidx, queue_obj, 0);
+	    }
+      }
+
+      if (queue) {
+	    if (idx < 0) {
+		  cerr << thr->get_fileline()
+		       << "Warning: cannot set element at negative index (" << idx << ")." << endl;
+	    } else {
+		  // Use set_word_max to auto-extend queue if needed
+		  queue->set_word_max(idx, value, 0);
+	    }
+      } else {
+	    cerr << thr->get_fileline()
+	         << "Error: queue property set on non-queue object." << endl;
+      }
+      return true;
+}
+
+/*
  * %qprop/delete - clear queue property (delete all elements)
+ * This clears the queue contents in place, not just the local reference.
  */
 bool of_QPROP_DELETE(vthread_t thr, vvp_code_t)
 {
       // Get queue from object stack
       vvp_object_t&queue_obj = thr->peek_object();
 
-      // Clear by replacing with nil
-      queue_obj.reset(0);
+      // Get the actual queue object and clear its contents
+      vvp_queue*queue = queue_obj.peek<vvp_queue>();
+      if (queue) {
+	    // Clear all elements from the queue
+	    while (queue->get_size() > 0) {
+		  queue->pop_back();
+	    }
+      }
       return true;
 }
 

@@ -342,6 +342,7 @@ extern bool of_QPROP_MIN_INDEX(vthread_t thr, vvp_code_t code);
 extern bool of_QPROP_REVERSE(vthread_t thr, vvp_code_t code);
 extern bool of_QPROP_SHUFFLE(vthread_t thr, vvp_code_t code);
 extern bool of_QPROP_UNIQUE_INDEX(vthread_t thr, vvp_code_t code);
+extern bool of_QPROP_SET_V(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_QB_O(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_QB_R(vthread_t thr, vvp_code_t code);
 extern bool of_STORE_QB_STR(vthread_t thr, vvp_code_t code);

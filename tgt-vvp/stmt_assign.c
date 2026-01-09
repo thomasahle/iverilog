@@ -1960,9 +1960,36 @@ static int show_stmt_assign_sig_cobject(ivl_statement_t net)
 			}
 		  } else {
 			/* Whole queue assignment */
-			errors += draw_eval_object(rval);
-			fprintf(vvp_out, "    %%store/prop/obj %d, 0; IVL_VT_QUEUE (whole queue)\n", prop_idx);
-			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			ivl_expr_type_t rval_expr_type = ivl_expr_type(rval);
+
+			if (rval_expr_type == IVL_EX_ARRAY_PATTERN) {
+			      /* Array pattern: {10, 20, 30} - use push_back with auto-vivification.
+			         This handles initialization of queue properties where the queue
+			         starts as null. Each push_back auto-vivifies if needed. */
+			      unsigned num_elems = ivl_expr_parms(rval);
+
+			      /* Load the queue property onto stack (after class object).
+			         Stack becomes [class_obj, queue_obj]. Queue may be null.
+			         Do NOT pop - qprop/qb/v needs both on stack. */
+			      fprintf(vvp_out, "    %%prop/obj %d, 0; Load queue property for array init\n", prop_idx);
+
+			      /* Clear the existing queue first by deleting all elements.
+			         This ensures array pattern REPLACES, not appends. */
+			      fprintf(vvp_out, "    %%qprop/delete;\n");
+
+			      /* Push each element using qprop/qb/v which has auto-vivification */
+			      for (unsigned i = 0; i < num_elems; i++) {
+				    draw_eval_vec4(ivl_expr_parm(rval, i));
+				    fprintf(vvp_out, "    %%qprop/qb/v %d; Push element %u\n", prop_idx, i);
+			      }
+
+			      /* Pop the queue and class objects */
+			      fprintf(vvp_out, "    %%pop/obj 2, 0;\n");
+			} else {
+			      errors += draw_eval_object(rval);
+			      fprintf(vvp_out, "    %%store/prop/obj %d, 0; IVL_VT_QUEUE (whole queue)\n", prop_idx);
+			      fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+			}
 		  }
 
 	    } else if (ivl_type_base(prop_type) == IVL_VT_CLASS) {
