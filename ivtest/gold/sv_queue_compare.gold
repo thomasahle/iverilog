@@ -1,4 +1,3 @@
-ivltests/sv_queue_compare.v:65: warning: Static variable initialization requires explicit lifetime in this context.
 PASS: q1 == q2 (identical queues)
 PASS: q1 != q3 (different last element)
 PASS: q1 == q1 (same variable)
