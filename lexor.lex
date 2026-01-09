@@ -285,6 +285,7 @@ TU [munpf]
 "|=>" { return K_IMPLIES_NOV; }
 "[*" { return K_REP_STAR; }
 "[=" { return K_REP_GOTO; }
+"[->" { return K_GOTO_REP; }
 "[+]" { return K_REP_PLUS; }
 
 <EDGES>"]" { BEGIN(0); return yytext[0]; }

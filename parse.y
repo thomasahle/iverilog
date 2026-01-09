@@ -944,7 +944,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %token K_implements K_interconnect K_nettype K_soft
 
  /* SVA (SystemVerilog Assertions) temporal operator tokens. */
-%token K_SEQ_DELAY K_IMPLIES_OV K_IMPLIES_NOV K_REP_STAR K_REP_GOTO K_REP_PLUS
+%token K_SEQ_DELAY K_IMPLIES_OV K_IMPLIES_NOV K_REP_STAR K_REP_GOTO K_REP_PLUS K_GOTO_REP
 
  /* The new tokens for Verilog-AMS 2.3. */
 %token K_above K_abs K_absdelay K_abstol K_access K_acos K_acosh
@@ -4683,6 +4683,74 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	} else {
 	      delete $2;
 	      delete $7;
+	      $$ = 0;
+	}
+      }
+  | expression K_throughout expression K_GOTO_REP DEC_NUMBER ']'
+      { /* throughout with goto repetition: a throughout signal[->N]
+           For single-cycle approximation: just check that 'a' holds.
+           The goto repetition [->N] means "wait for signal to go high N times". */
+	if (gn_supported_assertions_flag && $1) {
+	      yywarn(@2, "throughout with goto repetition approximated as single-cycle check.");
+	      delete $3;
+	      /* Wrap in double negation to avoid bare identifier check */
+	      PEUnary*not1 = new PEUnary('!', $1);
+	      FILE_NAME(not1, @1);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @1);
+	      $$ = not2;
+	} else {
+	      delete $1;
+	      delete $3;
+	      $$ = 0;
+	}
+      }
+  | '(' expression K_throughout expression K_GOTO_REP DEC_NUMBER ']' ')'
+      { /* Parenthesized throughout with goto: (a throughout signal[->N]) */
+	if (gn_supported_assertions_flag && $2) {
+	      yywarn(@3, "throughout with goto repetition approximated as single-cycle check.");
+	      delete $4;
+	      /* Wrap in double negation to avoid bare identifier check */
+	      PEUnary*not1 = new PEUnary('!', $2);
+	      FILE_NAME(not1, @2);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @2);
+	      $$ = not2;
+	} else {
+	      delete $2;
+	      delete $4;
+	      $$ = 0;
+	}
+      }
+  | expression K_GOTO_REP DEC_NUMBER ']'
+      { /* Standalone goto repetition: signal[->N]
+           For single-cycle approximation: just return the expression.
+           This matches "until signal goes high N times". */
+	if (gn_supported_assertions_flag && $1) {
+	      yywarn(@2, "Goto repetition [->N] approximated as single-cycle check.");
+	      /* Just return the expression wrapped to avoid property reference check */
+	      PEUnary*not1 = new PEUnary('!', $1);
+	      FILE_NAME(not1, @1);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @1);
+	      $$ = not2;
+	} else {
+	      delete $1;
+	      $$ = 0;
+	}
+      }
+  | '(' expression ')' K_GOTO_REP DEC_NUMBER ']'
+      { /* Parenthesized expression with goto: (expr)[->N] */
+	if (gn_supported_assertions_flag && $2) {
+	      yywarn(@4, "Goto repetition [->N] approximated as single-cycle check.");
+	      /* Just return the expression wrapped to avoid property reference check */
+	      PEUnary*not1 = new PEUnary('!', $2);
+	      FILE_NAME(not1, @2);
+	      PEUnary*not2 = new PEUnary('!', not1);
+	      FILE_NAME(not2, @2);
+	      $$ = not2;
+	} else {
+	      delete $2;
 	      $$ = 0;
 	}
       }
