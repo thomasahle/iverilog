@@ -2123,6 +2123,12 @@ constraint_expression /* IEEE1800-2005 A.1.9 */
 constraint_trigger
   : K_CONSTRAINT_IMPL '{' constraint_expression_list '}'
       { $$ = $3; }
+  | K_CONSTRAINT_IMPL expression
+      { /* Single expression after -> (no braces) */
+        std::list<PExpr*>*tmp = new std::list<PExpr*>;
+        tmp->push_back($2);
+        $$ = tmp;
+      }
   ;
 
   /* Dist constraint list and items - now converted to inside_range_t for enforcement */

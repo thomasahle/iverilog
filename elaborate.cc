@@ -8786,6 +8786,118 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope
 }
 
 /*
+ * Structure to hold condition info extracted from implication constraint guards.
+ */
+struct condition_info_t {
+      bool valid;          // true if condition was successfully extracted
+      size_t prop_idx;     // Property index for condition expression
+      char op;             // Condition comparison operator (=, !, <, >, L, G)
+      bool has_const;      // true if condition compares to constant
+      int64_t const_val;   // Constant value for condition
+      size_t prop2_idx;    // Property index if condition compares two properties
+
+      condition_info_t() : valid(false), prop_idx(0), op('='), has_const(true),
+                           const_val(0), prop2_idx(0) {}
+};
+
+/*
+ * Helper to extract condition info from a comparison expression.
+ * Returns true if a valid condition was extracted.
+ */
+static bool extract_condition(netclass_t*cls, PExpr*cond_expr, condition_info_t& cond,
+                              LexicalScope*scope, Design*des)
+{
+      const PEBComp* cmp = dynamic_cast<const PEBComp*>(cond_expr);
+      if (cmp == nullptr)
+	    return false;
+
+      char op = cmp->get_op();
+      // Map operators: 'e' is ==, 'n' is !=, 'G' is >=, 'L' is <=
+      if (op == 'e') op = '=';
+      else if (op == 'n') op = '!';
+
+      PExpr* left = cmp->get_left();
+      PExpr* right = cmp->get_right();
+
+      const PEIdent* prop_ident = nullptr;
+      const PEIdent* prop2_ident = nullptr;
+      int64_t const_val = 0;
+      bool has_const = false;
+      bool prop_on_left = false;
+
+      // Case 1: property OP constant
+      if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr &&
+          extract_constant_value(right, const_val, scope, cls, des)) {
+	    prop_on_left = true;
+	    has_const = true;
+      }
+      // Case 2: constant OP property
+      else if (extract_constant_value(left, const_val, scope, cls, des) &&
+               (prop_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
+	    prop_on_left = false;
+	    has_const = true;
+	    // Flip the operator since we'll normalize to property OP constant
+	    switch (op) {
+		  case '>': op = '<'; break;
+		  case '<': op = '>'; break;
+		  case 'G': op = 'L'; break;
+		  case 'L': op = 'G'; break;
+		  // == and != are symmetric
+	    }
+      }
+      // Case 3: property OP property
+      else if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr &&
+               (prop2_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
+	    prop_on_left = true;
+	    has_const = false;
+      }
+      else {
+	    return false;  // Can't extract condition
+      }
+
+      // Get property name from identifier path
+      const pform_scoped_name_t& path = prop_ident->path();
+      if (path.name.empty())
+	    return false;
+      perm_string prop_name = path.name.back().name;
+
+      // Look up property index
+      int prop_idx = cls->property_idx_from_name(prop_name);
+      if (prop_idx < 0)
+	    return false;
+
+      cond.valid = true;
+      cond.prop_idx = prop_idx;
+      cond.op = op;
+      cond.has_const = has_const;
+      cond.const_val = const_val;
+
+      if (!has_const && prop2_ident != nullptr) {
+	    const pform_scoped_name_t& path2 = prop2_ident->path();
+	    if (!path2.name.empty()) {
+		  perm_string prop2_name = path2.name.back().name;
+		  int prop2_idx = cls->property_idx_from_name(prop2_name);
+		  if (prop2_idx >= 0)
+			cond.prop2_idx = prop2_idx;
+	    }
+      }
+
+      if (debug_elaborate) {
+	    cerr << "extract_condition: " << prop_name << " " << op;
+	    if (has_const)
+		  cerr << " " << const_val;
+	    cerr << endl;
+      }
+
+      return true;
+}
+
+// Forward declaration for recursive calls with condition info
+static bool extract_simple_bound_with_cond(netclass_t*cls, perm_string constraint_name,
+                                           PExpr*expr, bool is_soft, LexicalScope*scope,
+                                           Design*des, const condition_info_t& cond);
+
+/*
  * Helper function to extract simple bounds from constraint expressions.
  * Handles expressions of the form: property OP constant or property OP property
  * where OP is a relational operator (>, <, >=, <=, ==, !=).
@@ -8796,6 +8908,42 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope
  */
 static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr, bool is_soft, LexicalScope*scope = nullptr, Design*des = nullptr)
 {
+      // Check for implication/conditional constraints with block syntax (-> { constraints })
+      const PEConditionalConstraint* cond_cons = dynamic_cast<const PEConditionalConstraint*>(expr);
+      if (cond_cons != nullptr) {
+	    // Extract condition info
+	    condition_info_t cond;
+	    if (!extract_condition(cls, cond_cons->get_condition(), cond, scope, des)) {
+		  // Can't extract condition, treat body constraints as soft (no condition)
+		  if (debug_elaborate) {
+			cerr << "extract_simple_bound: could not extract condition from implication" << endl;
+		  }
+		  // Process body constraints without condition (as before)
+		  bool any_extracted = false;
+		  for (PExpr* body_expr : cond_cons->get_if_constraints()) {
+			if (body_expr != nullptr) {
+			      // Treat as soft constraint since we can't enforce the condition
+			      any_extracted |= extract_simple_bound(cls, constraint_name, body_expr, true, scope, des);
+			}
+		  }
+		  return any_extracted;
+	    }
+
+	    // Extract body constraints with condition attached
+	    bool any_extracted = false;
+	    for (PExpr* body_expr : cond_cons->get_if_constraints()) {
+		  if (body_expr != nullptr) {
+			any_extracted |= extract_simple_bound_with_cond(cls, constraint_name, body_expr,
+			                                                is_soft, scope, des, cond);
+		  }
+	    }
+
+	    // TODO: Handle else constraints if has_else() - for if-else constraints
+	    // For implication (->), there's no else clause
+
+	    return any_extracted;
+      }
+
       // Check for logical AND expression (from 'inside' constraints)
       // e.g., (x >= 0) && (x <= 3) from "inside {[0:3]}"
       const PEBLogic* logic = dynamic_cast<const PEBLogic*>(expr);
@@ -8813,6 +8961,23 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    extract_simple_bound(cls, constraint_name, logic->get_left(), is_soft, scope, des);
 	    extract_simple_bound(cls, constraint_name, logic->get_right(), is_soft, scope, des);
 	    return false;  // OR constraints are harder to enforce as bounds
+      }
+
+      // Check for implication expression (mode == 1 -> value < 10)
+      // Parser uses K_TRIGGER which creates PEBLogic with operator 'q'
+      if (logic != nullptr && logic->get_op() == 'q') {
+	    // Extract condition from left side
+	    condition_info_t cond;
+	    if (!extract_condition(cls, logic->get_left(), cond, scope, des)) {
+		  // Can't extract condition, treat body constraint as soft
+		  if (debug_elaborate) {
+			cerr << "extract_simple_bound: could not extract implication condition" << endl;
+		  }
+		  return extract_simple_bound(cls, constraint_name, logic->get_right(), true, scope, des);
+	    }
+	    // Extract body constraint with condition attached
+	    return extract_simple_bound_with_cond(cls, constraint_name, logic->get_right(),
+	                                          is_soft, scope, des, cond);
       }
 
       // Check for standalone system function call (e.g., $onehot(value) without comparison)
@@ -9029,6 +9194,139 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    }
 
 	    cls->add_simple_bound(constraint_name, prop_idx, op, is_soft, false, 0, bound_idx);
+	    return true;
+      }
+
+      return false;
+}
+
+/*
+ * Version of extract_simple_bound that attaches condition info to extracted bounds.
+ * Used for implication constraints: condition -> body
+ */
+static bool extract_simple_bound_with_cond(netclass_t*cls, perm_string constraint_name,
+                                           PExpr*expr, bool is_soft, LexicalScope*scope,
+                                           Design*des, const condition_info_t& cond)
+{
+      // Handle AND/OR by recursing with condition attached
+      const PEBLogic* logic = dynamic_cast<const PEBLogic*>(expr);
+      if (logic != nullptr && logic->get_op() == 'a') {
+	    bool left_ok = extract_simple_bound_with_cond(cls, constraint_name,
+	                                                  logic->get_left(), is_soft, scope, des, cond);
+	    bool right_ok = extract_simple_bound_with_cond(cls, constraint_name,
+	                                                   logic->get_right(), is_soft, scope, des, cond);
+	    return left_ok || right_ok;
+      }
+      if (logic != nullptr && logic->get_op() == 'o') {
+	    extract_simple_bound_with_cond(cls, constraint_name,
+	                                   logic->get_left(), is_soft, scope, des, cond);
+	    extract_simple_bound_with_cond(cls, constraint_name,
+	                                   logic->get_right(), is_soft, scope, des, cond);
+	    return false;
+      }
+
+      // Check if this is a comparison expression
+      const PEBComp* cmp = dynamic_cast<const PEBComp*>(expr);
+      if (cmp == nullptr) {
+	    const PEBinary* bin = dynamic_cast<const PEBinary*>(expr);
+	    if (bin == nullptr)
+		  return false;
+	    char op = bin->get_op();
+	    if (op != '>' && op != '<' && op != 'G' && op != 'L' &&
+	        op != 'e' && op != 'n')
+		  return false;
+	    cmp = dynamic_cast<const PEBComp*>(expr);
+	    if (cmp == nullptr)
+		  return false;
+      }
+
+      char op = cmp->get_op();
+      if (op == 'e') op = '=';
+      else if (op == 'n') op = '!';
+
+      PExpr* left = cmp->get_left();
+      PExpr* right = cmp->get_right();
+
+      const PEIdent* prop_ident = nullptr;
+      const PEIdent* bound_ident = nullptr;
+      int64_t const_val = 0;
+      bool has_const = false;
+
+      // Case 1: property OP constant
+      if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr &&
+          extract_constant_value(right, const_val, scope, cls, des)) {
+	    has_const = true;
+      }
+      // Case 2: constant OP property
+      else if (extract_constant_value(left, const_val, scope, cls, des) &&
+               (prop_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
+	    has_const = true;
+	    switch (op) {
+		  case '>': op = '<'; break;
+		  case '<': op = '>'; break;
+		  case 'G': op = 'L'; break;
+		  case 'L': op = 'G'; break;
+	    }
+      }
+      // Case 3: property OP property
+      else if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr &&
+               (bound_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
+	    // Property-to-property bound with condition
+      }
+      else {
+	    return false;
+      }
+
+      const pform_scoped_name_t& path = prop_ident->path();
+      if (path.name.empty())
+	    return false;
+      perm_string prop_name = path.name.back().name;
+
+      int prop_idx = cls->property_idx_from_name(prop_name);
+      if (prop_idx < 0)
+	    return false;
+
+      property_qualifier_t qual = cls->get_prop_qual(prop_idx);
+      if (!qual.test_rand() && !qual.test_randc())
+	    return false;
+
+      if (has_const) {
+	    if (debug_elaborate) {
+		  cerr << "netclass_t::elaborate: extracted conditional bound "
+		       << prop_name << " " << op << " " << const_val
+		       << " (cond: prop" << cond.prop_idx << " " << cond.op << " "
+		       << cond.const_val << ")" << endl;
+	    }
+
+	    // Pass condition info to add_simple_bound
+	    cls->add_simple_bound(constraint_name, prop_idx, op, is_soft,
+	                          true, const_val, 0,
+	                          netclass_t::SYSFUNC_NONE, 0, 1, true,
+	                          cond.valid, cond.prop_idx, cond.op,
+	                          cond.has_const, cond.const_val, cond.prop2_idx);
+	    return true;
+      }
+      else if (bound_ident != nullptr) {
+	    const pform_scoped_name_t& bound_path = bound_ident->path();
+	    if (bound_path.name.empty())
+		  return false;
+	    perm_string bound_name = bound_path.name.back().name;
+	    int bound_idx = cls->property_idx_from_name(bound_name);
+	    if (bound_idx < 0)
+		  return false;
+
+	    if (debug_elaborate) {
+		  cerr << "netclass_t::elaborate: extracted conditional bound "
+		       << prop_name << " " << op << " " << bound_name
+		       << " (cond: prop" << cond.prop_idx << " " << cond.op << " "
+		       << cond.const_val << ")" << endl;
+	    }
+
+	    cls->add_simple_bound(constraint_name, prop_idx, op, is_soft,
+	                          false, 0, bound_idx,
+	                          netclass_t::SYSFUNC_NONE, 0, 1, true,
+	                          cond.valid, cond.prop_idx, cond.op,
+	                          cond.has_const, cond.const_val, cond.prop2_idx);
 	    return true;
       }
 

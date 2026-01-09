@@ -1,10 +1,6 @@
 // Test implication constraints: mode == 1 -> value < 10
 // When mode is 1, value should be constrained to be < 10
-// When mode is 0, value can be any valid value (not constrained)
-//
-// Note: Full implication constraint support is under development.
-// This test verifies that the implication syntax compiles.
-// The body constraint is currently treated as a soft constraint.
+// When mode is 0, value can be any valid value (0-49 due to c_val constraint)
 
 module test;
   class tx;
@@ -17,8 +13,7 @@ module test;
     // Simple constraint to limit value
     constraint c_val { value < 50; }
 
-    // Implication constraint - syntax test
-    // Note: Currently body is treated as soft
+    // Implication constraint - when mode==1, value must be < 10
     constraint c_impl { mode == 1 -> value < 10; }
   endclass
 
@@ -47,9 +42,15 @@ module test;
 
     // Print statistics
     $display("mode=0: %0d, mode=1: %0d", mode0_count, mode1_count);
-    $display("mode=1 with value>=10: %0d (implication body as soft)", mode1_over10);
+    $display("mode=1 with value>=10: %0d (should be 0)", mode1_over10);
 
-    // Test should pass if randomization succeeded
+    // Implication constraint should be enforced: when mode==1, value < 10
+    if (mode1_over10 > 0) begin
+      $display("FAILED: Implication constraint not enforced");
+      passed = 0;
+    end
+
+    // Test should pass if randomization succeeded and implication enforced
     if (passed) $display("PASSED");
     else $display("FAILED");
   end
