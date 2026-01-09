@@ -1297,3 +1297,4 @@ sv_queue_prop_index_methods	normal,-g2012	ivltests
 sv_countones_range_constraint	normal,-g2012	ivltests
 sv_constraint_onehot_standalone normal,-g2012 ivltests
 sv_rand_array normal,-g2012 ivltests
+sv_constraint_size	normal,-g2012	ivltests

@@ -8663,7 +8663,7 @@ static bool lookup_enum_constant(LexicalScope*scope, perm_string name, int64_t&v
  * negative constants like -10 which are represented as PEUnary('-', PENumber(10)).
  * Returns true if a constant was extracted, false otherwise.
  */
-static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope*scope = nullptr)
+static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope*scope = nullptr, netclass_t*cls = nullptr)
 {
       // Direct number
       const PENumber* num = dynamic_cast<const PENumber*>(expr);
@@ -8701,6 +8701,55 @@ static bool extract_constant_value(const PExpr*expr, int64_t&value, LexicalScope
 			perm_string name = path.name.front().name;
 			if (lookup_enum_constant(scope, name, value)) {
 			      return true;
+			}
+		  }
+	    }
+      }
+
+      // $size() system function call on array property
+      // e.g., $size(data) where data is a property with unpacked array dimensions
+      if (cls != nullptr) {
+	    const PECallFunction* func = dynamic_cast<const PECallFunction*>(expr);
+	    if (func != nullptr) {
+		  const pform_scoped_name_t& func_path = func->path();
+		  if (func_path.name.size() > 0) {
+			const name_component_t& last_comp = func_path.name.back();
+			perm_string func_name = last_comp.name;
+			if (func_name == "$size") {
+			      // Get the function argument - should be a property identifier
+			      const std::vector<named_pexpr_t>& parms = func->parms();
+			      if (parms.size() >= 1 && parms[0].parm != nullptr) {
+				    const PEIdent* arg_ident = dynamic_cast<const PEIdent*>(parms[0].parm);
+				    if (arg_ident != nullptr) {
+					  const pform_scoped_name_t& arg_path = arg_ident->path();
+					  if (arg_path.name.size() > 0) {
+						const name_component_t& arg_comp = arg_path.name.back();
+						perm_string prop_name = arg_comp.name;
+						int prop_idx = cls->property_idx_from_name(prop_name);
+						if (prop_idx >= 0) {
+						      ivl_type_t prop_type = cls->get_prop_type(prop_idx);
+						      if (prop_type != nullptr && ivl_type_is_uarray(prop_type)) {
+							    // Get dimension index (default 1 for first dimension)
+							    int dim_idx = 1;
+							    if (parms.size() >= 2 && parms[1].parm != nullptr) {
+								  const PENumber* dim_num = dynamic_cast<const PENumber*>(parms[1].parm);
+								  if (dim_num != nullptr) {
+									dim_idx = dim_num->value().as_long();
+								  }
+							    }
+							    // Dimension indices are 1-based, convert to 0-based
+							    unsigned udim = (dim_idx > 0) ? (dim_idx - 1) : 0;
+							    if (udim < ivl_type_uarray_dimensions(prop_type)) {
+								  int msb = ivl_type_uarray_msb(prop_type, udim);
+								  int lsb = ivl_type_uarray_lsb(prop_type, udim);
+								  value = (msb >= lsb) ? (msb - lsb + 1) : (lsb - msb + 1);
+								  return true;
+							    }
+						      }
+						}
+					  }
+				    }
+			      }
 			}
 		  }
 	    }
@@ -8816,14 +8865,14 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       bool has_const = false;
       bool prop_on_left = false;
 
-      // Case 1: property OP constant (including negative constants and enum constants)
+      // Case 1: property OP constant (including negative constants, enum constants, and $size())
       if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr &&
-          extract_constant_value(right, const_val, scope)) {
+          extract_constant_value(right, const_val, scope, cls)) {
 	    prop_on_left = true;
 	    has_const = true;
       }
-      // Case 2: constant OP property (e.g., 0 < value, -10 < value, VAL_1 < value)
-      else if (extract_constant_value(left, const_val, scope) &&
+      // Case 2: constant OP property (e.g., 0 < value, -10 < value, VAL_1 < value, $size(arr) > value)
+      else if (extract_constant_value(left, const_val, scope, cls) &&
                (prop_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
 	    prop_on_left = false;
 	    has_const = true;
@@ -8844,7 +8893,7 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       // Case 4: sysfunc(property) OP constant (e.g., $countones(flags) == 1)
       else {
 	    const PECallFunction* sysfunc = dynamic_cast<const PECallFunction*>(left);
-	    if (sysfunc != nullptr && extract_constant_value(right, const_val, scope)) {
+	    if (sysfunc != nullptr && extract_constant_value(right, const_val, scope, cls)) {
 		  // Get the system function name from the path
 		  const pform_scoped_name_t& func_path = sysfunc->path();
 		  if (func_path.name.size() == 0)
