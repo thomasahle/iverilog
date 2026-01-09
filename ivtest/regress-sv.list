@@ -1284,3 +1284,4 @@ sv_randcase		normal,-g2012		ivltests gold=sv_randcase.gold
 sv_std_randomize_multi	normal,-g2012	ivltests
 sv_array_locator_cmp		normal,-g2012		ivltests gold=sv_array_locator_cmp.gold
 sv_string_queue_method		normal,-g2012		ivltests gold=sv_string_queue_method.gold
+sv_sva_unbounded_approx	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_unbounded_approx.gold

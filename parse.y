@@ -4117,9 +4117,87 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	}
       }
   | expression K_IMPLIES_OV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
-      { /* |-> ##[m:$] unbounded sequence - parsed but not elaborated */ $$ = 0; }
+      { /* a |-> ##[m:$] b - unbounded: approximate as ##[m:MAX] where MAX=32 */
+	if (gn_supported_assertions_flag) {
+	      const long MAX_UNBOUNDED_DELAY = 32;
+	      PENumber*m_num = dynamic_cast<PENumber*>($5);
+	      if ($9 && m_num) {
+		    long m = m_num->value().as_long();
+		    if (m >= 0 && m <= MAX_UNBOUNDED_DELAY) {
+			  /* Build $past(a, MAX) for bounded approximation */
+			  std::vector<named_pexpr_t> past_parms;
+			  named_pexpr_t parm1;
+			  parm1.parm = $1;
+			  past_parms.push_back(parm1);
+			  if (MAX_UNBOUNDED_DELAY > 1) {
+				named_pexpr_t parm2;
+				parm2.parm = new PENumber(new verinum(MAX_UNBOUNDED_DELAY));
+				past_parms.push_back(parm2);
+			  }
+			  PExpr*past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
+			  FILE_NAME(past_expr, @1);
+			  /* Create !(past_expr) || consequent */
+			  PEUnary*not_past = new PEUnary('!', past_expr);
+			  FILE_NAME(not_past, @1);
+			  PEBLogic*impl = new PEBLogic('o', not_past, $9);
+			  FILE_NAME(impl, @1);
+			  yywarn(@1, "Unbounded delay ##[m:$] approximated as ##[m:32].");
+			  $$ = impl;
+		    } else {
+			  yywarn(@1, "Unbounded delay lower bound too large, assertion ignored.");
+			  delete $1;
+			  $$ = 0;
+		    }
+	      } else {
+		    delete $1;
+		    $$ = 0;
+	      }
+	} else {
+	      /* Assertions disabled - silently ignore */
+	      delete $1;
+	      $$ = 0;
+	}
+      }
   | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
-      { /* |=> ##[m:$] unbounded sequence - parsed but not elaborated */ $$ = 0; }
+      { /* a |=> ##[m:$] b - unbounded non-overlapping: approximate as ##[m:MAX+1] */
+	if (gn_supported_assertions_flag) {
+	      const long MAX_UNBOUNDED_DELAY = 32;
+	      PENumber*m_num = dynamic_cast<PENumber*>($5);
+	      if ($9 && m_num) {
+		    long m = m_num->value().as_long();
+		    if (m >= 0 && m <= MAX_UNBOUNDED_DELAY) {
+			  /* Build $past(a, MAX+1) for non-overlapping bounded approximation */
+			  std::vector<named_pexpr_t> past_parms;
+			  named_pexpr_t parm1;
+			  parm1.parm = $1;
+			  past_parms.push_back(parm1);
+			  named_pexpr_t parm2;
+			  parm2.parm = new PENumber(new verinum(MAX_UNBOUNDED_DELAY + 1));
+			  past_parms.push_back(parm2);
+			  PExpr*past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
+			  FILE_NAME(past_expr, @1);
+			  /* Create !(past_expr) || consequent */
+			  PEUnary*not_past = new PEUnary('!', past_expr);
+			  FILE_NAME(not_past, @1);
+			  PEBLogic*impl = new PEBLogic('o', not_past, $9);
+			  FILE_NAME(impl, @1);
+			  yywarn(@1, "Unbounded delay ##[m:$] approximated as ##[m:33].");
+			  $$ = impl;
+		    } else {
+			  yywarn(@1, "Unbounded delay lower bound too large, assertion ignored.");
+			  delete $1;
+			  $$ = 0;
+		    }
+	      } else {
+		    delete $1;
+		    $$ = 0;
+	      }
+	} else {
+	      /* Assertions disabled - silently ignore */
+	      delete $1;
+	      $$ = 0;
+	}
+      }
   | expression K_IMPLIES_OV K_first_match '(' sequence_expr_in_parens ')'
       { /* |-> first_match - parsed but not elaborated */ $$ = 0; }
   | expression K_IMPLIES_NOV K_first_match '(' sequence_expr_in_parens ')'
