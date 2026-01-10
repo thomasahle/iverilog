@@ -1,0 +1,5 @@
+./ivltests/sv_constraint_size_bounds.v:19: warning: Static variable initialization requires explicit lifetime in this context.
+./ivltests/sv_constraint_size_bounds.v:20: warning: Static variable initialization requires explicit lifetime in this context.
+./ivltests/sv_constraint_size_bounds.v:21: warning: Static variable initialization requires explicit lifetime in this context.
+PASSED
+./ivltests/sv_constraint_size_bounds.v:51: $finish called at 0 (1s)

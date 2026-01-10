@@ -9199,7 +9199,21 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 			      // Get the property name (first component of path)
 			      perm_string array_prop_name = call_path.name.front().name;
 			      int array_prop_idx = cls->property_idx_from_name(array_prop_name);
-			      if (array_prop_idx >= 0 && op == '=') {  // Only support == for size constraints
+			      // Support comparison operators for size constraints
+			      // op: '=' (==), '>' (>), '<' (<), 'G' (>=), 'L' (<=)
+			      if (array_prop_idx >= 0 && (op == '=' || op == '>' || op == '<' ||
+			                                  op == 'G' || op == 'L')) {
+				    // Map comparison operator to size constraint op
+				    // 'S' = size ==, 'M' = size >=, 'X' = size <=, 'm' = size >, 'x' = size <
+				    char size_op;
+				    switch (op) {
+					  case '=': size_op = 'S'; break;
+					  case 'G': size_op = 'M'; break;  // >=
+					  case 'L': size_op = 'X'; break;  // <=
+					  case '>': size_op = 'm'; break;  // >
+					  case '<': size_op = 'x'; break;  // <
+					  default: size_op = 'S'; break;
+				    }
 				    // Get element width for the array
 				    int64_t elem_width = 8;  // default
 				    ivl_type_t arr_prop_type = cls->get_prop_type(array_prop_idx);
@@ -9214,14 +9228,14 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 					  }
 				    }
 
-				    // Case 4a: arr.size() == constant
+				    // Case 4a: arr.size() OP constant
 				    if (extract_constant_value(right, const_val, scope, cls, des)) {
 					  if (debug_elaborate) {
 						cerr << "netclass_t::elaborate: extracted size bound "
-						     << array_prop_name << ".size() == " << const_val << endl;
+						     << array_prop_name << ".size() " << (char)op << " " << const_val << endl;
 					  }
-					  // op 'S' = constant size, store elem_width in weight
-					  cls->add_simple_bound(constraint_name, array_prop_idx, 'S', is_soft,
+					  // Store elem_width in weight
+					  cls->add_simple_bound(constraint_name, array_prop_idx, size_op, is_soft,
 					                        true, const_val, 0, netclass_t::SYSFUNC_NONE, 0,
 					                        elem_width, true);
 					  return true;

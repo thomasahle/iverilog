@@ -1303,3 +1303,4 @@ sv_constraint_foreach	normal,-g2012	ivltests
 sv_constraint_size_inline normal,-g2012 ivltests gold=sv_constraint_size_inline.gold
 sv_constraint_size_expr	normal,-g2012	ivltests gold=sv_constraint_size_expr.gold
 sv_constraint_size_div	normal,-g2012	ivltests gold=sv_constraint_size_div.gold
+sv_constraint_size_bounds	normal,-g2012	ivltests gold=sv_constraint_size_bounds.gold

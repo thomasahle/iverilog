@@ -1649,18 +1649,20 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			}
 
 			/* Encode weight in upper bits of op_code:
-			   bits 0-3: op_code (including soft flag)
-			   bits 4-19: weight (up to 65535)
+			   bits 0-3: op_code (4-bit operator, 0-15)
+			   bit 4: soft flag
+			   bits 5-20: weight (up to 65535)
 			   bit 31: weight_per_value flag */
-			unsigned encoded_op = op_code;
+			unsigned encoded_op = op_code & 0xF;  /* 4-bit operator */
+			if (op_code & 0x10) encoded_op |= (1u << 4);  /* soft flag */
 			if (weight > 65535) weight = 65535;
-			encoded_op |= (weight << 4);
+			encoded_op |= (weight << 5);
 			if (weight_per_value) encoded_op |= (1u << 31);
 
-			/* For op_code 7 (property-based size), pack source_prop_idx into const_val:
+			/* For op_code 7 (property-based size ==), pack source_prop_idx into const_val:
 			   - lower 16 bits = signed offset (negative offset indicates division)
 			   - upper 16 bits = source property index */
-			if ((op_code & 7) == 7) {
+			if ((op_code & 0xF) == 7) {
 			      int64_t packed_val = ((int64_t)src_prop_idx << 16) | (const_val & 0xFFFF);
 			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %lld;\n",
 				      prop_idx, encoded_op, (long long)packed_val);
@@ -1727,12 +1729,14 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			unsigned weight = (unsigned)ivl_expr_uvalue(weight_expr);
 			bool weight_per_value = ivl_expr_uvalue(wpv_expr) != 0;
 			/* Encode weight in upper bits of op_code:
-			   bits 0-3: op_code (including soft flag)
-			   bits 4-19: weight (up to 65535)
+			   bits 0-3: op_code (4-bit operator, 0-15)
+			   bit 4: soft flag
+			   bits 5-20: weight (up to 65535)
 			   bit 31: weight_per_value flag */
-			unsigned encoded_op = (unsigned)op_code;
+			unsigned encoded_op = (unsigned)(op_code & 0xF);  /* 4-bit operator */
+			if (op_code & 0x10) encoded_op |= (1u << 4);  /* soft flag */
 			if (weight > 65535) weight = 65535;  /* Clamp to 16 bits */
-			encoded_op |= (weight << 4);
+			encoded_op |= (weight << 5);
 			if (weight_per_value) encoded_op |= (1u << 31);
 			/* Cast to uint32_t for VVP output - VVP interprets as signed at runtime */
 			fprintf(vvp_out, "    %%push_rand_bound %u, %u, %u;\n",

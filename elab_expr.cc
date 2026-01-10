@@ -50,7 +50,10 @@ using namespace std;
  * Helper to analyze inline constraint expression and extract simple bounds.
  * Returns true if expression is a simple comparison: property_name OP constant
  * On success, fills in: property_name, op_code, const_value
- * op_code: 0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!', 6='S' (size constant), 7='s' (size from property)
+ * op_code encoding (4 bits, soft flag at bit 4):
+ *   0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!',
+ *   6='S' (size==), 7='s' (size==prop),
+ *   8='M' (size>=), 9='X' (size<=), 10='m' (size>), 11='x' (size<)
  * For op_code 7 (property-based size), source_prop_name is filled with the property providing the size.
  */
 static bool analyze_constraint_expr(const PExpr*expr,
@@ -80,19 +83,44 @@ static bool analyze_constraint_expr(const PExpr*expr,
       // Get the left operand
       const PExpr*lhs = bin->get_left();
 
-      // Check for property.size() == constant pattern (size constraint)
+      // Check for property.size() OP constant pattern (size constraint)
       // This is represented as a PECallFunction with path "property.size"
+      // Supports: == (exact size), > (min+1), >= (min), < (max-1), <= (max)
       const PECallFunction* call = dynamic_cast<const PECallFunction*>(lhs);
-      if (call != nullptr && op == 'e') {  // Only == makes sense for size constraints
+      if (call != nullptr) {
             const pform_scoped_name_t& call_path = call->path();
             if (call_path.name.size() == 2) {
                   // Check if the method name is "size"
                   perm_string method_name = call_path.name.back().name;
                   if (method_name == "size") {
+                        // Determine size op_code based on comparison operator
+                        // 'S' = size == N (exact), 'M' = size >= N, 'X' = size <= N
+                        // 'm' = size > N, 'x' = size < N
+                        char size_op;
+                        switch (op) {
+                              case 'e': size_op = 'S'; break;  // ==
+                              case 'G': size_op = 'M'; break;  // >=
+                              case 'L': size_op = 'X'; break;  // <=
+                              case '>': size_op = 'm'; break;  // >
+                              case '<': size_op = 'x'; break;  // <
+                              default: size_op = 0; break;     // Not supported
+                        }
+                        if (size_op == 0) {
+                              return false;  // != not meaningful for size bounds
+                        }
+                        // Map size_op character to numeric op_code
+                        // 'S'=6, 's'=7, 'M'=8, 'X'=9, 'm'=10, 'x'=11
+                        switch (size_op) {
+                              case 'S': op_code = 6; break;
+                              case 's': op_code = 7; break;
+                              case 'M': op_code = 8; break;
+                              case 'X': op_code = 9; break;
+                              case 'm': op_code = 10; break;
+                              case 'x': op_code = 11; break;
+                              default: op_code = 6; break;
+                        }
                         // Get the property name (first component of path)
                         property_name = call_path.name.front().name;
-                        // Use op_code 6 for size constraint ('S')
-                        op_code = 6;
                         // Get the constant from the RHS
                         const PExpr*rhs = bin->get_right();
                         const PENumber*num = dynamic_cast<const PENumber*>(rhs);

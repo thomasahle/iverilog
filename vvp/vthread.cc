@@ -8112,6 +8112,17 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       std::set<size_t> darray_props_to_randomize;
       std::map<size_t, unsigned> darray_elem_widths;
 
+      // Track size bounds per property (for size >, <, >=, <= constraints)
+      struct size_bounds_t {
+	    int64_t min_size;      // -1 means no minimum (or use 0)
+	    int64_t max_size;      // -1 means no maximum (use large default)
+	    int64_t exact_size;    // -1 means no exact constraint
+	    unsigned elem_width;
+	    bool has_any;          // true if any size constraint exists
+	    size_bounds_t() : min_size(-1), max_size(-1), exact_size(-1), elem_width(8), has_any(false) {}
+      };
+      std::map<size_t, size_bounds_t> size_bounds;
+
       // Collect property-based size constraints to apply AFTER source properties are randomized
       struct deferred_size_constraint {
 	    size_t prop_idx;
@@ -8122,33 +8133,50 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       };
       std::vector<deferred_size_constraint> deferred_size_constraints;
 
+      // Helper lambda to collect size bounds
+      auto collect_size_bound = [&](const class_type::simple_bound_t& bound) {
+	    size_t prop_idx = bound.property_idx;
+	    unsigned elem_width = (unsigned)bound.weight;
+	    if (elem_width == 0) elem_width = 8;
+
+	    size_bounds_t& sb = size_bounds[prop_idx];
+	    sb.has_any = true;
+	    sb.elem_width = elem_width;
+
+	    switch (bound.op) {
+		  case 'S':  // size == N (exact)
+			sb.exact_size = bound.const_bound;
+			break;
+		  case 'M':  // size >= N (minimum)
+			if (sb.min_size < 0 || (int64_t)bound.const_bound > sb.min_size)
+			      sb.min_size = bound.const_bound;
+			break;
+		  case 'm':  // size > N (strict minimum, means >= N+1)
+			if (sb.min_size < 0 || (int64_t)(bound.const_bound + 1) > sb.min_size)
+			      sb.min_size = bound.const_bound + 1;
+			break;
+		  case 'X':  // size <= N (maximum)
+			if (sb.max_size < 0 || (int64_t)bound.const_bound < sb.max_size)
+			      sb.max_size = bound.const_bound;
+			break;
+		  case 'x':  // size < N (strict maximum, means <= N-1)
+			if (sb.max_size < 0 || (int64_t)(bound.const_bound - 1) < sb.max_size)
+			      sb.max_size = bound.const_bound - 1;
+			break;
+		  default:
+			break;
+	    }
+      };
+
       // Process class-level size constraints (including inherited)
       const class_type* cls = defn;
       while (cls != nullptr) {
 	    for (size_t b = 0; b < cls->constraint_bound_count(); b++) {
 		  const class_type::simple_bound_t& bound = cls->get_constraint_bound(b);
-		  if (bound.op == 'S') {
-			// Size constraint (constant): resize dynamic array to const_bound elements
-			size_t target_size = (size_t)bound.const_bound;
-			size_t prop_idx = bound.property_idx;
-			unsigned elem_width = (unsigned)bound.weight;
-			if (elem_width == 0) elem_width = 8;  // Default to 8 bits
-
-			// Get current object (if any)
-			vvp_object_t cur_obj;
-			cobj->get_object(prop_idx, cur_obj, 0);
-			vvp_darray* cur_dar = cur_obj.peek<vvp_darray>();
-
-			// If array doesn't exist or has wrong size, create a new one
-			if (cur_dar == 0 || cur_dar->get_size() != target_size) {
-			      vvp_darray_vec4* new_dar = new vvp_darray_vec4(target_size, elem_width);
-			      vvp_object_t new_dar_obj(new_dar);
-			      cobj->set_object(prop_idx, new_dar_obj, 0);
-			}
-
-			// Mark this property for element randomization
-			darray_props_to_randomize.insert(prop_idx);
-			darray_elem_widths[prop_idx] = elem_width;
+		  // Handle all size constraint operators
+		  if (bound.op == 'S' || bound.op == 'M' || bound.op == 'X' ||
+		      bound.op == 'm' || bound.op == 'x') {
+			collect_size_bound(bound);
 		  }
 		  else if (bound.op == 's') {
 			// Property-based size constraint - defer until source is randomized
@@ -8169,30 +8197,10 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
       // Process inline size constraints (from randomize() with {...})
       for (const auto& bound : inline_constraints) {
-	    if (bound.op == 'S') {
-		  // Size constraint (constant): resize dynamic array to const_bound elements
-		  size_t target_size = (size_t)bound.const_bound;
-		  size_t prop_idx = bound.property_idx;
-		  unsigned elem_width = (unsigned)bound.weight;
-		  if (elem_width == 0) elem_width = 8;  // Default to 8 bits
-
-		  // Get current object (if any)
-		  vvp_object_t cur_obj;
-		  cobj->get_object(prop_idx, cur_obj, 0);
-		  vvp_darray* cur_dar = cur_obj.peek<vvp_darray>();
-
-		  // If array doesn't exist or has wrong size, create a new one
-		  if (cur_dar == 0 || cur_dar->get_size() != target_size) {
-			// Create new darray with target size
-			// Use vvp_darray_vec4 for general bit vectors
-			vvp_darray_vec4* new_dar = new vvp_darray_vec4(target_size, elem_width);
-			vvp_object_t new_dar_obj(new_dar);
-			cobj->set_object(prop_idx, new_dar_obj, 0);
-		  }
-
-		  // Mark this property for element randomization
-		  darray_props_to_randomize.insert(prop_idx);
-		  darray_elem_widths[prop_idx] = elem_width;
+	    // Handle all size constraint operators
+	    if (bound.op == 'S' || bound.op == 'M' || bound.op == 'X' ||
+	        bound.op == 'm' || bound.op == 'x') {
+		  collect_size_bound(bound);
 	    }
 	    else if (bound.op == 's') {
 		  // Property-based size constraint - defer until source is randomized
@@ -8207,6 +8215,48 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  if (dsc.is_division) dsc.offset = -bound.const_bound;  // Store positive divisor
 		  deferred_size_constraints.push_back(dsc);
 	    }
+      }
+
+      // Apply collected size bounds - determine target sizes and resize arrays
+      for (auto& pair : size_bounds) {
+	    size_t prop_idx = pair.first;
+	    size_bounds_t& sb = pair.second;
+	    if (!sb.has_any) continue;
+
+	    // Determine target size based on bounds
+	    size_t target_size;
+	    if (sb.exact_size >= 0) {
+		  // Exact size constraint takes precedence
+		  target_size = (size_t)sb.exact_size;
+	    } else {
+		  // Apply min/max bounds
+		  int64_t min_s = (sb.min_size >= 0) ? sb.min_size : 0;
+		  int64_t max_s = (sb.max_size >= 0) ? sb.max_size : 100;  // Default max if unbounded
+		  if (max_s < min_s) max_s = min_s;  // Ensure valid range
+
+		  // Pick random size in [min_s, max_s]
+		  if (max_s == min_s) {
+			target_size = (size_t)min_s;
+		  } else {
+			target_size = (size_t)(min_s + (rand() % (max_s - min_s + 1)));
+		  }
+	    }
+
+	    // Get current object (if any)
+	    vvp_object_t cur_obj;
+	    cobj->get_object(prop_idx, cur_obj, 0);
+	    vvp_darray* cur_dar = cur_obj.peek<vvp_darray>();
+
+	    // If array doesn't exist or has wrong size, create a new one
+	    if (cur_dar == 0 || cur_dar->get_size() != target_size) {
+		  vvp_darray_vec4* new_dar = new vvp_darray_vec4(target_size, sb.elem_width);
+		  vvp_object_t new_dar_obj(new_dar);
+		  cobj->set_object(prop_idx, new_dar_obj, 0);
+	    }
+
+	    // Mark this property for element randomization
+	    darray_props_to_randomize.insert(prop_idx);
+	    darray_elem_widths[prop_idx] = sb.elem_width;
       }
 
       // Randomize elements of dynamic arrays with size constraints
@@ -8601,9 +8651,10 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			if (bound.property_idx >= nprop) continue;
 			if (!bound.has_const_bound) continue;
 
-			// Skip size constraints ('S') - they're handled separately
+			// Skip size constraints - they're handled separately
 			// and don't need constraint checking
-			if (bound.op == 'S') continue;
+			if (bound.op == 'S' || bound.op == 'M' || bound.op == 'X' ||
+			    bound.op == 'm' || bound.op == 'x') continue;
 
 			// Skip constraints on properties that don't support vec4
 			// (e.g., object types like dynamic arrays)
@@ -8936,17 +8987,17 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
       unsigned encoded_op = cp->bit_idx[0];
 
       // Decode weight and weight_per_value from upper bits:
-      //   bits 0-3: op_code (including soft flag in bit 3)
-      //   bits 4-19: weight (up to 65535)
+      //   bits 0-3: op_code (4-bit operator, 0-15)
+      //   bit 4: soft flag
+      //   bits 5-20: weight (up to 65535)
       //   bit 31: weight_per_value flag
-      bound.weight = (encoded_op >> 4) & 0xFFFF;
+      bound.weight = (encoded_op >> 5) & 0xFFFF;
       bound.weight_per_value = (encoded_op & (1u << 31)) != 0;
       if (bound.weight == 0) bound.weight = 1;  // Default weight if not specified
 
-      int op_code = encoded_op & 0xF;
-      // Extract soft flag from bit 3
-      bool is_soft = (op_code & 8) != 0;
-      op_code &= 7;  // Mask off soft flag to get operator (3 bits for operator)
+      int op_code = encoded_op & 0xF;  // 4-bit operator
+      // Extract soft flag from bit 4
+      bool is_soft = (encoded_op & 0x10) != 0;
       switch (op_code) {
 	    case 0: bound.op = '>'; break;
 	    case 1: bound.op = '<'; break;
@@ -8954,8 +9005,12 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 	    case 3: bound.op = 'L'; break;  // <=
 	    case 4: bound.op = '='; break;
 	    case 5: bound.op = '!'; break;
-	    case 6: bound.op = 'S'; break;  // Size constraint (constant)
+	    case 6: bound.op = 'S'; break;  // Size constraint (exact)
 	    case 7: bound.op = 's'; break;  // Size constraint (property-based)
+	    case 8: bound.op = 'M'; break;  // Size >= (minimum)
+	    case 9: bound.op = 'X'; break;  // Size <= (maximum)
+	    case 10: bound.op = 'm'; break; // Size > (strict min)
+	    case 11: bound.op = 'x'; break; // Size < (strict max)
 	    default: bound.op = '='; break;
       }
       bound.is_soft = is_soft;
