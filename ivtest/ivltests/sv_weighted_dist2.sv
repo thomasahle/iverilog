@@ -44,8 +44,8 @@ module test;
          // Don't fail - this is probabilistic
       end
 
-      $display("PASSED - Weighted dist constraints work");
-      $display("  dist {1 := 9, 100 := 1}: count_1=%0d count_100=%0d (expected ~90:10)", count_low, count_high);
+      $display("PASSED");
+      $display("Weighted dist constraints work: dist {1 := 9, 100 := 1}: count_1=%0d count_100=%0d (expected ~90:10)", count_low, count_high);
       $finish;
    end
 
