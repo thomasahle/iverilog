@@ -1658,7 +1658,7 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			if (weight_per_value) encoded_op |= (1u << 31);
 
 			/* For op_code 7 (property-based size), pack source_prop_idx into const_val:
-			   - lower 16 bits = signed offset
+			   - lower 16 bits = signed offset (negative offset indicates division)
 			   - upper 16 bits = source property index */
 			if ((op_code & 7) == 7) {
 			      int64_t packed_val = ((int64_t)src_prop_idx << 16) | (const_val & 0xFFFF);

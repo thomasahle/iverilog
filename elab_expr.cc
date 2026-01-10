@@ -131,6 +131,28 @@ static bool analyze_constraint_expr(const PExpr*expr,
                                     }
                               }
                         }
+                        // Check for property / constant (arr.size() == len / 4)
+                        // We encode division using op_code 7 but with negative offset
+                        // (negate the divisor). This distinguishes it from addition.
+                        if (rhs_bin && rhs_bin->get_op() == '/') {
+                              const PEIdent*prop_id = dynamic_cast<const PEIdent*>(rhs_bin->get_left());
+                              const PENumber*divisor_num = dynamic_cast<const PENumber*>(rhs_bin->get_right());
+                              if (prop_id && divisor_num) {
+                                    const pform_scoped_name_t& prop_path = prop_id->path();
+                                    if (prop_path.size() == 1) {
+                                          op_code = 7;  // Property-based size (same as offset)
+                                          // Encode divisor as negative value with special marker
+                                          // Use INT16_MIN (-32768) as marker, actual divisor follows
+                                          int64_t divisor = divisor_num->value().as_long();
+                                          // Store negated divisor - decoder will detect negative and divide
+                                          const_value = -divisor;
+                                          // Store source property name if caller wants it
+                                          if (source_prop_name)
+                                                *source_prop_name = prop_path.name.front().name;
+                                          return true;
+                                    }
+                              }
+                        }
                   }
             }
       }

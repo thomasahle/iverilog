@@ -9275,6 +9275,33 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 						}
 					  }
 				    }
+
+				    // Case 4d: arr.size() == property / constant (division)
+				    if (rhs_bin != nullptr && rhs_bin->get_op() == '/') {
+					  const PEIdent* prop_ident2 = dynamic_cast<const PEIdent*>(rhs_bin->get_left());
+					  int64_t divisor_val = 0;
+					  if (prop_ident2 != nullptr && extract_constant_value(rhs_bin->get_right(), divisor_val, scope, cls, des)) {
+						const pform_scoped_name_t& prop_path2 = prop_ident2->path();
+						if (prop_path2.name.size() == 1) {
+						      perm_string src_prop_name = prop_path2.name.front().name;
+						      int src_prop_idx = cls->property_idx_from_name(src_prop_name);
+						      if (src_prop_idx >= 0) {
+							    if (debug_elaborate) {
+								  cerr << "netclass_t::elaborate: extracted size bound "
+								       << array_prop_name << ".size() == " << src_prop_name
+								       << " / " << divisor_val << endl;
+							    }
+							    // op 's' = property-based size
+							    // Encode division by using negative const_bound
+							    // const_bound=-divisor tells VVP to divide instead of add
+							    cls->add_simple_bound(constraint_name, array_prop_idx, 's', is_soft,
+							                          true, -divisor_val, src_prop_idx, netclass_t::SYSFUNC_NONE, 0,
+							                          elem_width, true);
+							    return true;
+						      }
+						}
+					  }
+				    }
 			      }
 			}
 		  }

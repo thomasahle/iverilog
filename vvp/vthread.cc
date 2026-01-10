@@ -8116,8 +8116,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       struct deferred_size_constraint {
 	    size_t prop_idx;
 	    size_t src_prop_idx;
-	    int64_t offset;
+	    int64_t offset;       // For 's': offset to add; for 'd': divisor
 	    unsigned elem_width;
+	    bool is_division;     // true if size = src_prop / offset
       };
       std::vector<deferred_size_constraint> deferred_size_constraints;
 
@@ -8151,12 +8152,15 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  }
 		  else if (bound.op == 's') {
 			// Property-based size constraint - defer until source is randomized
+			// If offset is negative, it indicates division (divisor = -offset)
 			deferred_size_constraint dsc;
 			dsc.prop_idx = bound.property_idx;
 			dsc.src_prop_idx = bound.bound_prop_idx;
 			dsc.offset = bound.const_bound;
 			dsc.elem_width = (unsigned)bound.weight;
 			if (dsc.elem_width == 0) dsc.elem_width = 8;
+			dsc.is_division = (bound.const_bound < 0);
+			if (dsc.is_division) dsc.offset = -bound.const_bound;  // Store positive divisor
 			deferred_size_constraints.push_back(dsc);
 		  }
 	    }
@@ -8192,12 +8196,15 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    }
 	    else if (bound.op == 's') {
 		  // Property-based size constraint - defer until source is randomized
+		  // If offset is negative, it indicates division (divisor = -offset)
 		  deferred_size_constraint dsc;
 		  dsc.prop_idx = bound.property_idx;
 		  dsc.src_prop_idx = bound.bound_prop_idx;
 		  dsc.offset = bound.const_bound;
 		  dsc.elem_width = (unsigned)bound.weight;
 		  if (dsc.elem_width == 0) dsc.elem_width = 8;
+		  dsc.is_division = (bound.const_bound < 0);
+		  if (dsc.is_division) dsc.offset = -bound.const_bound;  // Store positive divisor
 		  deferred_size_constraints.push_back(dsc);
 	    }
       }
@@ -8764,7 +8771,18 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    }
 
 	    // Calculate target size
-	    int64_t target_size_s = src_int + dsc.offset;
+	    int64_t target_size_s;
+	    if (dsc.is_division) {
+		  // Size = src_prop / divisor
+		  if (dsc.offset != 0) {
+			target_size_s = src_int / dsc.offset;
+		  } else {
+			target_size_s = 0;  // Division by zero protection
+		  }
+	    } else {
+		  // Size = src_prop + offset
+		  target_size_s = src_int + dsc.offset;
+	    }
 	    if (target_size_s < 0) target_size_s = 0;  // Can't have negative size
 	    size_t target_size = (size_t)target_size_s;
 
@@ -8928,7 +8946,7 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
       int op_code = encoded_op & 0xF;
       // Extract soft flag from bit 3
       bool is_soft = (op_code & 8) != 0;
-      op_code &= 7;  // Mask off soft flag to get operator
+      op_code &= 7;  // Mask off soft flag to get operator (3 bits for operator)
       switch (op_code) {
 	    case 0: bound.op = '>'; break;
 	    case 1: bound.op = '<'; break;
@@ -8944,14 +8962,14 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 
       // For op_code 7 (property-based size), unpack the source_prop_idx and offset:
       //   - upper 16 bits = source property index
-      //   - lower 16 bits = signed offset
+      //   - lower 16 bits = signed offset (negative indicates division by abs(offset))
       if (op_code == 7) {
 	    int64_t packed = cp->bit_idx[1];
 	    bound.has_const_bound = false;  // Property-based, not constant
 	    bound.bound_prop_idx = (packed >> 16) & 0xFFFF;  // Source property index
 	    // Sign-extend the 16-bit offset
-	    int16_t offset_raw = (int16_t)(packed & 0xFFFF);
-	    bound.const_bound = (int64_t)offset_raw;  // Offset to add
+	    int16_t value_raw = (int16_t)(packed & 0xFFFF);
+	    bound.const_bound = (int64_t)value_raw;  // Offset (or negated divisor if negative)
       } else {
 	    bound.has_const_bound = true;
 	    bound.const_bound = (int64_t)(int32_t)cp->bit_idx[1];  // Sign-extend
