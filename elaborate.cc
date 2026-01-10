@@ -9541,6 +9541,16 @@ static bool extract_simple_bound_with_cond(netclass_t*cls, perm_string constrain
  */
 static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr, bool is_soft, LexicalScope*scope = nullptr, Design*des = nullptr)
 {
+      // Check for soft constraint wrapper - unwrap and recurse with is_soft=true
+      const PESoftConstraint* soft_cons = dynamic_cast<const PESoftConstraint*>(expr);
+      if (soft_cons != nullptr) {
+	    PExpr* inner = soft_cons->get_expr();
+	    if (inner != nullptr) {
+		  return extract_simple_bound(cls, constraint_name, inner, true, scope, des);
+	    }
+	    return false;
+      }
+
       // Check for implication/conditional constraints with block syntax (-> { constraints })
       const PEConditionalConstraint* cond_cons = dynamic_cast<const PEConditionalConstraint*>(expr);
       if (cond_cons != nullptr) {
