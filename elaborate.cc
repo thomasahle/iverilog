@@ -9271,19 +9271,23 @@ static bool lookup_enum_constant(LexicalScope*scope, perm_string name, int64_t&v
 	    for (auto* enum_type : ss->enum_sets) {
 		  if (enum_type->names == nullptr)
 			continue;
+		  // Track the current auto-assigned value as we iterate through names
+		  int64_t current_val = 0;
 		  for (const auto& named : *(enum_type->names)) {
-			if (named.name == name) {
-			      // Found the enum constant
-			      if (named.parm != nullptr) {
-				    const PENumber* num = dynamic_cast<const PENumber*>(named.parm);
-				    if (num != nullptr) {
-					  value = num->value().as_long();
-					  return true;
-				    }
+			if (named.parm != nullptr) {
+			      // Explicit value - update current_val for subsequent autos
+			      const PENumber* num = dynamic_cast<const PENumber*>(named.parm);
+			      if (num != nullptr) {
+				    current_val = num->value().as_long();
 			      }
-			      // Auto-assigned value - can't extract at parse time
-			      return false;
 			}
+			if (named.name == name) {
+			      // Found the enum constant - return current value
+			      value = current_val;
+			      return true;
+			}
+			// Move to next value for potential auto-assignment
+			current_val++;
 		  }
 	    }
 	    ss = ss->parent_scope();
@@ -9581,8 +9585,35 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 		  }
 	    }
 
-	    // TODO: Handle else constraints if has_else() - for if-else constraints
-	    // For implication (->), there's no else clause
+	    // Handle else constraints if has_else() - for if-else constraints
+	    if (cond_cons->has_else()) {
+		  for (PExpr* else_expr : cond_cons->get_else_constraints()) {
+			if (else_expr != nullptr) {
+			      // Check if this is a nested conditional (else if)
+			      const PEConditionalConstraint* nested_cond =
+				    dynamic_cast<const PEConditionalConstraint*>(else_expr);
+			      if (nested_cond != nullptr) {
+				    // Recurse for 'else if' clause
+				    any_extracted |= extract_simple_bound(cls, constraint_name, else_expr,
+				                                          is_soft, scope, des);
+			      } else {
+				    // Plain else - invert the condition
+				    condition_info_t else_cond = cond;
+				    // Invert the operator to get the negated condition
+				    switch (cond.op) {
+					  case '=': else_cond.op = '!'; break;  // != instead of ==
+					  case '!': else_cond.op = '='; break;  // == instead of !=
+					  case '>': else_cond.op = 'L'; break;  // <= instead of >
+					  case '<': else_cond.op = 'G'; break;  // >= instead of <
+					  case 'G': else_cond.op = '<'; break;  // < instead of >=
+					  case 'L': else_cond.op = '>'; break;  // > instead of <=
+				    }
+				    any_extracted |= extract_simple_bound_with_cond(cls, constraint_name,
+				                                                    else_expr, is_soft, scope, des, else_cond);
+			      }
+			}
+		  }
+	    }
 
 	    return any_extracted;
       }
@@ -10236,7 +10267,67 @@ static bool extract_simple_bound_with_cond(netclass_t*cls, perm_string constrain
                (bound_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
 	    // Property-to-property bound with condition
       }
+      // Case 4: property.size() OP constant (conditional size constraint)
       else {
+	    const PECallFunction* call_func = dynamic_cast<const PECallFunction*>(left);
+	    if (call_func != nullptr) {
+		  const pform_scoped_name_t& call_path = call_func->path();
+		  if (call_path.name.size() >= 2) {  // property.size() has at least 2 components
+			// Check if the method is "size"
+			perm_string method_name = call_path.name.back().name;
+			if (method_name == "size") {
+			      // Get the property name (first component of path)
+			      perm_string array_prop_name = call_path.name.front().name;
+			      int array_prop_idx = cls->property_idx_from_name(array_prop_name);
+			      // Support comparison operators for size constraints
+			      // op: '=' (==), '>' (>), '<' (<), 'G' (>=), 'L' (<=)
+			      if (array_prop_idx >= 0 && (op == '=' || op == '>' || op == '<' ||
+			                                  op == 'G' || op == 'L')) {
+				    // Map comparison operator to size constraint op
+				    // 'S' = size ==, 'M' = size >=, 'X' = size <=, 'm' = size >, 'x' = size <
+				    char size_op;
+				    switch (op) {
+					  case '=': size_op = 'S'; break;
+					  case 'G': size_op = 'M'; break;  // >=
+					  case 'L': size_op = 'X'; break;  // <=
+					  case '>': size_op = 'm'; break;  // >
+					  case '<': size_op = 'x'; break;  // <
+					  default: size_op = 'S'; break;
+				    }
+				    // Get element width for the array
+				    int64_t elem_width = 8;  // default
+				    ivl_type_t arr_prop_type = cls->get_prop_type(array_prop_idx);
+				    if (arr_prop_type && arr_prop_type->base_type() == IVL_VT_DARRAY) {
+					  const netarray_t* arr_type = dynamic_cast<const netarray_t*>(arr_prop_type);
+					  if (arr_type) {
+						ivl_type_t elem_type = arr_type->element_type();
+						if (elem_type) {
+						      elem_width = elem_type->packed_width();
+						      if (elem_width == 0) elem_width = 32;
+						}
+					  }
+				    }
+
+				    // Check for constant on right side
+				    if (extract_constant_value(right, const_val, scope, cls, des)) {
+					  if (debug_elaborate) {
+						cerr << "netclass_t::elaborate: extracted conditional size bound "
+						     << array_prop_name << ".size() " << (char)op << " " << const_val
+						     << " (cond: prop" << cond.prop_idx << " " << cond.op << " "
+						     << cond.const_val << ")" << endl;
+					  }
+					  // Store conditional size constraint with elem_width in weight
+					  cls->add_simple_bound(constraint_name, array_prop_idx, size_op, is_soft,
+					                        true, const_val, 0, netclass_t::SYSFUNC_NONE, 0,
+					                        elem_width, true,
+					                        cond.valid, cond.prop_idx, cond.op,
+					                        cond.has_const, cond.const_val, cond.prop2_idx);
+					  return true;
+				    }
+			      }
+			}
+		  }
+	    }
 	    return false;
       }
 

@@ -8154,6 +8154,66 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       };
       std::vector<deferred_size_constraint> deferred_size_constraints;
 
+      // Helper lambda to evaluate condition for conditional constraints
+      // Returns true if the condition is satisfied (or if there's no condition)
+      auto evaluate_condition = [&](const class_type::simple_bound_t& bound) -> bool {
+	    if (!bound.has_condition)
+		  return true;  // No condition means always applies
+
+	    // First check if inline constraints set the condition property to a specific value
+	    // This handles cases like: randomize() with { burst == BURST4; }
+	    // where the condition property (burst) will be constrained to a specific value
+	    int64_t cond_val = 0;
+	    bool found_inline_value = false;
+	    for (const auto& inline_bound : inline_constraints) {
+		  // Look for equality constraint on the condition property
+		  if (inline_bound.property_idx == bound.cond_prop_idx &&
+		      inline_bound.op == '=' && inline_bound.has_const_bound) {
+			cond_val = inline_bound.const_bound;
+			found_inline_value = true;
+			break;
+		  }
+	    }
+
+	    // If no inline constraint found, use the current property value
+	    if (!found_inline_value) {
+		  vvp_vector4_t cond_prop_val;
+		  cobj->get_vec4(bound.cond_prop_idx, cond_prop_val);
+
+		  if (cond_prop_val.size() <= 64) {
+			for (unsigned i = 0; i < cond_prop_val.size(); i++) {
+			      if (cond_prop_val.value(i) == BIT4_1)
+				    cond_val |= (int64_t(1) << i);
+			}
+		  }
+	    }
+
+	    int64_t cond_bound_val = bound.cond_has_const ? bound.cond_const : 0;
+	    if (!bound.cond_has_const && bound.cond_prop2_idx < nprop) {
+		  vvp_vector4_t cond_prop2_val;
+		  cobj->get_vec4(bound.cond_prop2_idx, cond_prop2_val);
+		  if (cond_prop2_val.size() <= 64) {
+			for (unsigned i = 0; i < cond_prop2_val.size(); i++) {
+			      if (cond_prop2_val.value(i) == BIT4_1)
+				    cond_bound_val |= (int64_t(1) << i);
+			}
+		  }
+	    }
+
+	    // Evaluate the condition
+	    bool result = false;
+	    switch (bound.cond_op) {
+		  case '>': result = (cond_val > cond_bound_val); break;
+		  case '<': result = (cond_val < cond_bound_val); break;
+		  case 'G': result = (cond_val >= cond_bound_val); break;
+		  case 'L': result = (cond_val <= cond_bound_val); break;
+		  case '=': result = (cond_val == cond_bound_val); break;
+		  case '!': result = (cond_val != cond_bound_val); break;
+		  default: result = true; break;
+	    }
+	    return result;
+      };
+
       // Helper lambda to collect size bounds
       auto collect_size_bound = [&](const class_type::simple_bound_t& bound) {
 	    size_t prop_idx = bound.property_idx;
@@ -8166,7 +8226,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
 	    switch (bound.op) {
 		  case 'S':  // size == N (exact)
-			sb.exact_size = bound.const_bound;
+			// First matching exact size wins (for conditional constraints)
+			if (sb.exact_size < 0)
+			      sb.exact_size = bound.const_bound;
 			break;
 		  case 'M':  // size >= N (minimum)
 			if (sb.min_size < 0 || (int64_t)bound.const_bound > sb.min_size)
@@ -8197,20 +8259,25 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  // Handle all size constraint operators
 		  if (bound.op == 'S' || bound.op == 'M' || bound.op == 'X' ||
 		      bound.op == 'm' || bound.op == 'x') {
-			collect_size_bound(bound);
+			// Check condition before collecting size bound
+			if (evaluate_condition(bound))
+			      collect_size_bound(bound);
 		  }
 		  else if (bound.op == 's') {
 			// Property-based size constraint - defer until source is randomized
 			// If offset is negative, it indicates division (divisor = -offset)
-			deferred_size_constraint dsc;
-			dsc.prop_idx = bound.property_idx;
-			dsc.src_prop_idx = bound.bound_prop_idx;
-			dsc.offset = bound.const_bound;
-			dsc.elem_width = (unsigned)bound.weight;
-			if (dsc.elem_width == 0) dsc.elem_width = 8;
-			dsc.is_division = (bound.const_bound < 0);
-			if (dsc.is_division) dsc.offset = -bound.const_bound;  // Store positive divisor
-			deferred_size_constraints.push_back(dsc);
+			// Check condition before deferring
+			if (evaluate_condition(bound)) {
+			      deferred_size_constraint dsc;
+			      dsc.prop_idx = bound.property_idx;
+			      dsc.src_prop_idx = bound.bound_prop_idx;
+			      dsc.offset = bound.const_bound;
+			      dsc.elem_width = (unsigned)bound.weight;
+			      if (dsc.elem_width == 0) dsc.elem_width = 8;
+			      dsc.is_division = (bound.const_bound < 0);
+			      if (dsc.is_division) dsc.offset = -bound.const_bound;  // Store positive divisor
+			      deferred_size_constraints.push_back(dsc);
+			}
 		  }
 	    }
 	    cls = cls->get_parent();
