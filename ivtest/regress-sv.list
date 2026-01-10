@@ -1326,3 +1326,5 @@ sv_constraint_foreach_inline	normal,-g2012	ivltests	gold=sv_constraint_foreach_i
 sv_weighted_dist2	normal,-g2012	ivltests
 sv_dist_multi_range	normal,-g2012	ivltests
 sv_string_concat_sfunc	normal,-g2012	ivltests	gold=sv_string_concat_sfunc.gold
+sv_wait_fork	normal,-g2012	ivltests
+sv_disable_fork	normal,-g2012	ivltests
