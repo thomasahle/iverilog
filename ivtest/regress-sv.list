@@ -1339,3 +1339,4 @@ sv_nb_event_trigger	normal,-g2012	ivltests
 sv_assert_control	normal,-g2012	ivltests
 sv_vif_modport_class	normal,-g2012	ivltests
 sv_vif_static_modport_class	normal,-g2012	ivltests
+sv_process_class	normal,-g2012,-I../lib/ivl/uvm	ivltests gold=sv_process_class.gold

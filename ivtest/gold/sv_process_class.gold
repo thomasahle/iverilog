@@ -1,0 +1,6 @@
+../lib/ivl/uvm/uvm_pkg.sv:2520: note: Detected run_test() call.
+Got process handle from self()
+Process status: RUNNING
+await() completed (no-op stub)
+PASSED
+./ivltests/sv_process_class.v:37: $finish called at 0 (1s)
