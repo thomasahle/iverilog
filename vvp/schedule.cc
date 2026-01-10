@@ -812,6 +812,9 @@ static void schedule_event_push_(struct event_s*cur)
 
       cur->next = ctim->active->next;
       ctim->active->next = cur;
+      // Advance active to maintain FIFO order for fork statements.
+      // Without this, forked threads run in reverse order (LIFO).
+      ctim->active = cur;
 }
 
 void schedule_vthread(vthread_t thr, vvp_time64_t delay, bool push_flag)

@@ -1068,6 +1068,9 @@ sv_cast_class		normal,-g2012		ivltests
 # fork/join_none in class
 sv_fork_join_none_class	normal,-g2012		ivltests
 
+# fork branch execution order (FIFO, not LIFO)
+sv_fork_order	normal,-g2012		ivltests	gold=sv_fork_order.gold
+
 # fork_this mechanism - preserving 'this' in forked tasks
 sv_fork_this1		normal,-g2012		ivltests
 sv_fork_this2		normal,-g2012		ivltests

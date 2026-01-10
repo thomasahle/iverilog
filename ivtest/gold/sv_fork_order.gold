@@ -1,0 +1,2 @@
+PASSED: Fork branches executed in FIFO order: 1, 2, 3
+./ivltests/sv_fork_order.sv:28: $finish called at 0 (1s)

@@ -12,18 +12,18 @@ UVM_INFO: Running end_of_elaboration_phase...
 UVM_INFO: Running start_of_simulation_phase...
 UVM_INFO: Running run_phase...
 @ 0: Sequence: sending item 0
+@ 0: Driver: received item 0
 UVM_INFO: Waiting for all objections to drop...
-@ 1: Driver: received item 0
-@ 11: Driver: completed item 0
-@ 11: Sequence: item 0 done
-@ 11: Sequence: sending item 1
-@ 12: Driver: received item 1
-@ 22: Driver: completed item 1
-@ 22: Sequence: item 1 done
-@ 22: Sequence: sending item 2
-@ 23: Driver: received item 2
-@ 33: Driver: completed item 2
-@ 33: Sequence: item 2 done
+@ 10: Driver: completed item 0
+@ 10: Sequence: item 0 done
+@ 10: Sequence: sending item 1
+@ 11: Driver: received item 1
+@ 21: Driver: completed item 1
+@ 21: Sequence: item 1 done
+@ 21: Sequence: sending item 2
+@ 22: Driver: received item 2
+@ 32: Driver: completed item 2
+@ 32: Sequence: item 2 done
 UVM_INFO: All objections dropped, ending run_phase...
 UVM_INFO: Running extract_phase...
 UVM_INFO: Running check_phase...
