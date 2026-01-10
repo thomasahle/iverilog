@@ -3774,8 +3774,12 @@ bool of_DIV(vthread_t thr, vvp_code_t)
       vvp_vector4_t valb = thr->pop_vec4();
       vvp_vector4_t vala = thr->pop_vec4();
 
-      assert(vala.size()== valb.size());
-      unsigned wid = vala.size();
+      // Handle width mismatch by padding smaller operand to larger width
+      unsigned wid_a = vala.size();
+      unsigned wid_b = valb.size();
+      unsigned wid = (wid_a > wid_b) ? wid_a : wid_b;
+      if (wid_a < wid) vala.resize(wid, BIT4_0);
+      if (wid_b < wid) valb.resize(wid, BIT4_0);
 
       unsigned long*ap = vala.subarray(0, wid);
       if (ap == 0) {
