@@ -1348,3 +1348,4 @@ sv_pre_post_randomize		normal,-g2012		ivltests	gold=sv_pre_post_randomize.gold
 sv_constraint_unique	normal,-g2012	ivltests	gold=sv_constraint_unique.gold
 sv_rand_enum		normal,-g2012	ivltests	gold=sv_rand_enum.gold
 sv_randc_enum		normal,-g2012	ivltests	gold=sv_randc_enum.gold
+sv_constraint_soft_enum		normal,-g2012	ivltests	gold=sv_constraint_soft_enum.gold
