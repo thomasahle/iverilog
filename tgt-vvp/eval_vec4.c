@@ -1580,6 +1580,23 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    return;
       }
 
+      if (strcmp(ivl_expr_name(expr),"$ivl_semaphore_method$try_get")==0) {
+	    /* $ivl_semaphore_method$try_get(sem, key_count)
+	       Non-blocking attempt to get keys. Returns 1 if successful, 0 if not. */
+	    ivl_expr_t sem_arg = ivl_expr_parm(expr, 0);
+	    ivl_expr_t count_arg = ivl_expr_parm(expr, 1);
+
+	    /* Push semaphore object to stack */
+	    draw_eval_object(sem_arg);
+	    /* Evaluate key count to integer register 3 */
+	    draw_eval_expr_into_integer(count_arg, 3);
+	    /* Call semaphore try_get - pushes 1/0 to vec4 stack */
+	    fprintf(vvp_out, "    %%semaphore/try_get 3;\n");
+	    /* Pop the semaphore object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return;
+      }
+
       if (strcmp(ivl_expr_name(expr),"$ivl_randomize")==0) {
 	      /* The argument is a class object expression. Push it to the object
 	         stack, then call %randomize which will randomize its properties

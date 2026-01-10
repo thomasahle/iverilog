@@ -2205,12 +2205,32 @@ unsigned PECallFunction::test_width_method_(Design*, NetScope*,
 	    return 0;
       }
 
+      // Semaphore method width. Semaphores use IVL_VT_CLASS as base type but are
+      // not netclass_t. Check for semaphore before class check.
+      if (search_results.net && search_results.net->data_type()==IVL_VT_CLASS
+	  && dynamic_cast<const netsemaphore_t*>(search_results.net->net_type())) {
+	    // try_get() returns int (32-bit signed)
+	    if (method_name == "try_get") {
+		  expr_type_  = IVL_VT_BOOL;
+		  expr_width_ = 32;
+		  min_width_  = expr_width_;
+		  signed_flag_= true;
+		  return expr_width_;
+	    }
+	    // get() and put() are tasks, not expressions - they return nothing
+	    // But if called in expression context, treat as error
+	    return 0;
+      }
+
       // Class variables. In this case, the search found the class instance,
       // and the scope is the scope where the instance lives. The class method
       // in turn defines it's own scope. Use that to find the return value.
       if (search_results.net && search_results.net->data_type()==IVL_VT_CLASS) {
 	    const netclass_t *class_type = dynamic_cast<const netclass_t*>(search_results.type);
-	    ivl_assert(*this, class_type);
+	    if (!class_type) {
+		  // Not a class type, but uses IVL_VT_CLASS base - could be a special type
+		  return 0;
+	    }
 	    NetScope*method = class_type->method_from_name(method_name);
 
 	    if (method == 0) {
@@ -7197,6 +7217,49 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			++tail_it;
 		  }
 	    }
+      }
+
+      // Semaphore methods - handle try_get() which returns a value
+      if (search_results.net
+	  && dynamic_cast<const netsemaphore_t*>(search_results.net->net_type())
+	  && search_results.path_head.back().index.size()==0) {
+	    // Get the method name that we are looking for.
+	    perm_string method_name = search_results.path_tail.back().name;
+
+	    if (method_name == "try_get") {
+		  // try_get(key_count=1) - returns int (1 if got keys, 0 if not)
+		  unsigned nparms = parms_.size();
+		  if (nparms > 1) {
+			cerr << get_fileline() << ": error: semaphore try_get() "
+			     << "method takes zero or one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  NetExpr*count_arg;
+		  if (nparms > 0 && parms_[0].parm) {
+			count_arg = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+		  } else {
+			// Default key_count = 1
+			count_arg = new NetEConst(verinum((uint64_t)1, 32));
+			count_arg->set_line(*this);
+		  }
+
+		  // Generate a function call that returns int
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_semaphore_method$try_get",
+		                                     &netvector_t::atom2s32, 2);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sub_expr);
+		  sys_expr->parm(1, count_arg);
+		  return sys_expr;
+	    }
+
+	    // get() and put() are tasks, not expressions - they can't return values
+	    // They are handled in elaborate.cc PCallTask::elaborate_method_
+	    cerr << get_fileline() << ": error: semaphore method " << method_name
+		 << " cannot be used in an expression context." << endl;
+	    des->errors += 1;
+	    return 0;
       }
 
       // Queue variable with a select expression. The type of this expression
@@ -12298,6 +12361,28 @@ NetExpr* PENewClass::elaborate_expr_constructor_(Design*des, NetScope*scope,
 NetExpr* PENewClass::elaborate_expr(Design*des, NetScope*scope,
 				    ivl_type_t ntype, unsigned flags) const
 {
+	// Handle semaphore new(count) specially - semaphore is a built-in type
+      if (dynamic_cast<const netsemaphore_t*>(ntype)) {
+	    // Semaphore constructor takes an optional initial count (default 0)
+	    NetExpr*count_expr = nullptr;
+	    if (parms_.size() > 0 && parms_[0].parm) {
+		  count_expr = parms_[0].parm->elaborate_expr(des, scope,
+			  &netvector_t::atom2s32, 0);
+	    }
+	    if (count_expr == nullptr) {
+		  // Default count is 0
+		  count_expr = new NetEConst(verinum((uint64_t)0, 32));
+		  count_expr->set_line(*this);
+	    }
+
+	    // Create semaphore via system function
+	    // Returns the semaphore type (which is class-like)
+	    NetESFunc*sys_expr = new NetESFunc("$ivl_semaphore_new", ntype, 1);
+	    sys_expr->set_line(*this);
+	    sys_expr->parm(0, count_expr);
+	    return sys_expr;
+      }
+
 	// Find the constructor for the class. If there is no
 	// constructor then the result of this expression is the
 	// allocation alone.

@@ -2283,6 +2283,50 @@ static int show_system_task_call(ivl_statement_t net)
 	    return 1;
       }
 
+      /* Handle semaphore get() method - blocking acquire */
+      if (strcmp(stmt_name,"$ivl_semaphore_method$get") == 0) {
+	    show_stmt_file_line(net, "semaphore: get");
+
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 2)
+		  return 1;
+
+	    ivl_expr_t sem_expr = ivl_stmt_parm(net, 0);
+	    ivl_expr_t count_expr = ivl_stmt_parm(net, 1);
+
+	    /* Push semaphore object to stack */
+	    draw_eval_object(sem_expr);
+	    /* Evaluate key count to integer register 3 */
+	    draw_eval_expr_into_integer(count_expr, 3);
+	    /* Call semaphore get opcode */
+	    fprintf(vvp_out, "    %%semaphore/get 3;\n");
+	    /* Pop the semaphore object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return 0;
+      }
+
+      /* Handle semaphore put() method - release keys */
+      if (strcmp(stmt_name,"$ivl_semaphore_method$put") == 0) {
+	    show_stmt_file_line(net, "semaphore: put");
+
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 2)
+		  return 1;
+
+	    ivl_expr_t sem_expr = ivl_stmt_parm(net, 0);
+	    ivl_expr_t count_expr = ivl_stmt_parm(net, 1);
+
+	    /* Push semaphore object to stack */
+	    draw_eval_object(sem_expr);
+	    /* Evaluate key count to integer register 3 */
+	    draw_eval_expr_into_integer(count_expr, 3);
+	    /* Call semaphore put opcode */
+	    fprintf(vvp_out, "    %%semaphore/put 3;\n");
+	    /* Pop the semaphore object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return 0;
+      }
+
       if (strcmp(stmt_name,"$ivl_config_db_set") == 0) {
 	    /* $ivl_config_db_set(inst_name, field_name, value)
 	     * - Push inst_name string to string stack

@@ -4167,6 +4167,58 @@ NetProc* PCallTask::elaborate_queue_prop_method_(Design*des, NetScope*scope,
 }
 
 /*
+ * Helper function to elaborate semaphore property method calls.
+ * Handles sem_prop.get()/put() on class properties.
+ */
+NetProc* PCallTask::elaborate_semaphore_prop_method_(Design*des, NetScope*scope,
+					    NetNet*net,
+					    const netclass_t*class_type,
+					    int pidx,
+					    perm_string method_name) const
+{
+      // Create a NetEProperty expression for the semaphore property
+      NetEProperty*prop_expr = new NetEProperty(net, pidx);
+      prop_expr->set_line(*this);
+
+      unsigned nparms = parms_.size();
+
+      // get() and put() take optional count argument (default 1)
+      if (nparms > 1) {
+	    cerr << get_fileline() << ": error: semaphore " << method_name
+		 << "() method takes zero or one argument." << endl;
+	    des->errors += 1;
+	    return 0;
+      }
+
+      vector<NetExpr*>argv (2);
+      argv[0] = prop_expr;
+
+      if (nparms > 0 && parms_[0].parm) {
+	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+      } else {
+	    // Default key_count = 1
+	    argv[1] = new NetEConst(verinum((uint64_t)1, 32));
+	    argv[1]->set_line(*this);
+      }
+
+      const char* sys_task_name;
+      if (method_name == "get") {
+	    sys_task_name = "$ivl_semaphore_method$get";
+      } else if (method_name == "put") {
+	    sys_task_name = "$ivl_semaphore_method$put";
+      } else {
+	    // This shouldn't happen - try_get returns a value
+	    cerr << get_fileline() << ": internal error: semaphore "
+		 << method_name << " should be handled elsewhere." << endl;
+	    return 0;
+      }
+
+      NetSTask*sys = new NetSTask(sys_task_name, IVL_SFUNC_AS_TASK_IGNORE, argv);
+      sys->set_line(*this);
+      return sys;
+}
+
+/*
  * This is used for array/queue function methods called as tasks.
  */
 NetProc* PCallTask::elaborate_method_func_(NetScope*scope,
@@ -4398,6 +4450,118 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  return elaborate_sys_task_method_(des, scope, net, method_name,
 						    "$ivl_string_method$putc",
 						    parm_names);
+	    }
+      }
+
+      // Is this a method of a semaphore type?
+      if (dynamic_cast<const netsemaphore_t*>(net->net_type())) {
+	    if (method_name == "get") {
+		  // get(key_count=1) - blocking, takes optional count parameter
+		  static const std::vector<perm_string> parm_names = {
+			perm_string::literal("key_count")
+		  };
+
+		  // Handle optional parameter - default is 1
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms > 1) {
+			cerr << get_fileline() << ": error: semaphore get() "
+			     << "method takes zero or one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  vector<NetExpr*>argv (2);
+		  argv[0] = sig;
+		  if (nparms > 0 && parms_[0].parm) {
+			argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+		  } else {
+			// Default key_count = 1
+			argv[1] = new NetEConst(verinum((uint64_t)1, 32));
+			argv[1]->set_line(*this);
+		  }
+
+		  NetSTask*sys = new NetSTask("$ivl_semaphore_method$get",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
+	    } else if (method_name == "put") {
+		  // put(key_count=1) - blocking, takes optional count parameter
+		  static const std::vector<perm_string> parm_names = {
+			perm_string::literal("key_count")
+		  };
+
+		  // Handle optional parameter - default is 1
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms > 1) {
+			cerr << get_fileline() << ": error: semaphore put() "
+			     << "method takes zero or one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  vector<NetExpr*>argv (2);
+		  argv[0] = sig;
+		  if (nparms > 0 && parms_[0].parm) {
+			argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+		  } else {
+			// Default key_count = 1
+			argv[1] = new NetEConst(verinum((uint64_t)1, 32));
+			argv[1]->set_line(*this);
+		  }
+
+		  NetSTask*sys = new NetSTask("$ivl_semaphore_method$put",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
+	    } else if (method_name == "try_get") {
+		  // try_get(key_count=1) - returns int (1 if got keys, 0 if not)
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms > 1) {
+			cerr << get_fileline() << ": error: semaphore try_get() "
+			     << "method takes zero or one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  NetExpr*count_arg;
+		  if (nparms > 0 && parms_[0].parm) {
+			count_arg = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+		  } else {
+			// Default key_count = 1
+			count_arg = new NetEConst(verinum((uint64_t)1, 32));
+			count_arg->set_line(*this);
+		  }
+
+		  // Generate a function call that returns int
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_semaphore_method$try_get",
+		                                     &netvector_t::atom2s32, 2);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sig);
+		  sys_expr->parm(1, count_arg);
+
+		  // When called as a task, need to assign result to temp
+		  if (!void_cast_) {
+			cerr << get_fileline() << ": warning: method function 'try_get'"
+			     << " is being called as a task." << endl;
+		  }
+
+		  // Create a temp L-value for the function return
+		  NetNet*tmp = new NetNet(scope, scope->local_symbol(), NetNet::REG,
+		                          &netvector_t::atom2s32);
+		  tmp->set_line(*this);
+		  NetAssign_*lv = new NetAssign_(tmp);
+		  NetAssign*cur = new NetAssign(lv, sys_expr);
+		  cur->set_line(*this);
+		  return cur;
 	    }
       }
 
@@ -4836,6 +5000,27 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 								       parm_names);
 			      }
 			      // pop_front/pop_back are functions, not tasks - handled elsewhere
+			}
+
+			// Handle semaphore property method calls (get, put)
+			// try_get is a function and handled elsewhere
+			const netsemaphore_t* sem_type = dynamic_cast<const netsemaphore_t*>(prop_type);
+			if (sem_type) {
+			      // This is a semaphore property - handle semaphore methods
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+					 << "Detected semaphore property " << prop_name
+					 << " method " << method_name << endl;
+			      }
+
+			      if (method_name == "get") {
+				    return elaborate_semaphore_prop_method_(des, scope, net, class_type, pidx,
+								       method_name);
+			      } else if (method_name == "put") {
+				    return elaborate_semaphore_prop_method_(des, scope, net, class_type, pidx,
+								       method_name);
+			      }
+			      // try_get is a function and handled in elab_expr.cc
 			}
 
 			// Handle covergroup property method calls (sample, get_coverage, etc.)

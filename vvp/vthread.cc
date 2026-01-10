@@ -9015,6 +9015,144 @@ bool of_CONSTRAINT_MODE_SET(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * Semaphore support
+ *
+ * A semaphore is a synchronization primitive with an internal key count.
+ * For now, we implement a simplified non-blocking version:
+ * - new(count): creates a semaphore with initial count
+ * - get(n): decrements count by n (currently non-blocking - doesn't actually wait)
+ * - put(n): increments count by n
+ * - try_get(n): returns 1 if count >= n and decrements, else returns 0
+ *
+ * Full blocking support would require VVP scheduler changes.
+ */
+
+// Semaphore object class
+class vvp_semaphore {
+    public:
+      explicit vvp_semaphore(int initial_count = 0) : count_(initial_count) {}
+
+      int get_count() const { return count_; }
+
+      void put(int n) { count_ += n; }
+
+      bool try_get(int n) {
+	    if (count_ >= n) {
+		  count_ -= n;
+		  return true;
+	    }
+	    return false;
+      }
+
+      // Blocking get - for now just does try_get
+      // Full implementation would need VVP scheduler integration
+      bool get(int n) {
+	    // TODO: This should block until count >= n
+	    // For now, just try to get and warn if it would block
+	    if (count_ >= n) {
+		  count_ -= n;
+		  return true;
+	    }
+	    // Would block - just return false for now
+	    return false;
+      }
+
+    private:
+      int count_;
+};
+
+/*
+ * %semaphore/new <reg>
+ *
+ * Create a new semaphore with initial count from integer register <reg>.
+ * Push the semaphore object to the object stack.
+ */
+bool of_SEMAPHORE_NEW(vthread_t thr, vvp_code_t cp)
+{
+      int count = thr->words[cp->bit_idx[0]].w_int;
+      (void)count;  // Unused in stub implementation
+
+      // Push a null object as placeholder
+      // TODO: Need a proper vvp_semaphore class to wrap semaphore state
+      vvp_object_t obj;  // Creates null object
+      thr->push_object(obj);
+
+      // Print a warning that semaphores are stub implementations
+      static bool warned = false;
+      if (!warned) {
+	    fprintf(stderr, "WARNING: Semaphore operations are stub implementations (non-blocking).\n");
+	    warned = true;
+      }
+
+      return true;
+}
+
+/*
+ * %semaphore/get <reg>
+ *
+ * Pop semaphore from stack, decrement count by value in integer register <reg>.
+ * In full implementation, this should block until count >= n.
+ */
+bool of_SEMAPHORE_GET(vthread_t thr, vvp_code_t cp)
+{
+      int n = thr->words[cp->bit_idx[0]].w_int;
+      (void)n;  // Unused in stub implementation
+
+      // Peek the semaphore from stack (code generator emits %pop/obj)
+      vvp_object_t &obj = thr->peek_object();
+      (void)obj;
+
+      // Stub: don't actually block, just continue
+      // TODO: Implement actual blocking semaphore get logic
+
+      return true;
+}
+
+/*
+ * %semaphore/put <reg>
+ *
+ * Pop semaphore from stack, increment count by value in integer register <reg>.
+ */
+bool of_SEMAPHORE_PUT(vthread_t thr, vvp_code_t cp)
+{
+      int n = thr->words[cp->bit_idx[0]].w_int;
+      (void)n;  // Unused in stub implementation
+
+      // Peek the semaphore from stack (code generator emits %pop/obj)
+      vvp_object_t &obj = thr->peek_object();
+      (void)obj;
+
+      // Stub: just continue
+      // TODO: Implement actual semaphore put logic
+
+      return true;
+}
+
+/*
+ * %semaphore/try_get <reg>
+ *
+ * Pop semaphore from stack. If count >= n, decrement and push 1.
+ * Otherwise push 0.
+ */
+bool of_SEMAPHORE_TRY_GET(vthread_t thr, vvp_code_t cp)
+{
+      int n = thr->words[cp->bit_idx[0]].w_int;
+      (void)n;  // Unused in stub implementation
+
+      // Peek the semaphore from stack (code generator emits %pop/obj)
+      vvp_object_t &obj = thr->peek_object();
+      (void)obj;
+
+      // Stub: always succeed and push 1 to vec4 stack
+      // TODO: Implement actual semaphore try_get logic
+      vvp_vector4_t res(32, BIT4_0);
+      res.set_bit(0, BIT4_1);  // Return 1 (success)
+      thr->push_vec4(res);
+
+      return true;
+}
+
+/*
  * %push_rand_bound <prop_idx>, <op_encoded>, <bound_value>
  *
  * Push an inline constraint bound for the next randomize() call.

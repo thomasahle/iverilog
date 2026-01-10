@@ -642,6 +642,16 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    return 0;
       }
 
+      /* Semaphore new - create a new semaphore with initial count */
+      if (strcmp(name, "$ivl_semaphore_new") == 0) {
+	    ivl_expr_t count_arg = ivl_expr_parm(ex, 0);
+	    /* Evaluate the initial count into integer register 3 */
+	    draw_eval_expr_into_integer(count_arg, 3);
+	    /* Create the semaphore object */
+	    fprintf(vvp_out, "    %%semaphore/new 3;\n");
+	    return 0;
+      }
+
       fprintf(vvp_out, "; ERROR: eval_object_sfunc: Unknown system function '%s'\n", name);
       return 1;
 }
