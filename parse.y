@@ -1818,6 +1818,23 @@ class_item /* IEEE1800-2005: A.1.8 */
         delete[]$2;
         delete[]$3;
       }
+    /* Virtual interface with modport: virtual interface_name.modport_name var_name; */
+  | K_virtual TYPE_IDENTIFIER '.' IDENTIFIER IDENTIFIER ';'
+      { /* Virtual interface property with modport - registered type */
+        pform_class_property_virtual_interface(@1, property_qualifier_t::make_none(),
+            lex_strings.make($2.text), lex_strings.make($4), lex_strings.make($5), 0);
+        delete[]$2.text;
+        delete[]$4;
+        delete[]$5;
+      }
+  | K_virtual IDENTIFIER '.' IDENTIFIER IDENTIFIER ';'
+      { /* Virtual interface property with modport - unregistered type */
+        pform_class_property_virtual_interface(@1, property_qualifier_t::make_none(),
+            lex_strings.make($2), lex_strings.make($4), lex_strings.make($5), 0);
+        delete[]$2;
+        delete[]$4;
+        delete[]$5;
+      }
   | K_virtual TYPE_IDENTIFIER IDENTIFIER '=' expression ';'
       { /* Virtual interface with initializer */
         pform_class_property_virtual_interface(@1, property_qualifier_t::make_none(),

@@ -185,6 +185,12 @@ extern void pform_class_property_virtual_interface(const struct vlltype&loc,
 				 perm_string interface_name,
 				 perm_string var_name,
 				 PExpr*init_expr);
+extern void pform_class_property_virtual_interface(const struct vlltype&loc,
+				 property_qualifier_t pq,
+				 perm_string interface_name,
+				 perm_string modport_name,
+				 perm_string var_name,
+				 PExpr*init_expr);
 extern void pform_covergroup_declaration(const struct vlltype&loc,
 				 const char* covergroup_name,
 				 std::vector<pform_tf_port_t>* sample_ports);

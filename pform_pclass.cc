@@ -294,6 +294,42 @@ void pform_class_property_virtual_interface(const struct vlltype&loc,
       }
 }
 
+/*
+ * Handle virtual interface property declarations with modport specification.
+ * Creates a property with virtual_interface_type_t that includes modport name.
+ */
+void pform_class_property_virtual_interface(const struct vlltype&loc,
+				 property_qualifier_t property_qual,
+				 perm_string interface_name,
+				 perm_string modport_name,
+				 perm_string var_name,
+				 PExpr*init_expr)
+{
+      ivl_assert(loc, pform_cur_class);
+
+      // Create a virtual interface type with modport for this property
+      virtual_interface_type_t* vif_type = new virtual_interface_type_t(interface_name, modport_name);
+      FILE_NAME(vif_type, loc);
+
+      // Store the property in the class
+      pform_cur_class->type->properties[var_name]
+	    = class_type_t::prop_info_t(property_qual, vif_type);
+      FILE_NAME(&pform_cur_class->type->properties[var_name], loc);
+
+      // Handle initializer if present
+      if (init_expr) {
+	    PExpr*lval = new PEIdent(var_name, false);
+	    FILE_NAME(lval, loc);
+	    PAssign*tmp = new PAssign(lval, init_expr);
+	    FILE_NAME(tmp, loc);
+
+	    if (property_qual.test_static())
+		  pform_cur_class->type->initialize_static.push_back(tmp);
+	    else
+		  pform_cur_class->type->initialize.push_back(tmp);
+      }
+}
+
 void pform_set_this_class(const struct vlltype&loc, PTaskFunc*net)
 {
       if (pform_cur_class == 0)
