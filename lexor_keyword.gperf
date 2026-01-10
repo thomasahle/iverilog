@@ -271,6 +271,7 @@ s_nexttime,		GN_KEYWORDS_1800_2009,		K_s_nexttime
 s_until,		GN_KEYWORDS_1800_2009,		K_s_until
 s_until_with,		GN_KEYWORDS_1800_2009,		K_s_until_with
 scalared,		GN_KEYWORDS_1364_1995,		K_scalared
+semaphore,		GN_KEYWORDS_1800_2005,		K_semaphore
 sequence,		GN_KEYWORDS_1800_2005,		K_sequence
 shortint,		GN_KEYWORDS_1800_2005,		K_shortint
 shortreal,		GN_KEYWORDS_1800_2005,		K_shortreal

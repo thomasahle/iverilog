@@ -77,6 +77,24 @@ class netevent_type_t : public ivl_type_s {
 };
 
 /*
+ * The netsemaphore_t represents the SystemVerilog semaphore built-in class.
+ * Semaphores are counting semaphores with get(), put(), and try_get() methods.
+ */
+class netsemaphore_t : public ivl_type_s {
+
+    public:
+      inline explicit netsemaphore_t() { }
+      ~netsemaphore_t() override;
+
+      ivl_variable_type_t base_type() const override;
+
+      std::ostream& debug_dump(std::ostream&) const override;
+
+    public:
+      static netsemaphore_t type_semaphore;
+};
+
+/*
  * The netvirtual_interface_t represents an elaborated virtual interface.
  * Virtual interfaces are class properties that reference interface instances.
  * The interface binding happens at runtime, but we store a pointer to the

@@ -208,6 +208,11 @@ ivl_type_t event_type_t::elaborate_type_raw(Design*, NetScope*) const
       return &netevent_type_t::type_event;
 }
 
+ivl_type_t semaphore_type_t::elaborate_type_raw(Design*, NetScope*) const
+{
+      return &netsemaphore_t::type_semaphore;
+}
+
 // Helper to find the Module definition for an interface by name
 static Module* find_interface_module(perm_string name)
 {

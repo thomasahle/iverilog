@@ -274,6 +274,11 @@ void event_type_t::pform_dump(ostream&out, unsigned indent) const
       out << setw(indent) << "" << "event" << endl;
 }
 
+void semaphore_type_t::pform_dump(ostream&out, unsigned indent) const
+{
+      out << setw(indent) << "" << "semaphore" << endl;
+}
+
 void covergroup_type_t::pform_dump(ostream&out, unsigned indent) const
 {
       out << setw(indent) << "" << "covergroup " << covergroup_name << endl;

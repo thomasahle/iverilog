@@ -1140,7 +1140,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %token K_interface K_intersect K_join_any K_join_none K_local
 %token K_longint K_matches K_modport K_new K_null K_package K_packed
 %token K_priority K_program K_property K_protected K_pure K_rand K_randc
-%token K_randcase K_randsequence K_ref K_return K_sequence K_shortint
+%token K_randcase K_randsequence K_ref K_return K_semaphore K_sequence K_shortint
 %token K_shortreal K_solve K_static K_string K_struct K_super
 %token K_tagged K_this K_throughout K_timeprecision K_timeunit K_type
 %token K_typedef K_union K_unique K_var K_virtual K_void K_wait_order
@@ -2855,6 +2855,12 @@ data_type /* IEEE1800-2005: A.2.2.1 */
 	FILE_NAME(tmp, @1);
 	delete[]$1.text;
 	delete[]$3;
+	$$ = tmp;
+      }
+    /* Semaphore type: semaphore sem; */
+  | K_semaphore
+      { semaphore_type_t*tmp = new semaphore_type_t;
+	FILE_NAME(tmp, @1);
 	$$ = tmp;
       }
   ;

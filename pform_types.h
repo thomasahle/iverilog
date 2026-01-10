@@ -474,6 +474,18 @@ struct event_type_t : public data_type_t {
 };
 
 /*
+ * The semaphore_type_t represents the SystemVerilog semaphore built-in class.
+ * Semaphores are counting semaphores with get(), put(), and try_get() methods.
+ */
+struct semaphore_type_t : public data_type_t {
+      inline explicit semaphore_type_t() { }
+      ~semaphore_type_t() override;
+
+      ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
+      void pform_dump(std::ostream&out, unsigned indent) const override;
+};
+
+/*
  * The virtual_interface_type_t represents a virtual interface property.
  * It stores the name of the interface type for later elaboration.
  * For interface ports with modports, both interface_name and modport_name

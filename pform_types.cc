@@ -37,6 +37,10 @@ event_type_t::~event_type_t()
 {
 }
 
+semaphore_type_t::~semaphore_type_t()
+{
+}
+
 virtual_interface_type_t::~virtual_interface_type_t()
 {
 }

@@ -25,6 +25,7 @@ netreal_t netreal_t::type_real;
 netreal_t netreal_t::type_shortreal;
 netstring_t netstring_t::type_string;
 netevent_type_t netevent_type_t::type_event;
+netsemaphore_t netsemaphore_t::type_semaphore;
 
 netreal_t::~netreal_t()
 {
@@ -92,5 +93,22 @@ ivl_variable_type_t netevent_type_t::base_type() const
 ostream& netevent_type_t::debug_dump(ostream&out) const
 {
       out << "event";
+      return out;
+}
+
+netsemaphore_t::~netsemaphore_t()
+{
+}
+
+ivl_variable_type_t netsemaphore_t::base_type() const
+{
+      // Semaphores are special synchronization primitives. Use IVL_VT_CLASS
+      // since they are class-like objects with methods (get, put, try_get).
+      return IVL_VT_CLASS;
+}
+
+ostream& netsemaphore_t::debug_dump(ostream&out) const
+{
+      out << "semaphore";
       return out;
 }
