@@ -695,6 +695,19 @@ ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
                               spec_class->set_property_type_override(prop.first, prop_type);
                         }
 
+                        // NOTE: Method re-elaboration for parameterized class specializations is complex.
+                        // The issue is that methods in the base class were elaborated with W=8,
+                        // but we need W=16 for Item#(16). Re-elaborating during type elaboration
+                        // phase crashes because elaborate_scope is designed for a different phase.
+                        //
+                        // This is a known limitation. For now, methods inherit from base class
+                        // and use the default parameter values. Workarounds:
+                        // 1. Use properties directly instead of method parameters
+                        // 2. Pass width as a runtime parameter
+                        // 3. Override the method in a derived class
+                        //
+                        // TODO: Implement lazy method specialization at call site.
+
                         // Add the specialized class to the definition scope
                         definition_scope->add_class(spec_class);
 

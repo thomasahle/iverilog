@@ -133,6 +133,10 @@ class netclass_t : public ivl_type_s {
       void set_virtual(bool virtual_class) { virtual_class_ = virtual_class; }
       bool is_virtual() const { return virtual_class_; }
 
+	// Store and retrieve the PClass for method re-elaboration in specializations
+      void set_pclass(PClass* pc) { pclass_ = pc; }
+      PClass* get_pclass() const { return pclass_; }
+
     protected:
       bool test_compatibility(ivl_type_t that) const override;
 
@@ -167,6 +171,10 @@ class netclass_t : public ivl_type_s {
 	    NetExpr* expr;      // elaborated constraint expression
       };
       std::vector<constraint_t> constraints_;
+
+	// Pointer to the PClass for re-elaborating methods in specializations.
+	// This is null for specializations themselves (they inherit from base).
+      PClass* pclass_;
 
     public:
 	// Simple bound constraints extracted from constraint blocks.
