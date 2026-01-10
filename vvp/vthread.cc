@@ -8090,6 +8090,73 @@ static bool do_release_vec(vvp_code_t cp, bool net_flag)
 }
 
 /*
+ * Helper function to call pre_randomize or post_randomize callback on an object.
+ * Returns true if the method was found and called, false otherwise.
+ */
+static bool call_randomize_callback(vthread_t thr, vvp_cobject* cobj,
+                                    const vvp_object_t& obj, const char* method_name)
+{
+      const class_type* defn = cobj->get_class_type();
+      if (defn == 0)
+	    return false;
+
+      // Look up the method in the class's method table
+      const class_type::method_info* method = defn->get_method(method_name);
+      if (method == 0 || method->entry == 0 || method->scope == 0)
+	    return false;
+
+      // Create a new thread for the method call
+      vthread_t child = vthread_new(method->entry, method->scope);
+
+      // If the method scope is automatic (which class methods are),
+      // allocate context and set up the '@' (this) variable
+      if (method->scope->is_automatic()) {
+	    vvp_context_t new_context = vthread_alloc_context(method->scope);
+	    child->wt_context = new_context;
+	    child->rd_context = new_context;
+
+	    // Find the '@' variable in the method scope and store the object
+	    __vpiScope* scope = method->scope;
+	    for (unsigned idx = 0; idx < scope->intern.size(); ++idx) {
+		  vpiHandle item = scope->intern[idx];
+		  if (item && item->get_type_code() == vpiClassVar) {
+			const char* name = item->vpi_get_str(vpiName);
+			if (name && strcmp(name, "@") == 0) {
+			      __vpiBaseVar* var = dynamic_cast<__vpiBaseVar*>(item);
+			      if (var) {
+				    vvp_net_t* net = var->get_net();
+				    if (net && net->fun) {
+					  vvp_fun_signal_object_aa* fun_aa =
+						dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
+					  if (fun_aa) {
+						fun_aa->set_object_in_context(new_context, obj);
+					  }
+				    }
+			      }
+			      break;
+			}
+		  }
+	    }
+      }
+
+      // Set up parent-child relationship and run the method synchronously
+      child->parent = thr;
+      thr->children.insert(child);
+
+      child->is_scheduled = 1;
+      child->i_am_in_function = 1;
+      vthread_run(child);
+      running_thread = thr;
+
+      // Clean up the child thread
+      if (child->i_have_ended) {
+	    do_join(thr, child);
+      }
+
+      return true;
+}
+
+/*
  * %randomize
  *
  * Pop a class object from the object stack, randomize its 'rand' properties,
@@ -8097,6 +8164,9 @@ static bool do_release_vec(vvp_code_t cp, bool net_flag)
  *
  * Only properties marked with 'rand' or 'randc' qualifier are randomized.
  * Non-rand properties retain their values.
+ *
+ * Before randomization, calls pre_randomize() if defined.
+ * After randomization, calls post_randomize() if defined.
  *
  * Constraint Support:
  * Uses generate-and-test solver with retry mechanism:
@@ -8119,6 +8189,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    thr->push_vec4(res);
 	    return true;
       }
+
+      // Call pre_randomize() callback if defined
+      call_randomize_callback(thr, cobj, obj, "pre_randomize");
 
       const class_type* defn = cobj->get_class_type();
       size_t nprop = defn->property_count();
@@ -8990,6 +9063,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  }
 	    }
       }
+
+      // Call post_randomize() callback if defined
+      call_randomize_callback(thr, cobj, obj, "post_randomize");
 
       // Push result to vec4 stack: 1 for success, 0 for failure
       vvp_vector4_t res (32, BIT4_0);

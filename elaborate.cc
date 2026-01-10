@@ -5790,9 +5790,10 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  NetAssign_*lv = new NetAssign_(tmp);
 
 		  // Generate an assign for the return value
-		  NetAssign*cur = new NetAssign(lv, sys_expr);
-		  cur->set_line(*this);
-		  return cur;
+		  NetAssign*randomize_stmt = new NetAssign(lv, sys_expr);
+		  randomize_stmt->set_line(*this);
+
+		  return randomize_stmt;
 	    }
 
 	    // Handle built-in rand_mode() method on class properties

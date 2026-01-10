@@ -1343,3 +1343,4 @@ sv_process_class	normal,-g2012,-I../lib/ivl/uvm	ivltests gold=sv_process_class.g
 sv_constraint_soft_size	normal,-g2012,-I../lib/ivl/uvm	ivltests gold=sv_constraint_soft_size.gold
 sv_obj_compare		normal,-g2012	ivltests	gold=sv_obj_compare.gold
 sv_constraint_cond_size		normal,-g2012	ivltests	gold=sv_constraint_cond_size.gold
+sv_pre_post_randomize		normal,-g2012		ivltests	gold=sv_pre_post_randomize.gold
