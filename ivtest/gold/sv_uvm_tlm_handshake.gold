@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2539: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2547: note: Detected run_test() call.
 ./ivltests/sv_uvm_tlm_handshake.v:168: note: Detected run_test() call.
 ./ivltests/sv_uvm_tlm_handshake.v:168: note: Found test class 'my_test' for run_test("my_test").
 ./ivltests/sv_uvm_tlm_handshake.v:168: note: UVM factory not fully implemented. Test phases may not execute correctly.
@@ -36,4 +36,4 @@ Items received by driver: 3
 PASSED
 UVM_INFO: Running final_phase...
 UVM_INFO: UVM phases complete.
-../lib/ivl/uvm/uvm_pkg.sv:1319: $finish called at 100 (1s)
+../lib/ivl/uvm/uvm_pkg.sv:1327: $finish called at 100 (1s)

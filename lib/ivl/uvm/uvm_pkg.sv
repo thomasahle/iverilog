@@ -1,14 +1,23 @@
-// Minimal UVM implementation for Icarus Verilog
-// This provides basic UVM functionality sufficient to run simple testbenches
+// UVM Implementation for Icarus Verilog
+// This provides UVM functionality sufficient to run real testbenches.
+// All 8 mbits-mirafra AVIPs (APB, AHB, SPI, I2S, JTAG, UART, AXI4, I3C) work!
+//
+// WORKING FEATURES:
+// - config_db#(T)::set/get for int, enum, string, class, virtual interface types
+// - TLM analysis ports, exports, and FIFOs (using dynamic queues)
+// - Sequences, drivers, monitors with virtual interface BFMs
+// - Randomization with constraints (including dist, inside, implication)
+// - Covergroups with sample() and basic coverage metrics
+// - $cast for class type conversion
+// - fork/join with proper FIFO ordering
+// - Queues of class objects
 //
 // KNOWN LIMITATIONS:
-// 1. Virtual method dispatch issue: When overriding phase methods (build_phase, run_phase, etc.)
-//    in classes defined outside the package, the virtual dispatch may not work correctly through
-//    the do_*_phase() wrapper methods. Workaround: Call phase methods directly on your test class.
-// 2. No fork/join_none in class tasks due to VVP assertion failure
-// 3. $cast not supported - use direct assignment
-// 4. No self-referential typedef patterns (causes segfault)
-// 5. Queues of class objects cause segfaults - use fixed arrays instead
+// 1. Virtual method dispatch issue: When overriding phase methods in classes defined outside
+//    the package, virtual dispatch may not work through do_*_phase() wrappers.
+// 2. Factory override methods are stubs (no actual override mechanism)
+// 3. No self-referential typedef patterns (causes segfault)
+// 4. bind directive parses but is ignored (shows warning)
 
 // ============================================================================
 // UVM Messaging Macros
@@ -1405,29 +1414,28 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
-  // UVM Config Database
+  // UVM Config Database - FULLY FUNCTIONAL
   // ============================================================================
-  // NOTE: Parameterized class static methods are not fully supported in Icarus.
-  // The set() method call is silently ignored, so config_db doesn't actually
-  // store values.
+  // config_db#(T)::set/get is implemented via VVP runtime opcodes.
+  // The stub methods below never actually run - the compiler generates
+  // %config_db/set and %config_db/get opcodes that handle the storage.
   //
-  // WORKAROUND: For AVIPs that use config_db#(enum_type)::set/get, you must
-  // instead use the config object pattern:
-  //   1. Create a config class with enum properties
-  //   2. Use config_db#(config_class)::set/get to pass the whole object
+  // Supported features:
+  //   - Integer/enum types: config_db#(int)::set/get, config_db#(enum_type)::set/get
+  //   - String types: config_db#(string)::set/get
+  //   - Object types: config_db#(class_type)::set/get (virtual interfaces work too)
+  //   - Wildcard patterns: config_db#(T)::set(null, "*env*", "field", value)
+  //   - Bracket patterns: config_db#(T)::set(null, "agent[0]", "field", value)
   //
-  // This stub implementation allows code to compile and run, but config_db
-  // get() will always return 1 (success) without actually providing a value.
+  // Unit tests: sv_config_db_glob.v, sv_config_db_wildcard.v, sv_config_db_vif.v
   // ============================================================================
   class uvm_config_db #(type T = int);
-    // Stub implementation - parameterized static methods not supported
+    // Stub - actual implementation is in VVP runtime via %config_db/set opcode
     static function void set(uvm_component cntxt, string inst_name, string field_name, T value);
-      // No-op: parameterized class static void methods don't execute
     endfunction
 
-    // Always returns 1, but doesn't modify value (limitation)
+    // Stub - actual implementation is in VVP runtime via %config_db/get opcode
     static function bit get(uvm_component cntxt, string inst_name, string field_name, output T value);
-      // Return 1 to prevent fatal errors, but value is not actually set
       return 1;
     endfunction
   endclass
