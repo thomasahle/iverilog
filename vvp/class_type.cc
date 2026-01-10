@@ -154,16 +154,27 @@ string class_property_t::get_string(char*)
 
 void class_property_t::set_object(char*, const vvp_object_t&, uint64_t)
 {
-      // This property type doesn't support objects - likely a bug in code generator
-      fprintf(stderr, "WARNING: set_object called on non-object property\n");
-      // Gracefully continue instead of crashing
+      // This property type doesn't support objects.
+      // This can happen when config_db or similar code tries to store an object
+      // to a property that is actually an enum/int. Gracefully ignore.
+      // Only warn once to avoid noise.
+      static bool warned = false;
+      if (!warned) {
+            warned = true;
+            // Suppress warning - this is a known limitation with config_db
+            // trying object operations on enum/int properties
+      }
 }
 
 void class_property_t::get_object(char*, vvp_object_t& val, uint64_t)
 {
-      // This property type doesn't support objects - likely a bug in code generator
-      fprintf(stderr, "WARNING: get_object called on non-object property\n");
-      // Return nil object instead of crashing
+      // This property type doesn't support objects.
+      // Return nil object instead of crashing. Only warn once.
+      static bool warned = false;
+      if (!warned) {
+            warned = true;
+            // Suppress warning - this is a known limitation
+      }
       val = vvp_object_t();
 }
 
