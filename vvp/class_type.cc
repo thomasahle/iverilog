@@ -831,14 +831,84 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 	    }
       }
 
-      // First, collect all range constraints for this property
-      // We need to do this BEFORE generating special values like one-hot
+      // First, check for weighted discrete values (from dist constraints)
+      // If there are multiple equality constraints with weights, do weighted selection
+      struct weighted_value_t {
+	    int64_t value;
+	    int64_t weight;
+      };
+      std::vector<weighted_value_t> weighted_values;
+      int64_t total_weight = 0;
+
+      for (const auto& bound : constraint_bounds_) {
+	    if (bound.property_idx != prop_idx)
+		  continue;
+	    if (bound.sysfunc_type != SYSFUNC_NONE)
+		  continue;
+	    if (bound.is_soft)
+		  continue;
+	    // Only collect equality constraints with weights
+	    if (bound.op == '=' && bound.has_const_bound && bound.weight > 0) {
+		  // Check condition if present
+		  if (bound.has_condition) {
+			if (bound.cond_prop_idx >= properties_.size())
+			      continue;
+			if (!properties_[bound.cond_prop_idx].type->supports_vec4())
+			      continue;
+			vvp_vector4_t cond_prop_val;
+			get_vec4(inst, bound.cond_prop_idx, cond_prop_val);
+			int64_t cond_val = 0;
+			if (cond_prop_val.size() <= 64) {
+			      for (unsigned i = 0; i < cond_prop_val.size(); i++) {
+				    if (cond_prop_val.value(i) == BIT4_1)
+					  cond_val |= (int64_t(1) << i);
+			      }
+			}
+			int64_t cond_bound_val = bound.cond_has_const ? bound.cond_const : 0;
+			bool cond_satisfied = false;
+			switch (bound.cond_op) {
+			      case '>': cond_satisfied = (cond_val > cond_bound_val); break;
+			      case '<': cond_satisfied = (cond_val < cond_bound_val); break;
+			      case 'G': cond_satisfied = (cond_val >= cond_bound_val); break;
+			      case 'L': cond_satisfied = (cond_val <= cond_bound_val); break;
+			      case '=': cond_satisfied = (cond_val == cond_bound_val); break;
+			      case '!': cond_satisfied = (cond_val != cond_bound_val); break;
+			      default: cond_satisfied = true; break;
+			}
+			if (!cond_satisfied)
+			      continue;
+		  }
+		  weighted_value_t wv;
+		  wv.value = bound.const_bound;
+		  wv.weight = bound.weight;
+		  weighted_values.push_back(wv);
+		  total_weight += bound.weight;
+	    }
+      }
+
+      // If we have weighted discrete values, do weighted random selection
+      if (weighted_values.size() > 1 && total_weight > 0) {
+	    int64_t r = rand() % total_weight;
+	    int64_t cumulative = 0;
+	    for (const auto& wv : weighted_values) {
+		  cumulative += wv.weight;
+		  if (r < cumulative)
+			return wv.value;
+	    }
+	    // Fallback to last value
+	    return weighted_values.back().value;
+      }
+
+      // Now collect range constraints for this property
       // Apply all constraint bounds for this property
       for (const auto& bound : constraint_bounds_) {
 	    if (bound.property_idx != prop_idx)
 		  continue;
 	    // Skip system function constraints (handled above)
 	    if (bound.sysfunc_type != SYSFUNC_NONE)
+		  continue;
+	    // Skip weighted equality constraints (already handled)
+	    if (bound.op == '=' && bound.weight > 1)
 		  continue;
 
 	    // For implication constraints, check the condition first
@@ -1051,7 +1121,61 @@ bool class_type::check_constraints(inst_t inst) const
       if (all_bounds.empty())
 	    return true;
 
+      // First, handle weighted equality constraints (from dist)
+      // Group them by property index and check with OR logic
+      std::map<size_t, std::vector<int64_t>> weighted_eq_values;
       for (const auto& bound : all_bounds) {
+	    if (bound.op == '=' && bound.has_const_bound && bound.weight > 0 &&
+		!bound.is_soft && bound.sysfunc_type == SYSFUNC_NONE) {
+		  weighted_eq_values[bound.property_idx].push_back(bound.const_bound);
+	    }
+      }
+
+      // Check properties with multiple weighted equality constraints
+      for (const auto& entry : weighted_eq_values) {
+	    if (entry.second.size() <= 1)
+		  continue;  // Single value handled normally
+
+	    size_t prop_idx = entry.first;
+	    if (prop_idx >= properties_.size())
+		  continue;
+	    if (!properties_[prop_idx].type->supports_vec4())
+		  continue;
+
+	    vvp_vector4_t prop_val;
+	    get_vec4(inst, prop_idx, prop_val);
+
+	    int64_t val = 0;
+	    if (prop_val.size() <= 64) {
+		  for (unsigned i = 0; i < prop_val.size(); i++) {
+			if (prop_val.value(i) == BIT4_1)
+			      val |= (int64_t(1) << i);
+		  }
+	    }
+
+	    // Check if value matches ANY of the allowed values (OR logic)
+	    bool matches_any = false;
+	    for (int64_t allowed : entry.second) {
+		  if (val == allowed) {
+			matches_any = true;
+			break;
+		  }
+	    }
+
+	    if (!matches_any) {
+		  // Value doesn't match any allowed value - constraint violated
+		  return false;
+	    }
+      }
+
+      for (const auto& bound : all_bounds) {
+	    // Skip weighted equality constraints we already handled above
+	    if (bound.op == '=' && bound.has_const_bound && bound.weight > 0 &&
+		!bound.is_soft && bound.sysfunc_type == SYSFUNC_NONE) {
+		  auto it = weighted_eq_values.find(bound.property_idx);
+		  if (it != weighted_eq_values.end() && it->second.size() > 1)
+			continue;  // Already checked with OR logic
+	    }
 	    // Get the value of the constrained property
 	    // Use THIS class's property accessors (not parent's)
 	    if (bound.property_idx >= properties_.size())

@@ -9129,6 +9129,89 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    }
       }
 
+      // Check for dist constraint in class constraint block
+      // e.g., constraint c { x dist { 1 := 9, 100 := 1 }; }
+      const PEDistConstraint* dist = dynamic_cast<const PEDistConstraint*>(expr);
+      if (dist != nullptr) {
+	    // Get the target property name
+	    PExpr* target = dist->get_target();
+	    const PEIdent* target_ident = dynamic_cast<const PEIdent*>(target);
+	    if (!target_ident) return false;
+
+	    const pform_scoped_name_t& path = target_ident->path();
+	    if (path.name.empty()) return false;
+	    perm_string prop_name = path.name.back().name;
+
+	    // Get property index
+	    int prop_idx = cls->property_idx_from_name(prop_name);
+	    if (prop_idx < 0) {
+		  if (debug_elaborate) {
+			cerr << "extract_simple_bound: dist target " << prop_name
+			     << " not found as property" << endl;
+		  }
+		  return false;
+	    }
+
+	    // Check that property is rand
+	    property_qualifier_t qual = cls->get_prop_qual(prop_idx);
+	    if (!qual.test_rand() && !qual.test_randc()) {
+		  return false;
+	    }
+
+	    // Process each dist item
+	    bool any_extracted = false;
+	    const std::list<inside_range_t*>& items = dist->get_items();
+	    for (auto it = items.begin(); it != items.end(); ++it) {
+		  inside_range_t* rng = *it;
+
+		  // Extract weight
+		  int64_t weight = 1;
+		  bool weight_per_value = rng->weight_per_value;
+		  if (rng->weight) {
+			const PENumber* w_num = dynamic_cast<const PENumber*>(rng->weight);
+			if (w_num) {
+			      weight = w_num->value().as_long();
+			}
+		  }
+
+		  if (rng->single_val) {
+			// Single value: create == constraint with weight
+			const PENumber* num = dynamic_cast<const PENumber*>(rng->single_val);
+			if (num) {
+			      int64_t val = num->value().as_long();
+			      // op_code '=' (4) for ==, with weight in upper bits
+			      // Encode weight as: op_code = '=' | (weight << 8)
+			      // But add_simple_bound has a different interface, use it properly
+			      cls->add_simple_bound(constraint_name, prop_idx, '=', is_soft,
+			                            true, val, 0,
+			                            netclass_t::SYSFUNC_NONE, 0,
+			                            weight, weight_per_value);
+			      any_extracted = true;
+			}
+		  } else if (rng->low_val && rng->high_val) {
+			// Range: create >= and <= constraints with weight
+			const PENumber* lo_num = dynamic_cast<const PENumber*>(rng->low_val);
+			const PENumber* hi_num = dynamic_cast<const PENumber*>(rng->high_val);
+			if (lo_num && hi_num) {
+			      int64_t lo = lo_num->value().as_long();
+			      int64_t hi = hi_num->value().as_long();
+			      // Add >= bound
+			      cls->add_simple_bound(constraint_name, prop_idx, 'G', is_soft,
+			                            true, lo, 0,
+			                            netclass_t::SYSFUNC_NONE, 0,
+			                            weight, weight_per_value);
+			      // Add <= bound
+			      cls->add_simple_bound(constraint_name, prop_idx, 'L', is_soft,
+			                            true, hi, 0,
+			                            netclass_t::SYSFUNC_NONE, 0,
+			                            weight, weight_per_value);
+			      any_extracted = true;
+			}
+		  }
+	    }
+	    return any_extracted;
+      }
+
       // Check if this is a comparison expression
       const PEBComp* cmp = dynamic_cast<const PEBComp*>(expr);
       if (cmp == nullptr) {
