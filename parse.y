@@ -7058,27 +7058,29 @@ expr_primary
 	delete $2;
 	$$ = tmp;
       }
-  | package_scope hierarchy_identifier { lex_in_package_scope(0); } argument_list_parens std_randomize_constraint_opt
-      { /* Package scope function call with optional inline constraints for std::randomize */
+  | package_scope hierarchy_identifier argument_list_parens std_randomize_constraint_opt
+      { /* Package scope function call with optional inline constraints for std::randomize
+           Note: No mid-rule action needed - lexer automatically clears package scope
+           after producing the first token (hierarchy_identifier start) */
 	perm_string pkg_name = $1->pscope_name();
 	bool is_std_randomize = (pkg_name == "std" && $2->size() == 1 &&
 	                         peek_head_name(*$2) == "randomize");
 	PECallFunction*tmp;
 	if (is_std_randomize) {
 	    perm_string fn = perm_string::literal("$ivl_std_randomize");
-	    tmp = new PECallFunction(fn, *$4);
-	    if ($5) {
-		tmp->set_inline_constraints($5);
+	    tmp = new PECallFunction(fn, *$3);
+	    if ($4) {
+		tmp->set_inline_constraints($4);
 	    }
 	} else {
-	    if ($5) {
-		yyerror(@5, "error: 'with' constraint block can only be used with randomize().");
+	    if ($4) {
+		yyerror(@4, "error: 'with' constraint block can only be used with randomize().");
 	    }
-	    tmp = new PECallFunction($1, *$2, *$4);
+	    tmp = new PECallFunction($1, *$2, *$3);
 	}
 	FILE_NAME(tmp, @2);
 	delete $2;
-	delete $4;
+	delete $3;
 	$$ = tmp;
       }
 
@@ -11021,12 +11023,12 @@ statement_item /* This is roughly statement_item in the LRM */
       }
 
     /* void cast of package-scoped function call: void'(mypkg::foo(args)); */
-  | K_void '\'' '(' package_scope hierarchy_identifier { lex_in_package_scope(0); } argument_list_parens ')' ';'
-      { PCallTask*tmp = new PCallTask($4, *$5, *$7);
+  | K_void '\'' '(' package_scope hierarchy_identifier argument_list_parens ')' ';'
+      { PCallTask*tmp = new PCallTask($4, *$5, *$6);
 	FILE_NAME(tmp, @5);
 	tmp->void_cast();
 	delete $5;
-	delete $7;
+	delete $6;
 	$$ = tmp;
       }
 
@@ -11035,11 +11037,11 @@ statement_item /* This is roughly statement_item in the LRM */
       }
 
     /* Package-scoped function/task call as a statement: mypkg::foo(args); */
-  | package_scope hierarchy_identifier { lex_in_package_scope(0); } argument_list_parens_opt ';'
-      { PCallTask*tmp = new PCallTask($1, *$2, *$4);
+  | package_scope hierarchy_identifier argument_list_parens_opt ';'
+      { PCallTask*tmp = new PCallTask($1, *$2, *$3);
 	FILE_NAME(tmp, @2);
 	delete $2;
-	delete $4;
+	delete $3;
 	$$ = tmp;
       }
 
