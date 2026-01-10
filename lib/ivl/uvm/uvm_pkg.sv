@@ -1533,29 +1533,20 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
-  // TLM Analysis FIFO - Stub implementation for analysis ports
+  // TLM Analysis FIFO - Full implementation using SystemVerilog queues
   // ============================================================================
-  // Note: This is a stub implementation that accepts writes but discards data.
-  // Icarus has issues with arrays of parameterized class types, so we use
-  // a simplified version that at least allows compilation.
-  // TODO: Implement proper storage once class object arrays work correctly.
   class uvm_tlm_analysis_fifo #(type T = uvm_object) extends uvm_component;
 
-    int m_count;
-    // Simple queue to store items (max 64 items in stub)
-    T m_items[64];
-    int m_head;
-    int m_tail;
+    // Dynamic queue for unlimited storage (bounded FIFOs use m_bound)
+    T m_items[$];
+    int m_bound;  // 0 = unbounded
     // Analysis export for connection
     uvm_analysis_export #(T) analysis_export;
 
-    // Analysis export (implements write)
-    // size parameter accepted for compatibility but stub uses fixed 64-element array
-    function new(string name, uvm_component parent, int size = 1);
+    // size parameter specifies FIFO depth (0 = unbounded)
+    function new(string name, uvm_component parent, int size = 0);
       super.new(name, parent);
-      m_count = 0;
-      m_head = 0;
-      m_tail = 0;
+      m_bound = size;
       analysis_export = new("analysis_export", this);
       // Connect export to this FIFO so writes are forwarded
       analysis_export.set_parent_fifo(this);
@@ -1563,10 +1554,9 @@ package uvm_pkg;
 
     // Write method - receives data from analysis port
     virtual function void write(T t);
-      if (m_count < 64) begin
-        m_items[m_tail] = t;
-        m_tail = (m_tail + 1) % 64;
-        m_count++;
+      // Check bound (0 = unbounded)
+      if (m_bound == 0 || m_items.size() < m_bound) begin
+        m_items.push_back(t);
       end
     endfunction
 
@@ -1581,20 +1571,16 @@ package uvm_pkg;
 
     // Get method - blocking task to retrieve next item
     virtual task get(output T t);
-      while (m_count == 0) begin
+      while (m_items.size() == 0) begin
         #1; // Wait for item to be written
       end
-      t = m_items[m_head];
-      m_head = (m_head + 1) % 64;
-      m_count--;
+      t = m_items.pop_front();
     endtask
 
     // Try_get - non-blocking get
     virtual function bit try_get(output T t);
-      if (m_count > 0) begin
-        t = m_items[m_head];
-        m_head = (m_head + 1) % 64;
-        m_count--;
+      if (m_items.size() > 0) begin
+        t = m_items.pop_front();
         return 1;
       end
       return 0;
@@ -1602,8 +1588,8 @@ package uvm_pkg;
 
     // Peek - look at next item without removing
     virtual function bit try_peek(output T t);
-      if (m_count > 0) begin
-        t = m_items[m_head];
+      if (m_items.size() > 0) begin
+        t = m_items[0];
         return 1;
       end
       return 0;
@@ -1611,37 +1597,35 @@ package uvm_pkg;
 
     // Size - number of items in fifo
     virtual function int size();
-      return m_count;
+      return m_items.size();
     endfunction
 
     // Is empty check
     virtual function bit is_empty();
-      return m_count == 0;
+      return m_items.size() == 0;
     endfunction
 
     // Is full check
     virtual function bit is_full();
-      return m_count >= 64;
+      return m_bound > 0 && m_items.size() >= m_bound;
     endfunction
 
     // Peek - blocking task to look at next item without removing
     virtual task peek(output T t);
-      while (m_count == 0) begin
+      while (m_items.size() == 0) begin
         #1; // Wait for item to be written
       end
-      t = m_items[m_head];
+      t = m_items[0];
     endtask
 
     // Flush - reset fifo
     virtual function void flush();
-      m_count = 0;
-      m_head = 0;
-      m_tail = 0;
+      m_items.delete();
     endfunction
 
     // Used returns count (compatible with real UVM API)
     virtual function int used();
-      return m_count;
+      return m_items.size();
     endfunction
 
   endclass
@@ -1649,50 +1633,40 @@ package uvm_pkg;
   // ============================================================================
   // TLM FIFO - Generic TLM FIFO for communication between components
   // ============================================================================
-  // Note: This is a stub implementation similar to uvm_tlm_analysis_fifo but
-  // intended for request/response communication patterns.
+  // Full implementation using SystemVerilog queues for dynamic storage.
   class uvm_tlm_fifo #(type T = uvm_object) extends uvm_component;
 
-    int m_count;
-    // Simple queue to store items (max 64 items in stub)
-    T m_items[64];
-    int m_head;
-    int m_tail;
+    // Dynamic queue for unlimited storage (bounded FIFOs use m_bound)
+    T m_items[$];
+    int m_bound;  // 0 = unbounded
 
-    // size parameter accepted for compatibility but stub uses fixed 64-element array
-    function new(string name, uvm_component parent, int size = 1);
+    // size parameter specifies FIFO depth (0 = unbounded)
+    function new(string name, uvm_component parent, int size = 0);
       super.new(name, parent);
-      m_count = 0;
-      m_head = 0;
-      m_tail = 0;
+      m_bound = size;
     endfunction
 
     // Put method - blocking
     virtual task put(T t);
-      while (m_count >= 64) begin
+      // Check bound (0 = unbounded)
+      while (m_bound > 0 && m_items.size() >= m_bound) begin
         #1; // Wait for space
       end
-      m_items[m_tail] = t;
-      m_tail = (m_tail + 1) % 64;
-      m_count++;
+      m_items.push_back(t);
     endtask
 
     // Get method - blocking task to retrieve next item
     virtual task get(output T t);
-      while (m_count == 0) begin
+      while (m_items.size() == 0) begin
         #1; // Wait for item
       end
-      t = m_items[m_head];
-      m_head = (m_head + 1) % 64;
-      m_count--;
+      t = m_items.pop_front();
     endtask
 
     // Try_put - non-blocking put
     virtual function bit try_put(T t);
-      if (m_count < 64) begin
-        m_items[m_tail] = t;
-        m_tail = (m_tail + 1) % 64;
-        m_count++;
+      if (m_bound == 0 || m_items.size() < m_bound) begin
+        m_items.push_back(t);
         return 1;
       end
       return 0;
@@ -1700,10 +1674,8 @@ package uvm_pkg;
 
     // Try_get - non-blocking get
     virtual function bit try_get(output T t);
-      if (m_count > 0) begin
-        t = m_items[m_head];
-        m_head = (m_head + 1) % 64;
-        m_count--;
+      if (m_items.size() > 0) begin
+        t = m_items.pop_front();
         return 1;
       end
       return 0;
@@ -1711,8 +1683,8 @@ package uvm_pkg;
 
     // Peek - look at next item without removing (non-blocking)
     virtual function bit try_peek(output T t);
-      if (m_count > 0) begin
-        t = m_items[m_head];
+      if (m_items.size() > 0) begin
+        t = m_items[0];
         return 1;
       end
       return 0;
@@ -1720,47 +1692,45 @@ package uvm_pkg;
 
     // Peek - blocking task to look at next item without removing
     virtual task peek(output T t);
-      while (m_count == 0) begin
+      while (m_items.size() == 0) begin
         #1; // Wait for item
       end
-      t = m_items[m_head];
+      t = m_items[0];
     endtask
 
     // Can_put - check if can write
     virtual function bit can_put();
-      return m_count < 64;
+      return m_bound == 0 || m_items.size() < m_bound;
     endfunction
 
     // Can_get - check if can read
     virtual function bit can_get();
-      return m_count > 0;
+      return m_items.size() > 0;
     endfunction
 
     // Size - number of items in fifo
     virtual function int size();
-      return m_count;
+      return m_items.size();
     endfunction
 
     // Is empty check
     virtual function bit is_empty();
-      return m_count == 0;
+      return m_items.size() == 0;
     endfunction
 
     // Is full check
     virtual function bit is_full();
-      return m_count >= 64;
+      return m_bound > 0 && m_items.size() >= m_bound;
     endfunction
 
     // Used returns count (compatible with real UVM API)
     virtual function int used();
-      return m_count;
+      return m_items.size();
     endfunction
 
     // Flush - reset fifo
     virtual function void flush();
-      m_count = 0;
-      m_head = 0;
-      m_tail = 0;
+      m_items.delete();
     endfunction
 
   endclass
