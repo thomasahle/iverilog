@@ -21,6 +21,7 @@
 # include  "compile.h"
 # include  "factory_registry.h"
 # include  "vpi_priv.h"
+# include  "vvp_cobject.h"
 # include  "config.h"
 # include  <algorithm>
 # include  <map>
@@ -783,7 +784,7 @@ int class_type::constraint_idx_from_name(const std::string& name) const
  * Computes the valid range from all constraint bounds and generates
  * a random value within that range.
  */
-int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid) const
+int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid, const vvp_cobject* cobj) const
 {
       // Compute the type-based min/max based on width and signedness
       int64_t type_min = 0;
@@ -820,6 +821,10 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
       int required_ones = -1;    // For $countones(x) == N
 
       for (const auto& bound : constraint_bounds_) {
+	    // Skip disabled constraints (via constraint_mode)
+	    if (cobj != nullptr && !bound.constraint_name.empty() &&
+	        !cobj->is_constraint_enabled(bound.constraint_name))
+		  continue;
 	    // Only care about sysfunc constraints on this property
 	    if (bound.sysfunc_type == SYSFUNC_NONE)
 		  continue;
@@ -863,6 +868,10 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
       std::map<int64_t, std::pair<int64_t, bool>> upper_bounds;  // weight -> (value, weight_per_value)
 
       for (const auto& bound : constraint_bounds_) {
+	    // Skip disabled constraints (via constraint_mode)
+	    if (cobj != nullptr && !bound.constraint_name.empty() &&
+	        !cobj->is_constraint_enabled(bound.constraint_name))
+		  continue;
 	    if (bound.property_idx != prop_idx)
 		  continue;
 	    if (bound.sysfunc_type != SYSFUNC_NONE)
@@ -974,6 +983,10 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
       // Now collect range constraints for this property
       // Apply all constraint bounds for this property
       for (const auto& bound : constraint_bounds_) {
+	    // Skip disabled constraints (via constraint_mode)
+	    if (cobj != nullptr && !bound.constraint_name.empty() &&
+	        !cobj->is_constraint_enabled(bound.constraint_name))
+		  continue;
 	    if (bound.property_idx != prop_idx)
 		  continue;
 	    // Skip system function constraints (handled above)
@@ -1197,7 +1210,7 @@ bool class_type::has_any_constraints() const
       return false;
 }
 
-bool class_type::check_constraints(inst_t inst) const
+bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 {
       // Collect all constraint bounds from this class and all parent classes
       // We collect them and check using THIS class's property accessors
@@ -1206,8 +1219,13 @@ bool class_type::check_constraints(inst_t inst) const
       std::vector<simple_bound_t> all_bounds;
       const class_type* cls = this;
       while (cls != nullptr) {
-	    for (const auto& bound : cls->constraint_bounds_)
+	    for (const auto& bound : cls->constraint_bounds_) {
+		  // Skip disabled constraints (via constraint_mode)
+		  if (cobj != nullptr && !bound.constraint_name.empty() &&
+		      !cobj->is_constraint_enabled(bound.constraint_name))
+			continue;
 		  all_bounds.push_back(bound);
+	    }
 	    cls = cls->parent_;
       }
 

@@ -8576,6 +8576,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    if (bound.property_idx != i) continue;
 				    if (!bound.has_const_bound) continue;
 				    if (bound.is_soft) continue;
+				    // Skip disabled constraints (via constraint_mode)
+				    if (!bound.constraint_name.empty() &&
+					!cobj->is_constraint_enabled(bound.constraint_name)) continue;
 				    // Skip system function constraints - handled by generate_constrained_random()
 				    if (bound.sysfunc_type != class_type::SYSFUNC_NONE) continue;
 				    // Skip property+offset bounds - handled by generate_constrained_random()
@@ -8753,7 +8756,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			}
 			// Priority 3: Class-level constraints combined with inline bounds
 			else if (has_class_constraints) {
-			      rval = defn->generate_constrained_random(inst, i, wid);
+			      rval = defn->generate_constrained_random(inst, i, wid, cobj);
 			      // Combine with inline bounds and excluded values
 			      bool valid = (rval >= min_val && rval <= max_val);
 			      if (valid) {
@@ -8873,7 +8876,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    success = true;
 	    if (has_class_constraints) {
 		  // Check if generated values satisfy all class-level constraints
-		  success = defn->check_constraints(inst);
+		  // Pass cobj so it can check constraint_mode for each named constraint
+		  success = defn->check_constraints(inst, cobj);
 	    }
 	    // Also check inline constraints
 	    // Special handling: multiple '=' constraints on same property are OR'd

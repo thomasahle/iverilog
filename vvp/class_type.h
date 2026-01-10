@@ -149,10 +149,12 @@ class class_type : public __vpiHandle {
 	// Check if this class or any parent class has constraints
       bool has_any_constraints() const;
 	// Check if all constraints are satisfied for current property values
-      bool check_constraints(inst_t inst) const;
+	// cobj is used to check constraint_mode for each named constraint
+      bool check_constraints(inst_t inst, const class vvp_cobject* cobj) const;
 	// Generate constrained random value for a property
 	// Returns value within the computed valid range from constraint bounds
-      int64_t generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid) const;
+	// cobj is used to check constraint_mode for each named constraint
+      int64_t generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid, const class vvp_cobject* cobj) const;
 
       // Unique constraint support - ensure array elements have distinct values
       void add_unique_constraint(size_t prop_idx);
