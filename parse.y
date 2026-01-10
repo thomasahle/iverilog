@@ -6965,6 +6965,16 @@ expr_primary
 	$$ = tmp;
 	delete nm;
       }
+    /* queue.unique() method call - K_unique is a keyword so needs special rule */
+  | hierarchy_identifier '.' K_unique argument_list_parens
+      { pform_name_t * nm = $1;
+	nm->push_back(name_component_t(lex_strings.make("unique")));
+	PECallFunction*tmp = pform_make_call_function(@1, *nm, *$4);
+	FILE_NAME(tmp, @1);
+	delete nm;
+	delete $4;
+	$$ = tmp;
+      }
   | hierarchy_identifier '.' K_xor
       { pform_name_t * nm = $1;
 	nm->push_back(name_component_t(lex_strings.make("xor")));
