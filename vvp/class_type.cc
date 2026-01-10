@@ -1462,11 +1462,22 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
       bound.property_idx = prop_idx;
       bound.op = op;
       bound.is_soft = (soft != 0);
-      bound.has_const_bound = (has_const != 0);
-      if (has_const) {
+
+      // For property-based size constraint (op 's'), value contains packed data:
+      //   - upper 16 bits = source property index
+      //   - lower 16 bits = signed offset
+      if (op == 's') {
+	    bound.has_const_bound = false;  // Always property-based
+	    bound.bound_prop_idx = (value >> 16) & 0xFFFF;  // Source property index
+	    // Sign-extend the 16-bit offset
+	    int16_t offset_raw = (int16_t)(value & 0xFFFF);
+	    bound.const_bound = (int64_t)offset_raw;  // Offset to add
+      } else if (has_const) {
+	    bound.has_const_bound = true;
 	    bound.const_bound = value;
 	    bound.bound_prop_idx = 0;
       } else {
+	    bound.has_const_bound = false;
 	    bound.const_bound = 0;
 	    bound.bound_prop_idx = static_cast<size_t>(value);
       }

@@ -1588,13 +1588,14 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    unsigned nparms = ivl_expr_parms(expr);
 
 	      /* Emit inline constraint bounds before %randomize
-	         Extra parameters come in quintuplets: prop_idx, op_code, value, weight, weight_per_value */
-	    for (unsigned idx = 1; idx + 4 < nparms; idx += 5) {
+	         Extra parameters come in sextuplets: prop_idx, op_code, value, weight, weight_per_value, source_prop_idx */
+	    for (unsigned idx = 1; idx + 5 < nparms; idx += 6) {
 		  ivl_expr_t prop_expr = ivl_expr_parm(expr, idx);
 		  ivl_expr_t op_expr = ivl_expr_parm(expr, idx+1);
 		  ivl_expr_t val_expr = ivl_expr_parm(expr, idx+2);
 		  ivl_expr_t weight_expr = ivl_expr_parm(expr, idx+3);
 		  ivl_expr_t wpv_expr = ivl_expr_parm(expr, idx+4);
+		  ivl_expr_t src_expr = ivl_expr_parm(expr, idx+5);
 
 		  /* Extract constant values */
 		  if (ivl_expr_type(prop_expr) == IVL_EX_NUMBER &&
@@ -1606,6 +1607,7 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 
 			unsigned prop_idx = 0, op_code = 0;
 			int64_t const_val = 0;
+			unsigned src_prop_idx = 0;
 
 			/* Decode property index */
 			for (unsigned b = 0; b < ivl_expr_width(prop_expr) && b < 32; b++) {
@@ -1638,6 +1640,13 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			      const char *wpv_bits = ivl_expr_bits(wpv_expr);
 			      weight_per_value = (wpv_bits[0] == '1');
 			}
+			/* Decode source property index for property-based size constraints */
+			if (ivl_expr_type(src_expr) == IVL_EX_NUMBER) {
+			      const char *src_bits = ivl_expr_bits(src_expr);
+			      for (unsigned b = 0; b < ivl_expr_width(src_expr) && b < 32; b++) {
+				    if (src_bits[b] == '1') src_prop_idx |= (1u << b);
+			      }
+			}
 
 			/* Encode weight in upper bits of op_code:
 			   bits 0-3: op_code (including soft flag)
@@ -1648,8 +1657,17 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			encoded_op |= (weight << 4);
 			if (weight_per_value) encoded_op |= (1u << 31);
 
-			fprintf(vvp_out, "    %%push_rand_bound %u, %u, %lld;\n",
-			        prop_idx, encoded_op, (long long)const_val);
+			/* For op_code 7 (property-based size), pack source_prop_idx into const_val:
+			   - lower 16 bits = signed offset
+			   - upper 16 bits = source property index */
+			if ((op_code & 7) == 7) {
+			      int64_t packed_val = ((int64_t)src_prop_idx << 16) | (const_val & 0xFFFF);
+			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %lld;\n",
+				      prop_idx, encoded_op, (long long)packed_val);
+			} else {
+			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %lld;\n",
+				      prop_idx, encoded_op, (long long)const_val);
+			}
 		  }
 	    }
 

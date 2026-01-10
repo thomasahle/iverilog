@@ -8107,14 +8107,66 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       bool has_inline_constraints = !inline_constraints.empty();
       bool has_constraints = has_class_constraints || has_inline_constraints;
 
-      // Process size constraints first - these resize dynamic arrays before randomization
+      // Process size constraints - these resize dynamic arrays
       // Track which properties have size constraints so we can randomize their elements
       std::set<size_t> darray_props_to_randomize;
       std::map<size_t, unsigned> darray_elem_widths;
 
+      // Collect property-based size constraints to apply AFTER source properties are randomized
+      struct deferred_size_constraint {
+	    size_t prop_idx;
+	    size_t src_prop_idx;
+	    int64_t offset;
+	    unsigned elem_width;
+      };
+      std::vector<deferred_size_constraint> deferred_size_constraints;
+
+      // Process class-level size constraints (including inherited)
+      const class_type* cls = defn;
+      while (cls != nullptr) {
+	    for (size_t b = 0; b < cls->constraint_bound_count(); b++) {
+		  const class_type::simple_bound_t& bound = cls->get_constraint_bound(b);
+		  if (bound.op == 'S') {
+			// Size constraint (constant): resize dynamic array to const_bound elements
+			size_t target_size = (size_t)bound.const_bound;
+			size_t prop_idx = bound.property_idx;
+			unsigned elem_width = (unsigned)bound.weight;
+			if (elem_width == 0) elem_width = 8;  // Default to 8 bits
+
+			// Get current object (if any)
+			vvp_object_t cur_obj;
+			cobj->get_object(prop_idx, cur_obj, 0);
+			vvp_darray* cur_dar = cur_obj.peek<vvp_darray>();
+
+			// If array doesn't exist or has wrong size, create a new one
+			if (cur_dar == 0 || cur_dar->get_size() != target_size) {
+			      vvp_darray_vec4* new_dar = new vvp_darray_vec4(target_size, elem_width);
+			      vvp_object_t new_dar_obj(new_dar);
+			      cobj->set_object(prop_idx, new_dar_obj, 0);
+			}
+
+			// Mark this property for element randomization
+			darray_props_to_randomize.insert(prop_idx);
+			darray_elem_widths[prop_idx] = elem_width;
+		  }
+		  else if (bound.op == 's') {
+			// Property-based size constraint - defer until source is randomized
+			deferred_size_constraint dsc;
+			dsc.prop_idx = bound.property_idx;
+			dsc.src_prop_idx = bound.bound_prop_idx;
+			dsc.offset = bound.const_bound;
+			dsc.elem_width = (unsigned)bound.weight;
+			if (dsc.elem_width == 0) dsc.elem_width = 8;
+			deferred_size_constraints.push_back(dsc);
+		  }
+	    }
+	    cls = cls->get_parent();
+      }
+
+      // Process inline size constraints (from randomize() with {...})
       for (const auto& bound : inline_constraints) {
 	    if (bound.op == 'S') {
-		  // Size constraint: resize dynamic array to const_bound elements
+		  // Size constraint (constant): resize dynamic array to const_bound elements
 		  size_t target_size = (size_t)bound.const_bound;
 		  size_t prop_idx = bound.property_idx;
 		  unsigned elem_width = (unsigned)bound.weight;
@@ -8137,6 +8189,16 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  // Mark this property for element randomization
 		  darray_props_to_randomize.insert(prop_idx);
 		  darray_elem_widths[prop_idx] = elem_width;
+	    }
+	    else if (bound.op == 's') {
+		  // Property-based size constraint - defer until source is randomized
+		  deferred_size_constraint dsc;
+		  dsc.prop_idx = bound.property_idx;
+		  dsc.src_prop_idx = bound.bound_prop_idx;
+		  dsc.offset = bound.const_bound;
+		  dsc.elem_width = (unsigned)bound.weight;
+		  if (dsc.elem_width == 0) dsc.elem_width = 8;
+		  deferred_size_constraints.push_back(dsc);
 	    }
       }
 
@@ -8691,6 +8753,46 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    tries++;
       } while (!success && tries < MAX_CONSTRAINT_TRIES);
 
+      // Now that source properties are randomized, apply deferred property-based size constraints
+      for (const auto& dsc : deferred_size_constraints) {
+	    // Read the source property value (now randomized)
+	    vvp_vector4_t src_val;
+	    cobj->get_vec4(dsc.src_prop_idx, src_val);
+	    int64_t src_int = 0;
+	    for (unsigned b = 0; b < src_val.size() && b < 64; b++) {
+		  if (src_val.value(b) == BIT4_1) src_int |= (1LL << b);
+	    }
+
+	    // Calculate target size
+	    int64_t target_size_s = src_int + dsc.offset;
+	    if (target_size_s < 0) target_size_s = 0;  // Can't have negative size
+	    size_t target_size = (size_t)target_size_s;
+
+	    // Get current object (if any)
+	    vvp_object_t cur_obj;
+	    cobj->get_object(dsc.prop_idx, cur_obj, 0);
+	    vvp_darray* cur_dar = cur_obj.peek<vvp_darray>();
+
+	    // If array doesn't exist or has wrong size, create a new one
+	    if (cur_dar == 0 || cur_dar->get_size() != target_size) {
+		  vvp_darray_vec4* new_dar = new vvp_darray_vec4(target_size, dsc.elem_width);
+		  vvp_object_t new_dar_obj(new_dar);
+		  cobj->set_object(dsc.prop_idx, new_dar_obj, 0);
+		  cur_dar = new_dar;
+	    }
+
+	    // Randomize elements of the newly sized array
+	    if (cur_dar) {
+		  for (size_t idx = 0; idx < target_size; idx++) {
+			vvp_vector4_t new_val(dsc.elem_width);
+			for (unsigned b = 0; b < dsc.elem_width; b++) {
+			      new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+			}
+			cur_dar->set_word((unsigned)idx, new_val);
+		  }
+	    }
+      }
+
       // Push result to vec4 stack: 1 for success, 0 for failure
       vvp_vector4_t res (32, BIT4_0);
       if (success) {
@@ -8834,13 +8936,27 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 	    case 3: bound.op = 'L'; break;  // <=
 	    case 4: bound.op = '='; break;
 	    case 5: bound.op = '!'; break;
-	    case 6: bound.op = 'S'; break;  // Size constraint
+	    case 6: bound.op = 'S'; break;  // Size constraint (constant)
+	    case 7: bound.op = 's'; break;  // Size constraint (property-based)
 	    default: bound.op = '='; break;
       }
       bound.is_soft = is_soft;
-      bound.has_const_bound = true;
-      bound.const_bound = (int64_t)(int32_t)cp->bit_idx[1];  // Sign-extend
-      bound.bound_prop_idx = 0;
+
+      // For op_code 7 (property-based size), unpack the source_prop_idx and offset:
+      //   - upper 16 bits = source property index
+      //   - lower 16 bits = signed offset
+      if (op_code == 7) {
+	    int64_t packed = cp->bit_idx[1];
+	    bound.has_const_bound = false;  // Property-based, not constant
+	    bound.bound_prop_idx = (packed >> 16) & 0xFFFF;  // Source property index
+	    // Sign-extend the 16-bit offset
+	    int16_t offset_raw = (int16_t)(packed & 0xFFFF);
+	    bound.const_bound = (int64_t)offset_raw;  // Offset to add
+      } else {
+	    bound.has_const_bound = true;
+	    bound.const_bound = (int64_t)(int32_t)cp->bit_idx[1];  // Sign-extend
+	    bound.bound_prop_idx = 0;
+      }
 
       thr->push_inline_constraint(bound);
       return true;

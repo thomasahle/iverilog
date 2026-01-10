@@ -9186,8 +9186,101 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
                (bound_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
 	    prop_on_left = true;
       }
-      // Case 4: sysfunc(property) OP constant (e.g., $countones(flags) == 1)
+      // Case 4: property.size() OP expr (e.g., data.size() == len + 1)
+      // This is for dynamic array size constraints in named constraint blocks
       else {
+	    const PECallFunction* call_func = dynamic_cast<const PECallFunction*>(left);
+	    if (call_func != nullptr) {
+		  const pform_scoped_name_t& call_path = call_func->path();
+		  if (call_path.name.size() >= 2) {  // property.size() has at least 2 components
+			// Check if the method is "size"
+			perm_string method_name = call_path.name.back().name;
+			if (method_name == "size") {
+			      // Get the property name (first component of path)
+			      perm_string array_prop_name = call_path.name.front().name;
+			      int array_prop_idx = cls->property_idx_from_name(array_prop_name);
+			      if (array_prop_idx >= 0 && op == '=') {  // Only support == for size constraints
+				    // Get element width for the array
+				    int64_t elem_width = 8;  // default
+				    ivl_type_t arr_prop_type = cls->get_prop_type(array_prop_idx);
+				    if (arr_prop_type && arr_prop_type->base_type() == IVL_VT_DARRAY) {
+					  const netarray_t* arr_type = dynamic_cast<const netarray_t*>(arr_prop_type);
+					  if (arr_type) {
+						ivl_type_t elem_type = arr_type->element_type();
+						if (elem_type) {
+						      elem_width = elem_type->packed_width();
+						      if (elem_width == 0) elem_width = 32;
+						}
+					  }
+				    }
+
+				    // Case 4a: arr.size() == constant
+				    if (extract_constant_value(right, const_val, scope, cls, des)) {
+					  if (debug_elaborate) {
+						cerr << "netclass_t::elaborate: extracted size bound "
+						     << array_prop_name << ".size() == " << const_val << endl;
+					  }
+					  // op 'S' = constant size, store elem_width in weight
+					  cls->add_simple_bound(constraint_name, array_prop_idx, 'S', is_soft,
+					                        true, const_val, 0, netclass_t::SYSFUNC_NONE, 0,
+					                        elem_width, true);
+					  return true;
+				    }
+
+				    // Case 4b: arr.size() == property
+				    const PEIdent* rhs_ident = dynamic_cast<const PEIdent*>(right);
+				    if (rhs_ident != nullptr) {
+					  const pform_scoped_name_t& rhs_path = rhs_ident->path();
+					  if (rhs_path.name.size() == 1) {
+						perm_string src_prop_name = rhs_path.name.front().name;
+						int src_prop_idx = cls->property_idx_from_name(src_prop_name);
+						if (src_prop_idx >= 0) {
+						      if (debug_elaborate) {
+							    cerr << "netclass_t::elaborate: extracted size bound "
+							         << array_prop_name << ".size() == " << src_prop_name << endl;
+						      }
+						      // op 's' = property-based size
+						      // has_const=false, value=0 (offset), bound_prop_idx=src_prop_idx
+						      cls->add_simple_bound(constraint_name, array_prop_idx, 's', is_soft,
+						                            false, 0, src_prop_idx, netclass_t::SYSFUNC_NONE, 0,
+						                            elem_width, true);
+						      return true;
+						}
+					  }
+				    }
+
+				    // Case 4c: arr.size() == property + constant
+				    const PEBinary* rhs_bin = dynamic_cast<const PEBinary*>(right);
+				    if (rhs_bin != nullptr && rhs_bin->get_op() == '+') {
+					  const PEIdent* prop_ident2 = dynamic_cast<const PEIdent*>(rhs_bin->get_left());
+					  int64_t offset_val = 0;
+					  if (prop_ident2 != nullptr && extract_constant_value(rhs_bin->get_right(), offset_val, scope, cls, des)) {
+						const pform_scoped_name_t& prop_path2 = prop_ident2->path();
+						if (prop_path2.name.size() == 1) {
+						      perm_string src_prop_name = prop_path2.name.front().name;
+						      int src_prop_idx = cls->property_idx_from_name(src_prop_name);
+						      if (src_prop_idx >= 0) {
+							    if (debug_elaborate) {
+								  cerr << "netclass_t::elaborate: extracted size bound "
+								       << array_prop_name << ".size() == " << src_prop_name
+								       << " + " << offset_val << endl;
+							    }
+							    // op 's' = property-based size
+							    // has_const=true (has offset), const_bound=offset, bound_prop_idx=src_prop_idx
+							    cls->add_simple_bound(constraint_name, array_prop_idx, 's', is_soft,
+							                          true, offset_val, src_prop_idx, netclass_t::SYSFUNC_NONE, 0,
+							                          elem_width, true);
+							    return true;
+						      }
+						}
+					  }
+				    }
+			      }
+			}
+		  }
+	    }
+
+	    // Case 5: sysfunc(property) OP constant (e.g., $countones(flags) == 1)
 	    const PECallFunction* sysfunc = dynamic_cast<const PECallFunction*>(left);
 	    if (sysfunc != nullptr && extract_constant_value(right, const_val, scope, cls, des)) {
 		  // Get the system function name from the path
