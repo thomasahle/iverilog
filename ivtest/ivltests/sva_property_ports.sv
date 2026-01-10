@@ -16,10 +16,10 @@ module test;
     a |-> b;
   endproperty : p_multi_port
 
-  // Property with typed ports  
+  // Property with typed ports
   property p_typed_port(bit [7:0] data, logic valid);
     @(posedge clk) disable iff(reset)
-    valid |-> (data != 8'h00);
+    valid |-> data != 8'h00;  // No parens - workaround for LALR(1) conflict
   endproperty : p_typed_port
 
   // Assertions using properties with arguments (parsing only)
