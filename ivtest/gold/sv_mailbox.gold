@@ -15,4 +15,4 @@ Peeked message: 99
 try_peek returned: 1, msg: 99
 num() after peeks: 2
 PASSED
-./ivltests/sv_mailbox.sv:127: $finish called at 0 (1s)
+./ivltests/sv_mailbox.v:127: $finish called at 0 (1s)
