@@ -36,4 +36,4 @@ Items received by driver: 3
 PASSED
 UVM_INFO: Running final_phase...
 UVM_INFO: UVM phases complete.
-../lib/ivl/uvm/uvm_pkg.sv:1327: $finish called at 100 (1s)
+../lib/ivl/uvm/uvm_pkg.sv:1328: $finish called at 100 (1s)

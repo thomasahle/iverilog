@@ -1,5 +1,10 @@
 // Test uvm_tlm_analysis_fifo with various operations
 // Tests boundary conditions and multiple write/flush cycles
+//
+// NOTE: This test is marked NI (Not Implemented) because parameterized classes
+// with non-class type parameters (like int here) don't fully work.
+// The method parameters expect class objects but get vec4 values.
+// WORKAROUND: Use a wrapper class (e.g., class IntWrapper { int value; })
 
 `include "uvm_pkg.sv"
 
