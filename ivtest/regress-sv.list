@@ -1332,3 +1332,4 @@ sv_string_concat_sfunc	normal,-g2012	ivltests	gold=sv_string_concat_sfunc.gold
 sv_wait_fork	normal,-g2012	ivltests
 sv_disable_fork	normal,-g2012	ivltests
 sv_randomize_no_parens	normal,-g2012	ivltests gold=sv_randomize_no_parens.gold
+sv_randomize_stmt_constraint	normal,-g2012	ivltests gold=sv_randomize_stmt_constraint.gold

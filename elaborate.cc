@@ -4197,6 +4197,97 @@ NetProc* PCallTask::elaborate_method_func_(NetScope*scope,
       return cur;
 }
 
+/*
+ * Helper to analyze inline constraint expression for statement-form randomize.
+ * Returns true if expression is a simple comparison: property_name OP constant
+ * On success, fills in: property_name, op_code, const_value
+ * op_code encoding: 0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!'
+ */
+static bool analyze_stmt_constraint_expr(const PExpr*expr,
+                                         perm_string& property_name,
+                                         int& op_code,
+                                         int64_t& const_value)
+{
+      // Check if it's a binary comparison expression
+      const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
+      if (!bin) return false;
+
+      // Get the operator
+      char op = bin->get_op();
+      switch (op) {
+            case '>': op_code = 0; break;
+            case '<': op_code = 1; break;
+            case 'G': op_code = 2; break;  // >=
+            case 'L': op_code = 3; break;  // <=
+            case 'e': op_code = 4; break;  // ==
+            case 'n': op_code = 5; break;  // !=
+            default: return false;
+      }
+
+      // Get the left operand - should be an identifier (property name)
+      const PExpr*lhs = bin->get_left();
+      const PEIdent*ident = dynamic_cast<const PEIdent*>(lhs);
+      if (!ident) return false;
+
+      const pform_scoped_name_t& scoped_path = ident->path();
+      if (scoped_path.size() != 1) return false;
+      property_name = scoped_path.name.front().name;
+
+      // Get the right operand (should be a constant number)
+      const PExpr*rhs = bin->get_right();
+      const PENumber*num = dynamic_cast<const PENumber*>(rhs);
+      if (num) {
+            const verinum& val = num->value();
+            const_value = val.as_long();
+            return true;
+      }
+
+      // Try: unary minus on a number (e.g., -50)
+      const PEUnary*unary = dynamic_cast<const PEUnary*>(rhs);
+      if (unary && unary->get_op() == '-') {
+            const PENumber*inner_num = dynamic_cast<const PENumber*>(unary->get_expr());
+            if (inner_num) {
+                  const verinum& val = inner_num->value();
+                  const_value = -val.as_long();
+                  return true;
+            }
+      }
+
+      return false;
+}
+
+/*
+ * Recursive helper to extract ALL bounds from a constraint expression.
+ * Handles logical AND expressions (from 'inside' constraints).
+ */
+static void analyze_stmt_constraint_recursive(const PExpr*expr,
+      std::vector<std::tuple<perm_string, int, int64_t>>& bounds)
+{
+      // Check for logical AND expression (from 'inside' constraints)
+      const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
+      if (bin && bin->get_op() == 'a') {
+            // Recursively extract bounds from both sides of AND
+            analyze_stmt_constraint_recursive(bin->get_left(), bounds);
+            analyze_stmt_constraint_recursive(bin->get_right(), bounds);
+            return;
+      }
+
+      // For logical OR, process each side
+      if (bin && bin->get_op() == 'o') {
+            analyze_stmt_constraint_recursive(bin->get_left(), bounds);
+            analyze_stmt_constraint_recursive(bin->get_right(), bounds);
+            return;
+      }
+
+      // Try to extract a simple comparison bound
+      perm_string prop_name;
+      int op_code;
+      int64_t const_value;
+      if (analyze_stmt_constraint_expr(expr, prop_name, op_code, const_value)) {
+            bounds.push_back(std::make_tuple(prop_name, op_code, const_value));
+      }
+}
+
 NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
                                       bool add_this_flag) const
 {
@@ -5143,15 +5234,63 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			     << endl;
 		  }
 
+		  // Analyze inline constraints (if any)
+		  const std::list<PExpr*>& constraints = get_inline_constraints();
+		  std::vector<std::tuple<size_t, int, int64_t>> bounds;
+
+		  for (const PExpr* cons : constraints) {
+			// Use recursive extraction to handle AND expressions from 'inside'
+			std::vector<std::tuple<perm_string, int, int64_t>> extracted;
+			analyze_stmt_constraint_recursive(cons, extracted);
+
+			// Convert extracted bounds to property indices
+			for (const auto& ex : extracted) {
+			      perm_string prop_name = std::get<0>(ex);
+			      int op_code = std::get<1>(ex);
+			      int64_t const_val = std::get<2>(ex);
+			      // Look up property index
+			      int pidx = class_type->property_idx_from_name(prop_name);
+			      if (pidx >= 0) {
+				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val));
+			      }
+			}
+		  }
+
 		  // Create signal expression for the class object
 		  NetESignal*obj_expr = new NetESignal(net);
 		  obj_expr->set_line(*this);
 
 		  // Generate call to $ivl_randomize system function
+		  // with extra parameters for inline constraints (6 params per bound)
+		  unsigned num_parms = 1 + bounds.size() * 6;
 		  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
-						     &netvector_t::atom2s32, 1);
+						     &netvector_t::atom2s32, num_parms);
 		  sys_expr->set_line(*this);
 		  sys_expr->parm(0, obj_expr);
+
+		  // Add inline constraint bounds as constant integer parameters
+		  unsigned parm_idx = 1;
+		  for (const auto& bound : bounds) {
+			// Property index
+			NetEConst* prop_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
+			sys_expr->parm(parm_idx++, prop_const);
+			// Operator code
+			NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<1>(bound), 32));
+			sys_expr->parm(parm_idx++, op_const);
+			// Constant bound value
+			int64_t val = std::get<2>(bound);
+			NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
+			sys_expr->parm(parm_idx++, val_const);
+			// Weight (default 1)
+			NetEConst* weight_const = new NetEConst(verinum((uint64_t)1, 32));
+			sys_expr->parm(parm_idx++, weight_const);
+			// Weight per value flag (default true)
+			NetEConst* wpv_const = new NetEConst(verinum((uint64_t)1, 32));
+			sys_expr->parm(parm_idx++, wpv_const);
+			// Source property index (not used for basic constraints)
+			NetEConst* src_const = new NetEConst(verinum((uint64_t)0, 32));
+			sys_expr->parm(parm_idx++, src_const);
+		  }
 
 		  // Create a temporary variable to hold the return value
 		  NetNet*tmp = new NetNet(scope, scope->local_symbol(),
