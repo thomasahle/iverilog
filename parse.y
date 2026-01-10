@@ -2789,6 +2789,89 @@ description /* IEEE1800-2005: A.1.2 */
 	delete[] $3;
 	delete[] $5;
       }
+
+  /* SystemVerilog bind directive at file scope (IEEE 1800-2017 Section 23.11) */
+  | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
+      { pform_bind_directive(@1, $2, $3, $4, $6, 0);
+	delete[]$2;
+	delete[]$3;
+	delete[]$4;
+      }
+  | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { pform_bind_directive(@1, $2, $3, $4, 0, $6);
+	delete[]$2;
+	delete[]$3;
+	delete[]$4;
+      }
+  | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' ')' ';'
+      { pform_bind_directive(@1, $2, $3, $4, 0, 0);
+	delete[]$2;
+	delete[]$3;
+	delete[]$4;
+      }
+  | K_bind IDENTIFIER IDENTIFIER IDENTIFIER ';'
+      { pform_bind_directive(@1, $2, $3, $4, 0, 0);
+	delete[]$2;
+	delete[]$3;
+	delete[]$4;
+      }
+  | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
+      { pform_bind_directive(@1, $2, $3.text, $4, $6, 0);
+	delete[]$2;
+	delete[]$4;
+      }
+  | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { pform_bind_directive(@1, $2, $3.text, $4, 0, $6);
+	delete[]$2;
+	delete[]$4;
+      }
+  | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' ')' ';'
+      { pform_bind_directive(@1, $2, $3.text, $4, 0, 0);
+	delete[]$2;
+	delete[]$4;
+      }
+  | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER ';'
+      { pform_bind_directive(@1, $2, $3.text, $4, 0, 0);
+	delete[]$2;
+	delete[]$4;
+      }
+  | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
+      { pform_bind_directive(@1, $2.text, $3, $4, $6, 0);
+	delete[]$3;
+	delete[]$4;
+      }
+  | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { pform_bind_directive(@1, $2.text, $3, $4, 0, $6);
+	delete[]$3;
+	delete[]$4;
+      }
+  | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER '(' ')' ';'
+      { pform_bind_directive(@1, $2.text, $3, $4, 0, 0);
+	delete[]$3;
+	delete[]$4;
+      }
+  | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER ';'
+      { pform_bind_directive(@1, $2.text, $3, $4, 0, 0);
+	delete[]$3;
+	delete[]$4;
+      }
+  | K_bind TYPE_IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
+      { pform_bind_directive(@1, $2.text, $3.text, $4, $6, 0);
+	delete[]$4;
+      }
+  | K_bind TYPE_IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { pform_bind_directive(@1, $2.text, $3.text, $4, 0, $6);
+	delete[]$4;
+      }
+  | K_bind TYPE_IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' ')' ';'
+      { pform_bind_directive(@1, $2.text, $3.text, $4, 0, 0);
+	delete[]$4;
+      }
+  | K_bind TYPE_IDENTIFIER TYPE_IDENTIFIER IDENTIFIER ';'
+      { pform_bind_directive(@1, $2.text, $3.text, $4, 0, 0);
+	delete[]$4;
+      }
+
   | ';'
       { }
   ;
@@ -8923,42 +9006,33 @@ module_item
 
   /* Bind with module target (IDENTIFIER) */
   | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
-      { if (gn_unsupported_assertions_flag) {
-              yywarn(@1, "sorry: bind directive not yet supported."
-                     " Bound module instance will be ignored.");
-        }
+      { // bind target bound_type instance_name(.port_conns);
+        pform_bind_directive(@1, $2, $3, $4, $6, 0);
 	delete[]$2;
 	delete[]$3;
 	delete[]$4;
-	delete $6;
       }
 
   | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
-      { if (gn_unsupported_assertions_flag) {
-              yywarn(@1, "sorry: bind directive not yet supported."
-                     " Bound module instance will be ignored.");
-        }
+      { // bind target bound_type instance_name(port_exprs);
+	// Convert list<PExpr*> to positional connections
+	pform_bind_directive(@1, $2, $3, $4, 0, $6);
 	delete[]$2;
 	delete[]$3;
 	delete[]$4;
-	delete $6;
       }
 
   | K_bind IDENTIFIER IDENTIFIER IDENTIFIER '(' ')' ';'
-      { if (gn_unsupported_assertions_flag) {
-              yywarn(@1, "sorry: bind directive not yet supported."
-                     " Bound module instance will be ignored.");
-        }
+      { // bind target bound_type instance_name();
+        pform_bind_directive(@1, $2, $3, $4, 0, 0);
 	delete[]$2;
 	delete[]$3;
 	delete[]$4;
       }
 
   | K_bind IDENTIFIER IDENTIFIER IDENTIFIER ';'
-      { if (gn_unsupported_assertions_flag) {
-              yywarn(@1, "sorry: bind directive not yet supported."
-                     " Bound module instance will be ignored.");
-        }
+      { // bind target bound_type instance_name;
+        pform_bind_directive(@1, $2, $3, $4, 0, 0);
 	delete[]$2;
 	delete[]$3;
 	delete[]$4;
@@ -8966,40 +9040,72 @@ module_item
 
   /* Bind with module target (IDENTIFIER) and interface instance type (TYPE_IDENTIFIER) */
   | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
-      { if (gn_unsupported_assertions_flag) {
-              yywarn(@1, "sorry: bind directive not yet supported."
-                     " Bound module instance will be ignored.");
-        }
+      { pform_bind_directive(@1, $2, $3.text, $4, $6, 0);
 	delete[]$2;
 	delete[]$4;
-	delete $6;
       }
 
   | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
-      { if (gn_unsupported_assertions_flag) {
-              yywarn(@1, "sorry: bind directive not yet supported."
-                     " Bound module instance will be ignored.");
-        }
+      { pform_bind_directive(@1, $2, $3.text, $4, 0, $6);
 	delete[]$2;
 	delete[]$4;
-	delete $6;
+      }
+
+  | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' ')' ';'
+      { pform_bind_directive(@1, $2, $3.text, $4, 0, 0);
+	delete[]$2;
+	delete[]$4;
+      }
+
+  | K_bind IDENTIFIER TYPE_IDENTIFIER IDENTIFIER ';'
+      { pform_bind_directive(@1, $2, $3.text, $4, 0, 0);
+	delete[]$2;
+	delete[]$4;
       }
 
   /* Bind with interface target (TYPE_IDENTIFIER) */
   | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
-      { if (gn_unsupported_assertions_flag) {
-              yywarn(@1, "sorry: bind directive not yet supported."
-                     " Bound module instance will be ignored.");
-        }
-	delete $6;
+      { pform_bind_directive(@1, $2.text, $3, $4, $6, 0);
+	delete[]$3;
+	delete[]$4;
+      }
+
+  | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { pform_bind_directive(@1, $2.text, $3, $4, 0, $6);
+	delete[]$3;
+	delete[]$4;
+      }
+
+  | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER '(' ')' ';'
+      { pform_bind_directive(@1, $2.text, $3, $4, 0, 0);
+	delete[]$3;
+	delete[]$4;
+      }
+
+  | K_bind TYPE_IDENTIFIER IDENTIFIER IDENTIFIER ';'
+      { pform_bind_directive(@1, $2.text, $3, $4, 0, 0);
+	delete[]$3;
+	delete[]$4;
       }
 
   | K_bind TYPE_IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_name_list ')' ';'
-      { if (gn_unsupported_assertions_flag) {
-              yywarn(@1, "sorry: bind directive not yet supported."
-                     " Bound module instance will be ignored.");
-        }
-	delete $6;
+      { pform_bind_directive(@1, $2.text, $3.text, $4, $6, 0);
+	delete[]$4;
+      }
+
+  | K_bind TYPE_IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { pform_bind_directive(@1, $2.text, $3.text, $4, 0, $6);
+	delete[]$4;
+      }
+
+  | K_bind TYPE_IDENTIFIER TYPE_IDENTIFIER IDENTIFIER '(' ')' ';'
+      { pform_bind_directive(@1, $2.text, $3.text, $4, 0, 0);
+	delete[]$4;
+      }
+
+  | K_bind TYPE_IDENTIFIER TYPE_IDENTIFIER IDENTIFIER ';'
+      { pform_bind_directive(@1, $2.text, $3.text, $4, 0, 0);
+	delete[]$4;
       }
 
   | ';'

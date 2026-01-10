@@ -127,6 +127,25 @@ struct randcase_item_t {
       randcase_item_t() : weight(0), stmt(0) { }
 };
 
+/*
+ * The bind_directive_t holds information from a bind directive:
+ *   bind target_module bound_type instance_name(.port_connections);
+ * This is used to bind assertion/coverage modules to target modules.
+ */
+struct bind_directive_t : public LineInfo {
+      perm_string target_name;    // Name of target module/interface
+      perm_string bound_type;     // Type of module to bind
+      perm_string instance_name;  // Name for bound instance
+      std::list<named_pexpr_t>*port_conns;  // Port connections by name (null if by position)
+      std::list<PExpr*>*port_exprs;         // Port connections by position (null if by name)
+
+      bind_directive_t() : port_conns(0), port_exprs(0) { }
+      ~bind_directive_t() {
+            if (port_conns) delete port_conns;
+            if (port_exprs) delete port_exprs;
+      }
+};
+
 /* The lgate is gate instantiation information. */
 struct lgate : public LineInfo {
       explicit lgate() : parms(0), parms_by_name(0), ranges(0) { }

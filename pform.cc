@@ -67,6 +67,13 @@ map<perm_string,Module*> pform_modules;
 map<perm_string,PUdp*> pform_primitives;
 
 /*
+ * The pform_bind_directives is a list of bind directives that were parsed.
+ * These are processed during elaboration to create instances of the bound
+ * module/checker inside all instances of the target module.
+ */
+list<bind_directive_t*> pform_bind_directives;
+
+/*
  * The pform_units is a list of the SystemVerilog compilation unit scopes.
  * The current compilation unit is the last element in the list. All items
  * declared or defined at the top level (outside any design element) are
@@ -2653,6 +2660,35 @@ void pform_make_modgates(const struct vlltype&loc,
       }
 
       delete gates;
+}
+
+/*
+ * Store a bind directive for later elaboration. The bind directive is
+ * processed during elaboration to create instances of the bound module
+ * inside all instances of the target module.
+ */
+void pform_bind_directive(const struct vlltype&loc,
+			  const char*target_name,
+			  const char*bound_type,
+			  const char*instance_name,
+			  list<named_pexpr_t>*port_conns,
+			  list<PExpr*>*port_exprs)
+{
+      bind_directive_t*bd = new bind_directive_t;
+      FILE_NAME(bd, loc);
+      bd->target_name = lex_strings.make(target_name);
+      bd->bound_type = lex_strings.make(bound_type);
+      bd->instance_name = lex_strings.make(instance_name);
+      bd->port_conns = port_conns;
+      bd->port_exprs = port_exprs;
+
+      pform_bind_directives.push_back(bd);
+
+      if (debug_elaborate) {
+	    cerr << loc << ": debug: Stored bind directive: bind "
+		 << target_name << " " << bound_type << " " << instance_name
+		 << endl;
+      }
 }
 
 static PGAssign* pform_make_pgassign(PExpr*lval, PExpr*rval,

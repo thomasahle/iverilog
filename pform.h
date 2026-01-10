@@ -536,6 +536,16 @@ extern void pform_make_modgates(const struct vlltype&loc,
 				std::vector<lgate>*gates,
 				std::list<named_pexpr_t>*attr);
 
+/* Store a bind directive for later elaboration.
+ * The bind directive creates instances of bound_type inside all instances
+ * of target_name. Port connections can be by name or by position. */
+extern void pform_bind_directive(const struct vlltype&loc,
+				 const char*target_name,
+				 const char*bound_type,
+				 const char*instance_name,
+				 std::list<named_pexpr_t>*port_conns,
+				 std::list<PExpr*>*port_exprs);
+
 /* Make a continuous assignment node, with optional bit- or part- select. */
 extern void pform_make_pgassign_list(const struct vlltype&loc,
 				     std::list<PExpr*>*alist,
