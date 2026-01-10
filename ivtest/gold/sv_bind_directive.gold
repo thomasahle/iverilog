@@ -1,2 +1,2 @@
 PASSED
-./ivltests/sv_bind_directive.sv:66: $finish called at 50 (1s)
+./ivltests/sv_bind_directive.v:66: $finish called at 50 (1s)
