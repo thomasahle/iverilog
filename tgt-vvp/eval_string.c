@@ -252,8 +252,10 @@ void draw_eval_string(ivl_expr_t expr)
 		  string_ex_pop(expr);
 	    else if (strcmp(ivl_expr_name(expr), "$ivl_queue_method$pop_front")==0)
 		  string_ex_pop(expr);
-	    else
+	    else if (ivl_expr_value(expr) == IVL_VT_STRING)
 		  draw_sfunc_string(expr);
+	    else
+		  fallback_eval(expr);
 	    break;
 
 	  case IVL_EX_UFUNC:
