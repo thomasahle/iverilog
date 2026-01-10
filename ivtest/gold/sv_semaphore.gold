@@ -1,12 +1,14 @@
-WARNING: Semaphore operations are stub implementations (non-blocking).
-Created semaphore with default count
-try_get on empty: 1
+WARNING: Semaphore blocking operations (get) are non-blocking stubs.
+Created semaphore with default count (0)
+try_get on empty: 0 (expected 0)
 Put 2 keys
-Got 1 key
-try_get returned: 1
+try_get returned: 1 (expected 1)
+try_get(2) with 1 key: 0 (expected 0)
+Put 2 more keys (now 3 total)
+try_get(2) with 3 keys: 1 (expected 1)
 Created semaphore with initial count 5
-Got 3 keys at once
-Put 3 keys back
-try_get(2) returned: 1
+Got 3 keys at once (2 remaining)
+try_get(3) with 2 keys: 0 (expected 0)
+try_get(2) with 2 keys: 1 (expected 1)
 PASSED
-./ivltests/sv_semaphore.v:50: $finish called at 0 (1s)
+./ivltests/sv_semaphore.v:81: $finish called at 0 (1s)

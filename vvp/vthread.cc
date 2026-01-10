@@ -9027,8 +9027,8 @@ bool of_CONSTRAINT_MODE_SET(vthread_t thr, vvp_code_t cp)
  * Full blocking support would require VVP scheduler changes.
  */
 
-// Semaphore object class
-class vvp_semaphore {
+// Semaphore object class - derives from vvp_object for garbage collection
+class vvp_semaphore : public vvp_object {
     public:
       explicit vvp_semaphore(int initial_count = 0) : count_(initial_count) {}
 
@@ -9048,14 +9048,19 @@ class vvp_semaphore {
       // Full implementation would need VVP scheduler integration
       bool get(int n) {
 	    // TODO: This should block until count >= n
-	    // For now, just try to get and warn if it would block
+	    // For now, just decrement (non-blocking behavior)
 	    if (count_ >= n) {
 		  count_ -= n;
 		  return true;
 	    }
-	    // Would block - just return false for now
-	    return false;
+	    // Would block - just decrement anyway (stub behavior)
+	    count_ -= n;
+	    return true;
       }
+
+      // Required by vvp_object base class
+      void shallow_copy(const vvp_object*) override { }
+      vvp_object* duplicate(void) const override { return new vvp_semaphore(count_); }
 
     private:
       int count_;
@@ -9070,17 +9075,16 @@ class vvp_semaphore {
 bool of_SEMAPHORE_NEW(vthread_t thr, vvp_code_t cp)
 {
       int count = thr->words[cp->bit_idx[0]].w_int;
-      (void)count;  // Unused in stub implementation
 
-      // Push a null object as placeholder
-      // TODO: Need a proper vvp_semaphore class to wrap semaphore state
-      vvp_object_t obj;  // Creates null object
+      // Create a real semaphore object with the initial count
+      vvp_semaphore* sem = new vvp_semaphore(count);
+      vvp_object_t obj(sem);
       thr->push_object(obj);
 
-      // Print a warning that semaphores are stub implementations
+      // Print a warning that blocking is not implemented
       static bool warned = false;
       if (!warned) {
-	    fprintf(stderr, "WARNING: Semaphore operations are stub implementations (non-blocking).\n");
+	    fprintf(stderr, "WARNING: Semaphore blocking operations (get) are non-blocking stubs.\n");
 	    warned = true;
       }
 
@@ -9096,14 +9100,14 @@ bool of_SEMAPHORE_NEW(vthread_t thr, vvp_code_t cp)
 bool of_SEMAPHORE_GET(vthread_t thr, vvp_code_t cp)
 {
       int n = thr->words[cp->bit_idx[0]].w_int;
-      (void)n;  // Unused in stub implementation
 
       // Peek the semaphore from stack (code generator emits %pop/obj)
       vvp_object_t &obj = thr->peek_object();
-      (void)obj;
-
-      // Stub: don't actually block, just continue
-      // TODO: Implement actual blocking semaphore get logic
+      vvp_semaphore* sem = obj.peek<vvp_semaphore>();
+      if (sem) {
+	    // Decrement count (non-blocking - doesn't actually wait)
+	    sem->get(n);
+      }
 
       return true;
 }
@@ -9116,14 +9120,14 @@ bool of_SEMAPHORE_GET(vthread_t thr, vvp_code_t cp)
 bool of_SEMAPHORE_PUT(vthread_t thr, vvp_code_t cp)
 {
       int n = thr->words[cp->bit_idx[0]].w_int;
-      (void)n;  // Unused in stub implementation
 
       // Peek the semaphore from stack (code generator emits %pop/obj)
       vvp_object_t &obj = thr->peek_object();
-      (void)obj;
-
-      // Stub: just continue
-      // TODO: Implement actual semaphore put logic
+      vvp_semaphore* sem = obj.peek<vvp_semaphore>();
+      if (sem) {
+	    // Increment count
+	    sem->put(n);
+      }
 
       return true;
 }
@@ -9137,16 +9141,17 @@ bool of_SEMAPHORE_PUT(vthread_t thr, vvp_code_t cp)
 bool of_SEMAPHORE_TRY_GET(vthread_t thr, vvp_code_t cp)
 {
       int n = thr->words[cp->bit_idx[0]].w_int;
-      (void)n;  // Unused in stub implementation
 
       // Peek the semaphore from stack (code generator emits %pop/obj)
       vvp_object_t &obj = thr->peek_object();
-      (void)obj;
+      vvp_semaphore* sem = obj.peek<vvp_semaphore>();
 
-      // Stub: always succeed and push 1 to vec4 stack
-      // TODO: Implement actual semaphore try_get logic
       vvp_vector4_t res(32, BIT4_0);
-      res.set_bit(0, BIT4_1);  // Return 1 (success)
+      if (sem && sem->try_get(n)) {
+	    // Successfully got the keys
+	    res.set_bit(0, BIT4_1);  // Return 1 (success)
+      }
+      // Otherwise return 0 (failed - not enough keys)
       thr->push_vec4(res);
 
       return true;
