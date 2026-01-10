@@ -115,6 +115,15 @@ struct stored_property_t {
 };
 static std::map<perm_string, stored_property_t> named_properties;
 
+/* Named sequence declarations - stored by name for use in properties.
+   Sequences are like properties but without disable iff. */
+struct stored_sequence_t {
+      PEventStatement* clocking_event;
+      PExpr* expr;
+      std::vector<perm_string> port_names;  // Formal parameter names
+};
+static std::map<perm_string, stored_sequence_t> named_sequences;
+
 static void store_named_property(const char* name, PEventStatement* clk, PExpr* e,
                                  std::vector<pform_tf_port_t>* ports = 0)
 {
@@ -148,11 +157,146 @@ static stored_property_t* lookup_named_property(perm_string name)
       return 0;
 }
 
+static void store_named_sequence(const char* name, PEventStatement* clk, PExpr* e,
+                                 std::vector<pform_tf_port_t>* ports = 0)
+{
+      stored_sequence_t seq;
+      seq.clocking_event = clk;
+      seq.expr = e;
+      /* Extract port names for parameter substitution. */
+      if (ports) {
+            for (auto& p : *ports) {
+                  if (p.name) {
+                        seq.port_names.push_back(p.name);
+                  } else if (p.port) {
+                        seq.port_names.push_back(p.port->basename());
+                  }
+            }
+      }
+      perm_string key = lex_strings.make(name);
+      named_sequences[key] = seq;
+}
+
+static stored_sequence_t* lookup_named_sequence(perm_string name)
+{
+      std::map<perm_string, stored_sequence_t>::iterator it = named_sequences.find(name);
+      if (it != named_sequences.end()) {
+            return &(it->second);
+      }
+      return 0;
+}
+
 /* Map for parameter substitution during property instantiation */
 static std::map<perm_string, PExpr*> property_param_subst;
 
-/* Forward declaration for recursive substitution */
+/* Forward declarations */
+static PExpr* resolve_sequence_references(PExpr* expr);
 static PExpr* substitute_property_params(PExpr* expr);
+
+/* Resolve sequence references within an expression tree.
+   Returns a new expression with sequence names replaced by their expressions.
+   This allows properties to reference named sequences. */
+static PExpr* resolve_sequence_references(PExpr* expr)
+{
+      if (expr == 0)
+            return 0;
+
+      /* Check if this is a simple identifier - might be a sequence name */
+      PEIdent* ident = dynamic_cast<PEIdent*>(expr);
+      if (ident) {
+            const pform_scoped_name_t& path = ident->path();
+            if (path.size() == 1 && path.package == 0) {
+                  perm_string name = peek_head_name(path);
+                  if (name != 0) {
+                        /* Check if this is a non-parameterized sequence */
+                        stored_sequence_t* seq = lookup_named_sequence(name);
+                        if (seq && seq->port_names.empty()) {
+                              /* Replace with sequence expression */
+                              return seq->expr;
+                        }
+                  }
+            }
+            return expr;  /* Not a sequence - return as-is */
+      }
+
+      /* Handle logical binary operators (PEBLogic: ||, &&, ->, <->) */
+      PEBLogic* logic = dynamic_cast<PEBLogic*>(expr);
+      if (logic) {
+            PExpr* new_left = resolve_sequence_references(logic->get_left());
+            PExpr* new_right = resolve_sequence_references(logic->get_right());
+            if (new_left != logic->get_left() || new_right != logic->get_right()) {
+                  PEBLogic* new_logic = new PEBLogic(logic->get_op(), new_left, new_right);
+                  new_logic->set_line(*logic);
+                  return new_logic;
+            }
+            return expr;
+      }
+
+      /* Handle unary operators (e.g., ! for negation) */
+      PEUnary* unary = dynamic_cast<PEUnary*>(expr);
+      if (unary) {
+            PExpr* new_operand = resolve_sequence_references(unary->get_expr());
+            if (new_operand != unary->get_expr()) {
+                  PEUnary* new_unary = new PEUnary(unary->get_op(), new_operand);
+                  new_unary->set_line(*unary);
+                  return new_unary;
+            }
+            return expr;
+      }
+
+      /* Note: PETernary (?:) and PEBinary (arithmetic) don't have public accessors,
+         but these operators are rarely used with sequence references, so skip them */
+
+      /* Handle function calls - might be a parameterized sequence */
+      PECallFunction* call = dynamic_cast<PECallFunction*>(expr);
+      if (call) {
+            const pform_scoped_name_t& call_path = call->path();
+            if (call_path.size() == 1 && call_path.package == 0) {
+                  perm_string name = peek_head_name(call_path);
+                  if (name != 0) {
+                        stored_sequence_t* seq = lookup_named_sequence(name);
+                        if (seq && !seq->port_names.empty()) {
+                              /* Parameterized sequence - substitute arguments */
+                              const std::vector<named_pexpr_t>& args = call->parms();
+                              if (args.size() == seq->port_names.size()) {
+                                    /* Build substitution map */
+                                    std::map<perm_string, PExpr*> saved_subst = property_param_subst;
+                                    property_param_subst.clear();
+                                    for (size_t i = 0; i < args.size(); i++) {
+                                          property_param_subst[seq->port_names[i]] = args[i].parm;
+                                    }
+                                    PExpr* substituted = substitute_property_params(seq->expr);
+                                    property_param_subst = saved_subst;
+                                    return substituted;
+                              }
+                        }
+                  }
+            }
+            /* Not a sequence - recursively resolve arguments */
+            const std::vector<named_pexpr_t>& old_args = call->parms();
+            std::vector<named_pexpr_t> new_args;
+            bool changed = false;
+            for (auto& arg : old_args) {
+                  PExpr* new_parm = resolve_sequence_references(arg.parm);
+                  named_pexpr_t new_arg;
+                  new_arg.name = arg.name;
+                  new_arg.parm = new_parm;
+                  new_args.push_back(new_arg);
+                  if (new_parm != arg.parm)
+                        changed = true;
+            }
+            if (changed) {
+                  perm_string fname = peek_head_name(call->path());
+                  PECallFunction* new_call = new PECallFunction(fname, new_args);
+                  new_call->set_line(*call);
+                  return new_call;
+            }
+            return expr;
+      }
+
+      /* For other expression types, return as-is */
+      return expr;
+}
 
 /* Substitute parameters in an expression tree.
    Returns a new expression with formal parameters replaced by actual arguments.
@@ -262,12 +406,12 @@ static PExpr* substitute_property_params(PExpr* expr)
       return expr;
 }
 
-/* Check if an expression is a simple identifier that refers to a named property.
+/* Check if an expression is a simple identifier that refers to a named property or sequence.
    If so, resolve it and update the property_spec. Returns true if resolved.
-   Also handles parameterized property calls like foo(a, b). */
+   Also handles parameterized property/sequence calls like foo(a, b). */
 static bool resolve_named_property(PExpr*& expr, PEventStatement*& clk)
 {
-      /* First try simple identifier (non-parameterized property) */
+      /* First try simple identifier (non-parameterized property or sequence) */
       PEIdent* ident = dynamic_cast<PEIdent*>(expr);
       if (ident) {
             /* Only match simple identifiers (single component, no indices) */
@@ -275,22 +419,42 @@ static bool resolve_named_property(PExpr*& expr, PEventStatement*& clk)
             if (path.size() == 1 && path.package == 0) {
                   perm_string name = peek_head_name(path);
                   if (name != 0) {
+                        /* Try property first */
                         stored_property_t* prop = lookup_named_property(name);
                         if (prop && prop->port_names.empty()) {
                               /* Found a non-parameterized property */
-                              expr = prop->expr;
+                              /* Resolve any sequence references within the property expression */
+                              expr = resolve_sequence_references(prop->expr);
                               if (prop->clocking_event && clk == 0)
                                     clk = prop->clocking_event;
+                              return true;
+                        }
+                        /* Try sequence as fallback */
+                        stored_sequence_t* seq = lookup_named_sequence(name);
+                        if (seq && seq->port_names.empty()) {
+                              /* Found a non-parameterized sequence */
+                              expr = seq->expr;
+                              if (seq->clocking_event && clk == 0)
+                                    clk = seq->clocking_event;
                               return true;
                         }
                   }
             }
       }
 
-      /* Try function call (parameterized property) */
+      /* Try function call (parameterized property or sequence) */
       PECallFunction* call = dynamic_cast<PECallFunction*>(expr);
-      if (call == 0)
+      if (call == 0) {
+            /* Not an identifier or function call - might be an inline property
+               expression like "valid |-> seq_name(arg)". Try to resolve any
+               sequence references within the expression tree. */
+            PExpr* resolved = resolve_sequence_references(expr);
+            if (resolved != expr) {
+                  expr = resolved;
+                  return true;
+            }
             return false;
+      }
 
       /* Get the function name */
       const pform_scoped_name_t& call_path = call->path();
@@ -301,35 +465,68 @@ static bool resolve_named_property(PExpr*& expr, PEventStatement*& clk)
       if (name == 0)
             return false;
 
+      /* Try property first */
       stored_property_t* prop = lookup_named_property(name);
-      if (prop == 0)
-            return false;
+      if (prop) {
+            /* Found a parameterized property */
+            const std::vector<named_pexpr_t>& args = call->parms();
+            if (args.size() != prop->port_names.size()) {
+                  /* Argument count mismatch - can't substitute */
+                  return false;
+            }
 
-      /* Found a parameterized property */
-      const std::vector<named_pexpr_t>& args = call->parms();
-      if (args.size() != prop->port_names.size()) {
-            /* Argument count mismatch - can't substitute */
-            return false;
+            /* Build substitution map: formal_name -> actual_expr */
+            property_param_subst.clear();
+            for (size_t i = 0; i < args.size(); i++) {
+                  property_param_subst[prop->port_names[i]] = args[i].parm;
+            }
+
+            /* Substitute formal parameters with actual arguments in property expression */
+            PExpr* substituted = substitute_property_params(prop->expr);
+
+            /* Resolve any sequence references within the property expression */
+            substituted = resolve_sequence_references(substituted);
+
+            /* Use the substituted expression and property clocking */
+            expr = substituted;
+            if (prop->clocking_event && clk == 0)
+                  clk = prop->clocking_event;
+
+            /* Clear the substitution map */
+            property_param_subst.clear();
+            return true;
       }
 
-      /* Build substitution map: formal_name -> actual_expr */
-      property_param_subst.clear();
-      for (size_t i = 0; i < args.size(); i++) {
-            property_param_subst[prop->port_names[i]] = args[i].parm;
+      /* Try sequence as fallback */
+      stored_sequence_t* seq = lookup_named_sequence(name);
+      if (seq) {
+            /* Found a parameterized sequence */
+            const std::vector<named_pexpr_t>& args = call->parms();
+            if (args.size() != seq->port_names.size()) {
+                  /* Argument count mismatch - can't substitute */
+                  return false;
+            }
+
+            /* Build substitution map: formal_name -> actual_expr */
+            property_param_subst.clear();
+            for (size_t i = 0; i < args.size(); i++) {
+                  property_param_subst[seq->port_names[i]] = args[i].parm;
+            }
+
+            /* Substitute formal parameters with actual arguments in sequence expression */
+            PExpr* substituted = substitute_property_params(seq->expr);
+
+            /* Use the substituted expression and sequence clocking */
+            expr = substituted;
+            if (seq->clocking_event && clk == 0)
+                  clk = seq->clocking_event;
+
+            /* Clear the substitution map */
+            property_param_subst.clear();
+            return true;
       }
 
-      /* Substitute formal parameters with actual arguments in property expression */
-      PExpr* substituted = substitute_property_params(prop->expr);
-
-      /* Use the substituted expression and property clocking */
-      expr = substituted;
-      if (prop->clocking_event && clk == 0)
-            clk = prop->clocking_event;
-
-      /* Clear the substitution map */
-      property_param_subst.clear();
-
-      return true;
+      return false;
 }
 
 /* Check if an expression looks like a potential property reference that wasn't found.
@@ -3968,7 +4165,9 @@ property_declaration
       { /* Store property declaration for later use in assertions */
         if (gn_supported_assertions_flag) {
               if ($4.expr != 0) {
-                    store_named_property($2, $4.clocking_event, $4.expr);
+                    /* Resolve any sequence references in the property body */
+                    PExpr* resolved = resolve_sequence_references($4.expr);
+                    store_named_property($2, $4.clocking_event, resolved);
               } else {
                     /* Property contains unsupported sequence constructs */
                     yywarn(@1, "sorry: property contains unsupported sequence constructs"
@@ -3992,8 +4191,10 @@ property_declaration
       { /* Property declaration with ports - store with parameter names */
         if (gn_supported_assertions_flag) {
               if ($9.expr != 0) {
+                    /* Resolve any sequence references in the property body */
+                    PExpr* resolved = resolve_sequence_references($9.expr);
                     /* Store property with port names for parameter substitution */
-                    store_named_property($2, $9.clocking_event, $9.expr, $5);
+                    store_named_property($2, $9.clocking_event, resolved, $5);
               } else {
                     /* Property contains unsupported sequence constructs */
                     yywarn(@1, "sorry: property contains unsupported sequence constructs"
@@ -4024,8 +4225,15 @@ semicolon_opt
      clocking events, so we use property_spec which handles that. */
 sequence_declaration
   : K_sequence IDENTIFIER ';' property_spec semicolon_opt K_endsequence label_opt
-      { /* Sequence declaration parsed but not elaborated */
-        if (gn_unsupported_assertions_flag) {
+      { /* Store sequence declaration for later use in properties */
+        if (gn_supported_assertions_flag) {
+              if ($4.expr != 0) {
+                    store_named_sequence($2, $4.clocking_event, $4.expr);
+              } else {
+                    yywarn(@1, "sorry: sequence contains unsupported constructs"
+                           " and will be ignored.");
+              }
+        } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: sequence declarations are parsed but not yet elaborated."
                       " Try -gno-assertions or -gsupported-assertions"
                       " to turn this message off.");
@@ -4040,8 +4248,15 @@ sequence_declaration
     tf_port_list_opt ')'
       { pform_end_sva_declaration(); }
     ';' property_spec semicolon_opt K_endsequence label_opt
-      { /* Sequence declaration with ports */
-        if (gn_unsupported_assertions_flag) {
+      { /* Store sequence declaration with ports */
+        if (gn_supported_assertions_flag) {
+              if ($9.expr != 0) {
+                    store_named_sequence($2, $9.clocking_event, $9.expr, $5);
+              } else {
+                    yywarn(@1, "sorry: sequence contains unsupported constructs"
+                           " and will be ignored.");
+              }
+        } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: sequence declarations are parsed but not yet elaborated."
                       " Try -gno-assertions or -gsupported-assertions"
                       " to turn this message off.");

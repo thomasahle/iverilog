@@ -1311,6 +1311,7 @@ sv_sva_rep_star		normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_rep_s
 sv_sva_first_match	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_first_match.gold
 sv_sva_paren_antecedent	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_paren_antecedent.gold
 sv_sva_delay_in_property	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_delay_in_property.gold
+sv_named_sequence	normal,-g2012,-gsupported-assertions	ivltests gold=sv_named_sequence.gold
 sv_cast_enum_to_bit	normal,-g2012	ivltests
 sv_enum_name_print	normal,-g2012	ivltests
 sv_queue_prop_index_methods	normal,-g2012	ivltests
