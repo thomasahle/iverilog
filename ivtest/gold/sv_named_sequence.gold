@@ -1,1 +1,2 @@
 PASSED
+./ivltests/sv_named_sequence.v:45: $finish called at 55 (1s)
