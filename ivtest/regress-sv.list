@@ -1336,3 +1336,4 @@ sv_randomize_stmt_constraint	normal,-g2012	ivltests gold=sv_randomize_stmt_const
 sv_nb_event_trigger	normal,-g2012	ivltests
 sv_assert_control	normal,-g2012	ivltests
 sv_vif_modport_class	normal,-g2012	ivltests
+sv_vif_static_modport_class	normal,-g2012	ivltests

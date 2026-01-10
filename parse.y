@@ -1863,6 +1863,23 @@ class_item /* IEEE1800-2005: A.1.8 */
         delete[]$3;
         delete[]$4;
       }
+    /* Static virtual interface with modport: static virtual interface_name.modport_name var_name; */
+  | K_static K_virtual TYPE_IDENTIFIER '.' IDENTIFIER IDENTIFIER ';'
+      { /* Static virtual interface property with modport - registered type */
+        pform_class_property_virtual_interface(@2, property_qualifier_t::make_static(),
+            lex_strings.make($3.text), lex_strings.make($5), lex_strings.make($6), 0);
+        delete[]$3.text;
+        delete[]$5;
+        delete[]$6;
+      }
+  | K_static K_virtual IDENTIFIER '.' IDENTIFIER IDENTIFIER ';'
+      { /* Static virtual interface property with modport - unregistered type */
+        pform_class_property_virtual_interface(@2, property_qualifier_t::make_static(),
+            lex_strings.make($3), lex_strings.make($5), lex_strings.make($6), 0);
+        delete[]$3;
+        delete[]$5;
+        delete[]$6;
+      }
 
     /* IEEEE1800-2017: A.1.9 Class items: class_item ::= { property_qualifier} data_declaration */
 
