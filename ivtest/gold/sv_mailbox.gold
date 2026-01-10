@@ -1,0 +1,12 @@
+Created mailbox with default (unbounded)
+num() on empty: 0
+try_get on empty: 1
+Put message 42
+try_put returned: 1
+Got message
+try_get returned: 1
+Created mailbox with bound 2
+Peeked message
+try_peek returned: 1
+PASSED
+./ivltests/sv_mailbox.v:60: $finish called at 0 (1s)
