@@ -1662,13 +1662,15 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			/* For op_code 7 (property-based size ==), pack source_prop_idx into const_val:
 			   - lower 16 bits = signed offset (negative offset indicates division)
 			   - upper 16 bits = source property index */
+			/* Note: Print as unsigned because VVP lexer doesn't accept negative numbers.
+			   VVP runtime casts back to signed when needed. */
 			if ((op_code & 0xF) == 7) {
 			      int64_t packed_val = ((int64_t)src_prop_idx << 16) | (const_val & 0xFFFF);
-			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %lld;\n",
-				      prop_idx, encoded_op, (long long)packed_val);
+			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %llu;\n",
+				      prop_idx, encoded_op, (unsigned long long)(uint64_t)packed_val);
 			} else {
-			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %lld;\n",
-				      prop_idx, encoded_op, (long long)const_val);
+			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %llu;\n",
+				      prop_idx, encoded_op, (unsigned long long)(uint64_t)const_val);
 			}
 		  }
 	    }
