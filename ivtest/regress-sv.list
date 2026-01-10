@@ -1136,6 +1136,17 @@ sv_class_prop_array2	normal,-g2012		ivltests
 sv_uvm_config_db1	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_factory1	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_sequence	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_build_phase_inherit	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_clone	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_component_pattern	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_config_db_enum	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_config_pattern	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_driver_pattern	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_print_field	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_subscriber	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_tlm_analysis_fifo	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_tlm_fifo_methods	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_tlm_simple	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_include_semicolon1	normal,-g2012,-Iivltests		ivltests
 sv_interface_port1	normal,-g2012		ivltests gold=sv_interface_port1.gold
 sv_interface_port_member	normal,-g2012		ivltests gold=sv_interface_port_member.gold
