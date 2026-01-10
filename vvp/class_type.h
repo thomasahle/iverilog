@@ -154,6 +154,11 @@ class class_type : public __vpiHandle {
 	// Returns value within the computed valid range from constraint bounds
       int64_t generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid) const;
 
+      // Unique constraint support - ensure array elements have distinct values
+      void add_unique_constraint(size_t prop_idx);
+      size_t unique_constraint_count() const { return unique_props_.size(); }
+      size_t get_unique_constraint_prop(size_t idx) const;
+
     private:
       std::string class_name_;
       class_type*parent_;  // Parent class for inheritance hierarchy (nullptr if no parent)
@@ -171,6 +176,9 @@ class class_type : public __vpiHandle {
 
       // Constraint bounds for randomize()
       std::vector<simple_bound_t> constraint_bounds_;
+
+      // Unique constraint property indices
+      std::vector<size_t> unique_props_;
 };
 
 #endif /* IVL_class_type_H */

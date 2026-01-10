@@ -3754,6 +3754,22 @@ extern "C" unsigned ivl_type_simple_bound_cond_prop2(ivl_type_t net, unsigned id
       return class_type->get_simple_bound(idx).cond_prop2_idx;
 }
 
+extern "C" unsigned ivl_type_unique_constraints(ivl_type_t net)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      return class_type->get_unique_constraints();
+}
+
+extern "C" unsigned ivl_type_unique_constraint_prop(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      return class_type->get_unique_constraint_prop(idx);
+}
+
 extern "C" ivl_type_t ivl_type_super(ivl_type_t net)
 {
       const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);

@@ -857,6 +857,26 @@ class PEForeachConstraint : public PExpr {
       std::list<PExpr*> body_;
 };
 
+/*
+ * Unique constraint expression: unique { array1, array2, ... }
+ *
+ * This constraint ensures that all elements in the specified arrays
+ * have distinct values after randomization.
+ */
+class PEUniqueConstraint : public PExpr {
+
+    public:
+      explicit PEUniqueConstraint(std::list<PExpr*>*arrays);
+      ~PEUniqueConstraint() override;
+
+      virtual void dump(std::ostream&out) const override;
+
+      const std::list<PExpr*>& get_arrays() const { return arrays_; }
+
+    private:
+      std::list<PExpr*> arrays_;
+};
+
 class PEBinary : public PExpr {
 
     public:

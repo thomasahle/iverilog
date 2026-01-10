@@ -89,7 +89,7 @@ static struct __vpiModPath*modpath_dst = 0;
 %token K_CONCAT K_CONCAT8 K_DEBUG K_DELAY K_DFF_N K_DFF_N_ACLR
 %token K_DFF_N_ASET K_DFF_P K_DFF_P_ACLR K_DFF_P_ASET
 %token K_ENUM2 K_ENUM2_S K_ENUM4 K_ENUM4_S K_EVENT K_EVENT_OR
-%token K_CONSTRAINT_BOUND K_EXPORT K_FACTORY K_EXTEND_S K_FUNCTOR K_IMPORT K_ISLAND K_LATCH K_MODPATH
+%token K_CONSTRAINT_BOUND K_CONSTRAINT_UNIQUE K_EXPORT K_FACTORY K_EXTEND_S K_FUNCTOR K_IMPORT K_ISLAND K_LATCH K_MODPATH
 %token K_NET K_NET_S K_NET_R K_NET_2S K_NET_2U
 %token K_NET8 K_NET8_2S K_NET8_2U K_NET8_S
 %token K_PARAM_STR K_PARAM_L K_PARAM_REAL K_PART K_PART_PV
@@ -936,6 +936,10 @@ statement
       { compile_constraint_bound($2, $4, $6, $8[0], $10, $12, $14, $16, $18, 1, 1); }
   | K_CONSTRAINT_BOUND T_SYMBOL ',' T_STRING ',' T_NUMBER ',' T_STRING ',' T_NUMBER ',' T_NUMBER ',' '-' T_NUMBER ',' T_NUMBER ',' T_NUMBER ';'
       { compile_constraint_bound($2, $4, $6, $8[0], $10, $12, -$15, $17, $19, 1, 1); }
+
+  /* Unique constraint: .constraint_unique class_label, prop_idx ; */
+  | K_CONSTRAINT_UNIQUE T_SYMBOL ',' T_NUMBER ';'
+      { compile_constraint_unique($2, $4); }
 
   | enum_type
       { ; }

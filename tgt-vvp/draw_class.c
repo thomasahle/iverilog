@@ -246,6 +246,16 @@ void draw_class_in_scope(ivl_type_t classtype)
 	    }
       }
 
+      /* Emit unique constraints - ensure array elements have distinct values.
+       * Format: .constraint_unique <classptr>, <prop_idx> ;
+       */
+      unsigned unique_count = ivl_type_unique_constraints(classtype);
+      for (unsigned uidx = 0; uidx < unique_count; uidx++) {
+	    unsigned prop_idx = ivl_type_unique_constraint_prop(classtype, uidx);
+	    fprintf(vvp_out, ".constraint_unique C%p, %u ;\n",
+		    classtype, prop_idx);
+      }
+
       /* Register class with factory for UVM-style creation by name.
        * This allows run_test("classname") and type_id::create() to work. */
       fprintf(vvp_out, ".factory \"%s\", C%p ;\n", ivl_type_name(classtype), classtype);

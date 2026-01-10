@@ -9722,6 +9722,29 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    return any_extracted;
       }
 
+      // Check for unique constraint
+      const PEUniqueConstraint* unique_cons = dynamic_cast<const PEUniqueConstraint*>(expr);
+      if (unique_cons != nullptr) {
+	    // Process each array in the unique constraint
+	    bool any_added = false;
+	    for (PExpr* arr_expr : unique_cons->get_arrays()) {
+		  const PEIdent* arr_ident = dynamic_cast<const PEIdent*>(arr_expr);
+		  if (arr_ident != nullptr) {
+			perm_string arr_name = arr_ident->path().back().name;
+			int prop_idx = cls->property_idx_from_name(arr_name);
+			if (prop_idx >= 0) {
+			      cls->add_unique_constraint(constraint_name, prop_idx);
+			      any_added = true;
+			      if (debug_elaborate) {
+				    cerr << "extract_simple_bound: added unique constraint for property "
+				         << arr_name << " (idx " << prop_idx << ")" << endl;
+			      }
+			}
+		  }
+	    }
+	    return any_added;
+      }
+
       // Check for logical AND expression (from 'inside' constraints)
       // e.g., (x >= 0) && (x <= 3) from "inside {[0:3]}"
       const PEBLogic* logic = dynamic_cast<const PEBLogic*>(expr);

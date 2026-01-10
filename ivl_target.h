@@ -2516,6 +2516,13 @@ extern int         ivl_type_simple_bound_cond_has_const(ivl_type_t net, unsigned
 extern int64_t     ivl_type_simple_bound_cond_const(ivl_type_t net, unsigned idx);
 extern unsigned    ivl_type_simple_bound_cond_prop2(ivl_type_t net, unsigned idx);
 
+/* Unique constraint API - ensures array elements have distinct values.
+ * ivl_type_unique_constraints returns the number of unique constraints.
+ * ivl_type_unique_constraint_prop returns the property index for idx-th constraint.
+ */
+extern unsigned    ivl_type_unique_constraints(ivl_type_t net);
+extern unsigned    ivl_type_unique_constraint_prop(ivl_type_t net, unsigned idx);
+
 extern ivl_type_t  ivl_type_super(ivl_type_t net);
 
 /* Struct member access functions.

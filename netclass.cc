@@ -342,3 +342,15 @@ perm_string netclass_t::get_simple_bound_constraint_name(size_t idx) const
       assert(idx < simple_bounds_.size());
       return simple_bounds_[idx].constraint_name;
 }
+
+void netclass_t::add_unique_constraint(perm_string constraint_name, size_t prop_idx)
+{
+      (void)constraint_name;  // For future use with constraint_mode
+      unique_props_.push_back(prop_idx);
+}
+
+size_t netclass_t::get_unique_constraint_prop(size_t idx) const
+{
+      assert(idx < unique_props_.size());
+      return unique_props_[idx];
+}

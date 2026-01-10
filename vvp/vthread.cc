@@ -8504,6 +8504,18 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  // Get array size for this property (1 for scalars)
 		  uint64_t array_size = defn->property_array_size(i);
 
+		  // Check if this property has a unique constraint
+		  bool has_unique = false;
+		  for (size_t uc = 0; uc < defn->unique_constraint_count(); uc++) {
+			if (defn->get_unique_constraint_prop(uc) == i) {
+			      has_unique = true;
+			      break;
+			}
+		  }
+
+		  // Track used values for unique constraint
+		  std::set<int64_t> unique_used_values;
+
 		  // Randomize all array elements
 		  for (uint64_t arr_idx = 0; arr_idx < array_size; arr_idx++) {
 		  // Try to get the property as vec4 and randomize it
@@ -8542,6 +8554,14 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    }
 			      }
 			}
+
+			// For unique constraints, add values used in previous array elements
+			if (has_unique) {
+			      for (int64_t used : unique_used_values) {
+				    excluded_values.push_back(used);
+			      }
+			}
+
 			// Discrete values with weights: (value, weight)
 			std::vector<std::pair<int64_t, int64_t>> discrete_values;
 			std::vector<class_type::simple_bound_t> ge_bounds;  // >= bounds
@@ -8783,8 +8803,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    for (unsigned b = 0; b < wid; b++) {
 					  new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
 				    }
-				    // For randc, check if value is in excluded_values
-				    if (is_randc && !excluded_values.empty()) {
+				    // For randc or unique, check if value is in excluded_values
+				    if ((is_randc || has_unique) && !excluded_values.empty()) {
 					  // Extract generated value
 					  rval = 0;
 					  for (unsigned b = 0; b < wid && b < 64; b++) {
@@ -8828,6 +8848,22 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    }
 			      }
 			      cobj->randc_mark_used(i, used_val);
+			}
+
+			// For unique constraints, track the value for this array element
+			if (has_unique) {
+			      int64_t used_val;
+			      if (generated) {
+				    used_val = rval;
+			      } else {
+				    // Extract value from new_val for purely random generation
+				    used_val = 0;
+				    for (unsigned b = 0; b < wid && b < 64; b++) {
+					  if (new_val.value(b) == BIT4_1)
+						used_val |= (1LL << b);
+				    }
+			      }
+			      unique_used_values.insert(used_val);
 			}
 		  }
 		  } // end for arr_idx

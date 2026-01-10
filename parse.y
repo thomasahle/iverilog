@@ -2366,6 +2366,12 @@ constraint_expression /* IEEE1800-2005 A.1.9 */
         FILE_NAME(tmp, @1);
         $$ = tmp;
       }
+  | K_unique '{' expression_list_proper '}' ';'
+      { /* Unique constraint - ensures array elements have distinct values */
+        PEUniqueConstraint*tmp = new PEUniqueConstraint($3);
+        FILE_NAME(tmp, @1);
+        $$ = tmp;
+      }
   ;
 
 constraint_trigger

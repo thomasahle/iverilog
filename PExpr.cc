@@ -727,6 +727,34 @@ void PEForeachConstraint::dump(std::ostream&out) const
       out << "}";
 }
 
+PEUniqueConstraint::PEUniqueConstraint(std::list<PExpr*>*arrays)
+{
+      if (arrays) {
+            arrays_ = *arrays;
+            delete arrays;
+      }
+}
+
+PEUniqueConstraint::~PEUniqueConstraint()
+{
+      // Note: arrays_ contents are owned by this class
+      for (auto it = arrays_.begin(); it != arrays_.end(); ++it) {
+            delete *it;
+      }
+}
+
+void PEUniqueConstraint::dump(std::ostream&out) const
+{
+      out << "unique { ";
+      bool first = true;
+      for (auto it = arrays_.begin(); it != arrays_.end(); ++it) {
+            if (!first) out << ", ";
+            (*it)->dump(out);
+            first = false;
+      }
+      out << " }";
+}
+
 PEVoid::PEVoid()
 {
 }

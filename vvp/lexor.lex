@@ -86,6 +86,7 @@ inline uint64_t strtouint64(const char*str, char**endptr, int base)
 
   /* Constraint bound directive at beginning of line */
 ^".constraint_bound" { return K_CONSTRAINT_BOUND; }
+^".constraint_unique" { return K_CONSTRAINT_UNIQUE; }
 
   /* A label is any non-blank text that appears left justified. */
 ^[.$_a-zA-Z\\][.$_a-zA-Z\\0-9<>/]* {

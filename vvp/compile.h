@@ -587,4 +587,8 @@ extern void compile_constraint_bound(char*class_label, char*constraint_name, uns
                                      int has_cond = 0, unsigned cond_prop = 0, char cond_op = '=',
                                      int cond_has_const = 1, int64_t cond_value = 0);
 
+/* Unique constraint - ensures array elements have distinct values.
+ * prop_idx: property index of array that must have unique elements */
+extern void compile_constraint_unique(char*class_label, unsigned prop_idx);
+
 #endif /* IVL_compile_H */

@@ -245,7 +245,14 @@ class netclass_t : public ivl_type_s {
       const simple_bound_t& get_simple_bound(size_t idx) const;
       perm_string get_simple_bound_constraint_name(size_t idx) const;
 
+      // Unique constraint support - ensures array elements have distinct values
+      void add_unique_constraint(perm_string constraint_name, size_t prop_idx);
+      size_t get_unique_constraints() const { return unique_props_.size(); }
+      size_t get_unique_constraint_prop(size_t idx) const;
+
     private:
+      // Property indices that require unique element values
+      std::vector<size_t> unique_props_;
 	// This holds task/function definitions for methods.
       NetScope*class_scope_;
 

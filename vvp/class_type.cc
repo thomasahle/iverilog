@@ -1861,6 +1861,42 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
       free(constraint_name);
 }
 
+void compile_constraint_unique(char*class_label, unsigned prop_idx)
+{
+      // Look up the class definition from the label
+      vpiHandle class_h = vvp_lookup_handle(class_label);
+      if (!class_h) {
+	    fprintf(stderr, "ERROR: .constraint_unique: class label '%s' not found\n",
+		    class_label);
+	    free(class_label);
+	    return;
+      }
+
+      class_type*class_def = dynamic_cast<class_type*>(class_h);
+      if (!class_def) {
+	    fprintf(stderr, "ERROR: .constraint_unique: '%s' is not a class\n",
+		    class_label);
+	    free(class_label);
+	    return;
+      }
+
+      // Add the unique constraint
+      class_def->add_unique_constraint(prop_idx);
+
+      free(class_label);
+}
+
+void class_type::add_unique_constraint(size_t prop_idx)
+{
+      unique_props_.push_back(prop_idx);
+}
+
+size_t class_type::get_unique_constraint_prop(size_t idx) const
+{
+      assert(idx < unique_props_.size());
+      return unique_props_[idx];
+}
+
 #ifdef CHECK_WITH_VALGRIND
 void class_def_delete(class_type *item)
 {
