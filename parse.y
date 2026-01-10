@@ -217,6 +217,21 @@ static PExpr* substitute_property_params(PExpr* expr)
             return expr;
       }
 
+      /* Handle comparison operators (PEBComp: ==, !=, <, >, <=, >=, etc.)
+         Must check before PEBinary since PEBComp inherits from PEBinary */
+      PEBComp* comp = dynamic_cast<PEBComp*>(expr);
+      if (comp) {
+            PExpr* new_left = substitute_property_params(comp->get_left());
+            PExpr* new_right = substitute_property_params(comp->get_right());
+            if (new_left != comp->get_left() || new_right != comp->get_right()) {
+                  /* Create a new PEBComp expression with substituted operands */
+                  PEBComp* new_comp = new PEBComp(comp->get_op(), new_left, new_right);
+                  new_comp->set_line(*comp);  /* Copy file/line info */
+                  return new_comp;
+            }
+            return expr;
+      }
+
       /* Handle other binary operators */
       PEBinary* binary = dynamic_cast<PEBinary*>(expr);
       if (binary) {
