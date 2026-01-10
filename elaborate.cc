@@ -67,6 +67,9 @@ using namespace std;
 // Implemented in elab_scope.cc
 extern void set_scope_timescale(Design*des, NetScope*scope, const PScope*pscope);
 
+// Bind directives stored during parsing (defined in pform.cc)
+extern list<bind_directive_t*> pform_bind_directives;
+
 void PGate::elaborate(Design*, NetScope*) const
 {
       cerr << "internal error: what kind of gate? " <<
@@ -10440,6 +10443,185 @@ static void check_timescales()
 }
 
 /*
+ * Helper function to recursively collect all module scopes with a given
+ * module_name(). Used for bind directive elaboration.
+ */
+static void collect_scopes_by_module_name(NetScope*sc, perm_string target_name,
+					  vector<NetScope*>& result)
+{
+      // Check if this scope matches the target module name
+      if (sc->type() == NetScope::MODULE && sc->module_name() == target_name) {
+	    result.push_back(sc);
+      }
+
+      // Recursively search children using public iterator interface
+      for (auto it = sc->children_begin(); it != sc->children_end(); ++it) {
+	    collect_scopes_by_module_name(it->second, target_name, result);
+      }
+}
+
+/*
+ * Structure to track bound instances for multi-phase elaboration.
+ */
+struct bound_instance_t {
+      PGModule*pgm;          // The PGModule for the bound instance
+      Module*bound_mod;      // The bound module definition
+      NetScope*target_scope; // The target scope containing the bound instance
+};
+
+// Global list of bound instances for later elaboration phases
+static vector<bound_instance_t> bound_instances;
+
+/*
+ * Elaborate bind directives. This creates instances of bound modules
+ * inside all instances of the target module.
+ */
+static void elaborate_bind_directives(Design*des)
+{
+      if (pform_bind_directives.empty())
+	    return;
+
+      if (debug_elaborate) {
+	    cerr << "<toplevel>: elaborate: Processing "
+		 << pform_bind_directives.size() << " bind directives." << endl;
+      }
+
+      for (bind_directive_t*bd : pform_bind_directives) {
+	    // Find the bound module type
+	    map<perm_string,Module*>::const_iterator mod_it
+		  = pform_modules.find(bd->bound_type);
+	    if (mod_it == pform_modules.end()) {
+		  cerr << bd->get_fileline() << ": error: bind directive"
+		       << " references unknown module type: " << bd->bound_type
+		       << endl;
+		  des->errors += 1;
+		  continue;
+	    }
+	    Module*bound_mod = mod_it->second;
+
+	    // Collect all scopes matching the target module name
+	    vector<NetScope*> target_scopes;
+	    list<NetScope*> root_scopes = des->find_root_scopes();
+	    for (NetScope*root : root_scopes) {
+		  collect_scopes_by_module_name(root, bd->target_name, target_scopes);
+	    }
+
+	    if (target_scopes.empty()) {
+		  if (debug_elaborate) {
+			cerr << bd->get_fileline() << ": debug: bind directive"
+			     << " found no instances of target module: "
+			     << bd->target_name << endl;
+		  }
+		  continue;
+	    }
+
+	    if (debug_elaborate) {
+		  cerr << bd->get_fileline() << ": debug: bind "
+		       << bd->target_name << " " << bd->bound_type << " "
+		       << bd->instance_name << " - found "
+		       << target_scopes.size() << " target instance(s)." << endl;
+	    }
+
+	    // Create a PGModule for the bound instance
+	    PGModule*pgm = nullptr;
+	    if (bd->port_conns && !bd->port_conns->empty()) {
+		  // Named port connections - convert list to array
+		  unsigned npins = bd->port_conns->size();
+		  named_pexpr_t*pins = new named_pexpr_t[npins];
+		  unsigned i = 0;
+		  for (auto& conn : *bd->port_conns) {
+			pins[i++] = conn;
+		  }
+		  pgm = new PGModule(bd->bound_type, bd->instance_name, pins, npins);
+	    } else if (bd->port_exprs) {
+		  // Positional port connections
+		  pgm = new PGModule(bd->bound_type, bd->instance_name, bd->port_exprs);
+	    } else {
+		  // No port connections
+		  list<PExpr*>*empty_pins = new list<PExpr*>;
+		  pgm = new PGModule(bd->bound_type, bd->instance_name, empty_pins);
+	    }
+
+	    // Copy file/line info from bind directive
+	    pgm->set_lineno(bd->get_lineno());
+	    pgm->set_file(bd->get_file());
+
+	    // Elaborate the bound instance into each target scope
+	    for (NetScope*target : target_scopes) {
+		  if (debug_elaborate) {
+			cerr << bd->get_fileline() << ": debug: Binding "
+			     << bd->bound_type << " " << bd->instance_name
+			     << " into " << scope_path(target) << endl;
+		  }
+		  pgm->elaborate_scope(des, target);
+
+		  // Track this bound instance for later phases
+		  bound_instance_t bi;
+		  bi.pgm = pgm;
+		  bi.bound_mod = bound_mod;
+		  bi.target_scope = target;
+		  bound_instances.push_back(bi);
+	    }
+      }
+}
+
+/*
+ * Elaborate signals for bound instances.
+ */
+static bool elaborate_sig_bind_directives(Design*des)
+{
+      bool flag = true;
+
+      for (const bound_instance_t& bi : bound_instances) {
+	    // Get the child scope created by elaborate_scope
+	    NetScope::scope_vec_t instance = bi.target_scope->instance_arrays[bi.pgm->get_name()];
+
+	    for (unsigned idx = 0; idx < instance.size(); idx += 1) {
+		  NetScope*my_scope = instance[idx];
+		  if (!my_scope) continue;
+
+		  if (debug_elaborate) {
+			cerr << bi.pgm->get_fileline() << ": debug: elaborate_sig for bound instance "
+			     << scope_path(my_scope) << endl;
+		  }
+
+		  if (!bi.bound_mod->elaborate_sig(des, my_scope))
+			flag = false;
+	    }
+      }
+
+      return flag;
+}
+
+/*
+ * Elaborate netlist for bound instances.
+ */
+static bool elaborate_main_bind_directives(Design*des)
+{
+      bool flag = true;
+
+      for (const bound_instance_t& bi : bound_instances) {
+	    // Get the child scope created by elaborate_scope
+	    NetScope::scope_vec_t instance = bi.target_scope->instance_arrays[bi.pgm->get_name()];
+
+	    for (unsigned idx = 0; idx < instance.size(); idx += 1) {
+		  NetScope*my_scope = instance[idx];
+		  if (!my_scope) continue;
+
+		  if (debug_elaborate) {
+			cerr << bi.pgm->get_fileline() << ": debug: elaborate for bound instance "
+			     << scope_path(my_scope) << endl;
+		  }
+
+		  if (!bi.bound_mod->elaborate(des, my_scope))
+			flag = false;
+	    }
+      }
+
+      return flag;
+}
+
+/*
  * This function is the root of all elaboration. The input is the list
  * of root module names. The function locates the Module definitions
  * for each root, does the whole elaboration sequence, and fills in
@@ -10605,6 +10787,11 @@ Design* elaborate(list<perm_string>roots)
 		 << "elaboration work list done. Start processing residual defparams." << endl;
       }
 
+	// Process bind directives - create bound module instances inside
+	// target module scopes. Must be done after all regular scopes
+	// are elaborated.
+      elaborate_bind_directives(des);
+
 	// Look for residual defparams (that point to a non-existent
 	// scope) and clean them out.
       des->residual_defparams();
@@ -10697,6 +10884,15 @@ Design* elaborate(list<perm_string>roots)
 	    }
       }
 
+	// Elaborate signals for bound instances (from bind directives)
+      if (!elaborate_sig_bind_directives(des)) {
+	    if (debug_elaborate) {
+		  cerr << "<toplevel>: debug: elaborate_sig for bind directives failed" << endl;
+	    }
+	    delete des;
+	    return 0;
+      }
+
 	// Now that the structure and parameters are taken care of,
 	// run through the pform again and generate the full netlist.
 
@@ -10711,6 +10907,9 @@ Design* elaborate(list<perm_string>roots)
 	    NetScope *scope = root_elems[i].scope;
 	    rc &= rmod->elaborate(des, scope);
       }
+
+	// Elaborate netlist for bound instances (from bind directives)
+      rc &= elaborate_main_bind_directives(des);
 
       if (rc == false) {
 	    delete des;

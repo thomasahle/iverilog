@@ -1,6 +1,6 @@
-./ivltests/sv_bind_parse.v:56: sorry: bind directive not yet supported. Bound module instance will be ignored.
-./ivltests/sv_bind_parse.v:59: sorry: bind directive not yet supported. Bound module instance will be ignored.
+data_checker instantiated
+reset_checker instantiated
 data_checker instantiated
 reset_checker instantiated
 PASSED - bind directive parsed successfully
-./ivltests/sv_bind_parse.v:73: $finish called at 40 (1s)
+./ivltests/sv_bind_parse.sv:73: $finish called at 40 (1s)

@@ -1067,6 +1067,14 @@ class NetScope : public Definitions, public Attrib {
 	// Used for finding interface instances by interface type name.
       const NetScope* child_by_module_name(perm_string type_name) const;
 
+	// Iterators for accessing child scopes
+      typedef std::map<hname_t,NetScope*>::iterator child_iterator;
+      typedef std::map<hname_t,NetScope*>::const_iterator const_child_iterator;
+      child_iterator children_begin() { return children_.begin(); }
+      child_iterator children_end() { return children_.end(); }
+      const_child_iterator children_begin() const { return children_.begin(); }
+      const_child_iterator children_end() const { return children_.end(); }
+
 	// Nested modules have slightly different scope search rules.
       inline bool nested_module() const { return nested_module_; }
 	// Program blocks and interfaces have elaboration constraints.
