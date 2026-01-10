@@ -2684,6 +2684,10 @@ void pform_bind_directive(const struct vlltype&loc,
 
       pform_bind_directives.push_back(bd);
 
+      // Issue warning that bind elaboration is not yet implemented
+      yywarn(loc, "sorry: bind directive not yet supported."
+             " Bound module instance will be ignored.");
+
       if (debug_elaborate) {
 	    cerr << loc << ": debug: Stored bind directive: bind "
 		 << target_name << " " << bound_type << " " << instance_name
