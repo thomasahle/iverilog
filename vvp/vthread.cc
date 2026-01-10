@@ -9112,21 +9112,24 @@ bool of_STD_RANDOMIZE(vthread_t thr, vvp_code_t cp)
       int64_t max_val = INT64_MAX;
       // Collect discrete values with weights for == constraints (from dist)
       std::vector<std::pair<int64_t, int64_t>> discrete_values;  // (value, weight)
+      // Collect >= and <= bounds for building ranges (from dist with ranges)
+      std::vector<class_type::simple_bound_t> ge_bounds;  // >= bounds
+      std::vector<class_type::simple_bound_t> le_bounds;  // <= bounds
 
       for (const auto& b : bounds) {
 	    if (b.property_idx != prop_idx) continue;
 	    switch (b.op) {
-		  case '>':  // value > const
-			if (b.const_bound >= min_val) min_val = b.const_bound + 1;
+		  case '>':  // value > const - tightens minimum
+			if (b.const_bound + 1 > min_val) min_val = b.const_bound + 1;
 			break;
-		  case 'G':  // value >= const
-			if (b.const_bound > min_val) min_val = b.const_bound;
+		  case 'G':  // value >= const - collect for range building
+			ge_bounds.push_back(b);
 			break;
-		  case '<':  // value < const
-			if (b.const_bound <= max_val) max_val = b.const_bound - 1;
+		  case '<':  // value < const - tightens maximum
+			if (b.const_bound - 1 < max_val) max_val = b.const_bound - 1;
 			break;
-		  case 'L':  // value <= const
-			if (b.const_bound < max_val) max_val = b.const_bound;
+		  case 'L':  // value <= const - collect for range building
+			le_bounds.push_back(b);
 			break;
 		  case '=':  // value == const - collect for weighted selection
 			discrete_values.push_back({b.const_bound, b.weight});
@@ -9134,9 +9137,37 @@ bool of_STD_RANDOMIZE(vthread_t thr, vvp_code_t cp)
 	    }
       }
 
+      // Build range list from paired >= and <= bounds (for dist with ranges)
+      struct weighted_range_t {
+	    int64_t low, high, weight;
+	    bool weight_per_value;
+      };
+      std::vector<weighted_range_t> ranges;
+      if (!ge_bounds.empty() || !le_bounds.empty()) {
+	    // Pair up bounds in order (from dist items)
+	    size_t ge_idx = 0, le_idx = 0;
+	    while (ge_idx < ge_bounds.size() || le_idx < le_bounds.size()) {
+		  int64_t low = min_val, high = max_val;
+		  int64_t weight = 1;
+		  bool weight_per_value = true;
+		  if (ge_idx < ge_bounds.size()) {
+			low = ge_bounds[ge_idx].const_bound;
+			weight = ge_bounds[ge_idx].weight;
+			weight_per_value = ge_bounds[ge_idx].weight_per_value;
+			ge_idx++;
+		  }
+		  if (le_idx < le_bounds.size()) {
+			high = le_bounds[le_idx++].const_bound;
+		  }
+		  if (low <= high) {
+			ranges.push_back({low, high, weight, weight_per_value});
+		  }
+	    }
+      }
+
       int64_t generated_val;
       if (!discrete_values.empty()) {
-	    // Weighted random selection from discrete values
+	    // Priority 1: Weighted random selection from discrete values
 	    int64_t total_weight = 0;
 	    for (const auto& dv : discrete_values) {
 		  total_weight += dv.second;
@@ -9152,8 +9183,45 @@ bool of_STD_RANDOMIZE(vthread_t thr, vvp_code_t cp)
 		  }
 	    }
 	    generated_val = discrete_values[selected].first;
+      } else if (!ranges.empty()) {
+	    // Priority 2: Multiple disjoint ranges (from dist {[a:b], [c:d], ...})
+	    // Calculate total weight (considering weight_per_value)
+	    int64_t total_weight = 0;
+	    for (const auto& r : ranges) {
+		  if (r.weight_per_value) {
+			// := means weight per value, so multiply by range size
+			int64_t range_size = r.high - r.low + 1;
+			total_weight += r.weight * range_size;
+		  } else {
+			// :/ means weight divided across range
+			total_weight += r.weight;
+		  }
+	    }
+	    // Weighted random selection of range
+	    int64_t pick = rand() % total_weight;
+	    int64_t cumulative = 0;
+	    size_t range_idx = 0;
+	    for (size_t j = 0; j < ranges.size(); j++) {
+		  int64_t range_weight;
+		  if (ranges[j].weight_per_value) {
+			int64_t range_size = ranges[j].high - ranges[j].low + 1;
+			range_weight = ranges[j].weight * range_size;
+		  } else {
+			range_weight = ranges[j].weight;
+		  }
+		  cumulative += range_weight;
+		  if (pick < cumulative) {
+			range_idx = j;
+			break;
+		  }
+	    }
+	    // Generate random value within selected range
+	    int64_t low = ranges[range_idx].low;
+	    int64_t high = ranges[range_idx].high;
+	    int64_t range_size = high - low + 1;
+	    generated_val = low + (rand() % range_size);
       } else if (max_val >= min_val) {
-	    // Generate value in range [min_val, max_val]
+	    // Priority 3: Generate value in simple range [min_val, max_val]
 	    int64_t range = max_val - min_val + 1;
 	    if (range > 0) {
 		  // Generate random value in range
