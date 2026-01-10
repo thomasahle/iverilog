@@ -2328,7 +2328,6 @@ static int show_system_task_call(ivl_statement_t net)
       }
 
       /* Handle mailbox put() method - send message (may block if bounded and full) */
-      /* Stub implementation: message argument is ignored (not actually stored) */
       if (strcmp(stmt_name,"$ivl_mailbox_method$put") == 0) {
 	    show_stmt_file_line(net, "mailbox: put");
 
@@ -2337,11 +2336,13 @@ static int show_system_task_call(ivl_statement_t net)
 		  return 1;
 
 	    ivl_expr_t mb_expr = ivl_stmt_parm(net, 0);
-	    /* Note: msg_expr (parm 1) is ignored - stub doesn't store messages */
+	    ivl_expr_t msg_expr = ivl_stmt_parm(net, 1);
 
 	    /* Push mailbox object to stack */
 	    draw_eval_object(mb_expr);
-	    /* Call mailbox put opcode */
+	    /* Push message value to vec4 stack */
+	    draw_eval_vec4(msg_expr);
+	    /* Call mailbox put opcode (pops message from vec4, peeks mailbox) */
 	    fprintf(vvp_out, "    %%mailbox/put;\n");
 	    /* Pop the mailbox object */
 	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
@@ -2349,7 +2350,6 @@ static int show_system_task_call(ivl_statement_t net)
       }
 
       /* Handle mailbox get() method - receive message (blocks until available) */
-      /* Stub: just pushes mailbox and calls opcode, output arg ignored */
       if (strcmp(stmt_name,"$ivl_mailbox_method$get") == 0) {
 	    show_stmt_file_line(net, "mailbox: get");
 
@@ -2358,19 +2358,24 @@ static int show_system_task_call(ivl_statement_t net)
 		  return 1;
 
 	    ivl_expr_t mb_expr = ivl_stmt_parm(net, 0);
-	    /* Note: msg_expr (parm 1) is ignored - stub doesn't retrieve messages */
+	    ivl_expr_t msg_expr = ivl_stmt_parm(net, 1);
 
 	    /* Push mailbox object to stack */
 	    draw_eval_object(mb_expr);
-	    /* Call mailbox get opcode */
+	    /* Call mailbox get opcode - pushes message to vec4 stack */
 	    fprintf(vvp_out, "    %%mailbox/get 3;\n");
 	    /* Pop the mailbox object */
 	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    /* Store retrieved message to output variable */
+	    if (ivl_expr_type(msg_expr) == IVL_EX_SIGNAL) {
+		  ivl_signal_t sig = ivl_expr_signal(msg_expr);
+		  unsigned wid = ivl_signal_width(sig);
+		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", sig, wid);
+	    }
 	    return 0;
       }
 
       /* Handle mailbox peek() method - copy message without removing (blocks until available) */
-      /* Stub: just pushes mailbox and calls opcode, output arg ignored */
       if (strcmp(stmt_name,"$ivl_mailbox_method$peek") == 0) {
 	    show_stmt_file_line(net, "mailbox: peek");
 
@@ -2379,14 +2384,20 @@ static int show_system_task_call(ivl_statement_t net)
 		  return 1;
 
 	    ivl_expr_t mb_expr = ivl_stmt_parm(net, 0);
-	    /* Note: msg_expr (parm 1) is ignored - stub doesn't retrieve messages */
+	    ivl_expr_t msg_expr = ivl_stmt_parm(net, 1);
 
 	    /* Push mailbox object to stack */
 	    draw_eval_object(mb_expr);
-	    /* Call mailbox peek opcode */
+	    /* Call mailbox peek opcode - pushes message to vec4 stack */
 	    fprintf(vvp_out, "    %%mailbox/peek;\n");
 	    /* Pop the mailbox object */
 	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    /* Store peeked message to output variable */
+	    if (ivl_expr_type(msg_expr) == IVL_EX_SIGNAL) {
+		  ivl_signal_t sig = ivl_expr_signal(msg_expr);
+		  unsigned wid = ivl_signal_width(sig);
+		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", sig, wid);
+	    }
 	    return 0;
       }
 

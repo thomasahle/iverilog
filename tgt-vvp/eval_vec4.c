@@ -1603,11 +1603,11 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    ivl_expr_t mb_arg = ivl_expr_parm(expr, 0);
 	    ivl_expr_t msg_arg = ivl_expr_parm(expr, 1);
 
-	    /* Push message object to stack */
-	    draw_eval_object(msg_arg);
-	    /* Push mailbox object to stack */
+	    /* Push mailbox object to object stack */
 	    draw_eval_object(mb_arg);
-	    /* Call mailbox try_put - pushes 1/0 to vec4 stack */
+	    /* Push message value to vec4 stack */
+	    draw_eval_vec4(msg_arg);
+	    /* Call mailbox try_put - pops vec4, peeks object, pushes 1/0 to vec4 stack */
 	    fprintf(vvp_out, "    %%mailbox/try_put;\n");
 	    /* Pop the mailbox object */
 	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
@@ -1615,30 +1615,50 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
       }
 
       if (strcmp(ivl_expr_name(expr),"$ivl_mailbox_method$try_get")==0) {
-	    /* $ivl_mailbox_method$try_get(mb)
-	       Stub: Non-blocking try_get. Returns 1 always (success). */
+	    /* $ivl_mailbox_method$try_get(mb, msg_out)
+	       Non-blocking try_get. Returns 1 if got message, 0 if empty.
+	       Runtime pushes: return_value (bottom), message (top).
+	       We store message to output arg, leaving return value on stack. */
 	    ivl_expr_t mb_arg = ivl_expr_parm(expr, 0);
+	    ivl_expr_t msg_arg = ivl_expr_parm(expr, 1);
 
 	    /* Push mailbox object to stack */
 	    draw_eval_object(mb_arg);
-	    /* Call mailbox try_get - pushes 1/0 to vec4 stack */
+	    /* Call mailbox try_get - pushes return_value, then message to vec4 stack */
 	    fprintf(vvp_out, "    %%mailbox/try_get;\n");
 	    /* Pop the mailbox object */
 	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    /* Message is now on top of vec4 stack. Store to output arg. */
+	    if (ivl_expr_type(msg_arg) == IVL_EX_SIGNAL) {
+		  ivl_signal_t sig = ivl_expr_signal(msg_arg);
+		  unsigned wid = ivl_signal_width(sig);
+		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", sig, wid);
+	    }
+	    /* Return value is now on top of stack (as expected for expression) */
 	    return;
       }
 
       if (strcmp(ivl_expr_name(expr),"$ivl_mailbox_method$try_peek")==0) {
-	    /* $ivl_mailbox_method$try_peek(mb)
-	       Stub: Non-blocking try_peek. Returns 1 always (success). */
+	    /* $ivl_mailbox_method$try_peek(mb, msg_out)
+	       Non-blocking try_peek. Returns 1 if message available, 0 if empty.
+	       Runtime pushes: return_value (bottom), message (top).
+	       We store message to output arg, leaving return value on stack. */
 	    ivl_expr_t mb_arg = ivl_expr_parm(expr, 0);
+	    ivl_expr_t msg_arg = ivl_expr_parm(expr, 1);
 
 	    /* Push mailbox object to stack */
 	    draw_eval_object(mb_arg);
-	    /* Call mailbox try_peek - pushes 1/0 to vec4 stack */
+	    /* Call mailbox try_peek - pushes return_value, then message to vec4 stack */
 	    fprintf(vvp_out, "    %%mailbox/try_peek;\n");
 	    /* Pop the mailbox object */
 	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    /* Message is now on top of vec4 stack. Store to output arg. */
+	    if (ivl_expr_type(msg_arg) == IVL_EX_SIGNAL) {
+		  ivl_signal_t sig = ivl_expr_signal(msg_arg);
+		  unsigned wid = ivl_signal_width(sig);
+		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", sig, wid);
+	    }
+	    /* Return value is now on top of stack (as expected for expression) */
 	    return;
       }
 
