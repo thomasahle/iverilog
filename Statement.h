@@ -280,6 +280,11 @@ class PCallTask  : public Statement {
 				      const netclass_t*class_type,
 				      int pidx,
 				      perm_string method_name) const;
+      NetProc*elaborate_mailbox_prop_method_(Design*des, NetScope*scope,
+				      NetNet*net,
+				      const netclass_t*class_type,
+				      int pidx,
+				      perm_string method_name) const;
       NetProc*elaborate_covergroup_prop_method_(Design*des, NetScope*scope,
 				      NetNet*net,
 				      const netclass_t*class_type,

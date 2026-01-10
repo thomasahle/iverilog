@@ -1138,7 +1138,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %token K_iff K_ignore_bins K_illegal_bins K_import K_inside K_int
  /* Icarus already has defined "logic" above! */
 %token K_interface K_intersect K_join_any K_join_none K_local
-%token K_longint K_matches K_modport K_new K_null K_package K_packed
+%token K_longint K_mailbox K_matches K_modport K_new K_null K_package K_packed
 %token K_priority K_program K_property K_protected K_pure K_rand K_randc
 %token K_randcase K_randsequence K_ref K_return K_semaphore K_sequence K_shortint
 %token K_shortreal K_solve K_static K_string K_struct K_super
@@ -2860,6 +2860,12 @@ data_type /* IEEE1800-2005: A.2.2.1 */
     /* Semaphore type: semaphore sem; */
   | K_semaphore
       { semaphore_type_t*tmp = new semaphore_type_t;
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+    /* Mailbox type: mailbox mb; */
+  | K_mailbox
+      { mailbox_type_t*tmp = new mailbox_type_t;
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
       }

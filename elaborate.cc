@@ -4219,6 +4219,77 @@ NetProc* PCallTask::elaborate_semaphore_prop_method_(Design*des, NetScope*scope,
 }
 
 /*
+ * Helper function to elaborate mailbox property method calls.
+ * Handles mb_prop.put()/get()/peek() on class properties.
+ */
+NetProc* PCallTask::elaborate_mailbox_prop_method_(Design*des, NetScope*scope,
+					    NetNet*net,
+					    const netclass_t*class_type,
+					    int pidx,
+					    perm_string method_name) const
+{
+      // Create a NetEProperty expression for the mailbox property
+      NetEProperty*prop_expr = new NetEProperty(net, pidx);
+      prop_expr->set_line(*this);
+
+      unsigned nparms = parms_.size();
+
+      const char* sys_task_name = 0;
+
+      if (method_name == "put") {
+	    // put(message) takes one argument
+	    if (nparms != 1) {
+		  cerr << get_fileline() << ": error: mailbox put() method "
+		       << "takes exactly one argument." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+	    vector<NetExpr*>argv(2);
+	    argv[0] = prop_expr;
+	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+	    sys_task_name = "$ivl_mailbox_method$put";
+	    NetSTask*sys = new NetSTask(sys_task_name, IVL_SFUNC_AS_TASK_IGNORE, argv);
+	    sys->set_line(*this);
+	    return sys;
+      } else if (method_name == "get") {
+	    // get(ref message) takes one argument by reference
+	    if (nparms != 1) {
+		  cerr << get_fileline() << ": error: mailbox get() method "
+		       << "takes exactly one argument." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+	    vector<NetExpr*>argv(2);
+	    argv[0] = prop_expr;
+	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+	    sys_task_name = "$ivl_mailbox_method$get";
+	    NetSTask*sys = new NetSTask(sys_task_name, IVL_SFUNC_AS_TASK_IGNORE, argv);
+	    sys->set_line(*this);
+	    return sys;
+      } else if (method_name == "peek") {
+	    // peek(ref message) takes one argument by reference
+	    if (nparms != 1) {
+		  cerr << get_fileline() << ": error: mailbox peek() method "
+		       << "takes exactly one argument." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+	    vector<NetExpr*>argv(2);
+	    argv[0] = prop_expr;
+	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+	    sys_task_name = "$ivl_mailbox_method$peek";
+	    NetSTask*sys = new NetSTask(sys_task_name, IVL_SFUNC_AS_TASK_IGNORE, argv);
+	    sys->set_line(*this);
+	    return sys;
+      }
+
+      // This shouldn't happen - try_put/try_get/try_peek/num return values
+      cerr << get_fileline() << ": internal error: mailbox "
+	   << method_name << " should be handled elsewhere." << endl;
+      return 0;
+}
+
+/*
  * This is used for array/queue function methods called as tasks.
  */
 NetProc* PCallTask::elaborate_method_func_(NetScope*scope,
@@ -4551,6 +4622,215 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  // When called as a task, need to assign result to temp
 		  if (!void_cast_) {
 			cerr << get_fileline() << ": warning: method function 'try_get'"
+			     << " is being called as a task." << endl;
+		  }
+
+		  // Create a temp L-value for the function return
+		  NetNet*tmp = new NetNet(scope, scope->local_symbol(), NetNet::REG,
+		                          &netvector_t::atom2s32);
+		  tmp->set_line(*this);
+		  NetAssign_*lv = new NetAssign_(tmp);
+		  NetAssign*cur = new NetAssign(lv, sys_expr);
+		  cur->set_line(*this);
+		  return cur;
+	    }
+      }
+
+      // Is this a method of a mailbox type?
+      if (dynamic_cast<const netmailbox_t*>(net->net_type())) {
+	    if (method_name == "put") {
+		  // put(msg) - blocking put message
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms != 1) {
+			cerr << get_fileline() << ": error: mailbox put() "
+			     << "method requires one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  vector<NetExpr*>argv (2);
+		  argv[0] = sig;
+		  argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, false);
+
+		  NetSTask*sys = new NetSTask("$ivl_mailbox_method$put",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
+	    } else if (method_name == "get") {
+		  // get(msg) - blocking get message (output argument)
+		  // Stub implementation: ignores output argument
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms != 1) {
+			cerr << get_fileline() << ": error: mailbox get() "
+			     << "method requires one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Stub: just takes mailbox, doesn't write to output
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+
+		  NetSTask*sys = new NetSTask("$ivl_mailbox_method$get",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
+	    } else if (method_name == "peek") {
+		  // peek(msg) - blocking peek message (output argument)
+		  // Stub implementation: ignores output argument
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms != 1) {
+			cerr << get_fileline() << ": error: mailbox peek() "
+			     << "method requires one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Stub: just takes mailbox, doesn't write to output
+		  vector<NetExpr*>argv (1);
+		  argv[0] = sig;
+
+		  NetSTask*sys = new NetSTask("$ivl_mailbox_method$peek",
+		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
+		  sys->set_line(*this);
+		  return sys;
+	    } else if (method_name == "try_put") {
+		  // try_put(msg) - returns int (1 if put succeeded, 0 if full)
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms != 1) {
+			cerr << get_fileline() << ": error: mailbox try_put() "
+			     << "method requires one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  NetExpr*msg_arg = elab_and_eval(des, scope, parms_[0].parm, -1, false);
+
+		  // Generate a function call that returns int
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_mailbox_method$try_put",
+		                                     &netvector_t::atom2s32, 2);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sig);
+		  sys_expr->parm(1, msg_arg);
+
+		  // When called as a task, need to assign result to temp
+		  if (!void_cast_) {
+			cerr << get_fileline() << ": warning: method function 'try_put'"
+			     << " is being called as a task." << endl;
+		  }
+
+		  // Create a temp L-value for the function return
+		  NetNet*tmp = new NetNet(scope, scope->local_symbol(), NetNet::REG,
+		                          &netvector_t::atom2s32);
+		  tmp->set_line(*this);
+		  NetAssign_*lv = new NetAssign_(tmp);
+		  NetAssign*cur = new NetAssign(lv, sys_expr);
+		  cur->set_line(*this);
+		  return cur;
+	    } else if (method_name == "try_get") {
+		  // try_get(msg) - returns int (1 if got msg, 0 if empty)
+		  // Stub implementation: ignores output argument
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms != 1) {
+			cerr << get_fileline() << ": error: mailbox try_get() "
+			     << "method requires one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Generate a function call that returns int
+		  // Stub: just returns 1 (success), doesn't actually get message
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_mailbox_method$try_get",
+		                                     &netvector_t::atom2s32, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sig);
+
+		  // When called as a task, need to assign result to temp
+		  if (!void_cast_) {
+			cerr << get_fileline() << ": warning: method function 'try_get'"
+			     << " is being called as a task." << endl;
+		  }
+
+		  // Create a temp L-value for the function return
+		  NetNet*tmp = new NetNet(scope, scope->local_symbol(), NetNet::REG,
+		                          &netvector_t::atom2s32);
+		  tmp->set_line(*this);
+		  NetAssign_*lv = new NetAssign_(tmp);
+		  NetAssign*cur = new NetAssign(lv, sys_expr);
+		  cur->set_line(*this);
+		  return cur;
+	    } else if (method_name == "try_peek") {
+		  // try_peek(msg) - returns int (1 if peeked msg, 0 if empty)
+		  // Stub implementation: ignores output argument
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms != 1) {
+			cerr << get_fileline() << ": error: mailbox try_peek() "
+			     << "method requires one argument." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Generate a function call that returns int
+		  // Stub: just returns 1 (success), doesn't actually peek message
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_mailbox_method$try_peek",
+		                                     &netvector_t::atom2s32, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sig);
+
+		  // When called as a task, need to assign result to temp
+		  if (!void_cast_) {
+			cerr << get_fileline() << ": warning: method function 'try_peek'"
+			     << " is being called as a task." << endl;
+		  }
+
+		  // Create a temp L-value for the function return
+		  NetNet*tmp = new NetNet(scope, scope->local_symbol(), NetNet::REG,
+		                          &netvector_t::atom2s32);
+		  tmp->set_line(*this);
+		  NetAssign_*lv = new NetAssign_(tmp);
+		  NetAssign*cur = new NetAssign(lv, sys_expr);
+		  cur->set_line(*this);
+		  return cur;
+	    } else if (method_name == "num") {
+		  // num() - returns int (number of messages)
+		  NetESignal*sig = new NetESignal(net);
+		  sig->set_line(*this);
+
+		  unsigned nparms = parms_.size();
+		  if (nparms != 0) {
+			cerr << get_fileline() << ": error: mailbox num() "
+			     << "method takes no arguments." << endl;
+			des->errors += 1;
+			return 0;
+		  }
+
+		  // Generate a function call that returns int
+		  NetESFunc*sys_expr = new NetESFunc("$ivl_mailbox_method$num",
+		                                     &netvector_t::atom2s32, 1);
+		  sys_expr->set_line(*this);
+		  sys_expr->parm(0, sig);
+
+		  // When called as a task, need to assign result to temp
+		  if (!void_cast_) {
+			cerr << get_fileline() << ": warning: method function 'num'"
 			     << " is being called as a task." << endl;
 		  }
 
@@ -5021,6 +5301,30 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 								       method_name);
 			      }
 			      // try_get is a function and handled in elab_expr.cc
+			}
+
+			// Handle mailbox property method calls (put, get, peek)
+			// try_put, try_get, try_peek, num are functions and handled elsewhere
+			const netmailbox_t* mb_type = dynamic_cast<const netmailbox_t*>(prop_type);
+			if (mb_type) {
+			      // This is a mailbox property - handle mailbox methods
+			      if (debug_elaborate) {
+				    cerr << get_fileline() << ": PCallTask::elaborate_method_: "
+					 << "Detected mailbox property " << prop_name
+					 << " method " << method_name << endl;
+			      }
+
+			      if (method_name == "put") {
+				    return elaborate_mailbox_prop_method_(des, scope, net, class_type, pidx,
+								       method_name);
+			      } else if (method_name == "get") {
+				    return elaborate_mailbox_prop_method_(des, scope, net, class_type, pidx,
+								       method_name);
+			      } else if (method_name == "peek") {
+				    return elaborate_mailbox_prop_method_(des, scope, net, class_type, pidx,
+								       method_name);
+			      }
+			      // try_put, try_get, try_peek, num are functions and handled in elab_expr.cc
 			}
 
 			// Handle covergroup property method calls (sample, get_coverage, etc.)

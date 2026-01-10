@@ -201,6 +201,7 @@ log,			GN_KEYWORDS_VAMS_2_3,		K_log
 logic,	GN_KEYWORDS_1800_2005|GN_KEYWORDS_ICARUS,	K_logic
 longint,		GN_KEYWORDS_1800_2005,		K_longint
 macromodule,		GN_KEYWORDS_1364_1995,		K_macromodule
+mailbox,		GN_KEYWORDS_1800_2005,		K_mailbox
 matches,		GN_KEYWORDS_1800_2005,		K_matches
 max,			GN_KEYWORDS_VAMS_2_3,		K_max
 medium,			GN_KEYWORDS_1364_1995,		K_medium

@@ -9153,6 +9153,173 @@ bool of_SEMAPHORE_TRY_GET(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %mailbox/new <reg>
+ *
+ * Create a new mailbox with bound from integer register <reg>.
+ * If bound <= 0, mailbox is unbounded. Otherwise it holds at most bound messages.
+ * Push the mailbox object to the object stack.
+ */
+bool of_MAILBOX_NEW(vthread_t thr, vvp_code_t cp)
+{
+      int bound = thr->words[cp->bit_idx[0]].w_int;
+      (void)bound;  // Unused in stub implementation
+
+      // Push a null object as placeholder
+      // TODO: Need a proper vvp_mailbox class to wrap mailbox state
+      vvp_object_t obj;  // Creates null object
+      thr->push_object(obj);
+
+      // Note: This is a stub implementation. Actual mailbox would need
+      // to track a queue of objects and bound limit.
+
+      return true;
+}
+
+/*
+ * %mailbox/put
+ *
+ * Peek mailbox from object stack (code generator emits %pop/obj to clean up).
+ * Put the message into the mailbox.
+ * Stub: message argument is ignored (passed via vec4 stack, not object stack).
+ */
+bool of_MAILBOX_PUT(vthread_t thr, vvp_code_t)
+{
+      // Peek the mailbox (code generator emits separate %pop/obj)
+      vvp_object_t &mbx = thr->peek_object();
+      (void)mbx;
+
+      // Stub: message argument is ignored (passed via vec4 stack, not object stack)
+      // Just continue without actually queuing
+      // TODO: Implement actual mailbox put logic
+
+      return true;
+}
+
+/*
+ * %mailbox/get <reg>
+ *
+ * Peek mailbox from object stack (code generator emits %pop/obj to clean up).
+ * Block until a message is available.
+ * Stub: output argument is ignored, doesn't actually block.
+ */
+bool of_MAILBOX_GET(vthread_t thr, vvp_code_t cp)
+{
+      (void)cp;  // Unused in stub
+
+      // Peek the mailbox (code generator emits separate %pop/obj)
+      vvp_object_t &mbx = thr->peek_object();
+      (void)mbx;
+
+      // Stub: don't actually block
+      // Output argument is ignored (would need lvalue handling for real impl)
+
+      return true;
+}
+
+/*
+ * %mailbox/try_put
+ *
+ * Peek mailbox from object stack (code generator emits %pop/obj to clean up).
+ * Stub: message argument is ignored (passed via vec4 stack, not object stack).
+ * Try to put message. If bounded mailbox is full, push 0; otherwise push 1.
+ */
+bool of_MAILBOX_TRY_PUT(vthread_t thr, vvp_code_t)
+{
+      // Peek the mailbox (code generator emits separate %pop/obj)
+      vvp_object_t &mbx = thr->peek_object();
+      (void)mbx;
+
+      // Stub: always succeed and push 1
+      // Message argument is on vec4 stack but ignored for stub
+      vvp_vector4_t res(32, BIT4_0);
+      res.set_bit(0, BIT4_1);  // Return 1 (success)
+      thr->push_vec4(res);
+
+      return true;
+}
+
+/*
+ * %mailbox/try_get
+ *
+ * Peek mailbox from object stack (code generator emits %pop/obj to clean up).
+ * Stub: output argument is ignored.
+ * If message available, return 1; otherwise return 0.
+ */
+bool of_MAILBOX_TRY_GET(vthread_t thr, vvp_code_t)
+{
+      // Peek the mailbox (code generator emits separate %pop/obj)
+      vvp_object_t &mbx = thr->peek_object();
+      (void)mbx;
+
+      // Stub: always succeed and push 1
+      // Output argument is ignored (would need lvalue handling for real impl)
+      vvp_vector4_t res(32, BIT4_0);
+      res.set_bit(0, BIT4_1);  // Return 1 (success)
+      thr->push_vec4(res);
+
+      return true;
+}
+
+/*
+ * %mailbox/peek
+ *
+ * Peek mailbox from object stack (code generator emits %pop/obj to clean up).
+ * Block until message available.
+ * Stub: output argument is ignored, doesn't actually block.
+ */
+bool of_MAILBOX_PEEK(vthread_t thr, vvp_code_t)
+{
+      // Peek the mailbox (code generator emits separate %pop/obj)
+      vvp_object_t &mbx = thr->peek_object();
+      (void)mbx;
+
+      // Stub: don't actually block
+      // Output argument is ignored (would need lvalue handling for real impl)
+
+      return true;
+}
+
+/*
+ * %mailbox/try_peek
+ *
+ * Peek mailbox from object stack (code generator emits %pop/obj to clean up).
+ * Stub: output argument is ignored.
+ * If message available, return 1; otherwise return 0.
+ */
+bool of_MAILBOX_TRY_PEEK(vthread_t thr, vvp_code_t)
+{
+      // Peek the mailbox (code generator emits separate %pop/obj)
+      vvp_object_t &mbx = thr->peek_object();
+      (void)mbx;
+
+      // Stub: always succeed and push 1
+      // Output argument is ignored (would need lvalue handling for real impl)
+      vvp_vector4_t res(32, BIT4_0);
+      res.set_bit(0, BIT4_1);  // Return 1 (success)
+      thr->push_vec4(res);
+
+      return true;
+}
+
+/*
+ * %mailbox/num
+ *
+ * Pop mailbox from stack. Push number of messages currently in mailbox.
+ */
+bool of_MAILBOX_NUM(vthread_t thr, vvp_code_t)
+{
+      // Peek the mailbox (code generator emits separate %pop/obj)
+      vvp_object_t &mbx = thr->peek_object();
+      (void)mbx;
+
+      // Stub: always return 0 (empty mailbox)
+      vvp_vector4_t res(32, BIT4_0);
+      thr->push_vec4(res);
+
+      return true;
+}
+
+/*
  * %push_rand_bound <prop_idx>, <op_encoded>, <bound_value>
  *
  * Push an inline constraint bound for the next randomize() call.

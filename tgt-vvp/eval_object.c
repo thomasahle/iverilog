@@ -652,6 +652,16 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    return 0;
       }
 
+      /* Mailbox new - create a new mailbox with bound */
+      if (strcmp(name, "$ivl_mailbox_new") == 0) {
+	    ivl_expr_t bound_arg = ivl_expr_parm(ex, 0);
+	    /* Evaluate the bound into integer register 3 */
+	    draw_eval_expr_into_integer(bound_arg, 3);
+	    /* Create the mailbox object */
+	    fprintf(vvp_out, "    %%mailbox/new 3;\n");
+	    return 0;
+      }
+
       fprintf(vvp_out, "; ERROR: eval_object_sfunc: Unknown system function '%s'\n", name);
       return 1;
 }

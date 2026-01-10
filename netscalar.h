@@ -95,6 +95,25 @@ class netsemaphore_t : public ivl_type_s {
 };
 
 /*
+ * The netmailbox_t represents the SystemVerilog mailbox built-in class.
+ * Mailboxes are FIFO queues for inter-process communication with put(), get(),
+ * try_put(), try_get(), peek(), try_peek(), and num() methods.
+ */
+class netmailbox_t : public ivl_type_s {
+
+    public:
+      inline explicit netmailbox_t() { }
+      ~netmailbox_t() override;
+
+      ivl_variable_type_t base_type() const override;
+
+      std::ostream& debug_dump(std::ostream&) const override;
+
+    public:
+      static netmailbox_t type_mailbox;
+};
+
+/*
  * The netvirtual_interface_t represents an elaborated virtual interface.
  * Virtual interfaces are class properties that reference interface instances.
  * The interface binding happens at runtime, but we store a pointer to the

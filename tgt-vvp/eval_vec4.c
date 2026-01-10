@@ -1597,6 +1597,65 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    return;
       }
 
+      if (strcmp(ivl_expr_name(expr),"$ivl_mailbox_method$try_put")==0) {
+	    /* $ivl_mailbox_method$try_put(mb, msg)
+	       Non-blocking attempt to put message. Returns 1 if successful, 0 if full. */
+	    ivl_expr_t mb_arg = ivl_expr_parm(expr, 0);
+	    ivl_expr_t msg_arg = ivl_expr_parm(expr, 1);
+
+	    /* Push message object to stack */
+	    draw_eval_object(msg_arg);
+	    /* Push mailbox object to stack */
+	    draw_eval_object(mb_arg);
+	    /* Call mailbox try_put - pushes 1/0 to vec4 stack */
+	    fprintf(vvp_out, "    %%mailbox/try_put;\n");
+	    /* Pop the mailbox object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return;
+      }
+
+      if (strcmp(ivl_expr_name(expr),"$ivl_mailbox_method$try_get")==0) {
+	    /* $ivl_mailbox_method$try_get(mb)
+	       Stub: Non-blocking try_get. Returns 1 always (success). */
+	    ivl_expr_t mb_arg = ivl_expr_parm(expr, 0);
+
+	    /* Push mailbox object to stack */
+	    draw_eval_object(mb_arg);
+	    /* Call mailbox try_get - pushes 1/0 to vec4 stack */
+	    fprintf(vvp_out, "    %%mailbox/try_get;\n");
+	    /* Pop the mailbox object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return;
+      }
+
+      if (strcmp(ivl_expr_name(expr),"$ivl_mailbox_method$try_peek")==0) {
+	    /* $ivl_mailbox_method$try_peek(mb)
+	       Stub: Non-blocking try_peek. Returns 1 always (success). */
+	    ivl_expr_t mb_arg = ivl_expr_parm(expr, 0);
+
+	    /* Push mailbox object to stack */
+	    draw_eval_object(mb_arg);
+	    /* Call mailbox try_peek - pushes 1/0 to vec4 stack */
+	    fprintf(vvp_out, "    %%mailbox/try_peek;\n");
+	    /* Pop the mailbox object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return;
+      }
+
+      if (strcmp(ivl_expr_name(expr),"$ivl_mailbox_method$num")==0) {
+	    /* $ivl_mailbox_method$num(mb)
+	       Returns the number of messages currently in the mailbox. */
+	    ivl_expr_t mb_arg = ivl_expr_parm(expr, 0);
+
+	    /* Push mailbox object to stack */
+	    draw_eval_object(mb_arg);
+	    /* Call mailbox num - pushes count to vec4 stack */
+	    fprintf(vvp_out, "    %%mailbox/num;\n");
+	    /* Pop the mailbox object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return;
+      }
+
       if (strcmp(ivl_expr_name(expr),"$ivl_randomize")==0) {
 	      /* The argument is a class object expression. Push it to the object
 	         stack, then call %randomize which will randomize its properties

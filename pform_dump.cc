@@ -279,6 +279,11 @@ void semaphore_type_t::pform_dump(ostream&out, unsigned indent) const
       out << setw(indent) << "" << "semaphore" << endl;
 }
 
+void mailbox_type_t::pform_dump(ostream&out, unsigned indent) const
+{
+      out << setw(indent) << "" << "mailbox" << endl;
+}
+
 void covergroup_type_t::pform_dump(ostream&out, unsigned indent) const
 {
       out << setw(indent) << "" << "covergroup " << covergroup_name << endl;

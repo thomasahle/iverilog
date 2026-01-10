@@ -2327,6 +2327,68 @@ static int show_system_task_call(ivl_statement_t net)
 	    return 0;
       }
 
+      /* Handle mailbox put() method - send message (may block if bounded and full) */
+      if (strcmp(stmt_name,"$ivl_mailbox_method$put") == 0) {
+	    show_stmt_file_line(net, "mailbox: put");
+
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 2)
+		  return 1;
+
+	    ivl_expr_t mb_expr = ivl_stmt_parm(net, 0);
+	    ivl_expr_t msg_expr = ivl_stmt_parm(net, 1);
+
+	    /* Push message object to stack */
+	    draw_eval_object(msg_expr);
+	    /* Push mailbox object to stack */
+	    draw_eval_object(mb_expr);
+	    /* Call mailbox put opcode */
+	    fprintf(vvp_out, "    %%mailbox/put;\n");
+	    /* Pop the mailbox object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return 0;
+      }
+
+      /* Handle mailbox get() method - receive message (blocks until available) */
+      /* Stub: just pushes mailbox and calls opcode, output arg ignored */
+      if (strcmp(stmt_name,"$ivl_mailbox_method$get") == 0) {
+	    show_stmt_file_line(net, "mailbox: get");
+
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 1)
+		  return 1;
+
+	    ivl_expr_t mb_expr = ivl_stmt_parm(net, 0);
+
+	    /* Push mailbox object to stack */
+	    draw_eval_object(mb_expr);
+	    /* Call mailbox get opcode */
+	    fprintf(vvp_out, "    %%mailbox/get 3;\n");
+	    /* Pop the mailbox object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return 0;
+      }
+
+      /* Handle mailbox peek() method - copy message without removing (blocks until available) */
+      /* Stub: just pushes mailbox and calls opcode, output arg ignored */
+      if (strcmp(stmt_name,"$ivl_mailbox_method$peek") == 0) {
+	    show_stmt_file_line(net, "mailbox: peek");
+
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 1)
+		  return 1;
+
+	    ivl_expr_t mb_expr = ivl_stmt_parm(net, 0);
+
+	    /* Push mailbox object to stack */
+	    draw_eval_object(mb_expr);
+	    /* Call mailbox peek opcode */
+	    fprintf(vvp_out, "    %%mailbox/peek;\n");
+	    /* Pop the mailbox object */
+	    fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+	    return 0;
+      }
+
       if (strcmp(stmt_name,"$ivl_config_db_set") == 0) {
 	    /* $ivl_config_db_set(inst_name, field_name, value)
 	     * - Push inst_name string to string stack

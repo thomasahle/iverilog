@@ -26,6 +26,7 @@ netreal_t netreal_t::type_shortreal;
 netstring_t netstring_t::type_string;
 netevent_type_t netevent_type_t::type_event;
 netsemaphore_t netsemaphore_t::type_semaphore;
+netmailbox_t netmailbox_t::type_mailbox;
 
 netreal_t::~netreal_t()
 {
@@ -110,5 +111,22 @@ ivl_variable_type_t netsemaphore_t::base_type() const
 ostream& netsemaphore_t::debug_dump(ostream&out) const
 {
       out << "semaphore";
+      return out;
+}
+
+netmailbox_t::~netmailbox_t()
+{
+}
+
+ivl_variable_type_t netmailbox_t::base_type() const
+{
+      // Mailboxes are special synchronization primitives. Use IVL_VT_CLASS
+      // since they are class-like objects with methods (put, get, try_put, etc).
+      return IVL_VT_CLASS;
+}
+
+ostream& netmailbox_t::debug_dump(ostream&out) const
+{
+      out << "mailbox";
       return out;
 }

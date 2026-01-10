@@ -41,6 +41,10 @@ semaphore_type_t::~semaphore_type_t()
 {
 }
 
+mailbox_type_t::~mailbox_type_t()
+{
+}
+
 virtual_interface_type_t::~virtual_interface_type_t()
 {
 }

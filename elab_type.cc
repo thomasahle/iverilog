@@ -213,6 +213,11 @@ ivl_type_t semaphore_type_t::elaborate_type_raw(Design*, NetScope*) const
       return &netsemaphore_t::type_semaphore;
 }
 
+ivl_type_t mailbox_type_t::elaborate_type_raw(Design*, NetScope*) const
+{
+      return &netmailbox_t::type_mailbox;
+}
+
 // Helper to find the Module definition for an interface by name
 static Module* find_interface_module(perm_string name)
 {
