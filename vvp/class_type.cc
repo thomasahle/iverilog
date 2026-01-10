@@ -831,14 +831,25 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 	    }
       }
 
-      // First, check for weighted discrete values (from dist constraints)
-      // If there are multiple equality constraints with weights, do weighted selection
+      // First, check for weighted discrete values and ranges (from dist constraints)
+      // Collect discrete values with weights, and range bounds with weights
       struct weighted_value_t {
 	    int64_t value;
 	    int64_t weight;
       };
+      struct weighted_range_t {
+	    int64_t low;
+	    int64_t high;
+	    int64_t weight;
+	    bool weight_per_value;  // := means weight per value, :/ means weight per range
+      };
       std::vector<weighted_value_t> weighted_values;
+      std::vector<weighted_range_t> weighted_ranges;
       int64_t total_weight = 0;
+
+      // First pass: collect >= bounds with weights (lower bounds of ranges)
+      std::map<int64_t, std::pair<int64_t, bool>> lower_bounds;  // weight -> (value, weight_per_value)
+      std::map<int64_t, std::pair<int64_t, bool>> upper_bounds;  // weight -> (value, weight_per_value)
 
       for (const auto& bound : constraint_bounds_) {
 	    if (bound.property_idx != prop_idx)
@@ -847,56 +858,106 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 		  continue;
 	    if (bound.is_soft)
 		  continue;
-	    // Only collect equality constraints with weights
-	    if (bound.op == '=' && bound.has_const_bound && bound.weight > 0) {
-		  // Check condition if present
-		  if (bound.has_condition) {
-			if (bound.cond_prop_idx >= properties_.size())
-			      continue;
-			if (!properties_[bound.cond_prop_idx].type->supports_vec4())
-			      continue;
-			vvp_vector4_t cond_prop_val;
-			get_vec4(inst, bound.cond_prop_idx, cond_prop_val);
-			int64_t cond_val = 0;
-			if (cond_prop_val.size() <= 64) {
-			      for (unsigned i = 0; i < cond_prop_val.size(); i++) {
-				    if (cond_prop_val.value(i) == BIT4_1)
-					  cond_val |= (int64_t(1) << i);
-			      }
-			}
-			int64_t cond_bound_val = bound.cond_has_const ? bound.cond_const : 0;
-			bool cond_satisfied = false;
-			switch (bound.cond_op) {
-			      case '>': cond_satisfied = (cond_val > cond_bound_val); break;
-			      case '<': cond_satisfied = (cond_val < cond_bound_val); break;
-			      case 'G': cond_satisfied = (cond_val >= cond_bound_val); break;
-			      case 'L': cond_satisfied = (cond_val <= cond_bound_val); break;
-			      case '=': cond_satisfied = (cond_val == cond_bound_val); break;
-			      case '!': cond_satisfied = (cond_val != cond_bound_val); break;
-			      default: cond_satisfied = true; break;
-			}
-			if (!cond_satisfied)
-			      continue;
-		  }
+	    if (!bound.has_const_bound)
+		  continue;
+	    if (bound.weight <= 0)
+		  continue;
+
+	    // Skip conditional constraints for now in dist handling
+	    if (bound.has_condition)
+		  continue;
+
+	    if (bound.op == '=') {
+		  // Discrete value
 		  weighted_value_t wv;
 		  wv.value = bound.const_bound;
 		  wv.weight = bound.weight;
 		  weighted_values.push_back(wv);
-		  total_weight += bound.weight;
+	    } else if (bound.op == 'G') {
+		  // >= bound (lower bound of range)
+		  lower_bounds[bound.weight] = std::make_pair(bound.const_bound, bound.weight_per_value);
+	    } else if (bound.op == 'L') {
+		  // <= bound (upper bound of range)
+		  upper_bounds[bound.weight] = std::make_pair(bound.const_bound, bound.weight_per_value);
 	    }
       }
 
-      // If we have weighted discrete values, do weighted random selection
-      if (weighted_values.size() > 1 && total_weight > 0) {
+      // Pair up lower and upper bounds with matching weights to form ranges
+      for (const auto& lb : lower_bounds) {
+	    int64_t weight = lb.first;
+	    auto ub_it = upper_bounds.find(weight);
+	    if (ub_it != upper_bounds.end()) {
+		  weighted_range_t wr;
+		  wr.low = lb.second.first;
+		  wr.high = ub_it->second.first;
+		  wr.weight = weight;
+		  wr.weight_per_value = lb.second.second;
+		  if (wr.low <= wr.high) {  // Valid range
+			weighted_ranges.push_back(wr);
+		  }
+	    }
+      }
+
+      // Calculate total weight from discrete values and ranges
+      for (const auto& wv : weighted_values) {
+	    total_weight += wv.weight;
+      }
+      for (const auto& wr : weighted_ranges) {
+	    if (wr.weight_per_value) {
+		  // := means weight per value, so total weight = weight * range_size
+		  total_weight += wr.weight * (wr.high - wr.low + 1);
+	    } else {
+		  // :/ means weight per range
+		  total_weight += wr.weight;
+	    }
+      }
+
+      // If we have weighted values or ranges, do weighted random selection
+      size_t total_items = weighted_values.size() + weighted_ranges.size();
+      if (total_items > 1 && total_weight > 0) {
 	    int64_t r = rand() % total_weight;
 	    int64_t cumulative = 0;
+
+	    // Check discrete values first
 	    for (const auto& wv : weighted_values) {
 		  cumulative += wv.weight;
 		  if (r < cumulative)
 			return wv.value;
 	    }
-	    // Fallback to last value
+
+	    // Then check ranges
+	    for (const auto& wr : weighted_ranges) {
+		  int64_t range_weight;
+		  if (wr.weight_per_value) {
+			range_weight = wr.weight * (wr.high - wr.low + 1);
+		  } else {
+			range_weight = wr.weight;
+		  }
+		  cumulative += range_weight;
+		  if (r < cumulative) {
+			// Generate random value within this range
+			int64_t range_size = wr.high - wr.low + 1;
+			return wr.low + (rand() % range_size);
+		  }
+	    }
+
+	    // Fallback to last item
+	    if (!weighted_ranges.empty()) {
+		  const auto& wr = weighted_ranges.back();
+		  int64_t range_size = wr.high - wr.low + 1;
+		  return wr.low + (rand() % range_size);
+	    }
 	    return weighted_values.back().value;
+      }
+
+      // Handle single value or single range with weight
+      if (weighted_values.size() == 1 && weighted_ranges.empty()) {
+	    return weighted_values[0].value;
+      }
+      if (weighted_ranges.size() == 1 && weighted_values.empty()) {
+	    const auto& wr = weighted_ranges[0];
+	    int64_t range_size = wr.high - wr.low + 1;
+	    return wr.low + (rand() % range_size);
       }
 
       // Now collect range constraints for this property
@@ -907,8 +968,8 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 	    // Skip system function constraints (handled above)
 	    if (bound.sysfunc_type != SYSFUNC_NONE)
 		  continue;
-	    // Skip weighted equality constraints (already handled)
-	    if (bound.op == '=' && bound.weight > 1)
+	    // Skip weighted constraints (already handled above)
+	    if (bound.weight > 1 || (bound.op == '=' && bound.weight > 0))
 		  continue;
 
 	    // For implication constraints, check the condition first
@@ -1121,22 +1182,62 @@ bool class_type::check_constraints(inst_t inst) const
       if (all_bounds.empty())
 	    return true;
 
-      // First, handle weighted equality constraints (from dist)
-      // Group them by property index and check with OR logic
+      // First, handle weighted constraints (from dist)
+      // Group discrete values and ranges by property index, check with OR logic
+
+      // Structure to hold ranges (paired >= and <= bounds)
+      struct range_t { int64_t low; int64_t high; };
+
+      // Collect discrete values and ranges for each property
       std::map<size_t, std::vector<int64_t>> weighted_eq_values;
+      std::map<size_t, std::map<int64_t, int64_t>> lower_bounds_by_prop;  // prop -> weight -> low
+      std::map<size_t, std::map<int64_t, int64_t>> upper_bounds_by_prop;  // prop -> weight -> high
+      std::map<size_t, std::vector<range_t>> weighted_ranges;
+
       for (const auto& bound : all_bounds) {
-	    if (bound.op == '=' && bound.has_const_bound && bound.weight > 0 &&
-		!bound.is_soft && bound.sysfunc_type == SYSFUNC_NONE) {
+	    if (!bound.has_const_bound || bound.weight <= 0 || bound.is_soft ||
+		bound.sysfunc_type != SYSFUNC_NONE)
+		  continue;
+
+	    if (bound.op == '=') {
 		  weighted_eq_values[bound.property_idx].push_back(bound.const_bound);
+	    } else if (bound.op == 'G') {
+		  lower_bounds_by_prop[bound.property_idx][bound.weight] = bound.const_bound;
+	    } else if (bound.op == 'L') {
+		  upper_bounds_by_prop[bound.property_idx][bound.weight] = bound.const_bound;
 	    }
       }
 
-      // Check properties with multiple weighted equality constraints
-      for (const auto& entry : weighted_eq_values) {
-	    if (entry.second.size() <= 1)
-		  continue;  // Single value handled normally
+      // Pair up lower and upper bounds to form ranges
+      for (const auto& lb_entry : lower_bounds_by_prop) {
+	    size_t prop_idx = lb_entry.first;
+	    auto ub_it = upper_bounds_by_prop.find(prop_idx);
+	    if (ub_it == upper_bounds_by_prop.end()) continue;
 
+	    for (const auto& lb : lb_entry.second) {
+		  int64_t weight = lb.first;
+		  auto ub = ub_it->second.find(weight);
+		  if (ub != ub_it->second.end()) {
+			range_t r;
+			r.low = lb.second;
+			r.high = ub->second;
+			if (r.low <= r.high)
+			      weighted_ranges[prop_idx].push_back(r);
+		  }
+	    }
+      }
+
+      // Check properties with weighted constraints (discrete values or ranges)
+      for (const auto& entry : weighted_eq_values) {
 	    size_t prop_idx = entry.first;
+	    auto ranges_it = weighted_ranges.find(prop_idx);
+	    bool has_ranges = (ranges_it != weighted_ranges.end() && !ranges_it->second.empty());
+	    bool has_values = !entry.second.empty();
+
+	    // If only one value and no ranges, skip (handled normally)
+	    if (entry.second.size() <= 1 && !has_ranges)
+		  continue;
+
 	    if (prop_idx >= properties_.size())
 		  continue;
 	    if (!properties_[prop_idx].type->supports_vec4())
@@ -1153,7 +1254,7 @@ bool class_type::check_constraints(inst_t inst) const
 		  }
 	    }
 
-	    // Check if value matches ANY of the allowed values (OR logic)
+	    // Check if value matches ANY discrete value or is in ANY range
 	    bool matches_any = false;
 	    for (int64_t allowed : entry.second) {
 		  if (val == allowed) {
@@ -1161,9 +1262,53 @@ bool class_type::check_constraints(inst_t inst) const
 			break;
 		  }
 	    }
+	    if (!matches_any && has_ranges) {
+		  for (const auto& r : ranges_it->second) {
+			if (val >= r.low && val <= r.high) {
+			      matches_any = true;
+			      break;
+			}
+		  }
+	    }
 
 	    if (!matches_any) {
-		  // Value doesn't match any allowed value - constraint violated
+		  return false;
+	    }
+      }
+
+      // Also check properties that have ranges but no discrete values
+      for (const auto& entry : weighted_ranges) {
+	    size_t prop_idx = entry.first;
+	    if (weighted_eq_values.find(prop_idx) != weighted_eq_values.end())
+		  continue;  // Already handled above
+	    if (entry.second.size() <= 1)
+		  continue;  // Single range, handled normally
+
+	    if (prop_idx >= properties_.size())
+		  continue;
+	    if (!properties_[prop_idx].type->supports_vec4())
+		  continue;
+
+	    vvp_vector4_t prop_val;
+	    get_vec4(inst, prop_idx, prop_val);
+
+	    int64_t val = 0;
+	    if (prop_val.size() <= 64) {
+		  for (unsigned i = 0; i < prop_val.size(); i++) {
+			if (prop_val.value(i) == BIT4_1)
+			      val |= (int64_t(1) << i);
+		  }
+	    }
+
+	    bool matches_any = false;
+	    for (const auto& r : entry.second) {
+		  if (val >= r.low && val <= r.high) {
+			matches_any = true;
+			break;
+		  }
+	    }
+
+	    if (!matches_any) {
 		  return false;
 	    }
       }
@@ -1175,6 +1320,13 @@ bool class_type::check_constraints(inst_t inst) const
 		  auto it = weighted_eq_values.find(bound.property_idx);
 		  if (it != weighted_eq_values.end() && it->second.size() > 1)
 			continue;  // Already checked with OR logic
+	    }
+	    // Skip weighted range bounds we already handled above
+	    if ((bound.op == 'G' || bound.op == 'L') && bound.has_const_bound &&
+		bound.weight > 0 && !bound.is_soft && bound.sysfunc_type == SYSFUNC_NONE) {
+		  auto it = weighted_ranges.find(bound.property_idx);
+		  if (it != weighted_ranges.end() && it->second.size() > 0)
+			continue;  // Part of a weighted range, already checked
 	    }
 	    // Get the value of the constrained property
 	    // Use THIS class's property accessors (not parent's)
