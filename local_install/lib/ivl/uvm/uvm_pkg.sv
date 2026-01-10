@@ -1,14 +1,68 @@
-// Minimal UVM implementation for Icarus Verilog
-// This provides basic UVM functionality sufficient to run simple testbenches
+// UVM Implementation for Icarus Verilog
+// This provides UVM functionality sufficient to run real testbenches.
+// All 8 mbits-mirafra AVIPs (APB, AHB, SPI, I2S, JTAG, UART, AXI4, I3C) work!
+//
+// WORKING FEATURES:
+// - config_db#(T)::set/get for int, enum, string, class, virtual interface types
+// - TLM analysis ports, exports, and FIFOs (using dynamic queues)
+// - Sequences, drivers, monitors with virtual interface BFMs
+// - Randomization with constraints (including dist, inside, implication)
+// - Covergroups with sample() and basic coverage metrics
+// - $cast for class type conversion
+// - fork/join with proper FIFO ordering
+// - Queues of class objects
 //
 // KNOWN LIMITATIONS:
-// 1. Virtual method dispatch issue: When overriding phase methods (build_phase, run_phase, etc.)
-//    in classes defined outside the package, the virtual dispatch may not work correctly through
-//    the do_*_phase() wrapper methods. Workaround: Call phase methods directly on your test class.
-// 2. No fork/join_none in class tasks due to VVP assertion failure
-// 3. $cast not supported - use direct assignment
-// 4. No self-referential typedef patterns (causes segfault)
-// 5. Queues of class objects cause segfaults - use fixed arrays instead
+// 1. Virtual method dispatch issue: When overriding phase methods in classes defined outside
+//    the package, virtual dispatch may not work through do_*_phase() wrappers.
+// 2. Factory override methods are stubs (no actual override mechanism)
+// 3. No self-referential typedef patterns (causes segfault)
+// 4. bind directive parses but is ignored (shows warning)
+
+// ============================================================================
+// UVM Messaging Macros
+// These must be defined before the package since macros are global
+// ============================================================================
+
+`define uvm_info(ID, MSG, VERBOSITY) \
+  $display("UVM_INFO @ %0t: %m [%s] %s", $time, ID, MSG);
+
+`define uvm_warning(ID, MSG) \
+  $display("UVM_WARNING @ %0t: %m [%s] %s", $time, ID, MSG);
+
+`define uvm_error(ID, MSG) \
+  $display("UVM_ERROR @ %0t: %m [%s] %s", $time, ID, MSG);
+
+`define uvm_fatal(ID, MSG) \
+  begin $display("UVM_FATAL @ %0t: %m [%s] %s", $time, ID, MSG); $finish; end
+
+// ============================================================================
+// UVM Component/Object Utility Macros
+// ============================================================================
+
+`define uvm_component_utils(TYPE) \
+  typedef uvm_component_registry#(TYPE) type_id; \
+  virtual function string get_type_name(); return `"TYPE`"; endfunction
+
+`define uvm_object_utils(TYPE) \
+  typedef uvm_object_registry#(TYPE) type_id; \
+  virtual function string get_type_name(); return `"TYPE`"; endfunction
+
+`define uvm_field_int(ARG, FLAG) // Stub - field macros not implemented
+`define uvm_field_object(ARG, FLAG) // Stub - field macros not implemented
+`define uvm_field_string(ARG, FLAG) // Stub - field macros not implemented
+`define uvm_field_enum(T, ARG, FLAG) // Stub - field macros not implemented
+
+// ============================================================================
+// UVM P-Sequencer Macro
+// ============================================================================
+`define uvm_declare_p_sequencer(SEQUENCER) \
+  SEQUENCER p_sequencer; \
+  virtual function void m_set_p_sequencer(); \
+    if (!$cast(p_sequencer, m_sequencer)) begin \
+      `uvm_fatal("SEQTYPE", "Failed to cast sequencer to p_sequencer type") \
+    end \
+  endfunction
 
 package uvm_pkg;
 
@@ -1061,13 +1115,14 @@ package uvm_pkg;
   // ============================================================================
   class uvm_subscriber #(type T = uvm_sequence_item) extends uvm_component;
     // Analysis export for receiving transactions
-    // In real UVM this would be uvm_analysis_imp#(T, this_type)
-    // We set it to 'this' so that analysis_port.write() calls our tlm_write()
+    // The subscriber itself acts as the export - analysis_export points to 'this'
+    // so that analysis_port.write() -> analysis_export.tlm_write() -> this.tlm_write()
     uvm_object analysis_export;
 
     function new(string name = "", uvm_component parent = null);
       super.new(name, parent);
-      // Set analysis_export to 'this' so tlm_write calls come to this object
+      // Set analysis_export to point to ourselves
+      // When analysis_port calls analysis_export.tlm_write(), it calls our tlm_write()
       analysis_export = this;
     endfunction
 
@@ -1075,19 +1130,21 @@ package uvm_pkg;
       return "uvm_subscriber";
     endfunction
 
-    // Override tlm_write to forward to write() - this is called by analysis_port
-    virtual function void tlm_write(uvm_object t);
-      T casted_t;
-      // Cast from uvm_object to parameterized type T and call write()
-      if ($cast(casted_t, t)) begin
-        write(casted_t);
-      end
-      // If cast fails, silently ignore (type mismatch)
-    endfunction
-
     // Override this function to process received transactions
     virtual function void write(T t);
       // Base implementation - override in derived classes
+    endfunction
+
+    // Override tlm_write to receive transactions from analysis ports
+    // and forward to the write() method
+    virtual function void tlm_write(uvm_object t);
+      T item;
+      // Cast the uvm_object to type T and call write()
+      // Note: In Icarus, $cast returns 1 on success
+      if ($cast(item, t)) begin
+        write(item);
+      end
+      // If cast fails, silently ignore - type mismatch in subscriber
     endfunction
   endclass
 
@@ -1357,29 +1414,28 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
-  // UVM Config Database
+  // UVM Config Database - FULLY FUNCTIONAL
   // ============================================================================
-  // NOTE: Parameterized class static methods are not fully supported in Icarus.
-  // The set() method call is silently ignored, so config_db doesn't actually
-  // store values.
+  // config_db#(T)::set/get is implemented via VVP runtime opcodes.
+  // The stub methods below never actually run - the compiler generates
+  // %config_db/set and %config_db/get opcodes that handle the storage.
   //
-  // WORKAROUND: For AVIPs that use config_db#(enum_type)::set/get, you must
-  // instead use the config object pattern:
-  //   1. Create a config class with enum properties
-  //   2. Use config_db#(config_class)::set/get to pass the whole object
+  // Supported features:
+  //   - Integer/enum types: config_db#(int)::set/get, config_db#(enum_type)::set/get
+  //   - String types: config_db#(string)::set/get
+  //   - Object types: config_db#(class_type)::set/get (virtual interfaces work too)
+  //   - Wildcard patterns: config_db#(T)::set(null, "*env*", "field", value)
+  //   - Bracket patterns: config_db#(T)::set(null, "agent[0]", "field", value)
   //
-  // This stub implementation allows code to compile and run, but config_db
-  // get() will always return 1 (success) without actually providing a value.
+  // Unit tests: sv_config_db_glob.v, sv_config_db_wildcard.v, sv_config_db_vif.v
   // ============================================================================
   class uvm_config_db #(type T = int);
-    // Stub implementation - parameterized static methods not supported
+    // Stub - actual implementation is in VVP runtime via %config_db/set opcode
     static function void set(uvm_component cntxt, string inst_name, string field_name, T value);
-      // No-op: parameterized class static void methods don't execute
     endfunction
 
-    // Always returns 1, but doesn't modify value (limitation)
+    // Stub - actual implementation is in VVP runtime via %config_db/get opcode
     static function bit get(uvm_component cntxt, string inst_name, string field_name, output T value);
-      // Return 1 to prevent fatal errors, but value is not actually set
       return 1;
     endfunction
   endclass
@@ -1445,16 +1501,12 @@ package uvm_pkg;
       end
     endfunction
 
-    // Get coverage percentage based on sample count vs target
-    // NOTE: This is a simplified coverage calculation based on samples.
-    // True coverage would require tracking actual coverpoint bin hits.
+    // Get coverage percentage based on samples vs target
+    // Uses sample count since %cvg/sample updates m_sample_count directly
     virtual function real get_coverage();
-      int effective_count;
-      // Use sample_count since %cvg/sample opcode tracks samples
-      effective_count = m_sample_count;
       if (m_target_bins <= 0) return 100.0;
-      if (effective_count >= m_target_bins) return 100.0;
-      return (real'(effective_count) / real'(m_target_bins)) * 100.0;
+      if (m_sample_count >= m_target_bins) return 100.0;
+      return (real'(m_sample_count) / real'(m_target_bins)) * 100.0;
     endfunction
 
     // Get instance coverage - same as get_coverage for this stub
@@ -1489,29 +1541,20 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
-  // TLM Analysis FIFO - Stub implementation for analysis ports
+  // TLM Analysis FIFO - Full implementation using SystemVerilog queues
   // ============================================================================
-  // Note: This is a stub implementation that accepts writes but discards data.
-  // Icarus has issues with arrays of parameterized class types, so we use
-  // a simplified version that at least allows compilation.
-  // TODO: Implement proper storage once class object arrays work correctly.
   class uvm_tlm_analysis_fifo #(type T = uvm_object) extends uvm_component;
 
-    int m_count;
-    // Simple queue to store items (max 64 items in stub)
-    T m_items[64];
-    int m_head;
-    int m_tail;
+    // Dynamic queue for unlimited storage (bounded FIFOs use m_bound)
+    T m_items[$];
+    int m_bound;  // 0 = unbounded
     // Analysis export for connection
     uvm_analysis_export #(T) analysis_export;
 
-    // Analysis export (implements write)
-    // size parameter accepted for compatibility but stub uses fixed 64-element array
-    function new(string name, uvm_component parent, int size = 1);
+    // size parameter specifies FIFO depth (0 = unbounded)
+    function new(string name, uvm_component parent, int size = 0);
       super.new(name, parent);
-      m_count = 0;
-      m_head = 0;
-      m_tail = 0;
+      m_bound = size;
       analysis_export = new("analysis_export", this);
       // Connect export to this FIFO so writes are forwarded
       analysis_export.set_parent_fifo(this);
@@ -1519,10 +1562,9 @@ package uvm_pkg;
 
     // Write method - receives data from analysis port
     virtual function void write(T t);
-      if (m_count < 64) begin
-        m_items[m_tail] = t;
-        m_tail = (m_tail + 1) % 64;
-        m_count++;
+      // Check bound (0 = unbounded)
+      if (m_bound == 0 || m_items.size() < m_bound) begin
+        m_items.push_back(t);
       end
     endfunction
 
@@ -1537,20 +1579,16 @@ package uvm_pkg;
 
     // Get method - blocking task to retrieve next item
     virtual task get(output T t);
-      while (m_count == 0) begin
+      while (m_items.size() == 0) begin
         #1; // Wait for item to be written
       end
-      t = m_items[m_head];
-      m_head = (m_head + 1) % 64;
-      m_count--;
+      t = m_items.pop_front();
     endtask
 
     // Try_get - non-blocking get
     virtual function bit try_get(output T t);
-      if (m_count > 0) begin
-        t = m_items[m_head];
-        m_head = (m_head + 1) % 64;
-        m_count--;
+      if (m_items.size() > 0) begin
+        t = m_items.pop_front();
         return 1;
       end
       return 0;
@@ -1558,8 +1596,8 @@ package uvm_pkg;
 
     // Peek - look at next item without removing
     virtual function bit try_peek(output T t);
-      if (m_count > 0) begin
-        t = m_items[m_head];
+      if (m_items.size() > 0) begin
+        t = m_items[0];
         return 1;
       end
       return 0;
@@ -1567,37 +1605,35 @@ package uvm_pkg;
 
     // Size - number of items in fifo
     virtual function int size();
-      return m_count;
+      return m_items.size();
     endfunction
 
     // Is empty check
     virtual function bit is_empty();
-      return m_count == 0;
+      return m_items.size() == 0;
     endfunction
 
     // Is full check
     virtual function bit is_full();
-      return m_count >= 64;
+      return m_bound > 0 && m_items.size() >= m_bound;
     endfunction
 
     // Peek - blocking task to look at next item without removing
     virtual task peek(output T t);
-      while (m_count == 0) begin
+      while (m_items.size() == 0) begin
         #1; // Wait for item to be written
       end
-      t = m_items[m_head];
+      t = m_items[0];
     endtask
 
     // Flush - reset fifo
     virtual function void flush();
-      m_count = 0;
-      m_head = 0;
-      m_tail = 0;
+      m_items.delete();
     endfunction
 
     // Used returns count (compatible with real UVM API)
     virtual function int used();
-      return m_count;
+      return m_items.size();
     endfunction
 
   endclass
@@ -1605,50 +1641,40 @@ package uvm_pkg;
   // ============================================================================
   // TLM FIFO - Generic TLM FIFO for communication between components
   // ============================================================================
-  // Note: This is a stub implementation similar to uvm_tlm_analysis_fifo but
-  // intended for request/response communication patterns.
+  // Full implementation using SystemVerilog queues for dynamic storage.
   class uvm_tlm_fifo #(type T = uvm_object) extends uvm_component;
 
-    int m_count;
-    // Simple queue to store items (max 64 items in stub)
-    T m_items[64];
-    int m_head;
-    int m_tail;
+    // Dynamic queue for unlimited storage (bounded FIFOs use m_bound)
+    T m_items[$];
+    int m_bound;  // 0 = unbounded
 
-    // size parameter accepted for compatibility but stub uses fixed 64-element array
-    function new(string name, uvm_component parent, int size = 1);
+    // size parameter specifies FIFO depth (0 = unbounded)
+    function new(string name, uvm_component parent, int size = 0);
       super.new(name, parent);
-      m_count = 0;
-      m_head = 0;
-      m_tail = 0;
+      m_bound = size;
     endfunction
 
     // Put method - blocking
     virtual task put(T t);
-      while (m_count >= 64) begin
+      // Check bound (0 = unbounded)
+      while (m_bound > 0 && m_items.size() >= m_bound) begin
         #1; // Wait for space
       end
-      m_items[m_tail] = t;
-      m_tail = (m_tail + 1) % 64;
-      m_count++;
+      m_items.push_back(t);
     endtask
 
     // Get method - blocking task to retrieve next item
     virtual task get(output T t);
-      while (m_count == 0) begin
+      while (m_items.size() == 0) begin
         #1; // Wait for item
       end
-      t = m_items[m_head];
-      m_head = (m_head + 1) % 64;
-      m_count--;
+      t = m_items.pop_front();
     endtask
 
     // Try_put - non-blocking put
     virtual function bit try_put(T t);
-      if (m_count < 64) begin
-        m_items[m_tail] = t;
-        m_tail = (m_tail + 1) % 64;
-        m_count++;
+      if (m_bound == 0 || m_items.size() < m_bound) begin
+        m_items.push_back(t);
         return 1;
       end
       return 0;
@@ -1656,10 +1682,8 @@ package uvm_pkg;
 
     // Try_get - non-blocking get
     virtual function bit try_get(output T t);
-      if (m_count > 0) begin
-        t = m_items[m_head];
-        m_head = (m_head + 1) % 64;
-        m_count--;
+      if (m_items.size() > 0) begin
+        t = m_items.pop_front();
         return 1;
       end
       return 0;
@@ -1667,8 +1691,8 @@ package uvm_pkg;
 
     // Peek - look at next item without removing (non-blocking)
     virtual function bit try_peek(output T t);
-      if (m_count > 0) begin
-        t = m_items[m_head];
+      if (m_items.size() > 0) begin
+        t = m_items[0];
         return 1;
       end
       return 0;
@@ -1676,47 +1700,45 @@ package uvm_pkg;
 
     // Peek - blocking task to look at next item without removing
     virtual task peek(output T t);
-      while (m_count == 0) begin
+      while (m_items.size() == 0) begin
         #1; // Wait for item
       end
-      t = m_items[m_head];
+      t = m_items[0];
     endtask
 
     // Can_put - check if can write
     virtual function bit can_put();
-      return m_count < 64;
+      return m_bound == 0 || m_items.size() < m_bound;
     endfunction
 
     // Can_get - check if can read
     virtual function bit can_get();
-      return m_count > 0;
+      return m_items.size() > 0;
     endfunction
 
     // Size - number of items in fifo
     virtual function int size();
-      return m_count;
+      return m_items.size();
     endfunction
 
     // Is empty check
     virtual function bit is_empty();
-      return m_count == 0;
+      return m_items.size() == 0;
     endfunction
 
     // Is full check
     virtual function bit is_full();
-      return m_count >= 64;
+      return m_bound > 0 && m_items.size() >= m_bound;
     endfunction
 
     // Used returns count (compatible with real UVM API)
     virtual function int used();
-      return m_count;
+      return m_items.size();
     endfunction
 
     // Flush - reset fifo
     virtual function void flush();
-      m_count = 0;
-      m_head = 0;
-      m_tail = 0;
+      m_items.delete();
     endfunction
 
   endclass
