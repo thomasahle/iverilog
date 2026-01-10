@@ -10491,10 +10491,9 @@ static void elaborate_bind_directives(Design*des)
 	    map<perm_string,Module*>::const_iterator mod_it
 		  = pform_modules.find(bd->bound_type);
 	    if (mod_it == pform_modules.end()) {
-		  cerr << bd->get_fileline() << ": error: bind directive"
+		  cerr << bd->get_fileline() << ": warning: bind directive"
 		       << " references unknown module type: " << bd->bound_type
-		       << endl;
-		  des->errors += 1;
+		       << " (bind will be ignored)" << endl;
 		  continue;
 	    }
 	    Module*bound_mod = mod_it->second;
