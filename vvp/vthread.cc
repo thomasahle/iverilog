@@ -3849,8 +3849,14 @@ bool of_DIV_S(vthread_t thr, vvp_code_t)
       vvp_vector4_t valb = thr->pop_vec4();
       vvp_vector4_t&vala = thr->peek_vec4();
 
-      assert(vala.size()== valb.size());
-      unsigned wid = vala.size();
+      // Handle width mismatch by sign-extending smaller operand to larger width
+      unsigned wid_a = vala.size();
+      unsigned wid_b = valb.size();
+      unsigned wid = (wid_a > wid_b) ? wid_a : wid_b;
+      vvp_bit4_t sign_a = (wid_a > 0) ? vala.value(wid_a - 1) : BIT4_0;
+      vvp_bit4_t sign_b = (wid_b > 0) ? valb.value(wid_b - 1) : BIT4_0;
+      if (wid_a < wid) vala.resize(wid, sign_a);
+      if (wid_b < wid) valb.resize(wid, sign_b);
       unsigned words = (wid + CPU_WORD_BITS - 1) / CPU_WORD_BITS;
 
 	// Get the values, left in right, in binary form. If there is
@@ -5485,8 +5491,12 @@ bool of_MOD(vthread_t thr, vvp_code_t)
       vvp_vector4_t valb = thr->pop_vec4();
       vvp_vector4_t&vala = thr->peek_vec4();
 
-      assert(vala.size()==valb.size());
-      unsigned wid = vala.size();
+      // Handle width mismatch by padding smaller operand to larger width
+      unsigned wid_a = vala.size();
+      unsigned wid_b = valb.size();
+      unsigned wid = (wid_a > wid_b) ? wid_a : wid_b;
+      if (wid_a < wid) vala.resize(wid, BIT4_0);
+      if (wid_b < wid) valb.resize(wid, BIT4_0);
 
       if(wid <= 8*sizeof(unsigned long long)) {
 	    unsigned long long lv = 0, rv = 0;
@@ -5532,8 +5542,15 @@ bool of_MOD_S(vthread_t thr, vvp_code_t)
       vvp_vector4_t valb = thr->pop_vec4();
       vvp_vector4_t&vala = thr->peek_vec4();
 
-      assert(vala.size()==valb.size());
-      unsigned wid = vala.size();
+      // Handle width mismatch by padding smaller operand to larger width
+      // For signed operations, we sign-extend the smaller operand
+      unsigned wid_a = vala.size();
+      unsigned wid_b = valb.size();
+      unsigned wid = (wid_a > wid_b) ? wid_a : wid_b;
+      vvp_bit4_t sign_a = (wid_a > 0) ? vala.value(wid_a - 1) : BIT4_0;
+      vvp_bit4_t sign_b = (wid_b > 0) ? valb.value(wid_b - 1) : BIT4_0;
+      if (wid_a < wid) vala.resize(wid, sign_a);
+      if (wid_b < wid) valb.resize(wid, sign_b);
 
 	/* Handle the case that we can fit the bits into a long-long
 	   variable. We cause use native % to do the work. */

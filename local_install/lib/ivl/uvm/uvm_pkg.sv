@@ -1746,37 +1746,10 @@ package uvm_pkg;
   // ============================================================================
   // semaphore - SystemVerilog built-in synchronization primitive
   // ============================================================================
-  // Note: This is a stub implementation. Icarus doesn't have native semaphore
-  // support, so we provide a class-based stub that compiles but doesn't block.
-  // Real semaphore functionality requires VVP runtime support.
-  class semaphore;
-    int m_count;
-
-    function new(int keyCount = 0);
-      m_count = keyCount;
-    endfunction
-
-    // Get keys (blocking) - stub: decrements count
-    task get(int keyCount = 1);
-      // In real implementation, this would block if m_count < keyCount
-      // For stub, just decrement (may go negative)
-      m_count -= keyCount;
-    endtask
-
-    // Put keys back
-    function void put(int keyCount = 1);
-      m_count += keyCount;
-    endfunction
-
-    // Try to get keys without blocking
-    function int try_get(int keyCount = 1);
-      if (m_count >= keyCount) begin
-        m_count -= keyCount;
-        return 1;
-      end
-      return 0;
-    endfunction
-  endclass
+  // Semaphore is now a native type in Icarus Verilog. The class stub has been
+  // removed since 'semaphore' is a keyword.
+  // Note: Runtime methods (new, get, put, try_get) are not yet fully implemented
+  // in the VVP runtime - declarations work but blocking behavior is stubbed.
 
   // ============================================================================
   // uvm_seq_item_pull_port - TLM port for sequencer-driver communication
