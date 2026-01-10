@@ -186,23 +186,43 @@ void draw_class_in_scope(ivl_type_t classtype)
 	    char cond_op = ivl_type_simple_bound_cond_op(classtype, bidx);
 	    int cond_has_const = ivl_type_simple_bound_cond_has_const(classtype, bidx);
 
+	    int has_prop_offset = ivl_type_simple_bound_has_prop_offset(classtype, bidx);
+
+	    /* For property+offset constraints (e.g., y <= x + 10), use lowercase operator
+	     * to signal that the value contains packed prop_idx and offset:
+	     * 'g' = >= with offset, 'l' = <= with offset, 'e' = == with offset, etc.
+	     */
+	    char effective_op = op;
+	    if (has_prop_offset) {
+		  switch (op) {
+			case 'G': effective_op = 'g'; break;  /* >= with offset */
+			case 'L': effective_op = 'l'; break;  /* <= with offset */
+			case '>': effective_op = 'h'; break;  /* > with offset (h = higher) */
+			case '<': effective_op = 'j'; break;  /* < with offset (j = junior/less) */
+			case '=': effective_op = 'e'; break;  /* == with offset */
+			case '!': effective_op = 'n'; break;  /* != with offset */
+			default: break;
+		  }
+	    }
+
 	    fprintf(vvp_out, ".constraint_bound C%p, \"%s\", %u, \"%c\", %d, %d, ",
-		    classtype, cons_name ? cons_name : "", prop_idx, op, soft, has_const);
-	    if (op == 's') {
-		  /* Property-based size constraint: arr.size() == src_prop + offset
-		   * For 's' operator, we need both:
-		   * - prop2_idx (source property to read size from)
+		    classtype, cons_name ? cons_name : "", prop_idx, effective_op, soft, has_const);
+	    if (op == 's' || has_prop_offset) {
+		  /* Property-based constraint with optional offset:
+		   * For 's' operator: arr.size() == src_prop + offset
+		   * For property+offset: y <= x + 10
+		   * We need both:
+		   * - prop2_idx (source property to read value from)
 		   * - const_val (offset to add to source property value)
-		   * We pack these together: lower 16 bits = signed offset, upper 16 bits = src_prop_idx
+		   * We pack these together: lower 32 bits = signed offset, upper 32 bits = src_prop_idx
 		   */
 		  unsigned prop2_idx = ivl_type_simple_bound_prop2(classtype, bidx);
 		  int64_t offset_val = 0;
 		  if (has_const) {
 			offset_val = ivl_type_simple_bound_const(classtype, bidx);
 		  }
-		  /* Pack: offset in lower 16 bits (signed), prop2_idx in upper 16 bits */
-		  int64_t packed_val = ((int64_t)prop2_idx << 16) | (offset_val & 0xFFFF);
-		  /* Always emit as has_const=0 with packed value in the value field */
+		  /* Pack: offset in lower 32 bits (signed), prop2_idx in upper 32 bits */
+		  int64_t packed_val = ((int64_t)prop2_idx << 32) | (offset_val & 0xFFFFFFFF);
 		  fprintf(vvp_out, "%" PRId64 ", %u, %u, %" PRId64 ", %d, ",
 			  packed_val, sysfunc_type, sysfunc_arg, weight, weight_per_value);
 	    } else if (has_const) {

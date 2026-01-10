@@ -123,9 +123,10 @@ class class_type : public __vpiHandle {
 	    size_t property_idx;  // Index of constrained rand property
 	    char op;              // '>' | '<' | 'G' (>=) | 'L' (<=) | '=' | '!'
 	    bool is_soft;         // Soft constraint (doesn't cause failure)
-	    bool has_const_bound; // true if bound is a constant
-	    int64_t const_bound;  // Constant bound value (if has_const_bound)
-	    size_t bound_prop_idx;// Property index (if !has_const_bound)
+	    bool has_const_bound; // true if bound includes a constant
+	    int64_t const_bound;  // Constant bound value or offset (if has_const_bound)
+	    size_t bound_prop_idx;// Property index for property reference
+	    bool has_prop_offset; // true if bound is property + constant (e.g., y <= x + 10)
 	    int64_t weight;       // Weight for dist constraints (default 1)
 	    bool weight_per_value;// true for := (per value), false for :/ (per range)
 	    // System function constraint support

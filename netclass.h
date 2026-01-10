@@ -198,9 +198,10 @@ class netclass_t : public ivl_type_s {
 	    size_t property_idx;  // Index of constrained rand property
 	    char op;              // '>' | '<' | 'G' (>=) | 'L' (<=) | '=' | '!'
 	    bool is_soft;         // Soft constraint (doesn't cause failure)
-	    bool has_const_bound; // true if bound is a constant
-	    int64_t const_bound;  // Constant bound value (if has_const_bound)
-	    size_t bound_prop_idx;// Property index (if !has_const_bound)
+	    bool has_const_bound; // true if bound includes a constant
+	    int64_t const_bound;  // Constant bound value or offset (if has_const_bound)
+	    size_t bound_prop_idx;// Property index for property reference
+	    bool has_prop_offset; // true if bound is property + constant offset (e.g., y <= x + 10)
 	    // Foreach constraint support - constrains all elements of array
 	    bool is_foreach;      // true if this bound applies to all array elements
 	    size_t array_size;    // Array size (if is_foreach)
@@ -238,7 +239,8 @@ class netclass_t : public ivl_type_s {
                             int64_t weight = 1, bool weight_per_value = true,
                             bool has_cond = false, size_t cond_prop = 0, char cond_op = '=',
                             bool cond_has_const = true, int64_t cond_const = 0, size_t cond_prop2 = 0,
-                            bool is_foreach = false, size_t array_size = 0);
+                            bool is_foreach = false, size_t array_size = 0,
+                            bool has_prop_offset = false);
       size_t get_simple_bounds() const { return simple_bounds_.size(); }
       const simple_bound_t& get_simple_bound(size_t idx) const;
       perm_string get_simple_bound_constraint_name(size_t idx) const;

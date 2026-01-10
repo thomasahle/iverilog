@@ -1033,10 +1033,31 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 
 	    // Get the bound value
 	    int64_t bval = 0;
-	    if (bound.has_const_bound) {
+	    if (bound.has_prop_offset && bound.bound_prop_idx < properties_.size()) {
+		  // Property + offset bound (e.g., y <= x + 10)
+		  // bound.bound_prop_idx references another property, const_bound is the offset
+		  if (!properties_[bound.bound_prop_idx].type->supports_vec4())
+			continue;
+		  vvp_vector4_t prop_val;
+		  get_vec4(inst, bound.bound_prop_idx, prop_val);
+		  if (prop_val.size() <= 64) {
+			for (unsigned i = 0; i < prop_val.size(); i++) {
+			      if (prop_val.value(i) == BIT4_1)
+				    bval |= (int64_t(1) << i);
+			}
+			// Handle signed values
+			if (prop_val.size() < 64 && prop_val.size() > 0 &&
+			    prop_val.value(prop_val.size()-1) == BIT4_1) {
+			      for (unsigned i = prop_val.size(); i < 64; i++)
+				    bval |= (int64_t(1) << i);
+			}
+		  }
+		  // Add the constant offset
+		  bval += bound.const_bound;
+	    } else if (bound.has_const_bound) {
 		  bval = bound.const_bound;
 	    } else if (bound.bound_prop_idx < properties_.size()) {
-		  // Get value from another property
+		  // Get value from another property (no offset)
 		  if (!properties_[bound.bound_prop_idx].type->supports_vec4())
 			continue;
 		  vvp_vector4_t prop_val;
@@ -1419,11 +1440,33 @@ bool class_type::check_constraints(inst_t inst) const
 		  }
 	    }
 
-	    // Get the bound value (constant or property)
+	    // Get the bound value (constant, property, or property + offset)
 	    int64_t bound_val = 0;
-	    if (bound.has_const_bound) {
+	    if (bound.has_prop_offset && bound.bound_prop_idx < properties_.size()) {
+		  // Property + offset bound (e.g., y <= x + 10)
+		  // bound.bound_prop_idx references another property, const_bound is the offset
+		  if (!properties_[bound.bound_prop_idx].type->supports_vec4())
+			continue;
+		  vvp_vector4_t bound_prop_val;
+		  get_vec4(inst, bound.bound_prop_idx, bound_prop_val);
+		  if (bound_prop_val.size() <= 64) {
+			for (unsigned i = 0; i < bound_prop_val.size(); i++) {
+			      if (bound_prop_val.value(i) == BIT4_1)
+				    bound_val |= (int64_t(1) << i);
+			}
+			// Handle signed values
+			if (bound_prop_val.size() < 64 && bound_prop_val.size() > 0 &&
+			    bound_prop_val.value(bound_prop_val.size()-1) == BIT4_1) {
+			      for (unsigned i = bound_prop_val.size(); i < 64; i++)
+				    bound_val |= (int64_t(1) << i);
+			}
+		  }
+		  // Add the constant offset
+		  bound_val += bound.const_bound;
+	    } else if (bound.has_const_bound) {
 		  bound_val = bound.const_bound;
 	    } else if (bound.bound_prop_idx < properties_.size()) {
+		  // Property reference only (no offset)
 		  if (!properties_[bound.bound_prop_idx].type->supports_vec4())
 			continue;
 		  vvp_vector4_t bound_prop_val;
@@ -1758,17 +1801,34 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
       class_type::simple_bound_t bound;
       bound.constraint_name = constraint_name ? constraint_name : "";
       bound.property_idx = prop_idx;
-      bound.op = op;
       bound.is_soft = (soft != 0);
+      bound.has_prop_offset = false;  // Default
 
-      // For property-based size constraint (op 's'), value contains packed data:
-      //   - upper 16 bits = source property index
-      //   - lower 16 bits = signed offset
-      if (op == 's') {
-	    bound.has_const_bound = false;  // Always property-based
-	    bound.bound_prop_idx = (value >> 16) & 0xFFFF;  // Source property index
-	    // Sign-extend the 16-bit offset
-	    int16_t offset_raw = (int16_t)(value & 0xFFFF);
+      // Check for property+offset operators (lowercase variants)
+      // These indicate the value is packed: upper 32 bits = prop_idx, lower 32 bits = signed offset
+      char effective_op = op;
+      bool is_prop_offset = false;
+      switch (op) {
+	    case 'g': effective_op = 'G'; is_prop_offset = true; break;  // >= with offset
+	    case 'l': effective_op = 'L'; is_prop_offset = true; break;  // <= with offset
+	    case 'h': effective_op = '>'; is_prop_offset = true; break;  // > with offset
+	    case 'j': effective_op = '<'; is_prop_offset = true; break;  // < with offset
+	    case 'e': effective_op = '='; is_prop_offset = true; break;  // == with offset
+	    case 'n': effective_op = '!'; is_prop_offset = true; break;  // != with offset
+	    default: break;
+      }
+      bound.op = effective_op;
+
+      // For property-based size constraint (op 's') or property+offset constraints,
+      // value contains packed data:
+      //   - upper 32 bits = source property index
+      //   - lower 32 bits = signed offset
+      if (op == 's' || is_prop_offset) {
+	    bound.has_const_bound = true;  // There's an offset
+	    bound.has_prop_offset = true;  // Bound references property + offset
+	    bound.bound_prop_idx = (value >> 32) & 0xFFFFFFFF;  // Source property index
+	    // Sign-extend the 32-bit offset
+	    int32_t offset_raw = (int32_t)(value & 0xFFFFFFFF);
 	    bound.const_bound = (int64_t)offset_raw;  // Offset to add
       } else if (has_const) {
 	    bound.has_const_bound = true;

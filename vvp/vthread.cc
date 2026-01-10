@@ -8558,6 +8558,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    if (bound.is_soft) continue;
 				    // Skip system function constraints - handled by generate_constrained_random()
 				    if (bound.sysfunc_type != class_type::SYSFUNC_NONE) continue;
+				    // Skip property+offset bounds - handled by generate_constrained_random()
+				    if (bound.has_prop_offset) continue;
 				    switch (bound.op) {
 					  case '>':
 						if (bound.const_bound + 1 > min_val)

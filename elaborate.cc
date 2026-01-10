@@ -9944,6 +9944,24 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
                (bound_ident = dynamic_cast<const PEIdent*>(right)) != nullptr) {
 	    prop_on_left = true;
       }
+      // Case 3b: property OP (property + constant) or property OP (property - constant)
+      else if ((prop_ident = dynamic_cast<const PEIdent*>(left)) != nullptr) {
+	    const PEBinary* rhs_bin = dynamic_cast<const PEBinary*>(right);
+	    if (rhs_bin != nullptr && (rhs_bin->get_op() == '+' || rhs_bin->get_op() == '-')) {
+		  bound_ident = dynamic_cast<const PEIdent*>(rhs_bin->get_left());
+		  int64_t offset_val = 0;
+		  if (bound_ident != nullptr && extract_constant_value(rhs_bin->get_right(), offset_val, scope, cls, des)) {
+			// For property - constant, negate the offset
+			if (rhs_bin->get_op() == '-')
+			      offset_val = -offset_val;
+			const_val = offset_val;
+			has_const = true;  // Mark that we have a constant offset
+			prop_on_left = true;
+		  } else {
+			bound_ident = nullptr;  // Reset if pattern didn't match
+		  }
+	    }
+      }
       // Case 4: property.size() OP expr (e.g., data.size() == len + 1)
       // This is for dynamic array size constraints in named constraint blocks
       else {
@@ -10164,7 +10182,32 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       if (!qual.test_rand() && !qual.test_randc())
 	    return false;  // Not a rand property, skip
 
-      if (has_const) {
+      // Check for property + offset bound first (has both bound_ident and has_const)
+      if (bound_ident != nullptr && has_const) {
+	    // Property-to-property constraint with offset (e.g., y <= x + 10)
+	    const pform_scoped_name_t& bound_path = bound_ident->path();
+	    if (bound_path.name.empty())
+		  return false;
+	    perm_string bound_name = bound_path.name.back().name;
+	    int bound_idx = cls->property_idx_from_name(bound_name);
+	    if (bound_idx < 0)
+		  return false;
+
+	    if (debug_elaborate) {
+		  cerr << "netclass_t::elaborate: extracted bound "
+		       << prop_name << " " << op << " " << bound_name
+		       << " + " << const_val << endl;
+	    }
+
+	    // Property + offset constraint (e.g., y <= x + 10)
+	    // has_const=true (there's an offset), bound_idx holds property, const_val holds offset
+	    // has_prop_offset=true to indicate this is property+offset, not just a constant
+	    cls->add_simple_bound(constraint_name, prop_idx, op, is_soft, true, const_val, bound_idx,
+	                          netclass_t::SYSFUNC_NONE, 0, 1, true, false, 0, '=', true, 0, 0,
+	                          false, 0, true /* has_prop_offset */);
+	    return true;
+      }
+      else if (has_const) {
 	    if (debug_elaborate) {
 		  cerr << "netclass_t::elaborate: extracted bound "
 		       << prop_name << " " << op << " " << const_val << endl;
@@ -10174,7 +10217,7 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    return true;
       }
       else if (bound_ident != nullptr) {
-	    // Property-to-property constraint
+	    // Property-to-property constraint (no offset)
 	    const pform_scoped_name_t& bound_path = bound_ident->path();
 	    if (bound_path.name.empty())
 		  return false;
