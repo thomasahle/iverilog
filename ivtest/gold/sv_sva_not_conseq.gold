@@ -1,0 +1,10 @@
+ERROR: ./ivltests/sv_sva_not_conseq.v:12:
+       Time: 35  Scope: test
+ERROR: ./ivltests/sv_sva_not_conseq.v:15:
+       Time: 35  Scope: test
+ERROR: ./ivltests/sv_sva_not_conseq.v:15:
+       Time: 45  Scope: test
+ERROR: ./ivltests/sv_sva_not_conseq.v:12:
+       Time: 45  Scope: test
+PASSED
+./ivltests/sv_sva_not_conseq.v:35: $finish called at 50 (1s)

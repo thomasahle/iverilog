@@ -1261,6 +1261,7 @@ sva_paren_implication	normal,-g2012,-gno-assertions	ivltests gold=sva_paren_impl
 sv_sva_seq_delay1	normal,-g2012	ivltests gold=sv_sva_seq_delay1.gold
 sv_sva_seq_delayN	normal,-g2012	ivltests gold=sv_sva_seq_delayN.gold
 sv_sva_sampled		normal,-g2012	ivltests gold=sv_sva_sampled.gold
+sv_sva_not_conseq	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_not_conseq.gold
 sv_bind_parse		normal,-g2012,-gno-assertions	ivltests gold=sv_bind_parse.gold
 sv_property_seq_delay	normal,-g2012,-gsupported-assertions	ivltests
 sv_vif_class_access	normal,-g2012	ivltests
