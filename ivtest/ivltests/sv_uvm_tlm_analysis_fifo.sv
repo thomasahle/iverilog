@@ -2,6 +2,8 @@
 // This tests the full chain: analysis_port.write() -> export.tlm_write() -> FIFO.write()
 
 // Note: uvm_pkg.sv must be compiled first on the command line
+`include "uvm_pkg.sv"
+`include "uvm_macros.svh"
 import uvm_pkg::*;
 
 // Simple transaction class

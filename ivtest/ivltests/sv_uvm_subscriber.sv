@@ -3,6 +3,7 @@
 // and forwards transactions to the subscriber's write() method.
 
 `include "uvm_pkg.sv"
+`include "uvm_macros.svh"
 import uvm_pkg::*;
 
 // Transaction class

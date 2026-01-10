@@ -4,6 +4,7 @@
 // test class's build_phase which creates child components.
 
 `include "uvm_pkg.sv"
+`include "uvm_macros.svh"
 
 
 module test;

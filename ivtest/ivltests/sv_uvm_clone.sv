@@ -1,6 +1,8 @@
 // Test uvm_object clone() method
 // Clone creates a copy of an object using the factory
 // Compile with: iverilog -g2012 uvm_pkg.sv sv_uvm_clone.sv
+`include "uvm_pkg.sv"
+`include "uvm_macros.svh"
 import uvm_pkg::*;
 
 // Simple test class with properties to clone

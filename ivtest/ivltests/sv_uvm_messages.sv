@@ -2,6 +2,7 @@
 // Compile with: iverilog -g2012 -I<uvm_dir> sv_uvm_messages.sv
 
 `include "uvm_pkg.sv"
+`include "uvm_macros.svh"
 
 import uvm_pkg::*;
 

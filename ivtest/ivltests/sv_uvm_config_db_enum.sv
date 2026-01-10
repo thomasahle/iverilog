@@ -3,6 +3,7 @@
 // and config_db::get retrieves them into class properties
 
 `include "uvm_pkg.sv"
+`include "uvm_macros.svh"
 
 import uvm_pkg::*;
 
