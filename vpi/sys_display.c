@@ -2783,6 +2783,60 @@ void sys_display_register(void)
       res = vpi_register_systf(&tf_data);
       vpip_make_systf_system_defined(res);
 
+      /*============================ assertion control tasks (stubs) */
+      /* These tasks control assertion evaluation at runtime.
+       * Since Icarus compiles assertions into procedural code,
+       * we provide stub implementations that do nothing.
+       * This allows code using these tasks to compile and run. */
+      tf_data.type      = vpiSysTask;
+      tf_data.tfname    = "$assertoff";
+      tf_data.calltf    = 0;  /* No-op */
+      tf_data.compiletf = 0;
+      tf_data.sizetf    = 0;
+      tf_data.user_data = "$assertoff";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.tfname    = "$asserton";
+      tf_data.user_data = "$asserton";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.tfname    = "$assertkill";
+      tf_data.user_data = "$assertkill";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.tfname    = "$assertpasson";
+      tf_data.user_data = "$assertpasson";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.tfname    = "$assertpassoff";
+      tf_data.user_data = "$assertpassoff";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.tfname    = "$assertfailon";
+      tf_data.user_data = "$assertfailon";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.tfname    = "$assertfailoff";
+      tf_data.user_data = "$assertfailoff";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.tfname    = "$assertnonvacuouson";
+      tf_data.user_data = "$assertnonvacuouson";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.tfname    = "$assertvacuousoff";
+      tf_data.user_data = "$assertvacuousoff";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
       cb_data.reason = cbEndOfCompile;
       cb_data.time = 0;
       cb_data.cb_rtn = sys_end_of_compile;
