@@ -1300,3 +1300,4 @@ sv_constraint_onehot_standalone normal,-g2012 ivltests
 sv_rand_array normal,-g2012 ivltests
 sv_constraint_size	normal,-g2012	ivltests
 sv_constraint_foreach	normal,-g2012	ivltests
+sv_constraint_size_inline normal,-g2012 ivltests gold=sv_constraint_size_inline.gold

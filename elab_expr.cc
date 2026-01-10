@@ -50,7 +50,7 @@ using namespace std;
  * Helper to analyze inline constraint expression and extract simple bounds.
  * Returns true if expression is a simple comparison: property_name OP constant
  * On success, fills in: property_name, op_code, const_value
- * op_code: 0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!'
+ * op_code: 0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!', 6='S' (size)
  */
 static bool analyze_constraint_expr(const PExpr*expr,
                                     perm_string& property_name,
@@ -75,8 +75,34 @@ static bool analyze_constraint_expr(const PExpr*expr,
             default: return false;
       }
 
-      // Get the left operand (should be an identifier - property name)
+      // Get the left operand
       const PExpr*lhs = bin->get_left();
+
+      // Check for property.size() == constant pattern (size constraint)
+      // This is represented as a PECallFunction with path "property.size"
+      const PECallFunction* call = dynamic_cast<const PECallFunction*>(lhs);
+      if (call != nullptr && op == 'e') {  // Only == makes sense for size constraints
+            const pform_scoped_name_t& call_path = call->path();
+            if (call_path.name.size() == 2) {
+                  // Check if the method name is "size"
+                  perm_string method_name = call_path.name.back().name;
+                  if (method_name == "size") {
+                        // Get the property name (first component of path)
+                        property_name = call_path.name.front().name;
+                        // Use op_code 6 for size constraint ('S')
+                        op_code = 6;
+                        // Get the constant from the RHS
+                        const PExpr*rhs = bin->get_right();
+                        const PENumber*num = dynamic_cast<const PENumber*>(rhs);
+                        if (num) {
+                              const_value = num->value().as_long();
+                              return true;
+                        }
+                  }
+            }
+      }
+
+      // Normal case: LHS should be an identifier (property name)
       const PEIdent*ident = dynamic_cast<const PEIdent*>(lhs);
       if (!ident) return false;
 
@@ -6757,6 +6783,21 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      // Look up property index in the property's class type
 			      int pidx = prop_class->property_idx_from_name(cons_prop_name);
 			      if (pidx >= 0) {
+				    // For size constraints (op_code 6), extract element width
+				    // and store it in the weight field
+				    if ((op_code & 7) == 6) {
+					  ivl_type_t prop_type = prop_class->get_prop_type(pidx);
+					  if (prop_type && prop_type->base_type() == IVL_VT_DARRAY) {
+						const netarray_t* arr_type = dynamic_cast<const netarray_t*>(prop_type);
+						if (arr_type) {
+						      ivl_type_t elem_type = arr_type->element_type();
+						      if (elem_type) {
+							    weight = elem_type->packed_width();
+							    if (weight == 0) weight = 32;
+						      }
+						}
+					  }
+				    }
 				    // Encode soft flag in bit 3 of op_code
 				    if (is_soft) op_code |= 8;
 				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val, weight, weight_per_value));
@@ -7706,6 +7747,21 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      // Look up property index
 			      int pidx = class_type->property_idx_from_name(prop_name);
 			      if (pidx >= 0) {
+				    // For size constraints (op_code 6), extract element width
+				    // and store it in the weight field
+				    if ((op_code & 7) == 6) {
+					  ivl_type_t prop_type = class_type->get_prop_type(pidx);
+					  if (prop_type && prop_type->base_type() == IVL_VT_DARRAY) {
+						const netarray_t* arr_type = dynamic_cast<const netarray_t*>(prop_type);
+						if (arr_type) {
+						      ivl_type_t elem_type = arr_type->element_type();
+						      if (elem_type) {
+							    weight = elem_type->packed_width();
+							    if (weight == 0) weight = 32;
+						      }
+						}
+					  }
+				    }
 				    // Encode soft flag in bit 3 of op_code
 				    if (is_soft) op_code |= 8;
 				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val, weight, weight_per_value));

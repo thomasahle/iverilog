@@ -34,6 +34,7 @@
 # include  "vvp_cleanup.h"
 #endif
 # include  <set>
+# include  <map>
 # include  <typeinfo>
 # include  <vector>
 # include  <cstdlib>
@@ -8106,6 +8107,58 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       bool has_inline_constraints = !inline_constraints.empty();
       bool has_constraints = has_class_constraints || has_inline_constraints;
 
+      // Process size constraints first - these resize dynamic arrays before randomization
+      // Track which properties have size constraints so we can randomize their elements
+      std::set<size_t> darray_props_to_randomize;
+      std::map<size_t, unsigned> darray_elem_widths;
+
+      for (const auto& bound : inline_constraints) {
+	    if (bound.op == 'S') {
+		  // Size constraint: resize dynamic array to const_bound elements
+		  size_t target_size = (size_t)bound.const_bound;
+		  size_t prop_idx = bound.property_idx;
+		  unsigned elem_width = (unsigned)bound.weight;
+		  if (elem_width == 0) elem_width = 8;  // Default to 8 bits
+
+		  // Get current object (if any)
+		  vvp_object_t cur_obj;
+		  cobj->get_object(prop_idx, cur_obj, 0);
+		  vvp_darray* cur_dar = cur_obj.peek<vvp_darray>();
+
+		  // If array doesn't exist or has wrong size, create a new one
+		  if (cur_dar == 0 || cur_dar->get_size() != target_size) {
+			// Create new darray with target size
+			// Use vvp_darray_vec4 for general bit vectors
+			vvp_darray_vec4* new_dar = new vvp_darray_vec4(target_size, elem_width);
+			vvp_object_t new_dar_obj(new_dar);
+			cobj->set_object(prop_idx, new_dar_obj, 0);
+		  }
+
+		  // Mark this property for element randomization
+		  darray_props_to_randomize.insert(prop_idx);
+		  darray_elem_widths[prop_idx] = elem_width;
+	    }
+      }
+
+      // Randomize elements of dynamic arrays with size constraints
+      for (size_t prop_idx : darray_props_to_randomize) {
+	    vvp_object_t dar_obj;
+	    cobj->get_object(prop_idx, dar_obj, 0);
+	    vvp_darray* dar = dar_obj.peek<vvp_darray>();
+	    if (dar) {
+		  unsigned elem_width = darray_elem_widths[prop_idx];
+		  size_t dar_size = dar->get_size();
+		  for (size_t idx = 0; idx < dar_size; idx++) {
+			// Generate random value
+			vvp_vector4_t new_val(elem_width);
+			for (unsigned b = 0; b < elem_width; b++) {
+			      new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+			}
+			dar->set_word((unsigned)idx, new_val);
+		  }
+	    }
+      }
+
       // Try to find values that satisfy constraints
       int tries = 0;
       bool success = false;
@@ -8479,6 +8532,14 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			if (bound.property_idx >= nprop) continue;
 			if (!bound.has_const_bound) continue;
 
+			// Skip size constraints ('S') - they're handled separately
+			// and don't need constraint checking
+			if (bound.op == 'S') continue;
+
+			// Skip constraints on properties that don't support vec4
+			// (e.g., object types like dynamic arrays)
+			if (!defn->property_supports_vec4(bound.property_idx)) continue;
+
 			if (bound.op == '=') {
 			      auto& info = eq_constraints[bound.property_idx];
 			      info.values.push_back(bound.const_bound);
@@ -8773,6 +8834,7 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 	    case 3: bound.op = 'L'; break;  // <=
 	    case 4: bound.op = '='; break;
 	    case 5: bound.op = '!'; break;
+	    case 6: bound.op = 'S'; break;  // Size constraint
 	    default: bound.op = '='; break;
       }
       bound.is_soft = is_soft;
