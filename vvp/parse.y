@@ -61,6 +61,7 @@ static struct __vpiModPath*modpath_dst = 0;
       struct symbv_s symbv;
 
       struct numbv_s numbv;
+      struct enum_values_s enum_vals;
 
       struct enum_name_s enum_name;
       std::list<struct enum_name_s>*enum_namev;
@@ -89,7 +90,7 @@ static struct __vpiModPath*modpath_dst = 0;
 %token K_CONCAT K_CONCAT8 K_DEBUG K_DELAY K_DFF_N K_DFF_N_ACLR
 %token K_DFF_N_ASET K_DFF_P K_DFF_P_ACLR K_DFF_P_ASET
 %token K_ENUM2 K_ENUM2_S K_ENUM4 K_ENUM4_S K_EVENT K_EVENT_OR
-%token K_CONSTRAINT_BOUND K_CONSTRAINT_UNIQUE K_EXPORT K_FACTORY K_EXTEND_S K_FUNCTOR K_IMPORT K_ISLAND K_LATCH K_MODPATH
+%token K_CONSTRAINT_BOUND K_CONSTRAINT_UNIQUE K_ENUM_BOUND K_EXPORT K_FACTORY K_EXTEND_S K_FUNCTOR K_IMPORT K_ISLAND K_LATCH K_MODPATH
 %token K_NET K_NET_S K_NET_R K_NET_2S K_NET_2U
 %token K_NET8 K_NET8_2S K_NET8_2U K_NET8_S
 %token K_PARAM_STR K_PARAM_L K_PARAM_REAL K_PART K_PART_PV
@@ -134,6 +135,7 @@ static struct __vpiModPath*modpath_dst = 0;
 
 %type <enum_name> enum_type_name
 %type <enum_namev> enum_type_names
+%type <enum_vals> enum_value_list
 
 %%
 
@@ -941,6 +943,11 @@ statement
   | K_CONSTRAINT_UNIQUE T_SYMBOL ',' T_NUMBER ';'
       { compile_constraint_unique($2, $4); }
 
+  /* Enum bound: .enum_bound class_label, prop_idx, num_values, val1, val2, ... ;
+   * This lists valid enum values for a rand enum property */
+  | K_ENUM_BOUND T_SYMBOL ',' T_NUMBER ',' T_NUMBER enum_value_list ';'
+      { compile_enum_bound($2, $4, $6, $7.values, $7.count); }
+
   | enum_type
       { ; }
 
@@ -1024,6 +1031,16 @@ enum_type_name
       { $$.text = $1; $$.val2 = $2; $$.val4 = 0; }
   | T_STRING T_VECTOR
       { $$.text = $1; $$.val2 = 0; $$.val4 = $2.text; }
+  ;
+
+  /* Comma-separated list of enum values for .enum_bound directive */
+enum_value_list
+  : /* empty */
+      { enum_values_init(&$$); }
+  | enum_value_list ',' T_NUMBER
+      { $$ = $1; enum_values_add(&$$, $3); }
+  | enum_value_list ',' '-' T_NUMBER
+      { $$ = $1; enum_values_add(&$$, -$4); }
   ;
 
 local_flag

@@ -3770,6 +3770,13 @@ extern "C" unsigned ivl_type_unique_constraint_prop(ivl_type_t net, unsigned idx
       return class_type->get_unique_constraint_prop(idx);
 }
 
+extern "C" ivl_enumtype_t ivl_type_enumtype(ivl_type_t net)
+{
+      // Check if the type is an enum type
+      const netenum_t*enum_type = dynamic_cast<const netenum_t*>(net);
+      return enum_type;
+}
+
 extern "C" ivl_type_t ivl_type_super(ivl_type_t net)
 {
       const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);

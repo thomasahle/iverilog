@@ -65,6 +65,26 @@ void numbv_clear(struct numbv_s*obj)
       obj->cnt = 0;
 }
 
+void enum_values_init(struct enum_values_s*obj)
+{
+      obj->count = 0;
+      obj->values = 0;
+}
+
+void enum_values_add(struct enum_values_s*obj, int64_t val)
+{
+      obj->values = static_cast<int64_t*>(realloc(obj->values, (obj->count+1) * sizeof(int64_t)));
+      obj->values[obj->count] = val;
+      obj->count += 1;
+}
+
+void enum_values_clear(struct enum_values_s*obj)
+{
+      free(obj->values);
+      obj->values = 0;
+      obj->count = 0;
+}
+
 void argv_init(struct argv_s*obj)
 {
       obj->argc = 0;

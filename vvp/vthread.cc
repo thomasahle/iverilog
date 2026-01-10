@@ -8684,9 +8684,20 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			int64_t rval;
 			bool generated = false;
 
+			// Priority 0: Enum bounds - pick from valid enum values only
+			{
+			      const std::vector<int64_t>* enum_vals = defn->get_enum_values(i);
+			      if (enum_vals != nullptr && !enum_vals->empty()) {
+				    // Pick a random valid enum value
+				    size_t idx = rand() % enum_vals->size();
+				    rval = (*enum_vals)[idx];
+				    generated = true;
+			      }
+			}
+
 			// Priority 1: Discrete values from == constraints (from inside/dist)
 			// Use weighted random selection if weights are present
-			if (!discrete_values.empty()) {
+			if (!generated && !discrete_values.empty()) {
 			      // Calculate total weight
 			      int64_t total_weight = 0;
 			      for (const auto& dv : discrete_values) {

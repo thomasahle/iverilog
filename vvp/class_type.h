@@ -161,6 +161,10 @@ class class_type : public __vpiHandle {
       size_t unique_constraint_count() const { return unique_props_.size(); }
       size_t get_unique_constraint_prop(size_t idx) const;
 
+      // Enum bound support - lists valid values for rand enum properties
+      void add_enum_bound(size_t prop_idx, const std::vector<int64_t>& values);
+      const std::vector<int64_t>* get_enum_values(size_t prop_idx) const;
+
     private:
       std::string class_name_;
       class_type*parent_;  // Parent class for inheritance hierarchy (nullptr if no parent)
@@ -181,6 +185,9 @@ class class_type : public __vpiHandle {
 
       // Unique constraint property indices
       std::vector<size_t> unique_props_;
+
+      // Enum valid values: property index -> vector of valid enum values
+      std::map<size_t, std::vector<int64_t>> enum_values_;
 };
 
 #endif /* IVL_class_type_H */

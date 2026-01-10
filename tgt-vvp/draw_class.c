@@ -256,6 +256,38 @@ void draw_class_in_scope(ivl_type_t classtype)
 		    classtype, prop_idx);
       }
 
+      /* Emit enum constraints for rand enum properties.
+       * Format: .enum_bound <classptr>, <prop_idx>, <num_values>, <value1>, <value2>, ... ;
+       * This ensures randomization picks from valid enum values.
+       */
+      for (idx = 0; idx < ivl_type_properties(classtype); idx++) {
+	    int rand_flag = ivl_type_prop_rand(classtype, idx);
+	    if (rand_flag == 0) continue;  /* Only for rand/randc properties */
+
+	    ivl_type_t ptype = ivl_type_prop_type(classtype, idx);
+	    ivl_enumtype_t enum_type = ivl_type_enumtype(ptype);
+	    if (enum_type == NULL) continue;  /* Only for enum types */
+
+	    unsigned num_values = ivl_enum_names(enum_type);
+	    if (num_values == 0) continue;
+
+	    fprintf(vvp_out, ".enum_bound C%p, %d, %u",
+		    classtype, idx, num_values);
+	    for (unsigned vidx = 0; vidx < num_values; vidx++) {
+		  const char* bits = ivl_enum_bits(enum_type, vidx);
+		  /* Convert bits string to integer value */
+		  int64_t val = 0;
+		  if (bits) {
+			/* Parse binary string like "0010" */
+			for (const char* p = bits; *p; p++) {
+			      val = (val << 1) | (*p == '1' ? 1 : 0);
+			}
+		  }
+		  fprintf(vvp_out, ", %" PRId64, val);
+	    }
+	    fprintf(vvp_out, " ;\n");
+      }
+
       /* Register class with factory for UVM-style creation by name.
        * This allows run_test("classname") and type_id::create() to work. */
       fprintf(vvp_out, ".factory \"%s\", C%p ;\n", ivl_type_name(classtype), classtype);

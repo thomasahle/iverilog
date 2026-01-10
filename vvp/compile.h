@@ -591,4 +591,9 @@ extern void compile_constraint_bound(char*class_label, char*constraint_name, uns
  * prop_idx: property index of array that must have unique elements */
 extern void compile_constraint_unique(char*class_label, unsigned prop_idx);
 
+/* Enum bound - lists valid enum values for a rand enum property.
+ * This constrains randomization to only produce valid enum values. */
+extern void compile_enum_bound(char*class_label, unsigned prop_idx,
+                               unsigned num_values, int64_t* values, unsigned count);
+
 #endif /* IVL_compile_H */

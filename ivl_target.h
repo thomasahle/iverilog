@@ -2523,6 +2523,11 @@ extern unsigned    ivl_type_simple_bound_cond_prop2(ivl_type_t net, unsigned idx
 extern unsigned    ivl_type_unique_constraints(ivl_type_t net);
 extern unsigned    ivl_type_unique_constraint_prop(ivl_type_t net, unsigned idx);
 
+/* Check if this type is an enumeration type.
+ * Returns the enum type handle if true, NULL otherwise.
+ * This can be used to get valid enum values for randomization constraints. */
+extern ivl_enumtype_t ivl_type_enumtype(ivl_type_t net);
+
 extern ivl_type_t  ivl_type_super(ivl_type_t net);
 
 /* Struct member access functions.

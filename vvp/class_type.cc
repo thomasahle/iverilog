@@ -786,6 +786,14 @@ int class_type::constraint_idx_from_name(const std::string& name) const
  */
 int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid, const vvp_cobject* cobj) const
 {
+      // Check if this property has enum bounds - if so, pick from valid enum values
+      const std::vector<int64_t>* enum_vals = get_enum_values(prop_idx);
+      if (enum_vals != nullptr && !enum_vals->empty()) {
+	    // Pick a random valid enum value
+	    size_t idx = rand() % enum_vals->size();
+	    return (*enum_vals)[idx];
+      }
+
       // Compute the type-based min/max based on width and signedness
       int64_t type_min = 0;
       int64_t type_max = (1LL << wid) - 1;
@@ -1913,6 +1921,51 @@ size_t class_type::get_unique_constraint_prop(size_t idx) const
 {
       assert(idx < unique_props_.size());
       return unique_props_[idx];
+}
+
+void class_type::add_enum_bound(size_t prop_idx, const std::vector<int64_t>& values)
+{
+      enum_values_[prop_idx] = values;
+}
+
+const std::vector<int64_t>* class_type::get_enum_values(size_t prop_idx) const
+{
+      auto it = enum_values_.find(prop_idx);
+      if (it != enum_values_.end())
+	    return &it->second;
+      return nullptr;
+}
+
+void compile_enum_bound(char*class_label, unsigned prop_idx,
+                        unsigned num_values, int64_t* values, unsigned count)
+{
+      // Look up the class definition from the label
+      vpiHandle class_h = vvp_lookup_handle(class_label);
+      if (!class_h) {
+	    fprintf(stderr, "ERROR: .enum_bound: class label '%s' not found\n",
+		    class_label);
+	    free(class_label);
+	    return;
+      }
+
+      class_type*class_def = dynamic_cast<class_type*>(class_h);
+      if (!class_def) {
+	    fprintf(stderr, "ERROR: .enum_bound: '%s' is not a class\n",
+		    class_label);
+	    free(class_label);
+	    return;
+      }
+
+      // Collect the enum values into a vector
+      std::vector<int64_t> enum_vals;
+      for (unsigned i = 0; i < count; ++i) {
+	    enum_vals.push_back(values[i]);
+      }
+
+      // Add the enum bound to the class
+      class_def->add_enum_bound(prop_idx, enum_vals);
+
+      free(class_label);
 }
 
 #ifdef CHECK_WITH_VALGRIND

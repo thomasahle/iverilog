@@ -80,6 +80,16 @@ extern void numbv_init(struct numbv_s*obj);
 extern void numbv_add(struct numbv_s*obj, long item);
 extern void numbv_clear(struct numbv_s*obj);
 
+/* Enum values list for .enum_bound directive */
+struct enum_values_s {
+      unsigned count;
+      int64_t *values;
+};
+
+extern void enum_values_init(struct enum_values_s*obj);
+extern void enum_values_add(struct enum_values_s*obj, int64_t val);
+extern void enum_values_clear(struct enum_values_s*obj);
+
 struct argv_s {
       unsigned  argc;
       vpiHandle*argv;
