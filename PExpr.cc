@@ -687,6 +687,46 @@ void PEDistConstraint::dump(std::ostream&out) const
       out << " }";
 }
 
+PEForeachConstraint::PEForeachConstraint(perm_string array_name,
+                                         std::list<perm_string>*loop_vars,
+                                         std::list<PExpr*>*body)
+: array_name_(array_name)
+{
+      if (loop_vars) {
+            loop_vars_ = *loop_vars;
+            delete loop_vars;
+      }
+      if (body) {
+            body_ = *body;
+            delete body;
+      }
+}
+
+PEForeachConstraint::~PEForeachConstraint()
+{
+      // Note: body_ contents are owned by this class
+      for (auto it = body_.begin(); it != body_.end(); ++it) {
+            delete *it;
+      }
+}
+
+void PEForeachConstraint::dump(std::ostream&out) const
+{
+      out << "foreach(" << array_name_ << "[";
+      bool first = true;
+      for (auto it = loop_vars_.begin(); it != loop_vars_.end(); ++it) {
+            if (!first) out << ", ";
+            out << *it;
+            first = false;
+      }
+      out << "]) { ";
+      for (auto it = body_.begin(); it != body_.end(); ++it) {
+            (*it)->dump(out);
+            out << "; ";
+      }
+      out << "}";
+}
+
 PEVoid::PEVoid()
 {
 }

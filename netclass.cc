@@ -303,7 +303,8 @@ void netclass_t::add_simple_bound(perm_string constraint_name, size_t prop_idx, 
                                   sysfunc_type_t sysfunc, size_t sysfunc_arg,
                                   int64_t weight, bool weight_per_value,
                                   bool has_cond, size_t cond_prop, char cond_op,
-                                  bool cond_has_const, int64_t cond_const, size_t cond_prop2)
+                                  bool cond_has_const, int64_t cond_const, size_t cond_prop2,
+                                  bool is_foreach, size_t array_size)
 {
       simple_bound_t bound;
       bound.constraint_name = constraint_name;
@@ -313,6 +314,8 @@ void netclass_t::add_simple_bound(perm_string constraint_name, size_t prop_idx, 
       bound.has_const_bound = has_const;
       bound.const_bound = const_val;
       bound.bound_prop_idx = bound_prop;
+      bound.is_foreach = is_foreach;
+      bound.array_size = array_size;
       bound.sysfunc_type = sysfunc;
       bound.sysfunc_arg_idx = sysfunc_arg;
       bound.weight = weight;

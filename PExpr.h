@@ -831,6 +831,32 @@ class PEDistConstraint : public PExpr {
       std::list<inside_range_t*> items_;
 };
 
+/*
+ * PEForeachConstraint represents a foreach constraint.
+ * Form: foreach(array[i]) { constraints }
+ *
+ * At elaboration time, this is unrolled into individual constraints
+ * for each array element based on the array's size.
+ */
+class PEForeachConstraint : public PExpr {
+
+    public:
+      PEForeachConstraint(perm_string array_name, std::list<perm_string>*loop_vars,
+                          std::list<PExpr*>*body);
+      ~PEForeachConstraint() override;
+
+      virtual void dump(std::ostream&out) const override;
+
+      perm_string get_array_name() const { return array_name_; }
+      const std::list<perm_string>& get_loop_vars() const { return loop_vars_; }
+      const std::list<PExpr*>& get_body() const { return body_; }
+
+    private:
+      perm_string array_name_;
+      std::list<perm_string> loop_vars_;
+      std::list<PExpr*> body_;
+};
+
 class PEBinary : public PExpr {
 
     public:

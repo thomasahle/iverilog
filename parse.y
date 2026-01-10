@@ -2113,10 +2113,12 @@ constraint_expression /* IEEE1800-2005 A.1.9 */
         $$ = tmp;
       }
   | K_foreach '(' IDENTIFIER '[' loop_variables ']' ')' constraint_set semicolon_opt
-      { /* Foreach constraint - complex construct, not yet supported */
+      { /* Foreach constraint - unrolled at elaboration time */
+        perm_string array_name = lex_strings.make($3);
         delete[]$3;
-        delete $8;
-        $$ = 0;
+        PEForeachConstraint*tmp = new PEForeachConstraint(array_name, $5, $8);
+        FILE_NAME(tmp, @1);
+        $$ = tmp;
       }
   ;
 

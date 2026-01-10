@@ -193,6 +193,9 @@ class netclass_t : public ivl_type_s {
 	    bool has_const_bound; // true if bound is a constant
 	    int64_t const_bound;  // Constant bound value (if has_const_bound)
 	    size_t bound_prop_idx;// Property index (if !has_const_bound)
+	    // Foreach constraint support - constrains all elements of array
+	    bool is_foreach;      // true if this bound applies to all array elements
+	    size_t array_size;    // Array size (if is_foreach)
 	    // System function constraint support
 	    sysfunc_type_t sysfunc_type; // Type of system function (SYSFUNC_NONE if not applicable)
 	    size_t sysfunc_arg_idx;      // Property index that is argument to system function
@@ -226,7 +229,8 @@ class netclass_t : public ivl_type_s {
                             sysfunc_type_t sysfunc = SYSFUNC_NONE, size_t sysfunc_arg = 0,
                             int64_t weight = 1, bool weight_per_value = true,
                             bool has_cond = false, size_t cond_prop = 0, char cond_op = '=',
-                            bool cond_has_const = true, int64_t cond_const = 0, size_t cond_prop2 = 0);
+                            bool cond_has_const = true, int64_t cond_const = 0, size_t cond_prop2 = 0,
+                            bool is_foreach = false, size_t array_size = 0);
       size_t get_simple_bounds() const { return simple_bounds_.size(); }
       const simple_bound_t& get_simple_bound(size_t idx) const;
       perm_string get_simple_bound_constraint_name(size_t idx) const;

@@ -8944,6 +8944,109 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    return any_extracted;
       }
 
+      // Check for foreach constraint
+      const PEForeachConstraint* foreach_cons = dynamic_cast<const PEForeachConstraint*>(expr);
+      if (foreach_cons != nullptr) {
+	    // Get the array property
+	    perm_string array_name = foreach_cons->get_array_name();
+	    int prop_idx = cls->property_idx_from_name(array_name);
+	    if (prop_idx < 0) {
+		  if (debug_elaborate) {
+			cerr << "extract_simple_bound: foreach array " << array_name
+			     << " not found as property" << endl;
+		  }
+		  return false;
+	    }
+
+	    // Get the array type and size
+	    ivl_type_t prop_type = cls->get_prop_type(prop_idx);
+	    if (!prop_type) {
+		  if (debug_elaborate) {
+			cerr << "extract_simple_bound: foreach array has no type" << endl;
+		  }
+		  return false;
+	    }
+
+	    // Check if it's a static array (has slice dimensions)
+	    long array_size = -1;
+	    const netranges_t& dims = prop_type->slice_dimensions();
+	    if (!dims.empty()) {
+		  // Use the first dimension as the array size
+		  if (dims[0].defined()) {
+			array_size = dims[0].width();
+		  }
+	    }
+
+	    if (array_size <= 0) {
+		  if (debug_elaborate) {
+			cerr << "extract_simple_bound: foreach on dynamic array not yet supported" << endl;
+		  }
+		  return false;
+	    }
+
+	    // Get loop variables - we only support single loop variable for now
+	    const std::list<perm_string>& loop_vars = foreach_cons->get_loop_vars();
+	    if (loop_vars.size() != 1) {
+		  if (debug_elaborate) {
+			cerr << "extract_simple_bound: foreach with multiple loop vars not supported" << endl;
+		  }
+		  return false;
+	    }
+	    perm_string loop_var = loop_vars.front();
+
+	    // Process body constraints and mark them as foreach
+	    bool any_extracted = false;
+	    for (PExpr* body_expr : foreach_cons->get_body()) {
+		  if (body_expr != nullptr) {
+			// Parse the body constraint to get bounds
+			// The body should be of form: array[i] OP constant
+			const PEBComp* cmp = dynamic_cast<const PEBComp*>(body_expr);
+			if (!cmp) continue;
+
+			// Get the operator
+			char op = cmp->get_op();
+			if (op != 'g' && op != 'l' && op != 'G' && op != 'L' &&
+			    op != 'e' && op != 'n') continue;
+			// Map operators: g->>, l-><, G->>=, L-><=, e->==, n->!=
+			if (op == 'g') op = '>';
+			else if (op == 'l') op = '<';
+			else if (op == 'e') op = '=';
+			else if (op == 'n') op = '!';
+
+			// Check if left side is array[loopvar]
+			const PEIdent* left_ident = dynamic_cast<const PEIdent*>(cmp->get_left());
+			const PENumber* right_num = dynamic_cast<const PENumber*>(cmp->get_right());
+
+			if (!left_ident || !right_num) {
+			      // Try swapped operands
+			      left_ident = dynamic_cast<const PEIdent*>(cmp->get_right());
+			      right_num = dynamic_cast<const PENumber*>(cmp->get_left());
+			      // Swap operator
+			      if (op == '>') op = '<';
+			      else if (op == '<') op = '>';
+			      else if (op == 'G') op = 'L';
+			      else if (op == 'L') op = 'G';
+			}
+
+			if (!left_ident || !right_num) continue;
+
+			// Verify the identifier is the array we're constraining
+			// For now, just check the name matches
+			int64_t const_val = right_num->value().as_long();
+
+			// Add the bound as a foreach bound
+			cls->add_simple_bound(constraint_name, prop_idx, op, is_soft,
+			                      true, const_val, 0,
+			                      netclass_t::SYSFUNC_NONE, 0,  // sysfunc
+			                      1, true,  // weight
+			                      false, 0, '=', true, 0, 0,  // condition
+			                      true, array_size);  // foreach
+			any_extracted = true;
+		  }
+	    }
+	    return any_extracted;
+      }
+
       // Check for logical AND expression (from 'inside' constraints)
       // e.g., (x >= 0) && (x <= 3) from "inside {[0:3]}"
       const PEBLogic* logic = dynamic_cast<const PEBLogic*>(expr);
