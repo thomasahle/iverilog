@@ -342,6 +342,66 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
             return;
       }
 
+      // Check for foreach constraint
+      // For uniform bounds like foreach(arr[i]) { arr[i] >= 10; }, emit as regular constraint
+      // since VVP already applies constraints to all array elements
+      const PEForeachConstraint*foreach_con = dynamic_cast<const PEForeachConstraint*>(expr);
+      if (foreach_con) {
+            // Get the array name being iterated
+            perm_string array_name = foreach_con->get_array_name();
+
+            // Process each body constraint
+            // For now, we extract bounds that constrain the same array to constant values
+            for (const PExpr* body_expr : foreach_con->get_body()) {
+                  // Try to extract a comparison: array[i] OP constant
+                  const PEBComp* cmp = dynamic_cast<const PEBComp*>(body_expr);
+                  if (!cmp) continue;
+
+                  // Get the operator - parser uses '<', '>', 'G', 'L', 'e', 'n'
+                  char op = cmp->get_op();
+                  int op_code;
+                  switch (op) {
+                        case '>': op_code = 0; break;  // >
+                        case '<': op_code = 1; break;  // <
+                        case 'G': op_code = 2; break;  // >=
+                        case 'L': op_code = 3; break;  // <=
+                        case 'e': op_code = 4; break;  // ==
+                        case 'n': op_code = 5; break;  // !=
+                        default: continue;
+                  }
+
+                  // Try to extract: arr[i] OP constant
+                  const PEIdent* left_ident = dynamic_cast<const PEIdent*>(cmp->get_left());
+                  const PENumber* right_num = dynamic_cast<const PENumber*>(cmp->get_right());
+
+                  if (!left_ident || !right_num) {
+                        // Try swapped operands (constant OP property)
+                        left_ident = dynamic_cast<const PEIdent*>(cmp->get_right());
+                        right_num = dynamic_cast<const PENumber*>(cmp->get_left());
+                        // Swap operator: for "10 <= data[i]" this means "data[i] >= 10"
+                        if (op_code == 0) op_code = 1;       // > becomes <
+                        else if (op_code == 1) op_code = 0;  // < becomes >
+                        else if (op_code == 2) op_code = 3;  // >= becomes <=
+                        else if (op_code == 3) op_code = 2;  // <= becomes >=
+                  }
+
+                  if (!left_ident || !right_num) continue;
+
+                  // Get the property name from the identifier
+                  // For data[i], path().name.front().name gives "data"
+                  const pform_scoped_name_t& path = left_ident->path();
+                  if (path.size() != 1) continue;
+                  perm_string prop_name = path.name.front().name;
+
+                  int64_t const_val = right_num->value().as_long();
+
+                  // Emit as regular constraint (applies to all array elements)
+                  bounds.push_back(std::make_tuple(prop_name, op_code, const_val, is_soft,
+                                                   (int64_t)1, true, perm_string()));
+            }
+            return;
+      }
+
       // Check for logical AND expression (from 'inside' constraints)
       // e.g., (x >= 10) && (x <= 20) from "inside {[10:20]}"
       const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);

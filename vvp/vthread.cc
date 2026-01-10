@@ -8260,6 +8260,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
       }
 
       // Randomize elements of dynamic arrays with size constraints
+      // Apply element constraints (>= and <= bounds from inline constraints)
       for (size_t prop_idx : darray_props_to_randomize) {
 	    vvp_object_t dar_obj;
 	    cobj->get_object(prop_idx, dar_obj, 0);
@@ -8267,11 +8268,51 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    if (dar) {
 		  unsigned elem_width = darray_elem_widths[prop_idx];
 		  size_t dar_size = dar->get_size();
+
+		  // Collect element constraints for this property from inline constraints
+		  int64_t elem_min = 0;
+		  int64_t elem_max = (1LL << elem_width) - 1;
+		  if (elem_width >= 64) elem_max = INT64_MAX;
+
+		  for (const auto& bound : inline_constraints) {
+			if (bound.property_idx != prop_idx) continue;
+			if (!bound.has_const_bound) continue;
+			if (bound.is_soft) continue;
+			// Skip size constraints - only element constraints
+			if (bound.op == 'S' || bound.op == 's' || bound.op == 'M' ||
+			    bound.op == 'X' || bound.op == 'm' || bound.op == 'x') continue;
+			switch (bound.op) {
+			      case '>':  // value > const
+				    if (bound.const_bound + 1 > elem_min)
+					  elem_min = bound.const_bound + 1;
+				    break;
+			      case 'G':  // value >= const
+				    if (bound.const_bound > elem_min)
+					  elem_min = bound.const_bound;
+				    break;
+			      case '<':  // value < const
+				    if (bound.const_bound - 1 < elem_max)
+					  elem_max = bound.const_bound - 1;
+				    break;
+			      case 'L':  // value <= const
+				    if (bound.const_bound < elem_max)
+					  elem_max = bound.const_bound;
+				    break;
+			      default:
+				    break;
+			}
+		  }
+
+		  // Ensure valid range
+		  if (elem_min > elem_max) elem_min = elem_max;
+		  int64_t range = elem_max - elem_min + 1;
+
 		  for (size_t idx = 0; idx < dar_size; idx++) {
-			// Generate random value
+			// Generate constrained random value
+			int64_t rval = elem_min + (rand() % range);
 			vvp_vector4_t new_val(elem_width);
-			for (unsigned b = 0; b < elem_width; b++) {
-			      new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
+			for (unsigned b = 0; b < elem_width && b < 64; b++) {
+			      new_val.set_bit(b, ((rval >> b) & 1) ? BIT4_1 : BIT4_0);
 			}
 			dar->set_word((unsigned)idx, new_val);
 		  }
