@@ -436,6 +436,31 @@ void propagate_vector4_event_s::single_step_display(void)
 }
 
 /*
+ * This class supports triggering a named event via the ->> operator.
+ * Unlike propagate_vector4_event_s which sends to downstream outputs,
+ * this sends to the event's functor via port 0 to trigger waiting threads.
+ */
+struct trigger_event_s : public event_s {
+      explicit trigger_event_s(vvp_net_t*n) : net(n) { }
+      vvp_net_t*net;
+      void run_run(void) override;
+      void single_step_display(void) override;
+};
+
+void trigger_event_s::run_run(void)
+{
+      // Send to port 0 of the event net to trigger the event's functor
+      vvp_vector4_t tmp(1, BIT4_X);
+      vvp_net_ptr_t ptr(net, 0);
+      vvp_send_vec4(ptr, tmp, 0);
+}
+
+void trigger_event_s::single_step_display(void)
+{
+      cerr << "trigger_event: Trigger event" << endl;
+}
+
+/*
  * This class supports the propagation of real outputs from a
  * vvp_net_t object.
  */
@@ -908,16 +933,15 @@ void schedule_propagate_vector(vvp_net_t*net,
       schedule_event_(cur, delay, SEQ_NBASSIGN);
 }
 
-// FIXME: This needs to create a non-blocking event, but only one per time slot.
-//        Is schedule_event_ or execution actually filtering since the net is
-//        already X because this is not triggering?
+/*
+ * Schedule a non-blocking event trigger (->> operator).
+ * This uses trigger_event_s which properly sends to the event's functor
+ * to wake up threads waiting on the event.
+ */
 void schedule_propagate_event(vvp_net_t*net,
                               vvp_time64_t delay)
 {
-      vvp_vector4_t tmp (1, BIT4_X);
-      struct propagate_vector4_event_s*cur
-	    = new struct propagate_vector4_event_s(tmp);
-      cur->net = net;
+      struct trigger_event_s*cur = new struct trigger_event_s(net);
       schedule_event_(cur, delay, SEQ_NBASSIGN);
 }
 
