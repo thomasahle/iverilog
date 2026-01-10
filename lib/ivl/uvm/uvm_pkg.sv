@@ -25,16 +25,16 @@
 // ============================================================================
 
 `define uvm_info(ID, MSG, VERBOSITY) \
-  $display("UVM_INFO %s [%s] %s", ID, "%m", MSG);
+  $display("UVM_INFO @ %0t: %m [%s] %s", $time, ID, MSG);
 
 `define uvm_warning(ID, MSG) \
-  $display("UVM_WARNING %s [%s] %s", ID, "%m", MSG);
+  $display("UVM_WARNING @ %0t: %m [%s] %s", $time, ID, MSG);
 
 `define uvm_error(ID, MSG) \
-  $display("UVM_ERROR %s [%s] %s", ID, "%m", MSG);
+  $display("UVM_ERROR @ %0t: %m [%s] %s", $time, ID, MSG);
 
 `define uvm_fatal(ID, MSG) \
-  begin $display("UVM_FATAL %s [%s] %s", ID, "%m", MSG); $finish; end
+  begin $display("UVM_FATAL @ %0t: %m [%s] %s", $time, ID, MSG); $finish; end
 
 // ============================================================================
 // UVM Component/Object Utility Macros
