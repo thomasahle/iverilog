@@ -1,2 +1,2 @@
 PASSED
-./ivltests/sv_string_concat_sfunc.v:36: $finish called at 0 (1s)
+./ivltests/sv_string_concat_sfunc.v:50: $finish called at 0 (1s)

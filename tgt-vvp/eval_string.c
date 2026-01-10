@@ -259,7 +259,10 @@ void draw_eval_string(ivl_expr_t expr)
 	    break;
 
 	  case IVL_EX_UFUNC:
-	    draw_ufunc_string(expr);
+	    if (ivl_expr_value(expr) == IVL_VT_STRING)
+		  draw_ufunc_string(expr);
+	    else
+		  fallback_eval(expr);
 	    break;
 
 	  case IVL_EX_STRUCT_MEMBER:
