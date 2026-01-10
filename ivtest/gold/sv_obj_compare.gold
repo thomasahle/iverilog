@@ -1,3 +1,2 @@
 PASSED
 ./ivltests/sv_obj_compare.v:45: $finish called at 0 (1s)
-
