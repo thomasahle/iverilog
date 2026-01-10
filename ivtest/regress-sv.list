@@ -1135,6 +1135,7 @@ sv_class_extern_virtual2	normal,-g2012		ivltests
 sv_class_prop_array2	normal,-g2012		ivltests
 sv_uvm_config_db1	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_uvm_factory1	normal,-g2012,-I../lib/ivl/uvm		ivltests
+sv_uvm_sequence	normal,-g2012,-I../lib/ivl/uvm		ivltests
 sv_include_semicolon1	normal,-g2012,-Iivltests		ivltests
 sv_interface_port1	normal,-g2012		ivltests gold=sv_interface_port1.gold
 sv_interface_port_member	normal,-g2012		ivltests gold=sv_interface_port_member.gold

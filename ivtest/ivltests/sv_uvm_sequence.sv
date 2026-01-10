@@ -1,8 +1,11 @@
 // Test UVM sequence base functionality
+// Compile with: iverilog -g2012 -I<uvm_dir> sv_uvm_sequence.sv
+
+`include "uvm_pkg.sv"
+`include "uvm_macros.svh"
 
 package test_pkg;
   import uvm_pkg::*;
-  `include "uvm_pkg.sv"
 
   class my_item extends uvm_sequence_item;
     `uvm_object_utils(my_item)
