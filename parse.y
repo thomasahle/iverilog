@@ -11394,16 +11394,14 @@ statement_item /* This is roughly statement_item in the LRM */
       }
 
   | hierarchy_identifier K_with '{' constraint_block_item_list_opt '}' ';'
-      { /* ....randomize with { <constraints> } */
-	if ($1 && peek_tail_name(*$1) == "randomize") {
-	      if (pform_requires_sv(@2, "Randomize with constraint"))
-		    yyerror(@2, "sorry: Randomize with constraint not supported.");
-	} else {
+      { /* obj.randomize with { <constraints> } - without parentheses */
+	if (!($1 && peek_tail_name(*$1) == "randomize")) {
 	      yyerror(@2, "error: Constraint block can only be applied to randomize method.");
 	}
+	pform_requires_sv(@2, "Randomize with inline constraint");
 	list<named_pexpr_t> pt;
-	PCallTask*tmp = new PCallTask(*$1, pt);
-	FILE_NAME(tmp, @1);
+	PCallTask*tmp = pform_make_call_task(@1, *$1, pt);
+	tmp->set_inline_constraints($4);
 	delete $1;
 	$$ = tmp;
       }
