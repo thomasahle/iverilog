@@ -2328,6 +2328,7 @@ static int show_system_task_call(ivl_statement_t net)
       }
 
       /* Handle mailbox put() method - send message (may block if bounded and full) */
+      /* Stub implementation: message argument is ignored (not actually stored) */
       if (strcmp(stmt_name,"$ivl_mailbox_method$put") == 0) {
 	    show_stmt_file_line(net, "mailbox: put");
 
@@ -2336,10 +2337,8 @@ static int show_system_task_call(ivl_statement_t net)
 		  return 1;
 
 	    ivl_expr_t mb_expr = ivl_stmt_parm(net, 0);
-	    ivl_expr_t msg_expr = ivl_stmt_parm(net, 1);
+	    /* Note: msg_expr (parm 1) is ignored - stub doesn't store messages */
 
-	    /* Push message object to stack */
-	    draw_eval_object(msg_expr);
 	    /* Push mailbox object to stack */
 	    draw_eval_object(mb_expr);
 	    /* Call mailbox put opcode */
@@ -2355,10 +2354,11 @@ static int show_system_task_call(ivl_statement_t net)
 	    show_stmt_file_line(net, "mailbox: get");
 
 	    unsigned parm_count = ivl_stmt_parm_count(net);
-	    if (parm_count != 1)
+	    if (parm_count != 2)
 		  return 1;
 
 	    ivl_expr_t mb_expr = ivl_stmt_parm(net, 0);
+	    /* Note: msg_expr (parm 1) is ignored - stub doesn't retrieve messages */
 
 	    /* Push mailbox object to stack */
 	    draw_eval_object(mb_expr);
@@ -2375,10 +2375,11 @@ static int show_system_task_call(ivl_statement_t net)
 	    show_stmt_file_line(net, "mailbox: peek");
 
 	    unsigned parm_count = ivl_stmt_parm_count(net);
-	    if (parm_count != 1)
+	    if (parm_count != 2)
 		  return 1;
 
 	    ivl_expr_t mb_expr = ivl_stmt_parm(net, 0);
+	    /* Note: msg_expr (parm 1) is ignored - stub doesn't retrieve messages */
 
 	    /* Push mailbox object to stack */
 	    draw_eval_object(mb_expr);

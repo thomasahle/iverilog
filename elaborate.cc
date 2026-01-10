@@ -4246,7 +4246,7 @@ NetProc* PCallTask::elaborate_mailbox_prop_method_(Design*des, NetScope*scope,
 	    }
 	    vector<NetExpr*>argv(2);
 	    argv[0] = prop_expr;
-	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, false);
 	    sys_task_name = "$ivl_mailbox_method$put";
 	    NetSTask*sys = new NetSTask(sys_task_name, IVL_SFUNC_AS_TASK_IGNORE, argv);
 	    sys->set_line(*this);
@@ -4261,7 +4261,7 @@ NetProc* PCallTask::elaborate_mailbox_prop_method_(Design*des, NetScope*scope,
 	    }
 	    vector<NetExpr*>argv(2);
 	    argv[0] = prop_expr;
-	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, false);
 	    sys_task_name = "$ivl_mailbox_method$get";
 	    NetSTask*sys = new NetSTask(sys_task_name, IVL_SFUNC_AS_TASK_IGNORE, argv);
 	    sys->set_line(*this);
@@ -4276,7 +4276,7 @@ NetProc* PCallTask::elaborate_mailbox_prop_method_(Design*des, NetScope*scope,
 	    }
 	    vector<NetExpr*>argv(2);
 	    argv[0] = prop_expr;
-	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, true);
+	    argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, false);
 	    sys_task_name = "$ivl_mailbox_method$peek";
 	    NetSTask*sys = new NetSTask(sys_task_name, IVL_SFUNC_AS_TASK_IGNORE, argv);
 	    sys->set_line(*this);
@@ -4673,9 +4673,10 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			return 0;
 		  }
 
-		  // Stub: just takes mailbox, doesn't write to output
-		  vector<NetExpr*>argv (1);
+		  // Pass both mailbox and msg argument for consistent VVP interface
+		  vector<NetExpr*>argv (2);
 		  argv[0] = sig;
+		  argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, false);
 
 		  NetSTask*sys = new NetSTask("$ivl_mailbox_method$get",
 		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
@@ -4695,9 +4696,10 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			return 0;
 		  }
 
-		  // Stub: just takes mailbox, doesn't write to output
-		  vector<NetExpr*>argv (1);
+		  // Pass both mailbox and msg argument for consistent VVP interface
+		  vector<NetExpr*>argv (2);
 		  argv[0] = sig;
+		  argv[1] = elab_and_eval(des, scope, parms_[0].parm, -1, false);
 
 		  NetSTask*sys = new NetSTask("$ivl_mailbox_method$peek",
 		                              IVL_SFUNC_AS_TASK_IGNORE, argv);

@@ -6596,6 +6596,96 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return 0;
 	    }
 
+	    // Check if property is a mailbox type - handle mailbox methods
+	    if (const netmailbox_t*mailbox_type = dynamic_cast<const netmailbox_t*>(prop_type)) {
+		  (void)mailbox_type; // unused for now
+		  // Get the method name (second element)
+		  pform_name_t::const_iterator it = search_results.path_tail.begin();
+		  ++it;  // Skip property name
+		  perm_string method_name = it->name;
+
+		  // Create expression to load the mailbox property from 'this'
+		  NetNet*this_net = search_results.net;
+		  NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
+		  prop_expr->set_line(*this);
+
+		  if (method_name == "try_put") {
+			// try_put(msg) - returns int (1 if put, 0 if full/bounded)
+			if (parms_.size() != 1) {
+			      cerr << get_fileline() << ": error: mailbox try_put() "
+			           << "method takes exactly one argument." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+			NetExpr*msg_arg = elab_and_eval(des, scope, parms_[0].parm, -1, false);
+
+			NetESFunc*sys_expr = new NetESFunc("$ivl_mailbox_method$try_put",
+			                                   &netvector_t::atom2s32, 2);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			sys_expr->parm(1, msg_arg);
+			return sys_expr;
+		  }
+
+		  if (method_name == "try_get") {
+			// try_get(ref msg) - returns int (1 if got, 0 if empty)
+			if (parms_.size() != 1) {
+			      cerr << get_fileline() << ": error: mailbox try_get() "
+			           << "method takes exactly one argument." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+			NetExpr*msg_arg = elab_and_eval(des, scope, parms_[0].parm, -1, false);
+
+			NetESFunc*sys_expr = new NetESFunc("$ivl_mailbox_method$try_get",
+			                                   &netvector_t::atom2s32, 2);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			sys_expr->parm(1, msg_arg);
+			return sys_expr;
+		  }
+
+		  if (method_name == "try_peek") {
+			// try_peek(ref msg) - returns int (1 if peeked, 0 if empty)
+			if (parms_.size() != 1) {
+			      cerr << get_fileline() << ": error: mailbox try_peek() "
+			           << "method takes exactly one argument." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+			NetExpr*msg_arg = elab_and_eval(des, scope, parms_[0].parm, -1, false);
+
+			NetESFunc*sys_expr = new NetESFunc("$ivl_mailbox_method$try_peek",
+			                                   &netvector_t::atom2s32, 2);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			sys_expr->parm(1, msg_arg);
+			return sys_expr;
+		  }
+
+		  if (method_name == "num") {
+			// num() - returns int (number of messages in mailbox)
+			if (parms_.size() != 0) {
+			      cerr << get_fileline() << ": error: mailbox num() "
+			           << "method takes no arguments." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			NetESFunc*sys_expr = new NetESFunc("$ivl_mailbox_method$num",
+			                                   &netvector_t::atom2s32, 1);
+			sys_expr->set_line(*this);
+			sys_expr->parm(0, prop_expr);
+			return sys_expr;
+		  }
+
+		  // put(), get(), peek() are tasks - handled in elaborate.cc
+		  cerr << get_fileline() << ": error: mailbox method " << method_name
+		       << " cannot be used in an expression context." << endl;
+		  des->errors += 1;
+		  return 0;
+	    }
+
 	    const netclass_t*prop_class = dynamic_cast<const netclass_t*>(prop_type);
 	    if (!prop_class) {
 		  cerr << get_fileline() << ": error: "
