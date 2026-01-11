@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_extern_static_ref.v:23: $finish called at 0 (1s)

@@ -1,0 +1,1 @@
+sv_extern_static_ref.sv
