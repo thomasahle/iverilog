@@ -1,1 +1,1 @@
-ivltests/sv_constraint_soft_enum.sv
+sv_constraint_soft_enum.sv

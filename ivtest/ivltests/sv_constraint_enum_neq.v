@@ -1,1 +1,1 @@
-ivltests/sv_constraint_enum_neq.sv
+sv_constraint_enum_neq.sv

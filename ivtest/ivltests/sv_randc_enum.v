@@ -1,1 +1,1 @@
-ivltests/sv_randc_enum.sv
+sv_randc_enum.sv
