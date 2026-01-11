@@ -1359,3 +1359,5 @@ sv_constraint_multi_array	normal,-g2012	ivltests gold=sv_constraint_multi_array.
 sv_class_property_access	normal,-g2012	ivltests gold=sv_class_property_access.gold
 sv_class_super_call	normal,-g2012	ivltests gold=sv_class_super_call.gold
 sv_class_cast	normal,-g2012	ivltests gold=sv_class_cast.gold
+sv_enum_methods_full	normal,-g2012	ivltests gold=sv_enum_methods_full.gold
+sv_virtual_interface_basic	normal,-g2012	ivltests gold=sv_virtual_interface_basic.gold
