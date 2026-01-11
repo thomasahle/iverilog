@@ -1,0 +1,1 @@
+sv_covergroup_sample_args.sv

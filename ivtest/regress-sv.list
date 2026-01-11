@@ -1363,3 +1363,4 @@ sv_enum_methods_full	normal,-g2012	ivltests gold=sv_enum_methods_full.gold
 sv_virtual_interface_basic	normal,-g2012	ivltests gold=sv_virtual_interface_basic.gold
 sv_queue_prop_pop	normal,-g2012	ivltests gold=sv_queue_prop_pop.gold
 sv_queue_prop_direct	normal,-g2012	ivltests gold=sv_queue_prop_direct.gold
+sv_covergroup_sample_args	normal,-g2012,-I./local_install/lib/ivl/uvm	ivltests gold=sv_covergroup_sample_args.gold
