@@ -32,8 +32,6 @@ module test;
         high_count++;
     end
 
-    $display("Low range (0-9): %0d, High range (10-255): %0d", low_count, high_count);
-
     // With 90:10 weights, low should be significantly more than high
     // Allow some variance but expect at least 60% in low range
     if (low_count < 100) begin
@@ -41,7 +39,6 @@ module test;
       $finish;
     end
 
-    $display("Distribution looks reasonable");
     $display("PASSED");
     $finish;
   end

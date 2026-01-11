@@ -1,1 +1,2 @@
 PASSED
+./ivltests/sv_constraint_dist_perrange.v:43: $finish called at 0 (1s)

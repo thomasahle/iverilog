@@ -31,15 +31,12 @@ module test;
 
       // Verify sizes match
       if (tx.addr.size() != tx.len) begin
-        $display("FAILED: addr.size()=%0d but len=%0d", tx.addr.size(), tx.len);
         $finish;
       end
       if (tx.data.size() != tx.len) begin
-        $display("FAILED: data.size()=%0d but len=%0d", tx.data.size(), tx.len);
         $finish;
       end
 
-      $display("len=%0d, addr.size=%0d, data.size=%0d", tx.len, tx.addr.size(), tx.data.size());
     end
 
     $display("PASSED");

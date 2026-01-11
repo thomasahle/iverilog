@@ -73,9 +73,6 @@ module test;
       endcase
     end
 
-    $display("Mode distribution: IDLE=%0d, READ=%0d, WRITE=%0d, BURST=%0d",
-             100 - read_ok - write_ok - burst_ok, read_ok, write_ok, burst_ok);
-    $display("All implication constraints enforced correctly");
     $display("PASSED");
     $finish;
   end

@@ -55,9 +55,6 @@ module test;
       else other_count++;
     end
 
-    // With soft constraint, should mostly get WRITE
-    $display("Without override: WRITE=%0d, other=%0d", write_count, other_count);
-
     // Now test with inline constraint override
     write_count = 0;
     other_count = 0;
@@ -74,8 +71,6 @@ module test;
         $finish;
       end
     end
-
-    $display("With READ override: All 20 iterations got READ");
 
     $display("PASSED");
     $finish;

@@ -1,1 +1,7 @@
+Size after adds: 3
+remove_first() returned: 0x10 (expected 0x10)
+remove_last() returned: 0x30 (expected 0x30)
+Size after pops: 1 (expected 1)
+Queue class property operations working via wrapper methods
 PASSED
+./ivltests/sv_queue_prop_pop.v:74: $finish called at 0 (1s)

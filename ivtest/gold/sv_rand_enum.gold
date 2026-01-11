@@ -1,1 +1,4 @@
+./ivltests/sv_rand_enum.v:34: warning: Static variable initialization requires explicit lifetime in this context.
+./ivltests/sv_rand_enum.v:35: warning: Static variable initialization requires explicit lifetime in this context.
 PASSED
+./ivltests/sv_rand_enum.v:93: $finish called at 0 (1s)

@@ -1,1 +1,4 @@
+./ivltests/sv_constraint_soft_enum.v:29: warning: Static variable initialization requires explicit lifetime in this context.
+./ivltests/sv_constraint_soft_enum.v:30: warning: Static variable initialization requires explicit lifetime in this context.
 PASSED
+./ivltests/sv_constraint_soft_enum.v:76: $finish called at 0 (1s)

@@ -53,9 +53,6 @@ module test;
       $finish;
     end
 
-    $display("Distribution: IDLE=%0d, READ=%0d, WRITE=%0d, RESERVED=%0d",
-             counts[0], counts[1], counts[2], counts[3]);
-
     $display("PASSED");
     $finish;
   end

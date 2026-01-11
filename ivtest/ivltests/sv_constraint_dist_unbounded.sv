@@ -32,8 +32,6 @@ module test;
         high_count++;
     end
 
-    $display("Low range (0-5): %0d, High range (6-15): %0d", low_count, high_count);
-
     // Values should be within range
     if (low_count == 0 || high_count == 0) begin
       $display("FAILED: One range has no values");
@@ -46,7 +44,6 @@ module test;
       $finish;
     end
 
-    $display("Distribution looks reasonable");
     $display("PASSED");
     $finish;
   end

@@ -40,7 +40,6 @@ module test;
       pass_count++;
     end
 
-    $display("All %0d randomizations passed", pass_count);
     $display("PASSED");
     $finish;
   end

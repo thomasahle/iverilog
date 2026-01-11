@@ -1,1 +1,7 @@
+Nested access: obj.inner.value = 42
+items[0] = 10
+items[1] = 20
+items[2] = 30
+All property access patterns working
 PASSED
+./ivltests/sv_class_property_access.v:83: $finish called at 0 (1s)

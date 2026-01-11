@@ -1,1 +1,9 @@
+Base::process() called, value=20
+Base::process() called, value=20
+Derived::process() called, value=25
+Base::process() called, value=20
+Derived::process() called, value=25
+GrandChild::process() called, value=125
+All super calls working correctly
 PASSED
+./ivltests/sv_class_super_call.v:93: $finish called at 0 (1s)

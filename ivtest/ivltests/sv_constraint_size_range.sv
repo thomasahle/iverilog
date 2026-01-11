@@ -35,10 +35,6 @@ module test;
       if (pkt.data.size() < 9) size_counts[pkt.data.size()]++;
     end
 
-    $display("Size distribution: 3=%0d, 4=%0d, 5=%0d, 6=%0d, 7=%0d, 8=%0d",
-             size_counts[3], size_counts[4], size_counts[5],
-             size_counts[6], size_counts[7], size_counts[8]);
-
     // Verify sizes 0-2 not used
     for (i = 0; i < 3; i++) begin
       if (size_counts[i] != 0) begin

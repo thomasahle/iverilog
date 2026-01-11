@@ -1,1 +1,6 @@
+Monitor: Captured data 0xab
+Monitor: Captured data 0xcd
+Driver: Sent two packets
+Virtual interface test completed
 PASSED
+./ivltests/sv_virtual_interface_basic.v:88: $finish called at 35 (1s)

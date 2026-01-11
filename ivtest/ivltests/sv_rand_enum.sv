@@ -89,12 +89,6 @@ module test;
       $finish;
     end
 
-    // Report distribution
-    $display("State distribution: IDLE=%0d, BUSY=%0d, WAIT=%0d, ERROR=%0d",
-             state_counts[0], state_counts[1], state_counts[2], state_counts[3]);
-    $display("Color distribution: RED=%0d, GREEN=%0d, BLUE=%0d, WHITE=%0d",
-             color_counts[0], color_counts[1], color_counts[4], color_counts[7]);
-
     $display("PASSED");
     $finish;
   end

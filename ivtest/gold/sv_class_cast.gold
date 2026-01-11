@@ -1,1 +1,7 @@
+Animal speaks: Woof!
+Cast successful: Rex is 3 years old
+Rex is fetching!
+Cast correctly failed for Cat to Dog
+Cast to Cat succeeded: Whiskers says Meow!
 PASSED
+./ivltests/sv_class_cast.v:85: $finish called at 0 (1s)

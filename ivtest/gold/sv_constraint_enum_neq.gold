@@ -1,1 +1,2 @@
 PASSED
+./ivltests/sv_constraint_enum_neq.v:57: $finish called at 0 (1s)

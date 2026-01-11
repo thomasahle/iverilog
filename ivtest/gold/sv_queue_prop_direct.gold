@@ -1,1 +1,7 @@
+Size after push_back: 3
+pop_front() returned: 0x10 (expected 0x10)
+pop_back() returned: 0x30 (expected 0x30)
+Size after pops: 1 (expected 1)
+All direct queue property operations working
 PASSED
+./ivltests/sv_queue_prop_direct.v:65: $finish called at 0 (1s)

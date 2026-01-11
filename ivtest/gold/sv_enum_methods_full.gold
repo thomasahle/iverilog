@@ -1,1 +1,17 @@
+name() test: READ = READ
+first() test: IDLE
+last() test: ERROR
+next() test: IDLE.next() = READ
+next() wrap test: ERROR.next() = IDLE
+prev() test: READ.prev() = IDLE
+prev() wrap test: IDLE.prev() = ERROR
+num() test: 5 enum values
+Iterating through all values:
+  IDLE = 0
+  READ = 1
+  WRITE = 2
+  BURST = 3
+  ERROR = 4
+All enum methods working correctly
 PASSED
+./ivltests/sv_enum_methods_full.v:96: $finish called at 0 (1s)
