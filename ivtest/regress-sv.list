@@ -1376,3 +1376,4 @@ sv_constraint_foreach_ne	normal,-g2012		gold=sv_constraint_foreach_ne.gold
 sv_extern_static_ref	normal,-g2012		gold=sv_extern_static_ref.gold
 sv_uvm_config_db_indexed	normal,-g2012,-I./local_install/lib/ivl/uvm		gold=sv_uvm_config_db_indexed.gold
 sv_repeat_clock		 normal,-g2012			gold=sv_repeat_clock.gold
+sv_constraint_prop_bounds	 normal,-g2012			gold=sv_constraint_prop_bounds.gold

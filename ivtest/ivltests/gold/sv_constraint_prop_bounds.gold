@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_constraint_prop_bounds.v:94: $finish called at 0 (1s)
