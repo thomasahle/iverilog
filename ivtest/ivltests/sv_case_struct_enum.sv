@@ -1,6 +1,6 @@
 // Test case statement with struct enum member
-// Verifies: case(struct.enumMember) pattern
-// Note: Direct case(cfg.mode) crashes VPI - use temp variable workaround
+// Verifies: case(struct.enumMember) pattern works with direct access
+// Note: struct_member.name() is a known limitation - use temp variable for .name()
 
 module test;
 
@@ -16,25 +16,21 @@ module test;
   } config_t;
 
   config_t cfg;
-  mode_e temp_mode;
   string result;
 
   initial begin
-    // Test case with struct enum member - via temp variable workaround
+    // Test case with struct enum member - direct access works
     cfg.mode = MODE_IDLE;
     cfg.data = 100;
 
-    // Access struct enum via temp variable (workaround for VPI limitation)
-    temp_mode = cfg.mode;
-
-    case (temp_mode)
+    case (cfg.mode)
       MODE_IDLE: result = "idle";
       MODE_RUN:  result = "run";
       MODE_STOP: result = "stop";
       default:   result = "unknown";
     endcase
 
-    $display("Mode: %s, result: %s", temp_mode.name(), result);
+    $display("Mode value: %0d, result: %s", cfg.mode, result);
     if (result != "idle") begin
       $display("FAILED: Expected 'idle' for MODE_IDLE");
       $finish;
@@ -42,8 +38,7 @@ module test;
 
     // Change mode
     cfg.mode = MODE_RUN;
-    temp_mode = cfg.mode;
-    case (temp_mode)
+    case (cfg.mode)
       MODE_IDLE: result = "idle";
       MODE_RUN:  result = "run";
       MODE_STOP: result = "stop";
@@ -57,8 +52,7 @@ module test;
 
     // Test MODE_STOP
     cfg.mode = MODE_STOP;
-    temp_mode = cfg.mode;
-    case (temp_mode)
+    case (cfg.mode)
       MODE_IDLE: result = "idle";
       MODE_RUN:  result = "run";
       MODE_STOP: result = "stop";
