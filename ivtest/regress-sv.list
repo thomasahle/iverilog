@@ -1368,3 +1368,4 @@ sv_constraint_foreach_bounds	normal,-g2012	ivltests gold=sv_constraint_foreach_b
 sv_sva_changed_stable	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_changed_stable.gold
 sv_constraint_cond_chain	normal,-g2012	ivltests gold=sv_constraint_cond_chain.gold
 sv_constraint_impl_enum	normal,-g2012	ivltests gold=sv_constraint_impl_enum.gold
+sv_queue_delete_index	normal,-g2012	ivltests gold=sv_queue_delete_index.gold

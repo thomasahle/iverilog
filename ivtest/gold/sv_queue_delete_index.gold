@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_queue_delete_index.v:51: $finish called at 0 (1s)
