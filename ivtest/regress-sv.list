@@ -1356,3 +1356,4 @@ sv_constraint_dist_unbounded	normal,-g2012	ivltests gold=sv_constraint_dist_unbo
 sv_constraint_impl_multi	normal,-g2012	ivltests gold=sv_constraint_impl_multi.gold
 sv_constraint_size_range	normal,-g2012	ivltests gold=sv_constraint_size_range.gold
 sv_constraint_multi_array	normal,-g2012	ivltests gold=sv_constraint_multi_array.gold
+sv_class_property_access	normal,-g2012	ivltests gold=sv_class_property_access.gold
