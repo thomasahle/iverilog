@@ -1350,3 +1350,4 @@ sv_rand_enum		normal,-g2012	ivltests	gold=sv_rand_enum.gold
 sv_randc_enum		normal,-g2012	ivltests	gold=sv_randc_enum.gold
 sv_constraint_soft_enum		normal,-g2012	ivltests	gold=sv_constraint_soft_enum.gold
 sv_constraint_enum_neq		normal,-g2012	ivltests	gold=sv_constraint_enum_neq.gold
+sv_constraint_foreach_static	normal,-g2012	ivltests gold=sv_constraint_foreach_static.gold
