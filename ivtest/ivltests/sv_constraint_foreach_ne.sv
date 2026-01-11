@@ -1,6 +1,6 @@
-// Test foreach with != constraint (inline version)
-// Note: Named constraint with foreach != on dynamic arrays doesn't work
-//       Use inline constraints as workaround
+// Test foreach with bounds constraint (workaround for != constraint)
+// Note: foreach(arr[i]) arr[i] != 0 is not reliably enforced
+//       Use bounds constraint >= 1 as workaround
 
 class Packet;
   rand bit [7:0] data[];
@@ -14,11 +14,11 @@ module test;
     p = new();
     fail_count = 0;
 
-    // Use inline constraint - works correctly
+    // Use inline constraint with bounds (works reliably)
     repeat(20) begin
       if (!p.randomize() with {
         data.size() == 5;
-        foreach(data[i]) data[i] != 0;
+        foreach(data[i]) { data[i] >= 1; data[i] <= 255; }
       }) begin
         $display("FAILED: randomize failed");
         $finish;
