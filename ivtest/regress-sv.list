@@ -1367,3 +1367,4 @@ sv_covergroup_sample_args	normal,-g2012,-I../local_install/lib/ivl/uvm	ivltests 
 sv_constraint_foreach_bounds	normal,-g2012	ivltests gold=sv_constraint_foreach_bounds.gold
 sv_sva_changed_stable	normal,-g2012,-gsupported-assertions	ivltests gold=sv_sva_changed_stable.gold
 sv_constraint_cond_chain	normal,-g2012	ivltests gold=sv_constraint_cond_chain.gold
+sv_constraint_impl_enum	normal,-g2012	ivltests gold=sv_constraint_impl_enum.gold
