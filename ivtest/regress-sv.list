@@ -1351,3 +1351,5 @@ sv_randc_enum		normal,-g2012	ivltests	gold=sv_randc_enum.gold
 sv_constraint_soft_enum		normal,-g2012	ivltests	gold=sv_constraint_soft_enum.gold
 sv_constraint_enum_neq		normal,-g2012	ivltests	gold=sv_constraint_enum_neq.gold
 sv_constraint_foreach_static	normal,-g2012	ivltests gold=sv_constraint_foreach_static.gold
+sv_constraint_dist_perrange	normal,-g2012	ivltests gold=sv_constraint_dist_perrange.gold
+sv_constraint_dist_unbounded	normal,-g2012	ivltests gold=sv_constraint_dist_unbounded.gold
