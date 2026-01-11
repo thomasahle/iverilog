@@ -275,12 +275,16 @@ void draw_class_in_scope(ivl_type_t classtype)
 		    classtype, idx, num_values);
 	    for (unsigned vidx = 0; vidx < num_values; vidx++) {
 		  const char* bits = ivl_enum_bits(enum_type, vidx);
-		  /* Convert bits string to integer value */
+		  /* Convert bits string to integer value.
+		   * NOTE: The bits string is LSB-first (bit 0 at index 0),
+		   * so we iterate from end to start to build the value correctly.
+		   */
 		  int64_t val = 0;
 		  if (bits) {
-			/* Parse binary string like "0010" */
-			for (const char* p = bits; *p; p++) {
-			      val = (val << 1) | (*p == '1' ? 1 : 0);
+			size_t len = strlen(bits);
+			for (size_t i = len; i > 0; i--) {
+			      char c = bits[i-1];
+			      val = (val << 1) | (c == '1' ? 1 : 0);
 			}
 		  }
 		  fprintf(vvp_out, ", %" PRId64, val);
