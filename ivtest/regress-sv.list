@@ -1372,3 +1372,4 @@ sv_queue_delete_index	normal,-g2012	ivltests gold=sv_queue_delete_index.gold
 sv_constraint_inside_named	normal,-g2012	ivltests gold=sv_constraint_inside_named.gold
 sv_wait_basic		normal,-g2012		gold=sv_wait_basic.gold
 sv_wait_or_expr		normal,-g2012		gold=sv_wait_or_expr.gold
+sv_constraint_foreach_ne	normal,-g2012		gold=sv_constraint_foreach_ne.gold

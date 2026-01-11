@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_constraint_foreach_ne.v:37: $finish called at 0 (1s)
