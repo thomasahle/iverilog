@@ -1,0 +1,4 @@
+Waiting for ready...
+Ready received at time 25
+PASSED
+./ivltests/sv_wait_basic.v:27: $finish called at 35 (1s)

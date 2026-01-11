@@ -1,0 +1,4 @@
+Waiting for cond_a || cond_b...
+Condition met at time 25 (which=2)
+PASSED
+./ivltests/sv_wait_or_expr.v:28: $finish called at 35 (1s)
