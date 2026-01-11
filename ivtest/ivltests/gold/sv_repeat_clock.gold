@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_repeat_clock.v:68: $finish called at 119 (1s)
