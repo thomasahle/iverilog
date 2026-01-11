@@ -1,0 +1,4 @@
+./ivltests/sv_queue_struct_foreach.v:20: warning: Static variable initialization requires explicit lifetime in this context.
+./ivltests/sv_queue_struct_foreach.v:21: warning: Static variable initialization requires explicit lifetime in this context.
+PASSED
+./ivltests/sv_queue_struct_foreach.v:60: $finish called at 0 (1s)
