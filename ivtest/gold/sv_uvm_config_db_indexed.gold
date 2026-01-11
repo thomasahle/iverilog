@@ -1,0 +1,5 @@
+PASS: config[0] = 100
+PASS: config[1] = 110
+PASS: config[2] = 120
+PASSED
+./ivltests/sv_uvm_config_db_indexed.v:39: $finish called at 0 (1s)
