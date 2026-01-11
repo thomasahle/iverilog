@@ -1361,3 +1361,5 @@ sv_class_super_call	normal,-g2012	ivltests gold=sv_class_super_call.gold
 sv_class_cast	normal,-g2012	ivltests gold=sv_class_cast.gold
 sv_enum_methods_full	normal,-g2012	ivltests gold=sv_enum_methods_full.gold
 sv_virtual_interface_basic	normal,-g2012	ivltests gold=sv_virtual_interface_basic.gold
+sv_queue_prop_pop	normal,-g2012	ivltests gold=sv_queue_prop_pop.gold
+sv_queue_prop_direct	normal,-g2012	ivltests gold=sv_queue_prop_direct.gold
