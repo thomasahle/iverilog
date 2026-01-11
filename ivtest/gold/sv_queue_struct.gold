@@ -1,0 +1,4 @@
+Queue size: 3
+pkt_queue[0]: data=bb addr=2 valid=1
+pkt_queue[1]: data=cc addr=3 valid=0
+PASSED
