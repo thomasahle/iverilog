@@ -1353,3 +1353,6 @@ sv_constraint_enum_neq		normal,-g2012	ivltests	gold=sv_constraint_enum_neq.gold
 sv_constraint_foreach_static	normal,-g2012	ivltests gold=sv_constraint_foreach_static.gold
 sv_constraint_dist_perrange	normal,-g2012	ivltests gold=sv_constraint_dist_perrange.gold
 sv_constraint_dist_unbounded	normal,-g2012	ivltests gold=sv_constraint_dist_unbounded.gold
+sv_constraint_impl_multi	normal,-g2012	ivltests gold=sv_constraint_impl_multi.gold
+sv_constraint_size_range	normal,-g2012	ivltests gold=sv_constraint_size_range.gold
+sv_constraint_multi_array	normal,-g2012	ivltests gold=sv_constraint_multi_array.gold
