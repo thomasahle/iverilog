@@ -1382,3 +1382,4 @@ sv_constraint_prop_bounds	normal,-g2012	ivltests gold=sv_constraint_prop_bounds.
 sv_queue_struct_foreach	normal,-g2012	ivltests gold=sv_queue_struct_foreach.gold
 sv_enum_typecast       ivltests gold=sv_enum_typecast.gold
 sv_cast_enum	normal,-g2012	gold=sv_cast_enum.gold
+sv_struct_aggregate	normal,-g2012		gold=sv_struct_aggregate.gold

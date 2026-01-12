@@ -1,0 +1,7 @@
+PASSED Test 1: Unpacked named aggregate
+PASSED Test 2: Unpacked positional aggregate
+PASSED Test 3: Packed named aggregate
+PASSED Test 4: Packed positional aggregate
+PASSED Test 5: Out-of-order named aggregate
+PASSED: All struct aggregate tests passed
+./ivltests/sv_struct_aggregate.sv:75: $finish called at 0 (1s)

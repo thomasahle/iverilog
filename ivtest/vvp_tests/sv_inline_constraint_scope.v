@@ -1,0 +1,1 @@
+ivltests/sv_inline_constraint_scope.sv

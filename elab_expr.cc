@@ -910,6 +910,7 @@ NetExpr* PEAssignPattern::elaborate_expr_struct_(Design *des, NetScope *scope,
 						 bool need_const) const
 {
       auto &members = struct_type->members();
+      bool is_unpacked = !struct_type->packed();
 
       // Handle named struct aggregate patterns
       if (!named_parms_.empty()) {
@@ -931,8 +932,12 @@ NetExpr* PEAssignPattern::elaborate_expr_struct_(Design *des, NetScope *scope,
 			      auto expr = elaborate_rval_expr(des, scope,
 							      members[idx].net_type,
 							      np.parm, need_const);
-			      if (expr)
-				    neconcat->set(idx, expr);
+			      if (expr) {
+				    // For unpacked structs, reverse the order so first member
+				    // is at LSB. For packed structs, first member is at MSB.
+				    size_t concat_idx = is_unpacked ? (members.size() - 1 - idx) : idx;
+				    neconcat->set(concat_idx, expr);
+			      }
 			      member_assigned[idx] = true;
 			      found = true;
 			      break;
@@ -953,7 +958,8 @@ NetExpr* PEAssignPattern::elaborate_expr_struct_(Design *des, NetScope *scope,
 			     << endl;
 			// Set to 0/default for missing members
 			NetEConst*zero = new NetEConst(verinum(verinum::V0, members[idx].net_type->packed_width()));
-			neconcat->set(idx, zero);
+			size_t concat_idx = is_unpacked ? (members.size() - 1 - idx) : idx;
+			neconcat->set(concat_idx, zero);
 		  }
 	    }
 
@@ -974,8 +980,12 @@ NetExpr* PEAssignPattern::elaborate_expr_struct_(Design *des, NetScope *scope,
 	    auto expr = elaborate_rval_expr(des, scope,
 					    members[idx].net_type,
 					    parms_[idx], need_const);
-	    if (expr)
-		  neconcat->set(idx, expr);
+	    if (expr) {
+		  // For unpacked structs, reverse the order so first member
+		  // is at LSB. For packed structs, first member is at MSB.
+		  size_t concat_idx = is_unpacked ? (members.size() - 1 - idx) : idx;
+		  neconcat->set(concat_idx, expr);
+	    }
       }
 
       return neconcat;
