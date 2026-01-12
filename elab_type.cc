@@ -675,6 +675,8 @@ ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
                                     if (actual_type) {
                                           // Store as a type parameter in the scope
                                           spec_scope->set_type_parameter(formal->name, actual_type);
+                                          // Also store in the class for method re-elaboration
+                                          spec_class->set_type_param_override(formal->name, actual_type);
                                     }
                               } else {
                                     // Value parameter - create a parameter with the actual value
@@ -705,18 +707,11 @@ ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
                               spec_class->set_property_type_override(prop.first, prop_type);
                         }
 
-                        // NOTE: Method re-elaboration for parameterized class specializations is complex.
-                        // The issue is that methods in the base class were elaborated with W=8,
-                        // but we need W=16 for Item#(16). Re-elaborating during type elaboration
-                        // phase crashes because elaborate_scope is designed for a different phase.
-                        //
-                        // This is a known limitation. For now, methods inherit from base class
-                        // and use the default parameter values. Workarounds:
-                        // 1. Use properties directly instead of method parameters
-                        // 2. Pass width as a runtime parameter
-                        // 3. Override the method in a derived class
-                        //
-                        // TODO: Implement lazy method specialization at call site.
+                        // Method re-elaboration for parameterized class specializations.
+                        // Type parameter mappings are stored in spec_class->type_param_overrides_
+                        // so that type_parameter_t::elaborate_type_raw() can resolve them.
+                        // Methods are re-elaborated lazily at call site when the method is
+                        // first invoked on a specialized class instance.
 
                         // Add the specialized class to the definition scope
                         definition_scope->add_class(spec_class);
@@ -811,13 +806,28 @@ ivl_type_t typedef_t::elaborate_type(Design *des, NetScope *scope)
 
 ivl_type_t type_parameter_t::elaborate_type_raw(Design *des, NetScope*scope) const
 {
-      ivl_type_t type;
+      ivl_type_t type = nullptr;
 
+      // First try normal scope parameter lookup
       scope->get_parameter(des, name, type);
 
-      // Recover
-      if (!type)
-	    return netvector_t::integer_type();
+      if (type) {
+	    return type;
+      }
 
-      return type;
+      // If not found, check if we're in a specialized class context.
+      // Traverse up the scope hierarchy to find a class scope with type overrides.
+      for (NetScope* s = scope; s; s = s->parent()) {
+	    const netclass_t* class_def = s->class_def();
+	    if (class_def) {
+		  if (class_def->has_type_param_overrides()) {
+			if (class_def->get_type_param_override(name, type)) {
+			      return type;
+			}
+		  }
+	    }
+      }
+
+      // Last resort fallback to integer type
+      return netvector_t::integer_type();
 }

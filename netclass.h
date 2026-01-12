@@ -137,6 +137,24 @@ class netclass_t : public ivl_type_s {
       void set_pclass(PClass* pc) { pclass_ = pc; }
       PClass* get_pclass() const { return pclass_; }
 
+	// Type parameter override methods for parameterized class specializations.
+	// These are used during method re-elaboration to resolve type parameters.
+      void set_type_param_override(perm_string param_name, ivl_type_t type);
+      bool get_type_param_override(perm_string param_name, ivl_type_t &type) const;
+      bool has_type_param_overrides() const { return !type_param_overrides_.empty(); }
+
+	// Specialized method cache methods.
+	// When a method is called on a specialized class, check if we've already
+	// re-elaborated it, and if not, do so and cache the result.
+      NetScope* get_specialized_method(perm_string method_name) const;
+      void set_specialized_method(perm_string method_name, NetScope* scope) const;
+
+	// Get a method scope, re-elaborating if necessary for specialized classes.
+	// This replaces direct calls to method_from_name for specialized classes.
+	// If this is a specialized class with type param overrides, the method
+	// will be re-elaborated with the specialized types.
+      NetScope* get_method_for_call(Design* des, perm_string method_name) const;
+
     protected:
       bool test_compatibility(ivl_type_t that) const override;
 
@@ -175,6 +193,16 @@ class netclass_t : public ivl_type_s {
 	// Pointer to the PClass for re-elaborating methods in specializations.
 	// This is null for specializations themselves (they inherit from base).
       PClass* pclass_;
+
+	// Type parameter override map for parameterized class specializations.
+	// Maps type parameter names (e.g., "T") to their specialized types.
+	// Used during method re-elaboration to resolve type parameters.
+      std::map<perm_string, ivl_type_t> type_param_overrides_;
+
+	// Cache for specialized method scopes. When a method is called on
+	// a specialized class instance, the method may need to be re-elaborated
+	// with the specialized type parameters. This cache stores the results.
+      mutable std::map<perm_string, NetScope*> specialized_method_scopes_;
 
     public:
 	// Simple bound constraints extracted from constraint blocks.

@@ -831,6 +831,17 @@ netclass_t*NetScope::find_class_(const Design*des, perm_string name, std::set<co
       if (type_==CLASS && name_==hname_t(name))
 	    return class_def_;
 
+	// Special case for specialized parameterized classes:
+	// If this is a specialized class (inherits from the template class)
+	// and we're looking for the template class name, return this specialized
+	// class instead. This allows "this" in re-elaborated methods to have
+	// the specialized class type instead of the base template type.
+      if (type_==CLASS && class_def_ && class_def_->get_super()) {
+	    // Check if we're looking for the base class name
+	    if (class_def_->get_super()->get_name() == name)
+		  return class_def_;
+      }
+
 	// Look for the class directly within this scope.
       map<perm_string,netclass_t*>::const_iterator cur = classes_.find(name);
       if (cur != classes_.end())

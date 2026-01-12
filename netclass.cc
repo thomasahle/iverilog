@@ -19,6 +19,9 @@
 
 # include  "netclass.h"
 # include  "netlist.h"
+# include  "PClass.h"
+# include  "PTask.h"
+# include  "compiler.h"
 # include  <iostream>
 
 using namespace std;
@@ -57,6 +60,112 @@ void netclass_t::set_property_type_override(perm_string pname, ivl_type_t ptype)
       // This is used by parameterized class specializations to provide
       // specialized types while keeping the same property indices.
       overridden_prop_types_[pname] = ptype;
+}
+
+void netclass_t::set_type_param_override(perm_string param_name, ivl_type_t type)
+{
+      type_param_overrides_[param_name] = type;
+}
+
+bool netclass_t::get_type_param_override(perm_string param_name, ivl_type_t &type) const
+{
+      auto it = type_param_overrides_.find(param_name);
+      if (it != type_param_overrides_.end()) {
+	    type = it->second;
+	    return true;
+      }
+      return false;
+}
+
+NetScope* netclass_t::get_specialized_method(perm_string method_name) const
+{
+      auto it = specialized_method_scopes_.find(method_name);
+      if (it != specialized_method_scopes_.end())
+	    return it->second;
+      return nullptr;
+}
+
+void netclass_t::set_specialized_method(perm_string method_name, NetScope* scope) const
+{
+      specialized_method_scopes_[method_name] = scope;
+}
+
+NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) const
+{
+      // If not a specialized class, just return the normal method
+      if (!has_type_param_overrides()) {
+	    return method_from_name(method_name);
+      }
+
+      // Check cache first
+      NetScope* cached = get_specialized_method(method_name);
+      if (cached)
+	    return cached;
+
+      // We need to re-elaborate the method with specialized types.
+      // Get the PClass from the base class (specialized classes inherit from template)
+      PClass* pclass = nullptr;
+      for (const netclass_t* c = super_; c && !pclass; c = c->get_super()) {
+	    pclass = c->get_pclass();
+      }
+
+      if (!pclass) {
+	    // Fall back to normal method if we can't find PClass
+	    return method_from_name(method_name);
+      }
+
+      // Find the task or function definition
+      PTask* ptask = nullptr;
+      PFunction* pfunc = nullptr;
+      auto task_it = pclass->tasks.find(method_name);
+      if (task_it != pclass->tasks.end()) {
+	    ptask = task_it->second;
+      } else {
+	    auto func_it = pclass->funcs.find(method_name);
+	    if (func_it != pclass->funcs.end()) {
+		  pfunc = func_it->second;
+	    }
+      }
+
+      if (!ptask && !pfunc) {
+	    // Method not found in this class, check parent
+	    if (super_)
+		  return super_->method_from_name(method_name);
+	    return nullptr;
+      }
+
+      // Create a new method scope as a child of this (specialized) class scope.
+      // The type parameters will be found via the type_param_overrides_ lookup
+      // in type_parameter_t::elaborate_type_raw().
+      hname_t use_name(method_name);
+      NetScope* method_scope = nullptr;
+
+      if (ptask) {
+	    method_scope = new NetScope(class_scope_, use_name, NetScope::TASK);
+	    method_scope->is_auto(true);
+	    method_scope->is_virtual(ptask->is_virtual());
+	    method_scope->set_line(ptask);
+	    method_scope->add_imports(&ptask->explicit_imports);
+
+	    ptask->elaborate_scope(des, method_scope);
+	    ptask->elaborate_sig(des, method_scope);
+	    ptask->elaborate(des, method_scope);
+      } else {
+	    method_scope = new NetScope(class_scope_, use_name, NetScope::FUNC);
+	    method_scope->is_auto(true);
+	    method_scope->is_virtual(pfunc->is_virtual());
+	    method_scope->set_line(pfunc);
+	    method_scope->add_imports(&pfunc->explicit_imports);
+
+	    pfunc->elaborate_scope(des, method_scope);
+	    pfunc->elaborate_sig(des, method_scope);
+	    pfunc->elaborate(des, method_scope);
+      }
+
+      // Cache the specialized method
+      set_specialized_method(method_name, method_scope);
+
+      return method_scope;
 }
 
 void netclass_t::set_class_scope(NetScope*class_scope__)
@@ -151,8 +260,9 @@ ivl_type_t netclass_t::get_prop_type(size_t idx) const
 	    const char* pname = super_->get_prop_name(idx);
 	    if (pname) {
 		  auto it = overridden_prop_types_.find(perm_string::literal(pname));
-		  if (it != overridden_prop_types_.end())
+		  if (it != overridden_prop_types_.end()) {
 			return it->second;
+		  }
 	    }
 	    return super_->get_prop_type(idx);
       } else {

@@ -6380,7 +6380,8 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      int comp_pidx = current_class->property_idx_from_name(comp_name);
 			      if (comp_pidx < 0) {
 				    // Not a property - must be the function name
-				    NetScope* func = current_class->method_from_name(comp_name);
+				    // Use get_method_for_call for parameterized class specialization
+				    NetScope* func = current_class->get_method_for_call(des, comp_name);
 				    if (func && func->type() == NetScope::FUNC) {
 					  // Build function call
 					  NetFuncDef* func_def = func->func_def();
@@ -6467,8 +6468,8 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      }
 			}
 
-			// Check for function in final class
-			NetScope* func = current_class->method_from_name(method_name);
+			// Check for function in final class (use get_method_for_call for parameterized class specialization)
+			NetScope* func = current_class->get_method_for_call(des, method_name);
 			if (func && func->type() == NetScope::FUNC) {
 			      NetFuncDef* func_def = func->func_def();
 			      if (!func_def) {
@@ -7115,8 +7116,8 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
-	    // Find the method in the property's class
-	    NetScope*method = prop_class->method_from_name(method_name);
+	    // Find the method in the property's class (use get_method_for_call for parameterized classes)
+	    NetScope*method = prop_class->get_method_for_call(des, method_name);
 	    if (method == 0) {
 		  cerr << get_fileline() << ": error: "
 		       << "Method " << method_name << " not found in class "
@@ -8222,7 +8223,8 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return sys_expr;
 	    }
 
-	    NetScope*method = class_type->method_from_name(method_name);
+	    // Use get_method_for_call to get specialized method for parameterized classes
+	    NetScope*method = class_type->get_method_for_call(des, method_name);
 
 	    if (method == 0) {
 		  cerr << get_fileline() << ": Error: " << method_name
