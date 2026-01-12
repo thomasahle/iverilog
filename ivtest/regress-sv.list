@@ -745,6 +745,7 @@ sv_param_port_list	normal,-g2009		ivltests
 sv_param_class_method	normal,-g2012		ivltests gold=sv_param_class_method.gold
 sv_param_class_type_limit	normal,-g2012		ivltests gold=sv_param_class_type_limit.gold
 sv_param_class_method_type	normal,-g2012		ivltests gold=sv_param_class_method_type.gold
+sv_param_class_cast	normal,-g2012		ivltests gold=sv_param_class_cast.gold
 sv_pkg_class		normal,-g2009		ivltests gold=sv_pkg_class.gold
 sv_port_default1	normal,-g2009		ivltests
 sv_port_default2	normal,-g2009		ivltests

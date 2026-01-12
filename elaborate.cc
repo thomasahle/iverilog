@@ -11427,6 +11427,86 @@ static bool elaborate_main_bind_directives(Design*des)
 }
 
 /*
+ * Helper function to ensure all specialized class methods are re-elaborated.
+ * This is needed because methods called via virtual dispatch are not
+ * directly called on the specialized class, so get_method_for_call() is
+ * never triggered during normal method call elaboration.
+ *
+ * This function iterates through all classes in a scope and its children,
+ * and for each specialized class that has class-type parameter overrides,
+ * ensures all inherited methods are re-elaborated.
+ */
+static void ensure_specialized_class_methods(Design*des, netclass_t*cls)
+{
+      // Only process specialized classes with class-type parameter overrides
+      if (!cls->has_type_param_overrides()) {
+	    return;
+      }
+      if (!cls->has_class_type_property_overrides() && !cls->has_class_type_param_overrides()) {
+	    return;
+      }
+
+      // Get the PClass from the base class (specialized classes inherit from template)
+      PClass* pclass = nullptr;
+      for (const netclass_t* c = cls->get_super(); c && !pclass; c = c->get_super()) {
+	    pclass = c->get_pclass();
+      }
+
+      if (!pclass)
+	    return;
+
+      // Iterate through all tasks and functions in the PClass
+      // and ensure they get re-elaborated for this specialization
+      for (auto const& task_pair : pclass->tasks) {
+	    perm_string method_name = task_pair.first;
+	    // This will create and cache a specialized method if needed
+	    cls->get_method_for_call(des, method_name);
+      }
+
+      for (auto const& func_pair : pclass->funcs) {
+	    perm_string method_name = func_pair.first;
+	    // This will create and cache a specialized method if needed
+	    cls->get_method_for_call(des, method_name);
+      }
+}
+
+static void ensure_specialized_methods_in_scope(Design*des, NetScope*scope)
+{
+      // Process classes in this scope
+      for (NetScope::class_iterator it = scope->classes_begin();
+	   it != scope->classes_end(); ++it) {
+	    ensure_specialized_class_methods(des, it->second);
+      }
+
+      // Recursively process child scopes
+      for (NetScope::child_iterator it = scope->children_begin();
+	   it != scope->children_end(); ++it) {
+	    ensure_specialized_methods_in_scope(des, it->second);
+      }
+}
+
+static void ensure_specialized_methods(Design*des)
+{
+      if (debug_elaborate) {
+	    cerr << "<toplevel>: elaborate: "
+		 << "Ensuring specialized class methods are re-elaborated." << endl;
+      }
+
+      // Process package scopes
+      for (map<perm_string,NetScope*>::const_iterator scope = des->packages_begin();
+	   scope != des->packages_end(); ++scope) {
+	    ensure_specialized_methods_in_scope(des, scope->second);
+      }
+
+      // Process root scopes
+      list<NetScope*> root_scopes = des->find_root_scopes();
+      for (list<NetScope*>::const_iterator scope = root_scopes.begin();
+	   scope != root_scopes.end(); ++scope) {
+	    ensure_specialized_methods_in_scope(des, *scope);
+      }
+}
+
+/*
  * This function is the root of all elaboration. The input is the list
  * of root module names. The function locates the Module definitions
  * for each root, does the whole elaboration sequence, and fills in
@@ -11720,6 +11800,11 @@ Design* elaborate(list<perm_string>roots)
 	    delete des;
 	    return 0;
       }
+
+	// Ensure all specialized class methods are re-elaborated.
+	// This is needed for virtual dispatch to work correctly with
+	// parameterized classes that have class-type parameters.
+      ensure_specialized_methods(des);
 
 	// Now that everything is fully elaborated verify that we do
 	// not have an always block with no delay (an infinite loop),

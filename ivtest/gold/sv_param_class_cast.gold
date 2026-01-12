@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_param_class_cast.v:65: $finish called at 0 (1s)
