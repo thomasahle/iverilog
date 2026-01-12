@@ -1,0 +1,1 @@
+sv_rand_inline_scope.sv
