@@ -677,6 +677,7 @@ sv_darray_oob_vec4	normal,-g2009		ivltests
 sv_darray_null_test	normal,-g2012		ivltests
 sv_darray_signed	normal,-g2009		ivltests
 sv_darray_word_size	normal,-g2005-sv	ivltests
+sv_darray_width_mismatch	normal,-g2012		ivltests gold=sv_darray_width_mismatch.gold
 sv_darray_property_index	normal,-g2012		ivltests
 sv_deferred_assert1	normal,-g2012,-gsupported-assertions		ivltests gold=sv_deferred_assert1.gold
 sv_deferred_assert2	normal,-g2012,-gsupported-assertions		ivltests gold=sv_deferred_assert2.gold

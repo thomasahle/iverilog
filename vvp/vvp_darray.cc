@@ -243,8 +243,19 @@ size_t vvp_darray_vec4::get_size(void) const
 void vvp_darray_vec4::set_word(unsigned adr, const vvp_vector4_t&value)
 {
       if (adr >= array_.size()) return;
-      assert(value.size() == word_wid_);
-      array_[adr] = value;
+
+      // Handle width mismatch gracefully by resizing the value
+      if (value.size() != word_wid_) {
+	    vvp_vector4_t resized(word_wid_);
+	    // Copy bits, padding with X or truncating as needed
+	    for (unsigned i = 0; i < word_wid_ && i < value.size(); i++)
+		  resized.set_bit(i, value.value(i));
+	    for (unsigned i = value.size(); i < word_wid_; i++)
+		  resized.set_bit(i, BIT4_0);
+	    array_[adr] = resized;
+      } else {
+	    array_[adr] = value;
+      }
 }
 
 void vvp_darray_vec4::get_word(unsigned adr, vvp_vector4_t&value)

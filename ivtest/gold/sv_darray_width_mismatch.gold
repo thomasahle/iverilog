@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_darray_width_mismatch.v:40: $finish called at 0 (1s)
