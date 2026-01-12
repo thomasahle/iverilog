@@ -7077,7 +7077,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // Analyze inline constraints (including 'inside' constraints which
 		  // become AND expressions)
 		  const std::list<PExpr*>& constraints = get_inline_constraints();
-		  std::vector<std::tuple<size_t, int, int64_t, int64_t, bool, NetExpr*>> bounds;  // (prop_idx, op_code with soft, const_val, weight, weight_per_value, value_expr)
+		  std::vector<std::tuple<size_t, int, int64_t, int64_t, bool, NetExpr*, size_t>> bounds;  // (prop_idx, op_code with soft, const_val, weight, weight_per_value, value_expr, src_prop_idx)
 
 		  for (const PExpr* cons : constraints) {
 			// Use recursive extraction to handle AND expressions from 'inside'
@@ -7092,7 +7092,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      bool is_soft = std::get<3>(ex);
 			      int64_t weight = std::get<4>(ex);
 			      bool weight_per_value = std::get<5>(ex);
-			      // perm_string source_prop_name = std::get<6>(ex);  // Handled separately below
+			      perm_string source_prop_name = std::get<6>(ex);
 			      NetExpr* value_expr = std::get<7>(ex);
 			      // Look up property index in the property's class type
 			      int pidx = prop_class->property_idx_from_name(cons_prop_name);
@@ -7114,20 +7114,27 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    }
 				    // Encode soft flag in bit 3 of op_code
 				    if (is_soft) op_code |= 8;
-				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val, weight, weight_per_value, value_expr));
+				    // Look up source property index for property-based size constraints
+				    size_t src_prop_idx = 0;
+				    if (source_prop_name) {
+					  int src_pidx = prop_class->property_idx_from_name(source_prop_name);
+					  if (src_pidx >= 0) src_prop_idx = (size_t)src_pidx;
+				    }
+				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val, weight, weight_per_value, value_expr, src_prop_idx));
 			      }
 			}
 		  }
 
 		  // Generate a system function call to $ivl_randomize
-		  // with extra parameters for inline constraints (5 params per bound)
-		  unsigned num_parms = 1 + bounds.size() * 5;
+		  // with extra parameters for inline constraints (6 params per bound)
+		  unsigned num_parms = 1 + bounds.size() * 6;
 		  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
 						     &netvector_t::atom2s32, num_parms);
 		  sys_expr->set_line(*this);
 		  sys_expr->parm(0, prop_expr);
 
 		  // Add inline constraint bounds as constant integer parameters
+		  // Format: prop_idx, op_code, value, weight, weight_per_value, source_prop_idx
 		  unsigned parm_idx = 1;
 		  for (const auto& bound : bounds) {
 			// Property index
@@ -7153,6 +7160,10 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			bool wpv = std::get<4>(bound);
 			NetEConst* wpv_const = new NetEConst(verinum((uint64_t)(wpv ? 1 : 0), 32));
 			sys_expr->parm(parm_idx++, wpv_const);
+			// Source property index (for property-based size constraints)
+			size_t src_prop_idx = std::get<6>(bound);
+			NetEConst* src_const = new NetEConst(verinum((uint64_t)src_prop_idx, 32));
+			sys_expr->parm(parm_idx++, src_const);
 		  }
 
 		  return sys_expr;
