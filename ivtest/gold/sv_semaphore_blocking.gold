@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_semaphore_blocking.v:72: $finish called at 13 (1s)

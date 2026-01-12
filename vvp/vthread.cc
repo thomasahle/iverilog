@@ -9295,23 +9295,44 @@ bool of_CONSTRAINT_MODE_SET(vthread_t thr, vvp_code_t cp)
  * Semaphore support
  *
  * A semaphore is a synchronization primitive with an internal key count.
- * For now, we implement a simplified non-blocking version:
  * - new(count): creates a semaphore with initial count
- * - get(n): decrements count by n (currently non-blocking - doesn't actually wait)
- * - put(n): increments count by n
+ * - get(n): decrements count by n, blocks if count < n
+ * - put(n): increments count by n, wakes waiting threads
  * - try_get(n): returns 1 if count >= n and decrements, else returns 0
  *
- * Full blocking support would require VVP scheduler changes.
+ * Blocking is implemented by adding waiting threads to a list in the semaphore.
+ * When put() increases the count, waiting threads are woken in FIFO order.
  */
+
+// Track a waiting thread and how many keys it needs
+struct semaphore_waiter_s {
+      vthread_t thread;
+      int keys_needed;
+      semaphore_waiter_s* next;
+};
 
 // Semaphore object class - derives from vvp_object for garbage collection
 class vvp_semaphore : public vvp_object {
     public:
-      explicit vvp_semaphore(int initial_count = 0) : count_(initial_count) {}
+      explicit vvp_semaphore(int initial_count = 0)
+	    : count_(initial_count), waiters_(nullptr), waiters_tail_(&waiters_) {}
+
+      ~vvp_semaphore() {
+	    // Clean up any remaining waiters (shouldn't happen normally)
+	    while (waiters_) {
+		  semaphore_waiter_s* next = waiters_->next;
+		  delete waiters_;
+		  waiters_ = next;
+	    }
+      }
 
       int get_count() const { return count_; }
 
-      void put(int n) { count_ += n; }
+      // Put keys back and wake waiting threads
+      void put(int n) {
+	    count_ += n;
+	    wake_waiters();
+      }
 
       bool try_get(int n) {
 	    if (count_ >= n) {
@@ -9321,26 +9342,51 @@ class vvp_semaphore : public vvp_object {
 	    return false;
       }
 
-      // Blocking get - for now just does try_get
-      // Full implementation would need VVP scheduler integration
-      bool get(int n) {
-	    // TODO: This should block until count >= n
-	    // For now, just decrement (non-blocking behavior)
-	    if (count_ >= n) {
-		  count_ -= n;
-		  return true;
-	    }
-	    // Would block - just decrement anyway (stub behavior)
-	    count_ -= n;
-	    return true;
+      // Add a thread to wait for keys
+      void add_waiter(vthread_t thr, int n) {
+	    semaphore_waiter_s* waiter = new semaphore_waiter_s;
+	    waiter->thread = thr;
+	    waiter->keys_needed = n;
+	    waiter->next = nullptr;
+	    *waiters_tail_ = waiter;
+	    waiters_tail_ = &waiter->next;
       }
+
+      // Check if we can satisfy the request immediately
+      bool can_get(int n) const { return count_ >= n; }
+
+      // Do the get (call only after can_get returns true)
+      void do_get(int n) { count_ -= n; }
 
       // Required by vvp_object base class
       void shallow_copy(const vvp_object*) override { }
       vvp_object* duplicate(void) const override { return new vvp_semaphore(count_); }
 
     private:
+      void wake_waiters() {
+	    // Wake threads in FIFO order as long as we have enough keys
+	    while (waiters_ && count_ >= waiters_->keys_needed) {
+		  semaphore_waiter_s* waiter = waiters_;
+		  waiters_ = waiter->next;
+		  if (waiters_ == nullptr) {
+			waiters_tail_ = &waiters_;
+		  }
+
+		  // Decrement count by keys needed
+		  count_ -= waiter->keys_needed;
+
+		  // Wake the thread
+		  vthread_t thr = waiter->thread;
+		  thr->waiting_for_event = 0;
+		  schedule_vthread(thr, 0);
+
+		  delete waiter;
+	    }
+      }
+
       int count_;
+      semaphore_waiter_s* waiters_;
+      semaphore_waiter_s** waiters_tail_;
 };
 
 /*
@@ -9358,13 +9404,6 @@ bool of_SEMAPHORE_NEW(vthread_t thr, vvp_code_t cp)
       vvp_object_t obj(sem);
       thr->push_object(obj);
 
-      // Print a warning that blocking is not implemented
-      static bool warned = false;
-      if (!warned) {
-	    fprintf(stderr, "WARNING: Semaphore blocking operations (get) are non-blocking stubs.\n");
-	    warned = true;
-      }
-
       return true;
 }
 
@@ -9372,21 +9411,37 @@ bool of_SEMAPHORE_NEW(vthread_t thr, vvp_code_t cp)
  * %semaphore/get <reg>
  *
  * Pop semaphore from stack, decrement count by value in integer register <reg>.
- * In full implementation, this should block until count >= n.
+ * If count < n, block until put() increases count sufficiently.
  */
 bool of_SEMAPHORE_GET(vthread_t thr, vvp_code_t cp)
 {
+      assert(! thr->i_am_in_function);
+
       int n = thr->words[cp->bit_idx[0]].w_int;
 
       // Peek the semaphore from stack (code generator emits %pop/obj)
       vvp_object_t &obj = thr->peek_object();
       vvp_semaphore* sem = obj.peek<vvp_semaphore>();
-      if (sem) {
-	    // Decrement count (non-blocking - doesn't actually wait)
-	    sem->get(n);
+      if (sem == nullptr) {
+	    return true;  // Null semaphore - just continue
       }
 
-      return true;
+      // If we have enough keys, decrement and continue
+      if (sem->can_get(n)) {
+	    sem->do_get(n);
+	    return true;
+      }
+
+      // Not enough keys - block until put() provides them
+      // Mark thread as waiting for event
+      assert(! thr->waiting_for_event);
+      thr->waiting_for_event = 1;
+
+      // Add thread to semaphore's waiting list
+      sem->add_waiter(thr, n);
+
+      // Return false to suspend this thread
+      return false;
 }
 
 /*

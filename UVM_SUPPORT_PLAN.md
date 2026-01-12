@@ -82,32 +82,24 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 3. **Test class not found** - run_test() finds class at runtime
 
 ### Actual Limitations
-1. **Semaphore blocking** - `semaphore.get()` is non-blocking stub
-   - Complex sequences using semaphore handshaking may loop at time 0
-   - Workaround: Use simpler test sequences, or tests without semaphore coordination
-2. **Module-level class handles** - Cannot declare class variables at module scope
+1. **Module-level class handles** - Cannot declare class variables at module scope
    - Workaround: Use interface-based BFM pattern or package-level handles
-3. **Parameterized class method value specialization** - Methods don't specialize for value params
+2. **Parameterized class method value specialization** - Methods don't specialize for value params
    - `class Item#(int W=8)` - methods use default W, not specialized value
    - Workaround: Access properties directly, use runtime parameter
-4. **extern function out-of-body definitions** - Parsed but not linked
+3. **extern function out-of-body definitions** - Parsed but not linked
    - Workaround: Define functions inline in class
-5. **Full bins coverage** - Covergroups track samples but not bin hits
-6. **unique/unique0 case** - VVP ignores these qualifiers (shows "sorry" message)
-7. **SVA assertions** - Use `-gno-assertions` flag to disable
+4. **Full bins coverage** - Covergroups track samples but not bin hits
+5. **unique/unique0 case** - VVP ignores these qualifiers (shows "sorry" message)
+6. **SVA assertions** - Use `-gno-assertions` flag to disable
 
 ## Remaining Work
 
-### Priority 1: Semaphore Blocking Support
-- Implement proper blocking for `semaphore.get()`
-- Required for complex sequences with master/slave handshaking
-- Would fix JTAG and AXI4 burst test sequence loops
-
-### Priority 2: AXI4-Lite Setup
+### Priority 1: AXI4-Lite Setup
 - Complex nested VIP structure with multiple sub-VIPs
 - Requires proper multi-VIP compile script
 
-### Priority 3: Module-Level Class Handles
+### Priority 2: Module-Level Class Handles
 ```systemverilog
 module top;
   MyClass obj;  // Currently unsupported
@@ -117,7 +109,7 @@ endmodule
 - Would enable more BFM patterns
 - Requires VVP infrastructure for module-level objects
 
-### Priority 4: Parameterized Method Value Specialization
+### Priority 3: Parameterized Method Value Specialization
 ```systemverilog
 class Item#(int W=8);
   bit [W-1:0] data;
@@ -126,7 +118,7 @@ endclass
 Item#(16) i; i.set(16'hABCD);  // Truncates to 8 bits
 ```
 
-### Priority 5: Enhanced Constraint Features
+### Priority 4: Enhanced Constraint Features
 - `soft` constraints
 - `dist` for weighted distributions
 - More complex constraint expressions
@@ -138,6 +130,10 @@ Item#(16) i; i.set(16'hABCD);  // Truncates to 8 bits
 - Use `-gno-assertions` flag until SVA support complete
 
 ## Recent Changes
+- 2026-01-12: Implemented full semaphore blocking support!
+  - semaphore.get(n) now blocks until count >= n
+  - semaphore.put(n) wakes waiting threads in FIFO order
+  - Fixes sequence loops at time 0 in complex UVM testbenches
 - 2026-01-12: Fixed dynamic array width mismatch assertion crash in VVP
 - 2026-01-12: Fixed $cast in uvm_driver.get_next_item() for parameterized type cast
 - 2026-01-12: Added unit tests sv_param_class_cast.sv, sv_darray_width_mismatch.sv
