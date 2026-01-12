@@ -997,7 +997,7 @@ package uvm_pkg;
       uvm_sequence_item base_item;
       if (seq_item_port != null) begin
         seq_item_port.get_next_item(base_item);
-        item = base_item;
+        void'($cast(item, base_item));
       end
     endtask
 

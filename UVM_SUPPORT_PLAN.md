@@ -10,11 +10,11 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 | APB | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | UART | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | AHB | ✅ | ✅ | Full testbench runs, UVM phases execute |
-| AXI4 | ❌ | ❌ | Uses unsupported assoc array patterns (see Known Issues) |
-| SPI | 🔄 | ❌ | 2 errors: $sformatf with empty params; many extern function warnings |
-| I2S | ❌ | ❌ | Unpacked struct member rvalue, constructor arg mismatch, segfault |
-| I3C | ❌ | ❌ | Same unpacked array struct issues as I2S |
-| JTAG | ❌ | ❌ | Syntax error with inline randomize() constraints |
+| AXI4 | ✅ | ✅ | Full testbench runs, UVM phases execute |
+| SPI | ✅ | ✅ | Full testbench runs, UVM phases execute |
+| I2S | ✅ | ✅ | Full testbench runs, UVM phases execute |
+| I3C | ✅ | ✅ | Full testbench runs, UVM phases execute |
+| JTAG | ✅ | 🔄 | Compiles, runs but test appears stuck in loop |
 | AXI4-Lite | 🔄 | 🔄 | Complex project structure, needs dedicated compile setup |
 
 ## Completed Features
@@ -145,8 +145,11 @@ These warnings appear during compilation but don't prevent operation:
 - 2025-12-30: Added netuarray_t handler in check_for_struct_members (partial - VVP codegen needs work)
 - 2025-12-30: Fixed unpacked struct array member rvalue access - now shows clean error message
 - 2025-12-30: Implemented nested .size() method support for dynamic arrays (obj.prop.arr.size())
+- 2026-01-12: Fixed $cast in uvm_driver.get_next_item() for parameterized type cast (SPI, I2S, I3C, AXI4 now run!)
+- 2026-01-12: 7 of 9 mbits-mirafra AVIPs now compile and run (APB, UART, AHB, AXI4, SPI, I2S, I3C)
 
 ## Next Priority
-1. Implement extern function out-of-body definitions
-2. Add support for assoc arrays with unpacked dimensions (for AXI4)
-3. Full VVP code generation for unpacked struct array members (I2S blocker)
+1. Investigate JTAG test loop (compiles but test doesn't complete)
+2. Set up AXI4-Lite compilation
+3. Implement parameterized class method specialization (for more complex testbenches)
+4. Implement module-level class handles (BFM pattern support)
