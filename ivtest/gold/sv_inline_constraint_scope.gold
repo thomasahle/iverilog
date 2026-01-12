@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_inline_constraint_scope.v:53: $finish called at 0 (1s)

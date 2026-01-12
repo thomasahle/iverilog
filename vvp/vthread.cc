@@ -9723,6 +9723,72 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %push_rand_bound/stack <prop_idx>, <encoded_op>
+ *
+ * Push an inline constraint bound where the value is on the stack.
+ * This is used for runtime-evaluated constraint expressions.
+ * Pops the value from the vec4 stack.
+ */
+bool of_PUSH_RAND_BOUND_STACK(vthread_t thr, vvp_code_t cp)
+{
+      class_type::simple_bound_t bound;
+      bound.property_idx = cp->number;
+      unsigned encoded_op = cp->bit_idx[0];
+
+      // Decode weight and weight_per_value from upper bits
+      bound.weight = (encoded_op >> 5) & 0xFFFF;
+      bound.weight_per_value = (encoded_op & (1u << 31)) != 0;
+      if (bound.weight == 0) bound.weight = 1;
+
+      int op_code = encoded_op & 0xF;
+      bool is_soft = (encoded_op & 0x10) != 0;
+      switch (op_code) {
+	    case 0: bound.op = '>'; break;
+	    case 1: bound.op = '<'; break;
+	    case 2: bound.op = 'G'; break;  // >=
+	    case 3: bound.op = 'L'; break;  // <=
+	    case 4: bound.op = '='; break;
+	    case 5: bound.op = '!'; break;
+	    case 6: bound.op = 'S'; break;  // Size constraint (exact)
+	    case 7: bound.op = 's'; break;  // Size constraint (property-based)
+	    case 8: bound.op = 'M'; break;  // Size >= (minimum)
+	    case 9: bound.op = 'X'; break;  // Size <= (maximum)
+	    case 10: bound.op = 'm'; break; // Size > (strict min)
+	    case 11: bound.op = 'x'; break; // Size < (strict max)
+	    default: bound.op = '='; break;
+      }
+      bound.is_soft = is_soft;
+
+      // Pop the value from the stack
+      vvp_vector4_t val = thr->pop_vec4();
+      int64_t const_val = 0;
+      if (val.has_xz()) {
+	    // X/Z value - treat as 0
+	    const_val = 0;
+      } else if (val.size() <= 64) {
+	    // Sign-extend the value
+	    uint64_t uval = 0;
+	    for (unsigned i = 0; i < val.size() && i < 64; i++) {
+		  if (val.value(i) == BIT4_1)
+			uval |= (1ULL << i);
+	    }
+	    // Sign-extend if high bit is set
+	    if (val.size() < 64 && val.size() > 0 && val.value(val.size()-1) == BIT4_1) {
+		  for (unsigned i = val.size(); i < 64; i++)
+			uval |= (1ULL << i);
+	    }
+	    const_val = (int64_t)uval;
+      }
+
+      bound.has_const_bound = true;
+      bound.const_bound = const_val;
+      bound.bound_prop_idx = 0;
+
+      thr->push_inline_constraint(bound);
+      return true;
+}
+
+/*
  * %clear_rand_bounds
  *
  * Clear all inline constraint bounds. Called after randomize() if needed.

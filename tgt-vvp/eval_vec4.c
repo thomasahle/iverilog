@@ -1694,26 +1694,65 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 		  ivl_expr_t wpv_expr = ivl_expr_parm(expr, idx+4);
 		  ivl_expr_t src_expr = ivl_expr_parm(expr, idx+5);
 
-		  /* Extract constant values */
-		  if (ivl_expr_type(prop_expr) == IVL_EX_NUMBER &&
-		      ivl_expr_type(op_expr) == IVL_EX_NUMBER &&
-		      ivl_expr_type(val_expr) == IVL_EX_NUMBER) {
-			const char *prop_bits = ivl_expr_bits(prop_expr);
-			const char *op_bits = ivl_expr_bits(op_expr);
+		  /* Check that prop_idx and op_code are constants (required) */
+		  if (ivl_expr_type(prop_expr) != IVL_EX_NUMBER ||
+		      ivl_expr_type(op_expr) != IVL_EX_NUMBER) {
+			continue;  /* Skip invalid constraints */
+		  }
+
+		  const char *prop_bits = ivl_expr_bits(prop_expr);
+		  const char *op_bits = ivl_expr_bits(op_expr);
+
+		  unsigned prop_idx = 0, op_code = 0;
+		  unsigned src_prop_idx = 0;
+
+		  /* Decode property index */
+		  for (unsigned b = 0; b < ivl_expr_width(prop_expr) && b < 32; b++) {
+			if (prop_bits[b] == '1') prop_idx |= (1u << b);
+		  }
+		  /* Decode operator code */
+		  for (unsigned b = 0; b < ivl_expr_width(op_expr) && b < 32; b++) {
+			if (op_bits[b] == '1') op_code |= (1u << b);
+		  }
+
+		  /* Decode weight and weight_per_value */
+		  unsigned weight = 1;
+		  bool weight_per_value = true;
+		  if (ivl_expr_type(weight_expr) == IVL_EX_NUMBER) {
+			const char *w_bits = ivl_expr_bits(weight_expr);
+			weight = 0;
+			for (unsigned b = 0; b < ivl_expr_width(weight_expr) && b < 32; b++) {
+			      if (w_bits[b] == '1') weight |= (1u << b);
+			}
+		  }
+		  if (ivl_expr_type(wpv_expr) == IVL_EX_NUMBER) {
+			const char *wpv_bits = ivl_expr_bits(wpv_expr);
+			weight_per_value = (wpv_bits[0] == '1');
+		  }
+		  /* Decode source property index for property-based size constraints */
+		  if (ivl_expr_type(src_expr) == IVL_EX_NUMBER) {
+			const char *src_bits = ivl_expr_bits(src_expr);
+			for (unsigned b = 0; b < ivl_expr_width(src_expr) && b < 32; b++) {
+			      if (src_bits[b] == '1') src_prop_idx |= (1u << b);
+			}
+		  }
+
+		  /* Encode weight in upper bits of op_code:
+		     bits 0-3: op_code (4-bit operator, 0-15)
+		     bit 4: soft flag
+		     bits 5-20: weight (up to 65535)
+		     bit 31: weight_per_value flag */
+		  unsigned encoded_op = op_code & 0xF;  /* 4-bit operator */
+		  if (op_code & 0x10) encoded_op |= (1u << 4);  /* soft flag */
+		  if (weight > 65535) weight = 65535;
+		  encoded_op |= (weight << 5);
+		  if (weight_per_value) encoded_op |= (1u << 31);
+
+		  /* Check if value is a constant or needs runtime evaluation */
+		  if (ivl_expr_type(val_expr) == IVL_EX_NUMBER) {
+			/* Constant value - decode and use immediate opcode */
 			const char *val_bits = ivl_expr_bits(val_expr);
-
-			unsigned prop_idx = 0, op_code = 0;
 			int64_t const_val = 0;
-			unsigned src_prop_idx = 0;
-
-			/* Decode property index */
-			for (unsigned b = 0; b < ivl_expr_width(prop_expr) && b < 32; b++) {
-			      if (prop_bits[b] == '1') prop_idx |= (1u << b);
-			}
-			/* Decode operator code */
-			for (unsigned b = 0; b < ivl_expr_width(op_expr) && b < 32; b++) {
-			      if (op_bits[b] == '1') op_code |= (1u << b);
-			}
 			/* Decode constant value (signed) */
 			for (unsigned b = 0; b < ivl_expr_width(val_expr) && b < 32; b++) {
 			      if (val_bits[b] == '1') const_val |= (1LL << b);
@@ -1722,39 +1761,6 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			if (ivl_expr_width(val_expr) > 0 && val_bits[ivl_expr_width(val_expr)-1] == '1') {
 			      const_val |= (-1LL << ivl_expr_width(val_expr));
 			}
-
-			/* Decode weight and weight_per_value */
-			unsigned weight = 1;
-			bool weight_per_value = true;
-			if (ivl_expr_type(weight_expr) == IVL_EX_NUMBER) {
-			      const char *w_bits = ivl_expr_bits(weight_expr);
-			      weight = 0;
-			      for (unsigned b = 0; b < ivl_expr_width(weight_expr) && b < 32; b++) {
-				    if (w_bits[b] == '1') weight |= (1u << b);
-			      }
-			}
-			if (ivl_expr_type(wpv_expr) == IVL_EX_NUMBER) {
-			      const char *wpv_bits = ivl_expr_bits(wpv_expr);
-			      weight_per_value = (wpv_bits[0] == '1');
-			}
-			/* Decode source property index for property-based size constraints */
-			if (ivl_expr_type(src_expr) == IVL_EX_NUMBER) {
-			      const char *src_bits = ivl_expr_bits(src_expr);
-			      for (unsigned b = 0; b < ivl_expr_width(src_expr) && b < 32; b++) {
-				    if (src_bits[b] == '1') src_prop_idx |= (1u << b);
-			      }
-			}
-
-			/* Encode weight in upper bits of op_code:
-			   bits 0-3: op_code (4-bit operator, 0-15)
-			   bit 4: soft flag
-			   bits 5-20: weight (up to 65535)
-			   bit 31: weight_per_value flag */
-			unsigned encoded_op = op_code & 0xF;  /* 4-bit operator */
-			if (op_code & 0x10) encoded_op |= (1u << 4);  /* soft flag */
-			if (weight > 65535) weight = 65535;
-			encoded_op |= (weight << 5);
-			if (weight_per_value) encoded_op |= (1u << 31);
 
 			/* For op_code 7 (property-based size ==), pack source_prop_idx into const_val:
 			   - lower 16 bits = signed offset (negative offset indicates division)
@@ -1769,6 +1775,11 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %llu;\n",
 				      prop_idx, encoded_op, (unsigned long long)(uint64_t)const_val);
 			}
+		  } else {
+			/* Runtime expression - evaluate and use stack opcode */
+			draw_eval_vec4(val_expr);
+			fprintf(vvp_out, "    %%push_rand_bound/stack %u, %u;\n",
+				prop_idx, encoded_op);
 		  }
 	    }
 
@@ -1824,7 +1835,6 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			ivl_expr_t wpv_expr = ivl_expr_parm(expr, parm_idx++);
 
 			int op_code = (int)ivl_expr_uvalue(op_expr);
-			int64_t const_val = (int64_t)(int32_t)ivl_expr_uvalue(val_expr);
 			unsigned weight = (unsigned)ivl_expr_uvalue(weight_expr);
 			bool weight_per_value = ivl_expr_uvalue(wpv_expr) != 0;
 			/* Encode weight in upper bits of op_code:
@@ -1837,9 +1847,19 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			if (weight > 65535) weight = 65535;  /* Clamp to 16 bits */
 			encoded_op |= (weight << 5);
 			if (weight_per_value) encoded_op |= (1u << 31);
-			/* Cast to uint32_t for VVP output - VVP interprets as signed at runtime */
-			fprintf(vvp_out, "    %%push_rand_bound %u, %u, %u;\n",
-				sig_idx, encoded_op, (uint32_t)const_val);
+
+			/* Check if value is a constant or needs runtime evaluation */
+			if (ivl_expr_type(val_expr) == IVL_EX_NUMBER) {
+			      /* Constant value - use immediate opcode */
+			      int64_t const_val = (int64_t)(int32_t)ivl_expr_uvalue(val_expr);
+			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %u;\n",
+				      sig_idx, encoded_op, (uint32_t)const_val);
+			} else {
+			      /* Runtime expression - evaluate and use stack opcode */
+			      draw_eval_vec4(val_expr);
+			      fprintf(vvp_out, "    %%push_rand_bound/stack %u, %u;\n",
+				      sig_idx, encoded_op);
+			}
 		  }
 	    }
 

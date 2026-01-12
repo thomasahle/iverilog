@@ -48,8 +48,10 @@ using namespace std;
 
 /*
  * Helper to analyze inline constraint expression and extract simple bounds.
- * Returns true if expression is a simple comparison: property_name OP constant
+ * Returns true if expression is a simple comparison: property_name OP value
  * On success, fills in: property_name, op_code, const_value
+ * If value_expr is provided, it's filled with the elaborated RHS expression
+ * for runtime evaluation (non-null means use expr instead of const_value).
  * op_code encoding (4 bits, soft flag at bit 4):
  *   0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!',
  *   6='S' (size==), 7='s' (size==prop),
@@ -62,7 +64,8 @@ static bool analyze_constraint_expr(const PExpr*expr,
                                     int64_t& const_value,
                                     Design*des = nullptr,
                                     NetScope*scope = nullptr,
-                                    perm_string* source_prop_name = nullptr)
+                                    perm_string* source_prop_name = nullptr,
+                                    NetExpr** value_expr = nullptr)
 {
       // Check if it's a binary comparison expression
       const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
@@ -237,6 +240,19 @@ static bool analyze_constraint_expr(const PExpr*expr,
             }
       }
 
+      // Fourth try: Any expression that elaborates to a runtime value
+      // This handles external scope variables like local_min, local_max
+      if (des && scope && value_expr) {
+            PExpr* rhs_nc = const_cast<PExpr*>(rhs);
+            NetExpr* rhs_expr = rhs_nc->elaborate_expr(des, scope, -1, false);
+            if (rhs_expr) {
+                  // Return the expression for runtime evaluation
+                  *value_expr = rhs_expr;
+                  const_value = 0;  // Not used when value_expr is set
+                  return true;
+            }
+      }
+
       return false;
 }
 
@@ -245,11 +261,12 @@ static bool analyze_constraint_expr(const PExpr*expr,
  * Handles logical AND expressions (from 'inside' constraints) by recursively
  * processing both sides. Handles PESoftConstraint wrapper to mark soft constraints.
  * Handles PEConditionalConstraint for implication and if-else constraints.
- * Populates the bounds vector with (prop_name, op_code, const_value, is_soft, weight, weight_per_value, source_prop_name).
+ * Populates the bounds vector with (prop_name, op_code, const_value, is_soft, weight, weight_per_value, source_prop_name, value_expr).
  * The source_prop_name is only used for op_code 7 (property-based size constraints).
+ * The value_expr is non-null for runtime variable references (external scope variables).
  */
 static void analyze_constraint_expr_recursive(const PExpr*expr,
-                                              std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string>>& bounds,
+                                              std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string, NetExpr*>>& bounds,
                                               Design*des = nullptr,
                                               NetScope*scope = nullptr,
                                               bool is_soft = false)
@@ -296,7 +313,7 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
                         if (num) {
                               int64_t val = num->value().as_long();
                               // op_code 4 is '=' (==)
-                              bounds.push_back(std::make_tuple(prop_name, 4, val, is_soft, weight, weight_per_value, perm_string()));
+                              bounds.push_back(std::make_tuple(prop_name, 4, val, is_soft, weight, weight_per_value, perm_string(), (NetExpr*)nullptr));
                         }
                   } else if (rng->low_val && rng->high_val) {
                         // Range: create >= and <= constraints
@@ -307,12 +324,12 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
                         if (lo_num) {
                               int64_t lo = lo_num->value().as_long();
                               // op_code 2 is 'G' (>=)
-                              bounds.push_back(std::make_tuple(prop_name, 2, lo, is_soft, weight, weight_per_value, perm_string()));
+                              bounds.push_back(std::make_tuple(prop_name, 2, lo, is_soft, weight, weight_per_value, perm_string(), (NetExpr*)nullptr));
                         }
                         if (hi_num) {
                               int64_t hi = hi_num->value().as_long();
                               // op_code 3 is 'L' (<=)
-                              bounds.push_back(std::make_tuple(prop_name, 3, hi, is_soft, weight, weight_per_value, perm_string()));
+                              bounds.push_back(std::make_tuple(prop_name, 3, hi, is_soft, weight, weight_per_value, perm_string(), (NetExpr*)nullptr));
                         }
                   }
             }
@@ -397,7 +414,7 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
 
                   // Emit as regular constraint (applies to all array elements)
                   bounds.push_back(std::make_tuple(prop_name, op_code, const_val, is_soft,
-                                                   (int64_t)1, true, perm_string()));
+                                                   (int64_t)1, true, perm_string(), (NetExpr*)nullptr));
             }
             return;
       }
@@ -424,10 +441,12 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
       int op_code;
       int64_t const_value;
       perm_string source_prop_name;
-      if (analyze_constraint_expr(expr, prop_name, op_code, const_value, des, scope, &source_prop_name)) {
+      NetExpr* value_expr = nullptr;
+      if (analyze_constraint_expr(expr, prop_name, op_code, const_value, des, scope, &source_prop_name, &value_expr)) {
             // Default weight is 1 with weight_per_value=true
             // The 7th element is source_prop_name for property-based size constraints (op_code 7)
-            bounds.push_back(std::make_tuple(prop_name, op_code, const_value, is_soft, (int64_t)1, true, source_prop_name));
+            // The 8th element is value_expr for runtime variable references (non-null)
+            bounds.push_back(std::make_tuple(prop_name, op_code, const_value, is_soft, (int64_t)1, true, source_prop_name, value_expr));
       }
 }
 
@@ -2933,11 +2952,11 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 
 	    // Check for inline constraints and collect bounds for each signal
 	    const std::list<PExpr*>& constraints = get_inline_constraints();
-	    // bounds_per_sig[signal_idx] = vector of (op_code, const_val, weight, weight_per_value)
-	    std::vector<std::vector<std::tuple<int, int64_t, int64_t, bool>>> bounds_per_sig(num_signals);
+	    // bounds_per_sig[signal_idx] = vector of (op_code, const_val, weight, weight_per_value, value_expr)
+	    std::vector<std::vector<std::tuple<int, int64_t, int64_t, bool, NetExpr*>>> bounds_per_sig(num_signals);
 
 	    for (const PExpr* cons : constraints) {
-		  std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string>> extracted;
+		  std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string, NetExpr*>> extracted;
 		  analyze_constraint_expr_recursive(cons, extracted, des, scope);
 
 		  // Match each bound to the appropriate signal
@@ -2949,13 +2968,14 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 			int64_t weight = std::get<4>(ex);
 			bool weight_per_value = std::get<5>(ex);
 			// perm_string source_prop_name = std::get<6>(ex);  // Not used for std::randomize
+			NetExpr* value_expr = std::get<7>(ex);
 
 			// Find which signal this constraint applies to
 			for (unsigned sig_idx = 0; sig_idx < sig_names.size(); sig_idx++) {
 			      if (cons_name == sig_names[sig_idx]) {
 				    if (is_soft) op_code |= 8;
 				    bounds_per_sig[sig_idx].push_back(
-					  std::make_tuple(op_code, const_val, weight, weight_per_value));
+					  std::make_tuple(op_code, const_val, weight, weight_per_value, value_expr));
 				    break;
 			      }
 			}
@@ -2994,9 +3014,15 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 		  for (const auto& bound : bounds_per_sig[sig_idx]) {
 			NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<0>(bound), 32));
 			sys_expr->parm(parm_idx++, op_const);
-			int64_t val = std::get<1>(bound);
-			NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
-			sys_expr->parm(parm_idx++, val_const);
+			// Use runtime expression if available, otherwise use constant
+			NetExpr* val_expr = std::get<4>(bound);
+			if (val_expr) {
+			      sys_expr->parm(parm_idx++, val_expr);
+			} else {
+			      int64_t val = std::get<1>(bound);
+			      NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
+			      sys_expr->parm(parm_idx++, val_const);
+			}
 			int64_t weight = std::get<2>(bound);
 			NetEConst* weight_const = new NetEConst(verinum((uint64_t)weight, 32));
 			sys_expr->parm(parm_idx++, weight_const);
@@ -7041,11 +7067,11 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // Analyze inline constraints (including 'inside' constraints which
 		  // become AND expressions)
 		  const std::list<PExpr*>& constraints = get_inline_constraints();
-		  std::vector<std::tuple<size_t, int, int64_t, int64_t, bool>> bounds;  // (prop_idx, op_code with soft, const_val, weight, weight_per_value)
+		  std::vector<std::tuple<size_t, int, int64_t, int64_t, bool, NetExpr*>> bounds;  // (prop_idx, op_code with soft, const_val, weight, weight_per_value, value_expr)
 
 		  for (const PExpr* cons : constraints) {
 			// Use recursive extraction to handle AND expressions from 'inside'
-			std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string>> extracted;
+			std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string, NetExpr*>> extracted;
 			analyze_constraint_expr_recursive(cons, extracted, des, scope);
 
 			// Convert extracted bounds to property indices
@@ -7057,6 +7083,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      int64_t weight = std::get<4>(ex);
 			      bool weight_per_value = std::get<5>(ex);
 			      // perm_string source_prop_name = std::get<6>(ex);  // Handled separately below
+			      NetExpr* value_expr = std::get<7>(ex);
 			      // Look up property index in the property's class type
 			      int pidx = prop_class->property_idx_from_name(cons_prop_name);
 			      if (pidx >= 0) {
@@ -7077,7 +7104,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    }
 				    // Encode soft flag in bit 3 of op_code
 				    if (is_soft) op_code |= 8;
-				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val, weight, weight_per_value));
+				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val, weight, weight_per_value, value_expr));
 			      }
 			}
 		  }
@@ -7099,10 +7126,15 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			// Operator code (with soft flag in bit 3)
 			NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<1>(bound), 32));
 			sys_expr->parm(parm_idx++, op_const);
-			// Constant bound value
-			int64_t val = std::get<2>(bound);
-			NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
-			sys_expr->parm(parm_idx++, val_const);
+			// Bound value - use runtime expression if available
+			NetExpr* val_expr = std::get<5>(bound);
+			if (val_expr) {
+			      sys_expr->parm(parm_idx++, val_expr);
+			} else {
+			      int64_t val = std::get<2>(bound);
+			      NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
+			      sys_expr->parm(parm_idx++, val_const);
+			}
 			// Weight
 			int64_t weight = std::get<3>(bound);
 			NetEConst* weight_const = new NetEConst(verinum((uint64_t)weight, 32));
@@ -8138,11 +8170,11 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // Analyze inline constraints (including 'inside' constraints which
 		  // become AND expressions)
 		  const std::list<PExpr*>& constraints = get_inline_constraints();
-		  std::vector<std::tuple<size_t, int, int64_t, int64_t, bool, size_t>> bounds;  // (prop_idx, op_code with soft, const_val, weight, weight_per_value, source_prop_idx)
+		  std::vector<std::tuple<size_t, int, int64_t, int64_t, bool, size_t, NetExpr*>> bounds;  // (prop_idx, op_code with soft, const_val, weight, weight_per_value, source_prop_idx, value_expr)
 
 		  for (const PExpr* cons : constraints) {
 			// Use recursive extraction to handle AND expressions from 'inside'
-			std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string>> extracted;
+			std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string, NetExpr*>> extracted;
 			analyze_constraint_expr_recursive(cons, extracted, des, scope);
 
 			// Convert extracted bounds to property indices
@@ -8154,6 +8186,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      int64_t weight = std::get<4>(ex);
 			      bool weight_per_value = std::get<5>(ex);
 			      perm_string source_prop_name = std::get<6>(ex);
+			      NetExpr* value_expr = std::get<7>(ex);
 			      // Look up property index
 			      int pidx = class_type->property_idx_from_name(prop_name);
 			      if (pidx >= 0) {
@@ -8180,7 +8213,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    }
 				    // Encode soft flag in bit 3 of op_code
 				    if (is_soft) op_code |= 8;
-				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val, weight, weight_per_value, source_prop_idx));
+				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val, weight, weight_per_value, source_prop_idx, value_expr));
 			      }
 			}
 		  }
@@ -8202,10 +8235,15 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			// Operator code (with soft flag in bit 3)
 			NetEConst* op_const = new NetEConst(verinum((uint64_t)std::get<1>(bound), 32));
 			sys_expr->parm(parm_idx++, op_const);
-			// Constant bound value (or offset for property-based size)
-			int64_t val = std::get<2>(bound);
-			NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
-			sys_expr->parm(parm_idx++, val_const);
+			// Bound value - use runtime expression if available
+			NetExpr* val_expr = std::get<6>(bound);
+			if (val_expr) {
+			      sys_expr->parm(parm_idx++, val_expr);
+			} else {
+			      int64_t val = std::get<2>(bound);
+			      NetEConst* val_const = new NetEConst(verinum((uint64_t)val, 32));
+			      sys_expr->parm(parm_idx++, val_const);
+			}
 			// Weight (element width for size constraints)
 			int64_t weight = std::get<3>(bound);
 			NetEConst* weight_const = new NetEConst(verinum((uint64_t)weight, 32));
