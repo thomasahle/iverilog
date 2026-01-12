@@ -116,6 +116,22 @@ bool netclass_t::has_class_type_property_overrides() const
       return false;
 }
 
+bool netclass_t::has_class_type_param_overrides() const
+{
+      // Check if any type parameter override is a class type.
+      // This catches cases like uvm_tlm_analysis_fifo#(my_transaction) where:
+      //   - T = my_transaction (a class type)
+      //   - Methods might have local variables of type T (e.g., "T item;" in $cast)
+      // These methods need re-elaboration even if no PROPERTY is of class type.
+      for (auto const& override_pair : type_param_overrides_) {
+            ivl_type_t param_type = override_pair.second;
+            if (param_type && param_type->base_type() == IVL_VT_CLASS) {
+                  return true;
+            }
+      }
+      return false;
+}
+
 NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) const
 {
       // Always use the inherited method first. Only do re-elaboration for
@@ -129,20 +145,30 @@ NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) 
 	    return inherited;
       }
 
+      // DEBUG: Check what's happening
+      if (debug_elaborate) {
+	    cerr << "get_method_for_call: class=" << get_name()
+	         << " method=" << method_name
+	         << " has_type_param_overrides=" << has_type_param_overrides()
+	         << " has_class_type_property_overrides=" << has_class_type_property_overrides()
+	         << " has_class_type_param_overrides=" << has_class_type_param_overrides()
+	         << " class_scope_=" << (class_scope_ ? "set" : "null")
+	         << endl;
+      }
+
       // For specialized parameterized classes, check if the class has any PROPERTY
-      // type overrides that are class types. If so, methods need re-elaboration
-      // because they may store/load class objects to/from properties.
+      // type overrides that are class types, OR if any type parameter override
+      // is a class type. Methods need re-elaboration when:
       //
-      // This is more conservative than checking type_param_overrides_ because:
-      // - uvm_tlm_fifo#(axi4_tx) has T=axi4_tx (class) but NO class-typed properties
-      //   -> methods like size(), is_empty() don't need re-elaboration
-      // - Container#(Item) has T=Item and property "T data" -> has class-typed property
-      //   -> methods like set(T val) need re-elaboration for object ops
+      // 1. Properties are class types: methods may store/load class objects to properties
+      //    e.g., Container#(Item) has "T data" property
       //
-      // The key insight: re-elaboration is only needed when methods store/load
-      // class objects to class properties. If properties are all non-class types,
-      // the inherited methods work fine even if T is a class type.
-      if (!has_class_type_property_overrides()) {
+      // 2. Type parameters are class types: methods may declare local variables of type T
+      //    e.g., uvm_tlm_analysis_fifo#(my_transaction).tlm_write has "T item" local var
+      //    This is needed for $cast(item, t) to work correctly with the specialized type
+      //
+      // If neither condition is true, the inherited methods work fine.
+      if (!has_class_type_property_overrides() && !has_class_type_param_overrides()) {
 	    return inherited;
       }
 
@@ -150,6 +176,9 @@ NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) 
       // We need a valid class_scope_ to create the re-elaborated method in.
       if (!class_scope_) {
 	    // No class scope - can't re-elaborate, use inherited
+	    if (debug_elaborate) {
+		  cerr << "get_method_for_call: class_scope_ is null, using inherited" << endl;
+	    }
 	    return inherited;
       }
 

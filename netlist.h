@@ -1075,6 +1075,14 @@ class NetScope : public Definitions, public Attrib {
       const_child_iterator children_begin() const { return children_.begin(); }
       const_child_iterator children_end() const { return children_.end(); }
 
+	// Iterators for accessing classes in this scope
+      typedef std::map<perm_string,netclass_t*>::iterator class_iterator;
+      typedef std::map<perm_string,netclass_t*>::const_iterator const_class_iterator;
+      class_iterator classes_begin() { return classes_.begin(); }
+      class_iterator classes_end() { return classes_.end(); }
+      const_class_iterator classes_begin() const { return classes_.begin(); }
+      const_class_iterator classes_end() const { return classes_.end(); }
+
 	// Nested modules have slightly different scope search rules.
       inline bool nested_module() const { return nested_module_; }
 	// Program blocks and interfaces have elaboration constraints.
@@ -5308,6 +5316,11 @@ class Design {
       NetScope* make_package_scope(perm_string name, NetScope*unit_scope,
 				   bool is_unit);
       std::list<NetScope*> find_package_scopes() const;
+
+	// Iterators for accessing package scopes
+      typedef std::map<perm_string,NetScope*>::const_iterator package_const_iterator;
+      package_const_iterator packages_begin() const { return packages_.begin(); }
+      package_const_iterator packages_end() const { return packages_.end(); }
 
 	/* Attempt to set the precision to the specified value. If the
 	   precision is already more precise, the keep the precise

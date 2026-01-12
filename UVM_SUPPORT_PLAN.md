@@ -14,8 +14,8 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 | SPI | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | I2S | ✅ | ✅ | Full testbench runs, UVM phases execute |
 | I3C | ✅ | ✅ | Full testbench runs, UVM phases execute |
-| JTAG | ✅ | 🔄 | Compiles, runs but test appears stuck in loop |
-| AXI4-Lite | 🔄 | 🔄 | Complex project structure, needs dedicated compile setup |
+| JTAG | ✅ | 🔄 | Compiles, UVM starts; test sequence loops (test-specific issue) |
+| AXI4-Lite | 🔄 | 🔄 | Complex nested VIP structure, requires multi-VIP compile setup |
 
 ## Completed Features
 

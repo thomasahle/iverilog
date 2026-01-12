@@ -150,6 +150,11 @@ class netclass_t : public ivl_type_s {
 	// don't need re-elaboration even if type parameters exist.
       bool has_class_type_property_overrides() const;
 
+	// Check if any type parameter override is a class type.
+	// This is needed for method re-elaboration when local variables
+	// in methods use type parameters (e.g., "T item;" in $cast).
+      bool has_class_type_param_overrides() const;
+
 	// Specialized method cache methods.
 	// When a method is called on a specialized class, check if we've already
 	// re-elaborated it, and if not, do so and cache the result.
