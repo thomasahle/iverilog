@@ -82,23 +82,26 @@ Enable full UVM testbench support for the mbits-mirafra verification IP blocks.
 3. **Test class not found** - run_test() finds class at runtime
 
 ### Actual Limitations
-1. **Module-level class handles** - Cannot declare class variables at module scope
+1. **Semaphore blocking** - `semaphore.get()` is non-blocking stub
+   - Complex sequences using semaphore handshaking may loop at time 0
+   - Workaround: Use simpler test sequences, or tests without semaphore coordination
+2. **Module-level class handles** - Cannot declare class variables at module scope
    - Workaround: Use interface-based BFM pattern or package-level handles
-2. **Parameterized class method value specialization** - Methods don't specialize for value params
+3. **Parameterized class method value specialization** - Methods don't specialize for value params
    - `class Item#(int W=8)` - methods use default W, not specialized value
    - Workaround: Access properties directly, use runtime parameter
-3. **extern function out-of-body definitions** - Parsed but not linked
+4. **extern function out-of-body definitions** - Parsed but not linked
    - Workaround: Define functions inline in class
-4. **Full bins coverage** - Covergroups track samples but not bin hits
-5. **unique/unique0 case** - VVP ignores these qualifiers (shows "sorry" message)
-6. **SVA assertions** - Use `-gno-assertions` flag to disable
+5. **Full bins coverage** - Covergroups track samples but not bin hits
+6. **unique/unique0 case** - VVP ignores these qualifiers (shows "sorry" message)
+7. **SVA assertions** - Use `-gno-assertions` flag to disable
 
 ## Remaining Work
 
-### Priority 1: JTAG Test Investigation
-- Test compiles and UVM starts
-- Sequence appears to loop - likely test-specific issue
-- May need JTAG testbench fix rather than compiler fix
+### Priority 1: Semaphore Blocking Support
+- Implement proper blocking for `semaphore.get()`
+- Required for complex sequences with master/slave handshaking
+- Would fix JTAG and AXI4 burst test sequence loops
 
 ### Priority 2: AXI4-Lite Setup
 - Complex nested VIP structure with multiple sub-VIPs
