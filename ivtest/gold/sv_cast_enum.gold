@@ -1,0 +1,7 @@
+PASSED: $cast(enum, 1) = GREEN
+PASSED: $cast(enum, 5) failed as expected
+PASSED: $cast(enum, 0) = RED
+PASSED: $cast(enum, 2) = BLUE
+PASSED: $cast(enum, -1) failed as expected
+All 5 tests passed
+./ivltests/sv_cast_enum.sv:69: $finish called at 0 (1s)

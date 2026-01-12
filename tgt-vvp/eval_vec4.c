@@ -26,6 +26,7 @@
 # include  <math.h>
 # include  <assert.h>
 # include  <stdbool.h>
+# include  <stdint.h>
 
 void resize_vec4_wid(ivl_expr_t expr, unsigned wid)
 {
@@ -1979,8 +1980,67 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 		  return;
 	    }
 
-	    /* Generate code:
-	       1. Evaluate source expression onto object stack (handles any expression type)
+	    /* Check if destination is an enum type */
+	    ivl_enumtype_t enum_type = ivl_type_enumtype(dst_type);
+	    if (enum_type) {
+		  /* For enum $cast: validate source value against valid enum values.
+		     Uses flag register 8 to accumulate OR of all equality comparisons. */
+		  static unsigned enum_cast_counter = 0;
+		  unsigned cast_id = enum_cast_counter++;
+
+		  unsigned num_names = ivl_enum_names(enum_type);
+		  unsigned wid = ivl_expr_width(src_expr);
+		  if (wid == 0) wid = ivl_enum_width(enum_type);
+
+		  draw_eval_vec4(src_expr);
+		  /* Stack: [src_value] */
+
+		  fprintf(vvp_out, "    ; $cast to enum - check if value is valid\n");
+
+		  /* For each enum value: dup src, compare, accumulate match into flag8 */
+		  for (unsigned idx = 0; idx < num_names; idx++) {
+			const char* bits = ivl_enum_bits(enum_type, idx);
+			/* Convert bit string to integer value */
+			unsigned long long val = 0;
+			unsigned bit_len = strlen(bits);
+			for (unsigned b = 0; b < bit_len; b++) {
+			      if (bits[b] == '1')
+				    val |= (1ULL << b);
+			}
+			/* Dup src_value, compare with enum val */
+			fprintf(vvp_out, "    %%dup/vec4;\n");
+			fprintf(vvp_out, "    %%pushi/vec4 %llu, 0, %u;\n", val, wid);
+			fprintf(vvp_out, "    %%cmp/e;\n");
+			/* Get comparison result and accumulate into flag8 */
+			fprintf(vvp_out, "    %%flag_get/vec4 4;\n");
+			if (idx == 0) {
+			      /* First iteration: just set flag8 */
+			      fprintf(vvp_out, "    %%flag_set/vec4 8;\n");
+			} else {
+			      /* Subsequent iterations: OR with flag8 */
+			      fprintf(vvp_out, "    %%flag_get/vec4 8;\n");
+			      fprintf(vvp_out, "    %%or;\n");
+			      fprintf(vvp_out, "    %%flag_set/vec4 8;\n");
+			}
+		  }
+		  /* Stack: [src_value], flag8 = OR of all comparisons */
+		  fprintf(vvp_out, "    %%jmp/0xz T_%u_cast_fail, 8;\n", cast_id);
+		  /* Match found - store value and push success */
+		  fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", dst_sig, wid);
+		  fprintf(vvp_out, "    %%pushi/vec4 1, 0, 32;\n");  /* Push success */
+		  fprintf(vvp_out, "    %%jmp T_%u_cast_done;\n", cast_id);
+
+		  /* No match found - fail */
+		  fprintf(vvp_out, "T_%u_cast_fail ;\n", cast_id);
+		  fprintf(vvp_out, "    %%pop/vec4 1;\n");  /* Pop the src_value */
+		  fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32;\n");  /* Push failure */
+
+		  fprintf(vvp_out, "T_%u_cast_done ;\n", cast_id);
+		  return;
+	    }
+
+	    /* For class types: Generate code that
+	       1. Evaluate source expression onto object stack
 	       2. Call %cast with dest signal and dest class type label
 	       Result: If compatible, stores to dest and pushes 1 to vec4 stack
 	               If not compatible, pushes 0 to vec4 stack */
