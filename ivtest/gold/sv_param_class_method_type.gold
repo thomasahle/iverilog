@@ -1,2 +1,2 @@
 PASSED
-ivtest/ivltests/sv_param_class_method_type.sv:49: $finish called at 0 (1s)
+./ivltests/sv_param_class_method_type.v:49: $finish called at 0 (1s)
