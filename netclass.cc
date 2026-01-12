@@ -90,17 +90,74 @@ void netclass_t::set_specialized_method(perm_string method_name, NetScope* scope
       specialized_method_scopes_[method_name] = scope;
 }
 
+bool netclass_t::has_class_type_property_overrides() const
+{
+      // Check if any PROPERTY type overrides are class types.
+      // This is different from checking type_param_overrides_ because:
+      // - type_param_overrides_ tracks what type T became (e.g., T=MyClass)
+      // - overridden_prop_types_ tracks what the actual property types are
+      //
+      // A class like Container#(Item) has:
+      //   - type_param_overrides_["T"] = Item (class type)
+      //   - overridden_prop_types_["data"] = Item (class type) because data is of type T
+      //
+      // A class like uvm_tlm_fifo#(axi4_tx) has:
+      //   - type_param_overrides_["T"] = axi4_tx (class type)
+      //   - NO class-type property overrides (m_count is int, etc.)
+      //
+      // We only need to re-elaborate methods if they might store class objects
+      // to class properties.
+      for (auto const& override_pair : overridden_prop_types_) {
+            ivl_type_t prop_type = override_pair.second;
+            if (prop_type && prop_type->base_type() == IVL_VT_CLASS) {
+                  return true;
+            }
+      }
+      return false;
+}
+
 NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) const
 {
-      // If not a specialized class, just return the normal method
-      if (!has_type_param_overrides()) {
-	    return method_from_name(method_name);
+      // Always use the inherited method first. Only do re-elaboration for
+      // specialized parameterized classes that have methods using type parameters.
+      // For most classes (including UVM TLM classes), the inherited methods work fine.
+      NetScope* inherited = method_from_name(method_name);
+
+      // If not a specialized class, or if we don't have an inherited method,
+      // just return whatever we have
+      if (!has_type_param_overrides() || !inherited) {
+	    return inherited;
+      }
+
+      // For specialized parameterized classes, check if the class has any PROPERTY
+      // type overrides that are class types. If so, methods need re-elaboration
+      // because they may store/load class objects to/from properties.
+      //
+      // This is more conservative than checking type_param_overrides_ because:
+      // - uvm_tlm_fifo#(axi4_tx) has T=axi4_tx (class) but NO class-typed properties
+      //   -> methods like size(), is_empty() don't need re-elaboration
+      // - Container#(Item) has T=Item and property "T data" -> has class-typed property
+      //   -> methods like set(T val) need re-elaboration for object ops
+      //
+      // The key insight: re-elaboration is only needed when methods store/load
+      // class objects to class properties. If properties are all non-class types,
+      // the inherited methods work fine even if T is a class type.
+      if (!has_class_type_property_overrides()) {
+	    return inherited;
+      }
+
+      // We have class-typed property overrides. Check if we can safely re-elaborate.
+      // We need a valid class_scope_ to create the re-elaborated method in.
+      if (!class_scope_) {
+	    // No class scope - can't re-elaborate, use inherited
+	    return inherited;
       }
 
       // Check cache first
       NetScope* cached = get_specialized_method(method_name);
-      if (cached)
+      if (cached) {
 	    return cached;
+      }
 
       // We need to re-elaborate the method with specialized types.
       // Get the PClass from the base class (specialized classes inherit from template)
@@ -110,8 +167,8 @@ NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) 
       }
 
       if (!pclass) {
-	    // Fall back to normal method if we can't find PClass
-	    return method_from_name(method_name);
+	    // Fall back to inherited method if we can't find PClass
+	    return inherited;
       }
 
       // Find the task or function definition
@@ -128,10 +185,8 @@ NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) 
       }
 
       if (!ptask && !pfunc) {
-	    // Method not found in this class, check parent
-	    if (super_)
-		  return super_->method_from_name(method_name);
-	    return nullptr;
+	    // Method not found in PClass, use inherited
+	    return inherited;
       }
 
       // Create a new method scope as a child of this (specialized) class scope.
@@ -139,6 +194,13 @@ NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) 
       // in type_parameter_t::elaborate_type_raw().
       hname_t use_name(method_name);
       NetScope* method_scope = nullptr;
+
+      // Save and reset the in_fork state. Method bodies are not actually inside
+      // fork blocks even if the method CALL is. The in_fork counter is used to
+      // check that return statements aren't inside fork blocks, but a called
+      // method is a separate scope that can have return statements.
+      unsigned saved_in_fork = des->in_fork;
+      des->in_fork = 0;
 
       if (ptask) {
 	    method_scope = new NetScope(class_scope_, use_name, NetScope::TASK);
@@ -161,6 +223,9 @@ NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) 
 	    pfunc->elaborate_sig(des, method_scope);
 	    pfunc->elaborate(des, method_scope);
       }
+
+      // Restore in_fork state
+      des->in_fork = saved_in_fork;
 
       // Cache the specialized method
       set_specialized_method(method_name, method_scope);

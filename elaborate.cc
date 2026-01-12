@@ -5107,6 +5107,7 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			if (pidx < 0) {
 			      // Not a property - might be the method name
 			      // Check if this is the method we're looking for
+			      // Use get_method_for_call for parameterized class specialization
 			      NetScope*task = current_class->get_method_for_call(des, method_name);
 			      if (task) {
 				    if (debug_elaborate) {
@@ -5164,6 +5165,7 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  }
 
 		  // If we exhausted path_tail, the method is in current_class
+		  // Use get_method_for_call for parameterized class specialization
 		  NetScope*task = current_class->get_method_for_call(des, method_name);
 		  if (task) {
 			if (debug_elaborate) {
@@ -5402,6 +5404,7 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 				    int comp_pidx = current_class->property_idx_from_name(comp_name);
 				    if (comp_pidx < 0) {
 					  // Not a property - might be the method name
+					  // Use get_method_for_call for parameterized class specialization
 					  NetScope* task = current_class->get_method_for_call(des, comp_name);
 					  if (task) {
 						if (debug_elaborate) {
@@ -5456,6 +5459,7 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			      }
 
 			      // After exhausting remaining_tail, check for method in final class
+			      // Use get_method_for_call for parameterized class specialization
 			      NetScope* task = current_class->get_method_for_call(des, method_name);
 			      if (task) {
 				    if (debug_elaborate) {
@@ -5483,6 +5487,7 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			      }
 			} else if (current_class) {
 			      // Simple case: arr[i].method() with just one path component
+			      // Use get_method_for_call for parameterized class specialization
 			      NetScope* task = current_class->get_method_for_call(des, method_name);
 			      if (task) {
 				    if (debug_elaborate) {
@@ -5572,6 +5577,7 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 						}
 
 						// Look for the method in the final class
+						// Use get_method_for_call for parameterized class specialization
 						NetScope* task = current_class->get_method_for_call(des, method_name);
 						if (task) {
 						      if (debug_elaborate) {
@@ -5675,6 +5681,7 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			      }
 
 			      // Now look for the method in the final class
+			      // Use get_method_for_call for parameterized class specialization
 			      if (debug_elaborate) {
 				    cerr << get_fileline() << ": PCallTask::elaborate_method_: "
 					 << "Looking for method " << method_name
@@ -5889,6 +5896,7 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  }
 	    }
 
+	    // Use get_method_for_call for parameterized class specialization
 	    NetScope*task = class_type->get_method_for_call(des, method_name);
 	    if (task == 0) {
 		    // If an implicit this was added it is not an error if we

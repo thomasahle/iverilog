@@ -143,6 +143,13 @@ class netclass_t : public ivl_type_s {
       bool get_type_param_override(perm_string param_name, ivl_type_t &type) const;
       bool has_type_param_overrides() const { return !type_param_overrides_.empty(); }
 
+	// Check if this class has any PROPERTY type overrides that are class types.
+	// This is used to determine if methods need re-elaboration. Methods only
+	// need re-elaboration if they might store/load class objects to properties.
+	// If all property overrides are non-class types (int, bit, etc.), methods
+	// don't need re-elaboration even if type parameters exist.
+      bool has_class_type_property_overrides() const;
+
 	// Specialized method cache methods.
 	// When a method is called on a specialized class, check if we've already
 	// re-elaborated it, and if not, do so and cache the result.

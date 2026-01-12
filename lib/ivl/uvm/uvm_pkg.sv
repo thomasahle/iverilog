@@ -1781,7 +1781,8 @@ package uvm_pkg;
       if (m_sequencer != null) begin
         // Wait for item from sequencer's queue
         m_sequencer.get_next_item(base_item);
-        t = base_item;
+        if (!$cast(t, base_item))
+          $display("UVM_ERROR [SEQ_ITEM_PULL]: Cast failed in get_next_item");
       end else begin
         $display("UVM_ERROR [SEQ_ITEM_PULL]: No sequencer connected to pull port");
         t = null;
@@ -1794,7 +1795,8 @@ package uvm_pkg;
       uvm_sequence_item base_item;
       if (m_sequencer != null && m_sequencer.has_item()) begin
         m_sequencer.get_next_item(base_item);
-        t = base_item;
+        if (!$cast(t, base_item))
+          $display("UVM_ERROR [SEQ_ITEM_PULL]: Cast failed in try_next_item");
         success = 1;
       end else begin
         t = null;
