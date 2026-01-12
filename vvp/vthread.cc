@@ -9826,15 +9826,11 @@ bool of_PUSH_RAND_BOUND_STACK(vthread_t thr, vvp_code_t cp)
 	    // X/Z value - treat as 0
 	    const_val = 0;
       } else if (val.size() <= 64) {
-	    // Sign-extend the value
+	    // Extract value as unsigned - no sign extension
+	    // This matches how property values are extracted in check_constraints
 	    uint64_t uval = 0;
 	    for (unsigned i = 0; i < val.size() && i < 64; i++) {
 		  if (val.value(i) == BIT4_1)
-			uval |= (1ULL << i);
-	    }
-	    // Sign-extend if high bit is set
-	    if (val.size() < 64 && val.size() > 0 && val.value(val.size()-1) == BIT4_1) {
-		  for (unsigned i = val.size(); i < 64; i++)
 			uval |= (1ULL << i);
 	    }
 	    const_val = (int64_t)uval;

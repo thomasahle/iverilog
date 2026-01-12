@@ -1385,3 +1385,4 @@ sv_cast_enum	normal,-g2012	ivltests	gold=sv_cast_enum.gold
 sv_struct_aggregate	normal,-g2012	ivltests	gold=sv_struct_aggregate.gold
 sv_rand_inline_scope	normal,-g2012	ivltests	gold=sv_rand_inline_scope.gold
 sv_rand_foreach_elem_eq3	normal,-g2012	ivltests	gold=sv_rand_foreach_elem_eq3.gold
+sv_rand_nested_prop_inside	normal,-g2012	ivltests	gold=sv_rand_nested_prop_inside.gold
