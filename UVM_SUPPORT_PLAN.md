@@ -135,8 +135,10 @@ Item#(16) i; i.set(16'hABCD);  // Truncates to 8 bits
 - Use `-gno-assertions` flag until SVA support complete
 
 ## Recent Changes
+- 2026-01-12: Fixed dynamic array width mismatch assertion crash in VVP
 - 2026-01-12: Fixed $cast in uvm_driver.get_next_item() for parameterized type cast
-- 2026-01-12: Added unit test sv_param_class_cast.sv
+- 2026-01-12: Added unit tests sv_param_class_cast.sv, sv_darray_width_mismatch.sv
 - 2026-01-12: Removed debug prints from elaborate.cc
 - 2026-01-12: 7 of 9 mbits-mirafra AVIPs now compile and run!
+- 2026-01-12: APB 8b_write test runs with actual transactions and scoreboard comparison!
 - 2025-12-30: Multiple fixes for struct access, indexing, interface support
