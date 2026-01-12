@@ -1,2 +1,2 @@
 PASSED
-./ivltests/sv_enum_typecast.sv:58: $finish called at 0 (1s)
+./ivltests/sv_enum_typecast.v:58: $finish called at 0 (1s)

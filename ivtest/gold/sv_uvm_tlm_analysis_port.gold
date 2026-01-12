@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2520: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2522: note: Detected run_test() call.
 ./ivltests/sv_uvm_tlm_analysis_port.v:115: note: Detected run_test() call.
 ./ivltests/sv_uvm_tlm_analysis_port.v:115: note: Found test class 'test' for run_test("test").
 ./ivltests/sv_uvm_tlm_analysis_port.v:115: note: UVM factory not fully implemented. Test phases may not execute correctly.

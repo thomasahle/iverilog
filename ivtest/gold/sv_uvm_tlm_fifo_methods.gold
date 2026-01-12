@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2520: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2522: note: Detected run_test() call.
 ./ivltests/sv_uvm_tlm_fifo_methods.v:70: note: Detected run_test() call.
 ./ivltests/sv_uvm_tlm_fifo_methods.v:70: warning: Test class 'test_class' not found in scope for run_test().
 UVM_INFO: run_test called with test_name='test_class'

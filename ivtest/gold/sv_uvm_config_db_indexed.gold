@@ -1,4 +1,4 @@
-../local_install/lib/ivl/uvm/uvm_pkg.sv:2520: note: Detected run_test() call.
+../local_install/lib/ivl/uvm/uvm_pkg.sv:2522: note: Detected run_test() call.
 PASS: config[0] = 100
 PASS: config[1] = 110
 PASS: config[2] = 120
