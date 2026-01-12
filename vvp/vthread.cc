@@ -312,14 +312,24 @@ struct vthread_s {
 	 * These are pushed before %randomize and cleared after */
       std::vector<class_type::simple_bound_t> inline_constraints_;
 
+      /* Array copy sources for foreach element equality constraints */
+      std::map<unsigned, vvp_object_t> array_copy_sources_;
+
       void push_inline_constraint(const class_type::simple_bound_t& bound) {
 	    inline_constraints_.push_back(bound);
       }
+      void push_array_copy_source(unsigned prop_idx, const vvp_object_t& src) {
+	    array_copy_sources_[prop_idx] = src;
+      }
       void clear_inline_constraints() {
 	    inline_constraints_.clear();
+	    array_copy_sources_.clear();
       }
       const std::vector<class_type::simple_bound_t>& get_inline_constraints() const {
 	    return inline_constraints_;
+      }
+      const std::map<unsigned, vvp_object_t>& get_array_copy_sources() const {
+	    return array_copy_sources_;
       }
 
 	/* Save the file/line information when available. */
@@ -8480,6 +8490,53 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    }
       }
 
+      // Process array copy constraints (foreach element equality)
+      // Track which properties were copied so we skip them during randomization
+      std::set<size_t> copied_props;
+      const std::map<unsigned, vvp_object_t>& array_copy_sources = thr->get_array_copy_sources();
+      for (const auto& bound : inline_constraints) {
+	    if (bound.op == 'C') {
+		  size_t prop_idx = bound.property_idx;
+		  auto src_it = array_copy_sources.find(prop_idx);
+		  if (src_it != array_copy_sources.end()) {
+			// Get source array
+			vvp_darray* src_dar = src_it->second.peek<vvp_darray>();
+			if (src_dar) {
+			      size_t src_size = src_dar->get_size();
+			      // Get target property, resize if needed
+			      vvp_object_t target_obj;
+			      cobj->get_object(prop_idx, target_obj, 0);
+			      vvp_darray* target_dar = target_obj.peek<vvp_darray>();
+			      // Create or resize target array
+			      if (!target_dar || target_dar->get_size() != src_size) {
+				    // Need to create new array - get element width from source
+				    unsigned elem_width = 8;
+				    if (src_size > 0) {
+					  vvp_vector4_t first_elem;
+					  src_dar->get_word(0, first_elem);
+					  elem_width = first_elem.size();
+				    }
+				    vvp_darray_vec4* new_dar = new vvp_darray_vec4(src_size, elem_width);
+				    vvp_object_t new_dar_obj(new_dar);
+				    cobj->set_object(prop_idx, new_dar_obj, 0);
+				    cobj->get_object(prop_idx, target_obj, 0);
+				    target_dar = target_obj.peek<vvp_darray>();
+			      }
+			      // Copy elements
+			      if (target_dar) {
+				    for (size_t idx = 0; idx < src_size; idx++) {
+					  vvp_vector4_t elem;
+					  src_dar->get_word(idx, elem);
+					  target_dar->set_word(idx, elem);
+				    }
+			      }
+			      // Mark as copied so we skip normal randomization
+			      copied_props.insert(prop_idx);
+			}
+		  }
+	    }
+      }
+
       // Try to find values that satisfy constraints
       int tries = 0;
       bool success = false;
@@ -8489,6 +8546,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    class_type::inst_t inst = cobj->get_instance();
 
 	    for (size_t i = 0; i < nprop; i++) {
+		  // Skip properties that were copied from source arrays
+		  if (copied_props.count(i) > 0)
+			continue;
 		  // Only randomize properties marked with 'rand' or 'randc'
 		  // Also respects per-instance rand_mode setting
 		  if (!cobj->should_randomize(i))
@@ -9784,6 +9844,39 @@ bool of_PUSH_RAND_BOUND_STACK(vthread_t thr, vvp_code_t cp)
       bound.const_bound = const_val;
       bound.bound_prop_idx = 0;
 
+      thr->push_inline_constraint(bound);
+      return true;
+}
+
+/*
+ * %push_rand_array_copy <prop_idx>
+ *
+ * Push an array copy constraint for the next randomize() call.
+ * The source array is on the object stack.
+ * This implements foreach element equality: foreach(src[i]) { dest[i] == src[i]; }
+ */
+bool of_PUSH_RAND_ARRAY_COPY(vthread_t thr, vvp_code_t cp)
+{
+      unsigned prop_idx = cp->number;
+
+      // Pop the source array from the object stack
+      vvp_object_t src_obj;
+      thr->pop_object(src_obj);
+
+      // Store the array copy constraint
+      // Use op 'C' for copy, and store the source object in the thread
+      class_type::simple_bound_t bound;
+      bound.property_idx = prop_idx;
+      bound.op = 'C';  // Copy operator
+      bound.is_soft = false;
+      bound.has_const_bound = false;
+      bound.const_bound = 0;
+      bound.bound_prop_idx = 0;
+      bound.weight = 1;
+      bound.weight_per_value = true;
+
+      // Store the source array in the array_copy_sources map
+      thr->push_array_copy_source(prop_idx, src_obj);
       thr->push_inline_constraint(bound);
       return true;
 }

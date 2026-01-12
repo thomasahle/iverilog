@@ -402,7 +402,41 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
                         else if (op_code == 3) op_code = 2;  // <= becomes >=
                   }
 
-                  if (!left_ident || !right_num) continue;
+                  if (!left_ident || !right_num) {
+                        // Check for element equality: target[i] == source[i]
+                        // Both sides must be indexed identifiers and operator must be ==
+                        if (op_code == 4) {  // == operator
+                              const PEIdent* target = dynamic_cast<const PEIdent*>(cmp->get_left());
+                              const PEIdent* source = dynamic_cast<const PEIdent*>(cmp->get_right());
+                              if (target && source) {
+                                    // Get target property name
+                                    const pform_scoped_name_t& target_path = target->path();
+                                    // Get source array name
+                                    const pform_scoped_name_t& source_path = source->path();
+                                    if (target_path.size() == 1 && source_path.size() == 1) {
+                                          perm_string target_name = target_path.name.front().name;
+                                          perm_string source_name = source_path.name.front().name;
+                                          // Create a simple identifier for the source array (without index)
+                                          // to elaborate as an array expression
+                                          if (des && scope) {
+                                                pform_name_t simple_name;
+                                                simple_name.push_back(name_component_t(source_name));
+                                                PEIdent* source_array_ident = new PEIdent(simple_name, 0);
+                                                NetExpr* source_expr = source_array_ident->elaborate_expr(des, scope, -1, false);
+                                                delete source_array_ident;
+                                                if (source_expr) {
+                                                      // op_code 12 = element copy constraint
+                                                      // The source array expression is stored in value_expr
+                                                      bounds.push_back(std::make_tuple(target_name, 12, (int64_t)0, is_soft,
+                                                                                       (int64_t)1, true, source_name, source_expr));
+                                                      continue;
+                                                }
+                                          }
+                                    }
+                              }
+                        }
+                        continue;
+                  }
 
                   // Get the property name from the identifier
                   // For data[i], path().name.front().name gives "data"

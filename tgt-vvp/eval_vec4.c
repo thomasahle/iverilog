@@ -1775,6 +1775,12 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %llu;\n",
 				      prop_idx, encoded_op, (unsigned long long)(uint64_t)const_val);
 			}
+		  } else if ((op_code & 0xF) == 12) {
+			/* Element copy constraint: target[i] == source[i]
+			 * The source expression is an array (signal or property)
+			 * Evaluate it as an object and use special opcode */
+			draw_eval_object(val_expr);
+			fprintf(vvp_out, "    %%push_rand_array_copy %u;\n", prop_idx);
 		  } else {
 			/* Runtime expression - evaluate and use stack opcode */
 			draw_eval_vec4(val_expr);
