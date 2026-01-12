@@ -2506,6 +2506,18 @@ void draw_eval_vec4(ivl_expr_t expr)
       if (ivl_expr_value(expr) != IVL_VT_BOOL &&
           ivl_expr_value(expr) != IVL_VT_VECTOR &&
           ivl_expr_value(expr) != IVL_VT_STRING) {
+	    /* Check if this is a dynamic array or class expression used where a scalar is expected */
+	    ivl_variable_type_t vtype = ivl_expr_value(expr);
+	    if (vtype == IVL_VT_CLASS || vtype == IVL_VT_DARRAY || vtype == IVL_VT_QUEUE) {
+		  fprintf(stderr, "%s:%u: error: Dynamic array or class object cannot be used "
+				  "as a scalar value in this context. "
+				  "(e.g., 'inside {array}' requires scalar values, not arrays)\n",
+			  ivl_expr_file(expr), ivl_expr_lineno(expr));
+		  vvp_errors += 1;
+		  /* Push a dummy value to avoid stack underflow */
+		  fprintf(vvp_out, "    %%pushi/vec4 0, 0, 32; ERROR: array/class as scalar\n");
+		  return;
+	    }
 	    fprintf(stderr, "draw_eval_vec4: unexpected value type %d (expr_type=%d) at %s:%u\n",
 		    ivl_expr_value(expr), ivl_expr_type(expr),
 		    ivl_expr_file(expr), ivl_expr_lineno(expr));

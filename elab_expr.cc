@@ -246,6 +246,19 @@ static bool analyze_constraint_expr(const PExpr*expr,
             PExpr* rhs_nc = const_cast<PExpr*>(rhs);
             NetExpr* rhs_expr = rhs_nc->elaborate_expr(des, scope, -1, false);
             if (rhs_expr) {
+                  // Check if expression type is vectorable
+                  // We can't use dynamic arrays or class objects as constraint values
+                  ivl_variable_type_t expr_type = rhs_expr->expr_type();
+                  if (expr_type != IVL_VT_BOOL && expr_type != IVL_VT_LOGIC &&
+                      expr_type != IVL_VT_VECTOR && expr_type != IVL_VT_REAL) {
+                        // Dynamic array or class type - not supported in constraints
+                        cerr << expr->get_fileline() << ": warning: "
+                             << "Constraint value expression has unsupported type "
+                             << "(dynamic array or class). "
+                             << "Constraint will be ignored." << endl;
+                        delete rhs_expr;
+                        return false;
+                  }
                   // Return the expression for runtime evaluation
                   *value_expr = rhs_expr;
                   const_value = 0;  // Not used when value_expr is set
