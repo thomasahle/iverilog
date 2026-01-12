@@ -1,0 +1,2 @@
+PASSED: All 6 tests passed
+./ivltests/sv_rand_nested_prop_inside.v:61: $finish called at 0 (1s)
