@@ -1394,3 +1394,4 @@ sv_let_simple	normal,-g2012		ivltests gold=sv_let_simple.gold
 sv_let_basic	normal,-g2012		ivltests gold=sv_let_basic.gold
 sv_constraint_named_cond_countones	normal,-g2012	ivltests
 sv_constraint_foreach_ne_inline	normal,-g2012	ivltests gold=sv_constraint_foreach_ne_inline.gold
+sv_constraint_foreach_eq_inline	normal,-g2012	ivltests gold=sv_constraint_foreach_eq_inline.gold

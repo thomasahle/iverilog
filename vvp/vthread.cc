@@ -8420,8 +8420,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  int64_t elem_max = (1LL << elem_width) - 1;
 		  if (elem_width >= 64) elem_max = INT64_MAX;
 
-		  // Also collect excluded values (from != constraints)
+		  // Collect excluded values (from != constraints) and discrete values (from == constraints)
 		  std::vector<int64_t> excluded_vals;
+		  std::vector<int64_t> discrete_vals;  // For == constraints
 
 		  for (const auto& bound : inline_constraints) {
 			if (bound.property_idx != prop_idx) continue;
@@ -8450,6 +8451,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      case '!':  // value != const (exclusion)
 				    excluded_vals.push_back(bound.const_bound);
 				    break;
+			      case '=':  // value == const (discrete value)
+				    discrete_vals.push_back(bound.const_bound);
+				    break;
 			      default:
 				    break;
 			}
@@ -8460,23 +8464,35 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  int64_t range = elem_max - elem_min + 1;
 
 		  for (size_t idx = 0; idx < dar_size; idx++) {
-			// Generate constrained random value, avoiding excluded values
 			int64_t rval;
-			int retries = 0;
-			const int max_retries = 100;
-			do {
-			      rval = elem_min + (rand() % range);
-			      // Check if value is excluded
-			      bool is_excluded = false;
-			      for (int64_t excl : excluded_vals) {
-				    if (rval == excl) {
-					  is_excluded = true;
-					  break;
-				    }
+
+			// If we have discrete values from == constraints, use them
+			if (!discrete_vals.empty()) {
+			      // If multiple discrete values, pick one randomly for each element
+			      // If single value, all elements get that value
+			      if (discrete_vals.size() == 1) {
+				    rval = discrete_vals[0];
+			      } else {
+				    rval = discrete_vals[rand() % discrete_vals.size()];
 			      }
-			      if (!is_excluded) break;
-			      retries++;
-			} while (retries < max_retries);
+			} else {
+			      // Generate constrained random value, avoiding excluded values
+			      int retries = 0;
+			      const int max_retries = 100;
+			      do {
+				    rval = elem_min + (rand() % range);
+				    // Check if value is excluded
+				    bool is_excluded = false;
+				    for (int64_t excl : excluded_vals) {
+					  if (rval == excl) {
+						is_excluded = true;
+						break;
+					  }
+				    }
+				    if (!is_excluded) break;
+				    retries++;
+			      } while (retries < max_retries);
+			}
 
 			vvp_vector4_t new_val(elem_width);
 			for (unsigned b = 0; b < elem_width && b < 64; b++) {
