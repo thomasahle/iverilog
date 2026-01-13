@@ -8763,9 +8763,27 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			if (!generated) {
 			      const std::vector<int64_t>* enum_vals = defn->get_enum_values(i);
 			      if (enum_vals != nullptr && !enum_vals->empty()) {
+				    // Filter out excluded values (for randc/unique)
+				    std::vector<int64_t> available_vals;
+				    for (int64_t ev : *enum_vals) {
+					  bool is_excluded = false;
+					  for (int64_t excl : excluded_values) {
+						if (ev == excl) { is_excluded = true; break; }
+					  }
+					  if (!is_excluded) available_vals.push_back(ev);
+				    }
+				    // If all enum values are excluded (randc cycle complete),
+				    // clear and use all values
+				    if (available_vals.empty()) {
+					  if (is_randc) {
+						cobj->randc_clear(i);
+						excluded_values.clear();
+					  }
+					  available_vals = *enum_vals;
+				    }
 				    // Pick a random valid enum value
-				    size_t idx = rand() % enum_vals->size();
-				    rval = (*enum_vals)[idx];
+				    size_t idx = rand() % available_vals.size();
+				    rval = available_vals[idx];
 				    generated = true;
 			      }
 			}
