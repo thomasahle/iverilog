@@ -9470,12 +9470,40 @@ bool of_SEMAPHORE_TRY_GET(vthread_t thr, vvp_code_t cp)
  * A mailbox is a message queue for inter-process communication.
  * Messages are stored as 32-bit integers (vec4 values).
  * Bounded mailboxes have a maximum capacity.
+ *
+ * Blocking is implemented by adding waiting threads to a list in the mailbox.
+ * When put() adds a message, waiting get threads are woken in FIFO order.
+ * When get() removes a message from a full bounded mailbox, waiting put threads are woken.
  */
+
+// Track a waiting thread for mailbox get/put
+struct mailbox_waiter_s {
+      vthread_t thread;
+      int32_t message;       // For put waiters: the message they want to put
+      mailbox_waiter_s* next;
+};
 
 // Mailbox object class - derives from vvp_object for garbage collection
 class vvp_mailbox : public vvp_object {
     public:
-      explicit vvp_mailbox(int bound = 0) : bound_(bound) {}
+      explicit vvp_mailbox(int bound = 0)
+	    : bound_(bound),
+	      get_waiters_(nullptr), get_waiters_tail_(&get_waiters_),
+	      put_waiters_(nullptr), put_waiters_tail_(&put_waiters_) {}
+
+      ~vvp_mailbox() {
+	    // Clean up any remaining waiters
+	    while (get_waiters_) {
+		  mailbox_waiter_s* next = get_waiters_->next;
+		  delete get_waiters_;
+		  get_waiters_ = next;
+	    }
+	    while (put_waiters_) {
+		  mailbox_waiter_s* next = put_waiters_->next;
+		  delete put_waiters_;
+		  put_waiters_ = next;
+	    }
+      }
 
       int get_bound() const { return bound_; }
       int num() const { return (int)messages_.size(); }
@@ -9486,11 +9514,15 @@ class vvp_mailbox : public vvp_object {
 	    return (int)messages_.size() >= bound_;
       }
 
-      // Put a message into the mailbox
+      // Check if mailbox is empty
+      bool is_empty() const { return messages_.empty(); }
+
+      // Put a message into the mailbox and wake any waiting get threads
       // Returns true if successful, false if bounded mailbox is full
       bool put(int32_t msg) {
 	    if (is_full()) return false;
 	    messages_.push_back(msg);
+	    wake_get_waiters();
 	    return true;
       }
 
@@ -9500,6 +9532,7 @@ class vvp_mailbox : public vvp_object {
 	    if (messages_.empty()) return false;
 	    msg = messages_.front();
 	    messages_.erase(messages_.begin());
+	    wake_put_waiters();  // Wake threads waiting to put
 	    return true;
       }
 
@@ -9510,6 +9543,32 @@ class vvp_mailbox : public vvp_object {
 	    return true;
       }
 
+      // Add a thread waiting for get
+      void add_get_waiter(vthread_t thr) {
+	    mailbox_waiter_s* waiter = new mailbox_waiter_s;
+	    waiter->thread = thr;
+	    waiter->message = 0;
+	    waiter->next = nullptr;
+	    *get_waiters_tail_ = waiter;
+	    get_waiters_tail_ = &waiter->next;
+      }
+
+      // Add a thread waiting for put
+      void add_put_waiter(vthread_t thr, int32_t msg) {
+	    mailbox_waiter_s* waiter = new mailbox_waiter_s;
+	    waiter->thread = thr;
+	    waiter->message = msg;
+	    waiter->next = nullptr;
+	    *put_waiters_tail_ = waiter;
+	    put_waiters_tail_ = &waiter->next;
+      }
+
+      // Check if there are threads waiting for get
+      bool has_get_waiters() const { return get_waiters_ != nullptr; }
+
+      // Check if there are threads waiting for put
+      bool has_put_waiters() const { return put_waiters_ != nullptr; }
+
       // Required by vvp_object base class
       void shallow_copy(const vvp_object*) override { }
       vvp_object* duplicate(void) const override {
@@ -9519,8 +9578,64 @@ class vvp_mailbox : public vvp_object {
       }
 
     private:
+      void wake_get_waiters() {
+	    // Wake threads in FIFO order as long as we have messages
+	    while (get_waiters_ && !messages_.empty()) {
+		  mailbox_waiter_s* waiter = get_waiters_;
+		  get_waiters_ = waiter->next;
+		  if (get_waiters_ == nullptr) {
+			get_waiters_tail_ = &get_waiters_;
+		  }
+
+		  // Get the message for this waiter
+		  int32_t msg = messages_.front();
+		  messages_.erase(messages_.begin());
+
+		  // Push the message to the thread's vec4 stack before waking.
+		  // When the thread resumes, it will continue from the next opcode
+		  // (e.g., %pop/obj, %store/vec4) which expects the value on the stack.
+		  vthread_t thr = waiter->thread;
+		  vvp_vector4_t res(32);
+		  for (int i = 0; i < 32; i++) {
+			res.set_bit(i, (msg >> i) & 1 ? BIT4_1 : BIT4_0);
+		  }
+		  thr->push_vec4(res);
+
+		  // Wake the thread
+		  thr->waiting_for_event = 0;
+		  schedule_vthread(thr, 0, false);
+
+		  delete waiter;
+	    }
+      }
+
+      void wake_put_waiters() {
+	    // Wake threads in FIFO order as long as we have space
+	    while (put_waiters_ && !is_full()) {
+		  mailbox_waiter_s* waiter = put_waiters_;
+		  put_waiters_ = waiter->next;
+		  if (put_waiters_ == nullptr) {
+			put_waiters_tail_ = &put_waiters_;
+		  }
+
+		  // Put the message this waiter was trying to put
+		  messages_.push_back(waiter->message);
+
+		  // Wake the thread - it will resume at the next opcode
+		  vthread_t thr = waiter->thread;
+		  thr->waiting_for_event = 0;
+		  schedule_vthread(thr, 0, false);
+
+		  delete waiter;
+	    }
+      }
+
       int bound_;  // Max capacity (0 = unbounded)
       std::vector<int32_t> messages_;
+      mailbox_waiter_s* get_waiters_;
+      mailbox_waiter_s** get_waiters_tail_;
+      mailbox_waiter_s* put_waiters_;
+      mailbox_waiter_s** put_waiters_tail_;
 };
 
 /*
@@ -9547,7 +9662,13 @@ bool of_MAILBOX_NEW(vthread_t thr, vvp_code_t cp)
  *
  * Peek mailbox from object stack (code generator emits %pop/obj to clean up).
  * Put the message (from vec4 stack) into the mailbox.
- * Blocking put - for now, just puts without blocking (same as try_put).
+ * Blocking put - blocks if bounded mailbox is full until space is available.
+ *
+ * When blocking, the thread is added to the mailbox's wait list and suspended.
+ * When a get() removes a message from a full mailbox, wake_put_waiters() will:
+ *   1. Put the waiting message into the mailbox
+ *   2. Wake the thread
+ * The thread then resumes at the NEXT opcode (not this one).
  */
 bool of_MAILBOX_PUT(vthread_t thr, vvp_code_t)
 {
@@ -9560,10 +9681,23 @@ bool of_MAILBOX_PUT(vthread_t thr, vvp_code_t)
       // Peek the mailbox (code generator emits separate %pop/obj)
       vvp_object_t &obj = thr->peek_object();
       vvp_mailbox* mbx = obj.peek<vvp_mailbox>();
-      if (mbx) {
-	    // Put message (non-blocking for now)
-	    mbx->put(msg);
+
+      if (mbx == nullptr) {
+	    // Null mailbox - just continue
+	    return true;
       }
+
+      // Check if mailbox has space
+      if (mbx->is_full()) {
+	    // No space available - block until get() makes room
+	    assert(! thr->waiting_for_event);
+	    thr->waiting_for_event = 1;
+	    mbx->add_put_waiter(thr, msg);
+	    return false;  // Suspend thread
+      }
+
+      // Put message and wake any waiting get threads
+      mbx->put(msg);
 
       return true;
 }
@@ -9573,7 +9707,14 @@ bool of_MAILBOX_PUT(vthread_t thr, vvp_code_t)
  *
  * Peek mailbox from object stack (code generator emits %pop/obj to clean up).
  * Get a message and push it to the vec4 stack.
- * Blocking get - for now, just gets without blocking (returns 0 if empty).
+ * Blocking get - blocks if mailbox is empty until a message is available.
+ *
+ * When blocking, the thread is added to the mailbox's wait list and suspended.
+ * When a put() adds a message, wake_get_waiters() will:
+ *   1. Get the message from the mailbox
+ *   2. Push the message to the waiting thread's vec4 stack
+ *   3. Wake the thread
+ * The thread then resumes at the NEXT opcode (not this one).
  */
 bool of_MAILBOX_GET(vthread_t thr, vvp_code_t)
 {
@@ -9581,13 +9722,26 @@ bool of_MAILBOX_GET(vthread_t thr, vvp_code_t)
       vvp_object_t &obj = thr->peek_object();
       vvp_mailbox* mbx = obj.peek<vvp_mailbox>();
 
-      int32_t msg = 0;
-      if (mbx) {
-	    // Try to get message (non-blocking for now)
-	    mbx->try_get(msg);
+      if (mbx == nullptr) {
+	    // Null mailbox - push 0 and continue
+	    vvp_vector4_t res(32, BIT4_0);
+	    thr->push_vec4(res);
+	    return true;
       }
 
-      // Push the message to vec4 stack
+      // Check if mailbox has a message
+      if (mbx->is_empty()) {
+	    // No message available - block until one arrives
+	    assert(! thr->waiting_for_event);
+	    thr->waiting_for_event = 1;
+	    mbx->add_get_waiter(thr);
+	    return false;  // Suspend thread
+      }
+
+      // Get message and push to stack
+      int32_t msg = 0;
+      mbx->try_get(msg);
+
       vvp_vector4_t res(32);
       for (int i = 0; i < 32; i++) {
 	    res.set_bit(i, (msg >> i) & 1 ? BIT4_1 : BIT4_0);

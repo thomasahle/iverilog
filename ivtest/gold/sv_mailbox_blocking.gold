@@ -1,0 +1,31 @@
+./ivltests/sv_mailbox_blocking.v:99: warning: Static variable initialization requires explicit lifetime in this context.
+./ivltests/sv_mailbox_blocking.v:101: warning: Static variable initialization requires explicit lifetime in this context.
+Test 1: Blocking get on empty mailbox
+[0] Thread A: calling mb.get() on empty mailbox...
+[10] Thread B: putting value 42...
+[10] Thread B: put done
+[10] Thread A: mb.get() returned, msg=42
+Test 1 PASSED: blocking get received correct value
+
+Test 2: Blocking put on full bounded mailbox
+[10] Thread C: calling mb.put(200) on full mailbox...
+[20] Thread D: getting value...
+[20] Thread D: got 100
+[20] Thread C: mb.put() returned
+Got second value: 200 (expected 200)
+Test 2 PASSED: blocking put on full mailbox works
+
+Test 3: Non-blocking try_get on empty mailbox
+Test 3 PASSED: try_get returned 0 on empty mailbox
+
+Test 4: FIFO order for multiple waiting get threads
+[20] Thread E: waiting for get...
+[20] Thread F: waiting for get...
+[30] Thread G: putting values...
+[30] Thread G: done putting
+[30] Thread E: got 1
+[30] Thread F: got 2
+Test 4 PASSED: FIFO order maintained
+
+All mailbox blocking tests complete!
+./ivltests/sv_mailbox_blocking.v:136: $finish called at 30 (1s)

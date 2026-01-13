@@ -1389,3 +1389,4 @@ sv_rand_inline_scope	normal,-g2012	ivltests	gold=sv_rand_inline_scope.gold
 sv_rand_foreach_elem_eq3	normal,-g2012	ivltests	gold=sv_rand_foreach_elem_eq3.gold
 sv_rand_nested_prop_inside	normal,-g2012	ivltests	gold=sv_rand_nested_prop_inside.gold
 sv_semaphore_blocking	normal,-g2012	ivltests	gold=sv_semaphore_blocking.gold
+sv_mailbox_blocking	normal,-g2012		ivltests gold=sv_mailbox_blocking.gold
