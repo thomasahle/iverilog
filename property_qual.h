@@ -45,7 +45,7 @@ class property_qualifier_t {
       static inline property_qualifier_t make_virtual()
       { property_qualifier_t res; res.mask_ = 64; return res; }
 
-      inline property_qualifier_t operator | (property_qualifier_t r)
+      inline property_qualifier_t operator | (property_qualifier_t r) const
       { property_qualifier_t res; res.mask_ = mask_ | r.mask_; return res; }
 
     public:

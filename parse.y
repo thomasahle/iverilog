@@ -931,6 +931,18 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 
 %}
 
+/* Note: GLR parsing has been experimentally tested (2026-01-14).
+   Bison 3.8.2 GLR mode works but requires extensive disambiguation (%dprec)
+   to avoid "syntax is ambiguous" errors. The const-correctness and mid-rule
+   action fixes in property_qual.h and tf_port_item rules are prerequisites
+   for GLR mode and have been retained.
+
+   To enable GLR in the future, uncomment these lines and add %dprec directives:
+   %glr-parser
+   %expect 104
+   %expect-rr 218
+*/
+
 %union {
       bool flag;
 
@@ -1401,7 +1413,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
   /* source_text ::= [ timeunits_declaration ] { description } */
 source_text
   : timeunits_declaration_opt
-      { pform_set_scope_timescale(yyloc); }
+      { pform_set_scope_timescale(@1); }
     description_list
   | /* empty */
   ;
@@ -5659,12 +5671,13 @@ tf_port_item /* IEEE1800-2005: A.2.7 */
 		// indicate the type. Save the type for any right
 		// context that may come later.
 	      port_declaration_context.port_type = use_port_type;
-	      if ($3 == 0) {
-		    $3 = new vector_type_t(IVL_VT_LOGIC, false, 0);
-		    FILE_NAME($3, @4);
+	      data_type_t* use_data_type = $3;
+	      if (use_data_type == 0) {
+		    use_data_type = new vector_type_t(IVL_VT_LOGIC, false, 0);
+		    FILE_NAME(use_data_type, @4);
 	      }
-	      port_declaration_context.data_type = $3;
-	      tmp = pform_make_task_ports(@3, use_port_type, $3, port_list);
+	      port_declaration_context.data_type = use_data_type;
+	      tmp = pform_make_task_ports(@3, use_port_type, use_data_type, port_list);
 	}
 
 	$$ = tmp;
@@ -5701,12 +5714,13 @@ tf_port_item /* IEEE1800-2005: A.2.7 */
 
 	} else {
 	      port_declaration_context.port_type = use_port_type;
-	      if ($3 == 0) {
-		    $3 = new vector_type_t(IVL_VT_LOGIC, false, 0);
-		    FILE_NAME($3, @4);
+	      data_type_t* use_data_type = $3;
+	      if (use_data_type == 0) {
+		    use_data_type = new vector_type_t(IVL_VT_LOGIC, false, 0);
+		    FILE_NAME(use_data_type, @4);
 	      }
-	      port_declaration_context.data_type = $3;
-	      tmp = pform_make_task_ports(@3, use_port_type, $3, port_list);
+	      port_declaration_context.data_type = use_data_type;
+	      tmp = pform_make_task_ports(@3, use_port_type, use_data_type, port_list);
 	}
 
 	$$ = tmp;
@@ -5729,12 +5743,13 @@ tf_port_item /* IEEE1800-2005: A.2.7 */
 	list<pform_port_t>* port_list = make_port_list($5, @5.lexical_pos, $6, 0);
 
 	port_declaration_context.port_type = NetNet::PREF;
-	if ($4 == 0) {
-	      $4 = new vector_type_t(IVL_VT_LOGIC, false, 0);
-	      FILE_NAME($4, @5);
+	data_type_t* use_data_type = $4;
+	if (use_data_type == 0) {
+	      use_data_type = new vector_type_t(IVL_VT_LOGIC, false, 0);
+	      FILE_NAME(use_data_type, @5);
 	}
-	port_declaration_context.data_type = $4;
-	tmp = pform_make_task_ports(@4, NetNet::PREF, $4, port_list);
+	port_declaration_context.data_type = use_data_type;
+	tmp = pform_make_task_ports(@4, NetNet::PREF, use_data_type, port_list);
 
 	// Mark the port as const
 	if (tmp && !tmp->empty()) {

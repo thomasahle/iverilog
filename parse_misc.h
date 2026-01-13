@@ -53,6 +53,14 @@ inline void FILE_NAME(LineInfo*tmp, const struct vlltype&where)
 #endif
 extern YYLTYPE yylloc;
 
+/* For GLR parser compatibility - map standard names to VL prefixed names */
+#ifndef yylex
+# define yylex VLlex
+#endif
+#ifndef yyerror
+# define yyerror VLerror
+#endif
+
 /*
  * Interface into the lexical analyzer. ...
  */
