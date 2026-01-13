@@ -4965,10 +4965,6 @@ static void do_join(vthread_t thr, vthread_t child)
 
         /* If the immediate child thread is in an automatic scope... */
       if (child->wt_context) {
-              /* and is the top level task/function thread...
-               * Skip context swap for forked tasks - they don't have return values
-               * and swapping would break access to @ (implicit this) in the caller.
-               * Only do swap for function call children (i_am_forked_task=0). */
             // Original context swap logic for function returns.
             // This swaps the function's context from wt_context to rd_context
             // so the caller can read return values.
@@ -5177,30 +5173,8 @@ bool of_LOAD_OBJ(vthread_t thr, vvp_code_t cp)
       vvp_fun_signal_object*fun = dynamic_cast<vvp_fun_signal_object*> (net->fun);
       assert(fun);
 
-      // Check if this is an automatic variable being loaded with null rd_context
-      vvp_fun_signal_object_aa*fun_aa = dynamic_cast<vvp_fun_signal_object_aa*>(net->fun);
-      if (fun_aa && !thr->rd_context) {
-	    // For automatic variables, if rd_context is null, try wt_context
-	    // This can happen when reading return values after %callf/obj
-	    if (thr->wt_context) {
-		  vvp_object_t val = fun_aa->get_object_from_context(thr->wt_context);
-		  thr->push_object(val);
-		  return true;
-	    }
-      }
-
       vvp_object_t val = fun->get_object();
 
-      // For automatic variables, if value is nil and wt_context is different,
-      // try loading from wt_context. This handles reading return values after
-      // %callf/obj where the value was stored using wt_context but rd_context
-      // points to the caller's context.
-      if (val.test_nil() && fun_aa && thr->wt_context && thr->wt_context != thr->rd_context) {
-	    vvp_object_t alt_val = fun_aa->get_object_from_context(thr->wt_context);
-	    if (!alt_val.test_nil()) {
-		  val = alt_val;
-	    }
-      }
 
       thr->push_object(val);
 
@@ -6671,6 +6645,7 @@ static bool prop(vthread_t thr, vvp_code_t cp)
 	    vthread_push(thr, val);
 	    return true;
       }
+
 
       ELEM val;
       get_from_obj(pid, cobj, val);
@@ -11098,7 +11073,6 @@ bool of_STORE_OBJ(vthread_t thr, vvp_code_t cp)
                   fprintf(stderr, "  ctx=%p\n", thr->wt_context);
             }
       }
-
 
       vvp_send_object(ptr, val, thr->wt_context);
 
