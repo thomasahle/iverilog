@@ -8420,6 +8420,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  int64_t elem_max = (1LL << elem_width) - 1;
 		  if (elem_width >= 64) elem_max = INT64_MAX;
 
+		  // Also collect excluded values (from != constraints)
+		  std::vector<int64_t> excluded_vals;
+
 		  for (const auto& bound : inline_constraints) {
 			if (bound.property_idx != prop_idx) continue;
 			if (!bound.has_const_bound) continue;
@@ -8444,6 +8447,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    if (bound.const_bound < elem_max)
 					  elem_max = bound.const_bound;
 				    break;
+			      case '!':  // value != const (exclusion)
+				    excluded_vals.push_back(bound.const_bound);
+				    break;
 			      default:
 				    break;
 			}
@@ -8454,8 +8460,24 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  int64_t range = elem_max - elem_min + 1;
 
 		  for (size_t idx = 0; idx < dar_size; idx++) {
-			// Generate constrained random value
-			int64_t rval = elem_min + (rand() % range);
+			// Generate constrained random value, avoiding excluded values
+			int64_t rval;
+			int retries = 0;
+			const int max_retries = 100;
+			do {
+			      rval = elem_min + (rand() % range);
+			      // Check if value is excluded
+			      bool is_excluded = false;
+			      for (int64_t excl : excluded_vals) {
+				    if (rval == excl) {
+					  is_excluded = true;
+					  break;
+				    }
+			      }
+			      if (!is_excluded) break;
+			      retries++;
+			} while (retries < max_retries);
+
 			vvp_vector4_t new_val(elem_width);
 			for (unsigned b = 0; b < elem_width && b < 64; b++) {
 			      new_val.set_bit(b, ((rval >> b) & 1) ? BIT4_1 : BIT4_0);
