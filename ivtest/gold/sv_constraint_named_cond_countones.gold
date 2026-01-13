@@ -1,0 +1,6 @@
+Tested 100 randomizations:
+  BYTE: 43 (countones=1)
+  HALFWORD: 27 (countones=2)
+  WORD: 30 (countones=4)
+PASSED
+./ivltests/sv_constraint_named_cond_countones.v:73: $finish called at 0 (1s)

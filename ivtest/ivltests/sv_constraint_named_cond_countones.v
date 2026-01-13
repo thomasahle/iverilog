@@ -1,0 +1,1 @@
+sv_constraint_named_cond_countones.sv
