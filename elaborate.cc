@@ -35,6 +35,7 @@
 # include  <iostream>
 # include  <sstream>
 # include  <list>
+# include  <set>
 # include  "pform.h"
 # include  "pform_types.h"
 # include  "PClass.h"
@@ -9635,6 +9636,165 @@ static bool extract_simple_bound_with_cond(netclass_t*cls, perm_string constrain
                                            PExpr*expr, bool is_soft, LexicalScope*scope,
                                            Design*des, const condition_info_t& cond);
 
+// Forward declaration for extract_simple_bound (needed by process_if_else_chain)
+static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr,
+                                 bool is_soft, LexicalScope*scope = nullptr, Design*des = nullptr);
+
+// Structure to represent a branch in an if-else-if chain
+struct if_else_branch_t {
+      condition_info_t cond;    // Condition for this branch (invalid for final else)
+      std::vector<PExpr*> body; // Body constraints
+      bool is_final_else;       // True if this is the unconditional else branch
+};
+
+// Helper to flatten an if-else-if chain into a list of branches
+static void flatten_if_else_chain(const PEConditionalConstraint* cond_cons,
+                                  netclass_t* cls, LexicalScope* scope, Design* des,
+                                  std::vector<if_else_branch_t>& branches)
+{
+      if (cond_cons == nullptr)
+	    return;
+
+      // Extract this branch's condition and body
+      if_else_branch_t branch;
+      branch.is_final_else = false;
+      if (!extract_condition(cls, cond_cons->get_condition(), branch.cond, scope, des)) {
+	    branch.cond.valid = false;
+      }
+      for (PExpr* body_expr : cond_cons->get_if_constraints()) {
+	    if (body_expr != nullptr)
+		  branch.body.push_back(body_expr);
+      }
+      branches.push_back(branch);
+
+      // Process else clause
+      if (cond_cons->has_else()) {
+	    for (PExpr* else_expr : cond_cons->get_else_constraints()) {
+		  if (else_expr == nullptr)
+			continue;
+		  // Check if this is a nested else-if
+		  const PEConditionalConstraint* nested =
+			dynamic_cast<const PEConditionalConstraint*>(else_expr);
+		  if (nested != nullptr) {
+			// Recurse to flatten nested else-if
+			flatten_if_else_chain(nested, cls, scope, des, branches);
+		  } else {
+			// Final else branch - no condition
+			if_else_branch_t else_branch;
+			else_branch.is_final_else = true;
+			else_branch.cond.valid = false;
+			else_branch.body.push_back(else_expr);
+			branches.push_back(else_branch);
+		  }
+	    }
+      }
+}
+
+// Helper to process an if-else-if chain with proper else handling
+static bool process_if_else_chain(netclass_t* cls, perm_string constraint_name,
+                                  const PEConditionalConstraint* cond_cons,
+                                  bool is_soft, LexicalScope* scope, Design* des)
+{
+      // Flatten the chain
+      std::vector<if_else_branch_t> branches;
+      flatten_if_else_chain(cond_cons, cls, scope, des, branches);
+
+      if (branches.empty())
+	    return false;
+
+      bool any_extracted = false;
+
+      // Check if all non-else conditions are equality tests on the same property
+      bool all_equality_same_prop = true;
+      size_t cond_prop_idx = 0;
+      std::set<int64_t> covered_values;
+      bool first_cond = true;
+
+      for (const auto& branch : branches) {
+	    if (branch.is_final_else)
+		  continue;
+	    if (!branch.cond.valid || branch.cond.op != '=' || !branch.cond.has_const) {
+		  all_equality_same_prop = false;
+		  break;
+	    }
+	    if (first_cond) {
+		  cond_prop_idx = branch.cond.prop_idx;
+		  first_cond = false;
+	    } else if (branch.cond.prop_idx != cond_prop_idx) {
+		  all_equality_same_prop = false;
+		  break;
+	    }
+	    covered_values.insert(branch.cond.const_val);
+      }
+
+      // Process each branch
+      for (const auto& branch : branches) {
+	    if (branch.is_final_else) {
+		  // Handle final else clause
+		  if (all_equality_same_prop && !covered_values.empty()) {
+			// Check if the condition property is an enum type
+			// Get the property's enum values if available
+			std::vector<int64_t> remaining_values;
+
+			// Try to get enum values from the property type
+			ivl_type_t prop_type = cls->get_prop_type(cond_prop_idx);
+			if (prop_type != nullptr) {
+			      const netenum_t* enum_type = dynamic_cast<const netenum_t*>(prop_type);
+			      if (enum_type != nullptr) {
+				    // It's an enum - get all valid values
+				    // The iterator dereferences to std::pair<perm_string, verinum>
+				    netenum_t::iterator enum_it = enum_type->first_name();
+				    while (enum_it != enum_type->end_name()) {
+					  const verinum& enum_val = enum_it->second;
+					  int64_t val = enum_val.as_long();
+					  if (covered_values.find(val) == covered_values.end()) {
+						remaining_values.push_back(val);
+					  }
+					  ++enum_it;
+				    }
+			      }
+			}
+
+			if (!remaining_values.empty()) {
+			      // Generate constraints with explicit conditions for remaining values
+			      for (int64_t rem_val : remaining_values) {
+				    condition_info_t else_cond;
+				    else_cond.valid = true;
+				    else_cond.prop_idx = cond_prop_idx;
+				    else_cond.op = '=';
+				    else_cond.has_const = true;
+				    else_cond.const_val = rem_val;
+				    for (PExpr* body_expr : branch.body) {
+					  any_extracted |= extract_simple_bound_with_cond(
+						cls, constraint_name, body_expr, is_soft, scope, des, else_cond);
+				    }
+			      }
+			      continue;
+			}
+		  }
+		  // Fallback: treat else as soft constraint (no condition)
+		  for (PExpr* body_expr : branch.body) {
+			any_extracted |= extract_simple_bound(cls, constraint_name, body_expr,
+			                                      true, scope, des);
+		  }
+	    } else if (branch.cond.valid) {
+		  // Normal branch with valid condition
+		  for (PExpr* body_expr : branch.body) {
+			any_extracted |= extract_simple_bound_with_cond(
+			      cls, constraint_name, body_expr, is_soft, scope, des, branch.cond);
+		  }
+	    } else {
+		  // Invalid condition - treat as soft
+		  for (PExpr* body_expr : branch.body) {
+			any_extracted |= extract_simple_bound(cls, constraint_name, body_expr,
+			                                      true, scope, des);
+		  }
+	    }
+      }
+
+      return any_extracted;
+}
+
 /*
  * Helper function to extract simple bounds from constraint expressions.
  * Handles expressions of the form: property OP constant or property OP property
@@ -9644,7 +9804,7 @@ static bool extract_simple_bound_with_cond(netclass_t*cls, perm_string constrain
  * The des parameter is needed to look up class parameters.
  * Returns true if a simple bound was extracted, false otherwise.
  */
-static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr, bool is_soft, LexicalScope*scope = nullptr, Design*des = nullptr)
+static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PExpr*expr, bool is_soft, LexicalScope*scope, Design*des)
 {
       // Check for soft constraint wrapper - unwrap and recurse with is_soft=true
       const PESoftConstraint* soft_cons = dynamic_cast<const PESoftConstraint*>(expr);
@@ -9659,64 +9819,10 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
       // Check for implication/conditional constraints with block syntax (-> { constraints })
       const PEConditionalConstraint* cond_cons = dynamic_cast<const PEConditionalConstraint*>(expr);
       if (cond_cons != nullptr) {
-	    // Extract condition info
-	    condition_info_t cond;
-	    if (!extract_condition(cls, cond_cons->get_condition(), cond, scope, des)) {
-		  // Can't extract condition, treat body constraints as soft (no condition)
-		  if (debug_elaborate) {
-			cerr << "extract_simple_bound: could not extract condition from implication" << endl;
-		  }
-		  // Process body constraints without condition (as before)
-		  bool any_extracted = false;
-		  for (PExpr* body_expr : cond_cons->get_if_constraints()) {
-			if (body_expr != nullptr) {
-			      // Treat as soft constraint since we can't enforce the condition
-			      any_extracted |= extract_simple_bound(cls, constraint_name, body_expr, true, scope, des);
-			}
-		  }
-		  return any_extracted;
-	    }
-
-	    // Extract body constraints with condition attached
-	    bool any_extracted = false;
-	    for (PExpr* body_expr : cond_cons->get_if_constraints()) {
-		  if (body_expr != nullptr) {
-			any_extracted |= extract_simple_bound_with_cond(cls, constraint_name, body_expr,
-			                                                is_soft, scope, des, cond);
-		  }
-	    }
-
-	    // Handle else constraints if has_else() - for if-else constraints
-	    if (cond_cons->has_else()) {
-		  for (PExpr* else_expr : cond_cons->get_else_constraints()) {
-			if (else_expr != nullptr) {
-			      // Check if this is a nested conditional (else if)
-			      const PEConditionalConstraint* nested_cond =
-				    dynamic_cast<const PEConditionalConstraint*>(else_expr);
-			      if (nested_cond != nullptr) {
-				    // Recurse for 'else if' clause
-				    any_extracted |= extract_simple_bound(cls, constraint_name, else_expr,
-				                                          is_soft, scope, des);
-			      } else {
-				    // Plain else - invert the condition
-				    condition_info_t else_cond = cond;
-				    // Invert the operator to get the negated condition
-				    switch (cond.op) {
-					  case '=': else_cond.op = '!'; break;  // != instead of ==
-					  case '!': else_cond.op = '='; break;  // == instead of !=
-					  case '>': else_cond.op = 'L'; break;  // <= instead of >
-					  case '<': else_cond.op = 'G'; break;  // >= instead of <
-					  case 'G': else_cond.op = '<'; break;  // < instead of >=
-					  case 'L': else_cond.op = '>'; break;  // > instead of <=
-				    }
-				    any_extracted |= extract_simple_bound_with_cond(cls, constraint_name,
-				                                                    else_expr, is_soft, scope, des, else_cond);
-			      }
-			}
-		  }
-	    }
-
-	    return any_extracted;
+	    // Use the new helper that properly handles if-else-if chains
+	    // This correctly generates conditions for the final else clause
+	    // based on remaining enum values (instead of incorrect negation)
+	    return process_if_else_chain(cls, constraint_name, cond_cons, is_soft, scope, des);
       }
 
       // Check for foreach constraint
@@ -10490,6 +10596,68 @@ static bool extract_simple_bound_with_cond(netclass_t*cls, perm_string constrain
 					                        cond.valid, cond.prop_idx, cond.op,
 					                        cond.has_const, cond.const_val, cond.prop2_idx);
 					  return true;
+				    }
+			      }
+			}
+		  }
+	    }
+
+	    // Case 5: sysfunc(property) OP constant (e.g., $countones(flags) == 1) with condition
+	    const PECallFunction* sysfunc = dynamic_cast<const PECallFunction*>(left);
+	    if (sysfunc != nullptr && extract_constant_value(right, const_val, scope, cls, des)) {
+		  // Get the system function name from the path
+		  const pform_scoped_name_t& func_path = sysfunc->path();
+		  if (func_path.name.size() > 0) {
+			const name_component_t& last_comp = func_path.name.back();
+			perm_string func_name = last_comp.name;
+			if (!func_name.nil()) {
+			      // Check if it's a supported system function for constraints
+			      netclass_t::sysfunc_type_t sysfunc_type = netclass_t::SYSFUNC_NONE;
+			      if (func_name == "$countones")
+				    sysfunc_type = netclass_t::SYSFUNC_COUNTONES;
+			      else if (func_name == "$onehot")
+				    sysfunc_type = netclass_t::SYSFUNC_ONEHOT;
+			      else if (func_name == "$onehot0")
+				    sysfunc_type = netclass_t::SYSFUNC_ONEHOT0;
+			      else if (func_name == "$isunknown")
+				    sysfunc_type = netclass_t::SYSFUNC_ISUNKNOWN;
+			      else if (func_name == "$clog2")
+				    sysfunc_type = netclass_t::SYSFUNC_CLOG2;
+
+			      if (sysfunc_type != netclass_t::SYSFUNC_NONE) {
+				    // Get the function argument - should be a single property identifier
+				    const std::vector<named_pexpr_t>& parms = sysfunc->parms();
+				    if (parms.size() == 1 && parms[0].parm != nullptr) {
+					  const PEIdent* arg_ident = dynamic_cast<const PEIdent*>(parms[0].parm);
+					  if (arg_ident != nullptr) {
+						const pform_scoped_name_t& arg_path = arg_ident->path();
+						if (arg_path.name.size() > 0) {
+						      const name_component_t& arg_last_comp = arg_path.name.back();
+						      perm_string arg_name = arg_last_comp.name;
+
+						      // Look up property index for the argument
+						      int arg_idx = cls->property_idx_from_name(arg_name);
+						      if (arg_idx >= 0) {
+							    // Check if property is rand/randc
+							    property_qualifier_t qual = cls->get_prop_qual(arg_idx);
+							    if (qual.test_rand() || qual.test_randc()) {
+								  if (debug_elaborate) {
+									cerr << "netclass_t::elaborate: extracted conditional system function bound "
+									     << func_name << "(" << arg_name << ") " << op << " "
+									     << const_val << " (cond: prop" << cond.prop_idx << " "
+									     << cond.op << " " << cond.const_val << ")" << endl;
+								  }
+
+								  // For sysfunc constraints, property_idx is set to arg_idx
+								  cls->add_simple_bound(constraint_name, arg_idx, op, is_soft, true, const_val, 0,
+								                        sysfunc_type, arg_idx, 1, true,
+								                        cond.valid, cond.prop_idx, cond.op,
+								                        cond.has_const, cond.const_val, cond.prop2_idx);
+								  return true;
+							    }
+						      }
+						}
+					  }
 				    }
 			      }
 			}

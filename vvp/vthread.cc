@@ -8650,6 +8650,10 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
 			// Then add inline constraints
 			for (const auto& bound : inline_constraints) {
+#ifdef DEBUG_CONSTRAINTS
+			      fprintf(stderr, "DEBUG: Inline constraint: prop_idx=%zu, op='%c', has_const=%d, const_bound=%lld (checking prop %zu)\n",
+			              bound.property_idx, bound.op, bound.has_const_bound, (long long)bound.const_bound, i);
+#endif
 			      if (bound.property_idx != i) continue;
 			      if (!bound.has_const_bound) continue;
 			      // For value generation, only use hard constraints (non-soft)
@@ -8719,20 +8723,18 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			int64_t rval;
 			bool generated = false;
 
-			// Priority 0: Enum bounds - pick from valid enum values only
-			{
-			      const std::vector<int64_t>* enum_vals = defn->get_enum_values(i);
-			      if (enum_vals != nullptr && !enum_vals->empty()) {
-				    // Pick a random valid enum value
-				    size_t idx = rand() % enum_vals->size();
-				    rval = (*enum_vals)[idx];
-				    generated = true;
-			      }
+#ifdef DEBUG_CONSTRAINTS
+			fprintf(stderr, "DEBUG: Property %zu: discrete_values.size()=%zu\n", i, discrete_values.size());
+			for (size_t dvi = 0; dvi < discrete_values.size(); dvi++) {
+			      fprintf(stderr, "DEBUG:   discrete_value[%zu] = %lld (weight=%lld)\n", dvi,
+			              (long long)discrete_values[dvi].first, (long long)discrete_values[dvi].second);
 			}
+#endif
 
-			// Priority 1: Discrete values from == constraints (from inside/dist)
+			// Priority 0: Discrete values from == constraints (from inline constraints like x == val)
+			// These take highest priority as they represent explicit value requests
 			// Use weighted random selection if weights are present
-			if (!generated && !discrete_values.empty()) {
+			if (!discrete_values.empty()) {
 			      // Calculate total weight
 			      int64_t total_weight = 0;
 			      for (const auto& dv : discrete_values) {
@@ -8751,10 +8753,25 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      }
 			      rval = discrete_values[selected].first;
 			      generated = true;
+#ifdef DEBUG_CONSTRAINTS
+			      fprintf(stderr, "DEBUG: Property %zu: Using discrete value %lld\n", i, (long long)rval);
+#endif
+			}
+
+			// Priority 1: Enum bounds - pick from valid enum values only
+			// (only if no explicit value constraint from Priority 0)
+			if (!generated) {
+			      const std::vector<int64_t>* enum_vals = defn->get_enum_values(i);
+			      if (enum_vals != nullptr && !enum_vals->empty()) {
+				    // Pick a random valid enum value
+				    size_t idx = rand() % enum_vals->size();
+				    rval = (*enum_vals)[idx];
+				    generated = true;
+			      }
 			}
 			// Priority 2: Multiple disjoint ranges (from dist {[a:b], [c:d], ...})
 			// Use weighted random selection based on range weights
-			else if (!ranges.empty()) {
+			if (!generated && !ranges.empty()) {
 			      // Calculate total weight (considering weight_per_value)
 			      int64_t total_weight = 0;
 			      for (const auto& r : ranges) {
@@ -8801,8 +8818,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      generated = true;
 			}
 			// Priority 3: Class-level constraints combined with inline bounds
-			else if (has_class_constraints) {
-			      rval = defn->generate_constrained_random(inst, i, wid, cobj);
+			// Only execute if no value has been generated yet (e.g., by discrete values)
+			if (!generated && has_class_constraints) {
+			      rval = defn->generate_constrained_random(inst, i, wid, cobj, inline_constraints);
 			      // Combine with inline bounds and excluded values
 			      bool valid = (rval >= min_val && rval <= max_val);
 			      if (valid) {
@@ -8827,7 +8845,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      generated = true;
 			}
 			// Priority 4: Range constraints from class or inline (> and < bounds)
-			else if ((has_inline_constraints || has_class_constraints) && min_val <= max_val) {
+			// Only execute if no value has been generated yet
+			if (!generated && (has_inline_constraints || has_class_constraints) && min_val <= max_val) {
 			      // Generate within constraint bounds
 			      int64_t range = max_val - min_val + 1;
 			      int avoid_tries = 0;
@@ -8845,7 +8864,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			}
 			// Priority 5: No constraints - purely random
 			// For randc, still need to exclude used values
-			else {
+			if (!generated) {
 			      int avoid_tries = 0;
 			      do {
 				    // Generate purely random bits

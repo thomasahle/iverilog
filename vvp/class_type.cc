@@ -784,7 +784,7 @@ int class_type::constraint_idx_from_name(const std::string& name) const
  * Computes the valid range from all constraint bounds and generates
  * a random value within that range.
  */
-int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid, const vvp_cobject* cobj) const
+int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid, const vvp_cobject* cobj, const std::vector<simple_bound_t>& inline_constraints) const
 {
       // Check if this property has enum bounds - if so, pick from valid enum values
       const std::vector<int64_t>* enum_vals = get_enum_values(prop_idx);
@@ -840,6 +840,74 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 		  continue;
 	    if (bound.is_soft)
 		  continue;  // Skip soft constraints for value generation
+
+	    // Check if this is a conditional constraint
+	    if (bound.has_condition) {
+		  // Evaluate the condition to see if this constraint applies
+		  if (bound.cond_prop_idx >= properties_.size())
+			continue;
+		  if (!properties_[bound.cond_prop_idx].type->supports_vec4())
+			continue;
+
+		  // First check if inline constraints set the condition property to a specific value
+		  // This handles cases like: randomize() with { burst == BURST4; }
+		  int64_t cond_val = 0;
+		  bool found_inline_value = false;
+		  for (const auto& inline_bound : inline_constraints) {
+			// Look for equality constraint on the condition property
+			if (inline_bound.property_idx == bound.cond_prop_idx &&
+			    inline_bound.op == '=' && inline_bound.has_const_bound) {
+			      cond_val = inline_bound.const_bound;
+			      found_inline_value = true;
+			      break;
+			}
+		  }
+
+		  // If no inline constraint found, use the current property value
+		  if (!found_inline_value) {
+			vvp_vector4_t cond_prop_val;
+			get_vec4(inst, bound.cond_prop_idx, cond_prop_val);
+
+			if (cond_prop_val.size() <= 64) {
+			      for (unsigned i = 0; i < cond_prop_val.size(); i++) {
+				    if (cond_prop_val.value(i) == BIT4_1)
+					  cond_val |= (int64_t(1) << i);
+			      }
+			}
+		  }
+
+		  // Get the condition bound value
+		  int64_t cond_bound_val = 0;
+		  if (bound.cond_has_const) {
+			cond_bound_val = bound.cond_const;
+		  } else if (bound.cond_prop2_idx < properties_.size() &&
+		             properties_[bound.cond_prop2_idx].type->supports_vec4()) {
+			vvp_vector4_t cond_prop2_val;
+			get_vec4(inst, bound.cond_prop2_idx, cond_prop2_val);
+			if (cond_prop2_val.size() <= 64) {
+			      for (unsigned i = 0; i < cond_prop2_val.size(); i++) {
+				    if (cond_prop2_val.value(i) == BIT4_1)
+					  cond_bound_val |= (int64_t(1) << i);
+			      }
+			}
+		  }
+
+		  // Evaluate the condition
+		  bool cond_satisfied = false;
+		  switch (bound.cond_op) {
+			case '>': cond_satisfied = (cond_val > cond_bound_val); break;
+			case '<': cond_satisfied = (cond_val < cond_bound_val); break;
+			case 'G': cond_satisfied = (cond_val >= cond_bound_val); break;
+			case 'L': cond_satisfied = (cond_val <= cond_bound_val); break;
+			case '=': cond_satisfied = (cond_val == cond_bound_val); break;
+			case '!': cond_satisfied = (cond_val != cond_bound_val); break;
+			default: cond_satisfied = true; break;
+		  }
+
+		  // If condition is false, skip this constraint
+		  if (!cond_satisfied)
+			continue;
+	    }
 
 	    // Handle system function constraints
 	    if (bound.sysfunc_type == SYSFUNC_COUNTONES && bound.op == '=' &&
