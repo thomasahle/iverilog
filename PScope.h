@@ -180,7 +180,8 @@ class LexicalScope {
 
       void dump_var_inits_(std::ostream&out, unsigned indent) const;
 
-      bool elaborate_var_inits_(Design*des, NetScope*scope) const;
+      bool elaborate_var_inits_(Design*des, NetScope*scope,
+			       bool skip_automatic = false) const;
 
     private:
       LexicalScope*parent_;

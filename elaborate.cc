@@ -3180,13 +3180,35 @@ NetProc* PBlock::elaborate(Design*des, NetScope*scope) const
 	      // each time the block is entered, so add them to the main
 	      // block. For static scopes, put them in a separate process
 	      // that will be executed at the start of simulation.
+	      // However, automatic variables in static scopes should still
+	      // be initialized inline each time the block is entered.
 	    if (nscope->is_auto()) {
 		  for (unsigned idx = 0; idx < var_inits.size(); idx += 1) {
 			NetProc*tmp = var_inits[idx]->elaborate(des, nscope);
 			if (tmp) cur->append(tmp);
 		  }
 	    } else {
-		  elaborate_var_inits_(des, nscope);
+		  // Helper to check if a var_init is for an automatic variable
+		  auto is_auto_var = [this](Statement* stmt) -> bool {
+			const PAssign*ass = dynamic_cast<const PAssign*>(stmt);
+			if (!ass) return false;
+			const PEIdent*id = dynamic_cast<const PEIdent*>(ass->lval());
+			if (!id || id->path().name.empty()) return false;
+			perm_string var_name = id->path().name.front().name;
+			PWire*wire = const_cast<PBlock*>(this)->wires_find(var_name);
+			return wire && wire->get_lifetime() == LexicalScope::AUTOMATIC;
+		  };
+
+		  // Inline automatic var_inits, leave static ones for $init
+		  for (unsigned idx = 0; idx < var_inits.size(); idx += 1) {
+			if (is_auto_var(var_inits[idx])) {
+			      NetProc*tmp = var_inits[idx]->elaborate(des, nscope);
+			      if (tmp) cur->append(tmp);
+			}
+		  }
+
+		  // Create $init process for static var_inits
+		  elaborate_var_inits_(des, nscope, true /* skip_automatic */);
 	    }
       }
 
@@ -8399,7 +8421,42 @@ void PFunction::elaborate(Design*des, NetScope*scope) const
 		  if (tmp) blk->prepend(tmp);
 	    }
       } else {
-	    elaborate_var_inits_(des, scope);
+	    // For static functions, automatic variables should still be
+	    // initialized each time the function is called, not in $init.
+	    // First, inline any automatic var_inits, then create $init
+	    // process for static var_inits only.
+
+	    // Helper to check if a var_init is for an automatic variable
+	    auto is_auto_var = [this](Statement* stmt) -> bool {
+		  const PAssign*ass = dynamic_cast<const PAssign*>(stmt);
+		  if (!ass) return false;
+		  const PEIdent*id = dynamic_cast<const PEIdent*>(ass->lval());
+		  if (!id || id->path().name.empty()) return false;
+		  perm_string var_name = id->path().name.front().name;
+		  PWire*wire = const_cast<PFunction*>(this)->wires_find(var_name);
+		  return wire && wire->get_lifetime() == LexicalScope::AUTOMATIC;
+	    };
+
+	    // Collect and inline automatic var_inits
+	    NetBlock*blk = nullptr;
+	    for (unsigned idx = var_inits.size(); idx > 0; idx -= 1) {
+		  if (is_auto_var(var_inits[idx-1])) {
+			if (!blk) {
+			      blk = dynamic_cast<NetBlock*>(st);
+			      if (!blk) {
+				    blk = new NetBlock(NetBlock::SEQU, scope);
+				    blk->set_line(*this);
+				    blk->append(st);
+				    st = blk;
+			      }
+			}
+			NetProc*tmp = var_inits[idx-1]->elaborate(des, scope);
+			if (tmp) blk->prepend(tmp);
+		  }
+	    }
+
+	    // Create $init process for remaining (static) var_inits
+	    elaborate_var_inits_(des, scope, true /* skip_automatic */);
       }
 
       def->set_proc(st);
@@ -8630,7 +8687,42 @@ void PTask::elaborate(Design*des, NetScope*task) const
 		  if (tmp) blk->prepend(tmp);
 	    }
       } else {
-	    elaborate_var_inits_(des, task);
+	    // For static tasks, automatic variables should still be
+	    // initialized each time the task is called, not in $init.
+	    // First, inline any automatic var_inits, then create $init
+	    // process for static var_inits only.
+
+	    // Helper to check if a var_init is for an automatic variable
+	    auto is_auto_var = [this](Statement* stmt) -> bool {
+		  const PAssign*ass = dynamic_cast<const PAssign*>(stmt);
+		  if (!ass) return false;
+		  const PEIdent*id = dynamic_cast<const PEIdent*>(ass->lval());
+		  if (!id || id->path().name.empty()) return false;
+		  perm_string var_name = id->path().name.front().name;
+		  PWire*wire = const_cast<PTask*>(this)->wires_find(var_name);
+		  return wire && wire->get_lifetime() == LexicalScope::AUTOMATIC;
+	    };
+
+	    // Collect and inline automatic var_inits
+	    NetBlock*blk = nullptr;
+	    for (unsigned idx = var_inits.size(); idx > 0; idx -= 1) {
+		  if (is_auto_var(var_inits[idx-1])) {
+			if (!blk) {
+			      blk = dynamic_cast<NetBlock*>(st);
+			      if (!blk) {
+				    blk = new NetBlock(NetBlock::SEQU, task);
+				    blk->set_line(*this);
+				    blk->append(st);
+				    st = blk;
+			      }
+			}
+			NetProc*tmp = var_inits[idx-1]->elaborate(des, task);
+			if (tmp) blk->prepend(tmp);
+		  }
+	    }
+
+	    // Create $init process for remaining (static) var_inits
+	    elaborate_var_inits_(des, task, true /* skip_automatic */);
       }
 
       def->set_proc(st);
@@ -10704,19 +10796,42 @@ bool PScope::elaborate_behaviors_(Design*des, NetScope*scope) const
       return result_flag;
 }
 
-bool LexicalScope::elaborate_var_inits_(Design*des, NetScope*scope) const
+bool LexicalScope::elaborate_var_inits_(Design*des, NetScope*scope,
+				       bool skip_automatic) const
 {
       if (var_inits.size() == 0)
 	    return true;
 
+	// Helper lambda to check if a var_init is for an automatic variable
+      auto is_auto_var = [this](Statement* stmt) -> bool {
+	    const PAssign*ass = dynamic_cast<const PAssign*>(stmt);
+	    if (!ass) return false;
+	    const PEIdent*id = dynamic_cast<const PEIdent*>(ass->lval());
+	    if (!id || id->path().name.empty()) return false;
+	    perm_string var_name = id->path().name.front().name;
+	    PWire*wire = const_cast<LexicalScope*>(this)->wires_find(var_name);
+	    return wire && wire->get_lifetime() == LexicalScope::AUTOMATIC;
+      };
+
+	// Collect var_inits to process, optionally skipping automatic ones
+      std::vector<Statement*> inits_to_process;
+      for (unsigned idx = 0; idx < var_inits.size(); idx += 1) {
+	    if (skip_automatic && is_auto_var(var_inits[idx]))
+		  continue;
+	    inits_to_process.push_back(var_inits[idx]);
+      }
+
+      if (inits_to_process.empty())
+	    return true;
+
       NetProc*proc = 0;
-      if (var_inits.size() == 1) {
-	    proc = var_inits[0]->elaborate(des, scope);
+      if (inits_to_process.size() == 1) {
+	    proc = inits_to_process[0]->elaborate(des, scope);
       } else {
 	    NetBlock*blk = new NetBlock(NetBlock::SEQU, 0);
 	    bool flag = true;
-	    for (unsigned idx = 0; idx < var_inits.size(); idx += 1) {
-		  NetProc*tmp = var_inits[idx]->elaborate(des, scope);
+	    for (unsigned idx = 0; idx < inits_to_process.size(); idx += 1) {
+		  NetProc*tmp = inits_to_process[idx]->elaborate(des, scope);
 		  if (tmp)
 			blk->append(tmp);
 		  else
