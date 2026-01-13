@@ -329,15 +329,34 @@ static void draw_binary_vec4_compare_class(ivl_expr_t expr)
 	    }
 
 	    if (arr_idx) {
-		  /* Darray element null test: property[arr_idx] == null
-		     Load the darray property (using 0 as prop array index since
-		     a darray property is scalar), then test element at arr_idx */
-		  fprintf(vvp_out, "    %%prop/obj %u, 0; Load darray property\n", pidx);
-		  fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+		  /* Array element null test: property[arr_idx] == null
+		     Need to distinguish between darray and fixed-size array properties */
 		  int arr_reg = allocate_word();
 		  draw_eval_expr_into_integer(arr_idx, arr_reg);
-		  fprintf(vvp_out, "    %%test_nul/dar %d;\n", arr_reg);
-		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+
+		  /* Get the property type to determine if it's a darray or fixed array */
+		  ivl_type_t class_type;
+		  if (base) {
+			class_type = ivl_expr_net_type(base);
+		  } else {
+			class_type = sig ? ivl_signal_net_type(sig) : NULL;
+		  }
+		  ivl_type_t prop_type = class_type ? ivl_type_prop_type(class_type, pidx) : NULL;
+		  ivl_variable_type_t prop_base = prop_type ? ivl_type_base(prop_type) : IVL_VT_NO_TYPE;
+
+		  if (prop_base == IVL_VT_DARRAY || prop_base == IVL_VT_QUEUE) {
+			/* Dynamic array/queue: load the darray property (index 0),
+			   then test if element at arr_idx is null */
+			fprintf(vvp_out, "    %%prop/obj %u, 0; Load darray property\n", pidx);
+			fprintf(vvp_out, "    %%pop/obj 1, 1;\n");
+			fprintf(vvp_out, "    %%test_nul/dar %d;\n", arr_reg);
+			fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
+		  } else {
+			/* Fixed-size array: directly load element at arr_idx */
+			fprintf(vvp_out, "    %%prop/obj %u, %d; Load fixed array element\n", pidx, arr_reg);
+			fprintf(vvp_out, "    %%test_nul/obj;\n");
+			fprintf(vvp_out, "    %%pop/obj 2, 0;\n");
+		  }
 		  clr_word(arr_reg);
 	    } else {
 		  fprintf(vvp_out, "    %%test_nul/prop %u, %d;\n", pidx, idx);
