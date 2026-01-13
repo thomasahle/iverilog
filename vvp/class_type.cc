@@ -1949,6 +1949,11 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
 	    bound.cond_const = 0;
 	    bound.cond_prop2_idx = static_cast<size_t>(cond_value);
       }
+      // Indexed array element constraints (default: apply to all elements)
+      bound.has_element_idx = false;
+      bound.element_idx = 0;
+      // Foreach constraint flag (applies to dynamic arrays)
+      bound.is_foreach = false;
       class_def->add_constraint_bound(bound);
 
       free(class_label);

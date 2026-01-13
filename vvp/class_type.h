@@ -144,6 +144,9 @@ class class_type : public __vpiHandle {
 	    // For "data[0] == 42": constraint applies to specific array element
 	    bool has_element_idx; // true if this bound constrains specific array element
 	    int64_t element_idx;  // Array element index (if has_element_idx)
+	    // Foreach constraint on dynamic array support
+	    // For named constraints like "constraint c { foreach(data[i]) data[i] != 0; }"
+	    bool is_foreach;      // true if this applies to all elements of dynamic array
       };
       void add_constraint_bound(const simple_bound_t& bound);
 	// Get constraint index from name, return -1 if not found

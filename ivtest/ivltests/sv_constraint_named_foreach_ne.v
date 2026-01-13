@@ -1,0 +1,1 @@
+sv_constraint_named_foreach_ne.sv

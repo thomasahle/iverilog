@@ -9914,7 +9914,8 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    }
 
 	    // Check if it's a static array (has slice dimensions)
-	    long array_size = -1;
+	    // For dynamic arrays, array_size will be 0 (meaning "apply to all elements at runtime")
+	    long array_size = 0;  // Default for dynamic arrays
 	    const netranges_t& dims = prop_type->slice_dimensions();
 	    if (!dims.empty()) {
 		  // Use the first dimension as the array size
@@ -9923,12 +9924,8 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 		  }
 	    }
 
-	    if (array_size <= 0) {
-		  if (debug_elaborate) {
-			cerr << "extract_simple_bound: foreach on dynamic array not yet supported" << endl;
-		  }
-		  return false;
-	    }
+	    // For dynamic arrays (array_size == 0), we still create constraints
+	    // They will be applied to all elements at runtime
 
 	    // Get loop variables - we only support single loop variable for now
 	    const std::list<perm_string>& loop_vars = foreach_cons->get_loop_vars();

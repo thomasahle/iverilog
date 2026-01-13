@@ -8426,15 +8426,16 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  std::vector<int64_t> default_excluded_vals;
 		  std::vector<int64_t> default_discrete_vals;
 
-		  for (const auto& bound : inline_constraints) {
-			if (bound.property_idx != prop_idx) continue;
-			if (!bound.has_const_bound) continue;
-			if (bound.is_soft) continue;
+		  // Lambda to process a constraint bound for dynamic array element constraints
+		  auto process_darray_elem_bound = [&](const class_type::simple_bound_t& bound) {
+			if (bound.property_idx != prop_idx) return;
+			if (!bound.has_const_bound) return;
+			if (bound.is_soft) return;
 			// Skip size constraints - only element constraints
 			if (bound.op == 'S' || bound.op == 's' || bound.op == 'M' ||
-			    bound.op == 'X' || bound.op == 'm' || bound.op == 'x') continue;
+			    bound.op == 'X' || bound.op == 'm' || bound.op == 'x') return;
 			// Skip element-indexed constraints here - handle them per-element
-			if (bound.has_element_idx) continue;
+			if (bound.has_element_idx) return;
 
 			switch (bound.op) {
 			      case '>':  // value > const
@@ -8462,6 +8463,26 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      default:
 				    break;
 			}
+		  };
+
+		  // First, collect named constraints from the class hierarchy
+		  // This enables named foreach constraints on dynamic arrays:
+		  // constraint c { foreach(data[i]) data[i] != 0; }
+		  const class_type* cls_iter = defn;
+		  while (cls_iter != nullptr) {
+			for (size_t b = 0; b < cls_iter->constraint_bound_count(); b++) {
+			      const class_type::simple_bound_t& bound = cls_iter->get_constraint_bound(b);
+			      // Skip disabled constraints (via constraint_mode)
+			      if (!bound.constraint_name.empty() &&
+				  !cobj->is_constraint_enabled(bound.constraint_name)) continue;
+			      process_darray_elem_bound(bound);
+			}
+			cls_iter = cls_iter->get_parent();
+		  }
+
+		  // Then collect from inline constraints
+		  for (const auto& bound : inline_constraints) {
+			process_darray_elem_bound(bound);
 		  }
 
 		  // Ensure valid default range
