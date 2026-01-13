@@ -489,6 +489,95 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
             return;
       }
 
+      // Check for negated constraint: !(x inside {[lo:hi]})
+      // Parser transforms "x inside {[lo:hi]}" to "(x >= lo) && (x <= hi)"
+      // So negated inside becomes "!((x >= lo) && (x <= hi))"
+      const PEUnary*unary_not = dynamic_cast<const PEUnary*>(expr);
+      if (unary_not && unary_not->get_op() == '!') {
+            // Get the operand - should be a binary AND for negated inside
+            const PEBinary*and_expr = dynamic_cast<const PEBinary*>(unary_not->get_expr());
+            if (and_expr && and_expr->get_op() == 'a') {  // 'a' is AND
+                  // Check if both sides are comparisons
+                  const PEBComp*left_cmp = dynamic_cast<const PEBComp*>(and_expr->get_left());
+                  const PEBComp*right_cmp = dynamic_cast<const PEBComp*>(and_expr->get_right());
+                  if (left_cmp && right_cmp) {
+                        // Look for >= and <= on the same property
+                        char left_op = left_cmp->get_op();
+                        char right_op = right_cmp->get_op();
+
+                        // We need one 'G' (>=) and one 'L' (<=)
+                        const PEBComp*ge_cmp = nullptr;
+                        const PEBComp*le_cmp = nullptr;
+                        if (left_op == 'G' && right_op == 'L') {
+                              ge_cmp = left_cmp;
+                              le_cmp = right_cmp;
+                        } else if (left_op == 'L' && right_op == 'G') {
+                              ge_cmp = right_cmp;
+                              le_cmp = left_cmp;
+                        }
+
+                        if (ge_cmp && le_cmp) {
+                              // Extract property and bounds from >= (low bound)
+                              const PEIdent*ge_ident = dynamic_cast<const PEIdent*>(ge_cmp->get_left());
+                              const PENumber*ge_num = dynamic_cast<const PENumber*>(ge_cmp->get_right());
+                              // Try swapped: constant >= prop means prop <= constant
+                              bool ge_swapped = false;
+                              if (!ge_ident || !ge_num) {
+                                    ge_ident = dynamic_cast<const PEIdent*>(ge_cmp->get_right());
+                                    ge_num = dynamic_cast<const PENumber*>(ge_cmp->get_left());
+                                    ge_swapped = true;
+                              }
+
+                              // Extract property and bounds from <= (high bound)
+                              const PEIdent*le_ident = dynamic_cast<const PEIdent*>(le_cmp->get_left());
+                              const PENumber*le_num = dynamic_cast<const PENumber*>(le_cmp->get_right());
+                              bool le_swapped = false;
+                              if (!le_ident || !le_num) {
+                                    le_ident = dynamic_cast<const PEIdent*>(le_cmp->get_right());
+                                    le_num = dynamic_cast<const PENumber*>(le_cmp->get_left());
+                                    le_swapped = true;
+                              }
+
+                              if (ge_ident && ge_num && le_ident && le_num) {
+                                    // Check that both comparisons are on the same property
+                                    const pform_scoped_name_t& ge_path = ge_ident->path();
+                                    const pform_scoped_name_t& le_path = le_ident->path();
+                                    if (!ge_path.name.empty() && !le_path.name.empty()) {
+                                          perm_string ge_prop = ge_path.name.back().name;
+                                          perm_string le_prop = le_path.name.back().name;
+                                          if (ge_prop == le_prop) {
+                                                // Get the bounds (accounting for swapped operands)
+                                                int64_t low_bound = ge_num->value().as_long();
+                                                int64_t high_bound = le_num->value().as_long();
+                                                // If ge was swapped, it's actually a <= comparison (high bound)
+                                                // If le was swapped, it's actually a >= comparison (low bound)
+                                                if (ge_swapped && le_swapped) {
+                                                      // Both swapped: swap bounds
+                                                      std::swap(low_bound, high_bound);
+                                                } else if (ge_swapped) {
+                                                      // ge became <=, so swap
+                                                      std::swap(low_bound, high_bound);
+                                                } else if (le_swapped) {
+                                                      // le became >=, so swap
+                                                      std::swap(low_bound, high_bound);
+                                                }
+                                                // Ensure low <= high
+                                                if (low_bound > high_bound)
+                                                      std::swap(low_bound, high_bound);
+
+                                                // op_code 14 = excluded range
+                                                // Store low in const_value, high in element_idx field
+                                                bounds.push_back(std::make_tuple(ge_prop, 14, low_bound, is_soft,
+                                                      (int64_t)1, true, perm_string(), (NetExpr*)nullptr, true, high_bound));
+                                                return;
+                                          }
+                                    }
+                              }
+                        }
+                  }
+            }
+      }
+
       // Check for dist constraint
       // For dist: x dist { val1 := w1, [lo:hi] :/ w2 } - convert to == for values, >= and <= for ranges
       const PEDistConstraint*dist = dynamic_cast<const PEDistConstraint*>(expr);

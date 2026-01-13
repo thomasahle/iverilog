@@ -532,6 +532,39 @@ void netclass_t::add_simple_bound(perm_string constraint_name, size_t prop_idx, 
       bound.cond_has_const = cond_has_const;
       bound.cond_const = cond_const;
       bound.cond_prop2_idx = cond_prop2;
+      bound.is_excluded_range = false;
+      bound.excluded_range_low = 0;
+      bound.excluded_range_high = 0;
+      simple_bounds_.push_back(bound);
+}
+
+void netclass_t::add_excluded_range_bound(perm_string constraint_name, size_t prop_idx,
+                                          int64_t low_bound, int64_t high_bound, bool is_soft)
+{
+      simple_bound_t bound;
+      bound.constraint_name = constraint_name;
+      bound.property_idx = prop_idx;
+      bound.op = 'R';  // Excluded range operator
+      bound.is_soft = is_soft;
+      bound.has_const_bound = false;
+      bound.const_bound = 0;
+      bound.bound_prop_idx = 0;
+      bound.has_prop_offset = false;
+      bound.is_foreach = false;
+      bound.array_size = 0;
+      bound.sysfunc_type = SYSFUNC_NONE;
+      bound.sysfunc_arg_idx = 0;
+      bound.weight = 1;
+      bound.weight_per_value = true;
+      bound.has_condition = false;
+      bound.cond_prop_idx = 0;
+      bound.cond_op = '=';
+      bound.cond_has_const = true;
+      bound.cond_const = 0;
+      bound.cond_prop2_idx = 0;
+      bound.is_excluded_range = true;
+      bound.excluded_range_low = low_bound;
+      bound.excluded_range_high = high_bound;
       simple_bounds_.push_back(bound);
 }
 

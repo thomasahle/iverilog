@@ -259,6 +259,10 @@ class netclass_t : public ivl_type_s {
 	    bool cond_has_const;  // true if condition compares to constant
 	    int64_t cond_const;   // Constant value for condition (if cond_has_const)
 	    size_t cond_prop2_idx;// Property index for condition (if !cond_has_const)
+	    // Excluded range support - for !(x inside {[lo:hi]})
+	    bool is_excluded_range;
+	    int64_t excluded_range_low;
+	    int64_t excluded_range_high;
       };
       std::vector<simple_bound_t> simple_bounds_;
 
@@ -281,6 +285,8 @@ class netclass_t : public ivl_type_s {
                             bool cond_has_const = true, int64_t cond_const = 0, size_t cond_prop2 = 0,
                             bool is_foreach = false, size_t array_size = 0,
                             bool has_prop_offset = false);
+      void add_excluded_range_bound(perm_string constraint_name, size_t prop_idx,
+                                    int64_t low_bound, int64_t high_bound, bool is_soft);
       size_t get_simple_bounds() const { return simple_bounds_.size(); }
       const simple_bound_t& get_simple_bound(size_t idx) const;
       perm_string get_simple_bound_constraint_name(size_t idx) const;

@@ -1218,6 +1218,44 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 	    }
       }
 
+      // Collect excluded ranges for this property (from !(x inside {[lo:hi]}))
+      std::vector<std::pair<int64_t, int64_t>> excluded_ranges;
+      for (const auto& bound : constraint_bounds_) {
+	    // Skip disabled constraints
+	    if (cobj != nullptr && !bound.constraint_name.empty() &&
+	        !cobj->is_constraint_enabled(bound.constraint_name))
+		  continue;
+	    if (bound.property_idx != prop_idx)
+		  continue;
+	    if (!bound.is_excluded_range)
+		  continue;
+	    if (bound.is_soft)
+		  continue;
+	    excluded_ranges.push_back(std::make_pair(bound.excluded_range_low,
+						     bound.excluded_range_high));
+      }
+
+      // Also check inline constraints for excluded ranges
+      for (const auto& bound : inline_constraints) {
+	    if (bound.property_idx != prop_idx)
+		  continue;
+	    if (!bound.is_excluded_range)
+		  continue;
+	    if (bound.is_soft)
+		  continue;
+	    excluded_ranges.push_back(std::make_pair(bound.excluded_range_low,
+						     bound.excluded_range_high));
+      }
+
+      // Helper lambda to check if a value is in any excluded range
+      auto is_in_excluded_range = [&](int64_t val) -> bool {
+	    for (const auto& range : excluded_ranges) {
+		  if (val >= range.first && val <= range.second)
+			return true;
+	    }
+	    return false;
+      };
+
       // Now handle special value generation (like one-hot) WITH range constraints
       if (need_onehot) {
 	    // Generate a random power of 2 (exactly one bit set)
@@ -1288,22 +1326,34 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 	    return r;
       }
 
-      // Generate random value in range
+      // Generate random value in range, avoiding excluded ranges
       int64_t range = max_val - min_val + 1;
       if (range <= 0) {
 	    // Overflow or single value
 	    return min_val;
       }
 
-      // Use modulo for range (not perfectly uniform but good enough)
-      int64_t r = 0;
-      for (unsigned i = 0; i < 64; i++) {
-	    if (rand() & 1) r |= (int64_t(1) << i);
-      }
-      // Make sure r is non-negative for modulo
-      if (r < 0) r = -r;
+      // If we have excluded ranges, we need to retry to find a valid value
+      int max_attempts = excluded_ranges.empty() ? 1 : 1000;
+      for (int attempt = 0; attempt < max_attempts; attempt++) {
+	    // Use modulo for range (not perfectly uniform but good enough)
+	    int64_t r = 0;
+	    for (unsigned i = 0; i < 64; i++) {
+		  if (rand() & 1) r |= (int64_t(1) << i);
+	    }
+	    // Make sure r is non-negative for modulo
+	    if (r < 0) r = -r;
 
-      return min_val + (r % range);
+	    int64_t result = min_val + (r % range);
+
+	    // Check if result is in an excluded range
+	    if (!is_in_excluded_range(result))
+		  return result;
+      }
+
+      // Fallback: couldn't find a value outside excluded ranges
+      // Return a value that's at least in the valid range
+      return min_val + (rand() % range);
 }
 
 bool class_type::has_any_constraints() const
@@ -1678,6 +1728,14 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 		  // Hard constraint violated
 		  return false;
 	    }
+
+	    // Check excluded ranges (from !(x inside {[lo:hi]}))
+	    if (bound.is_excluded_range && !bound.is_soft) {
+		  // Value must NOT be in the excluded range
+		  if (val >= bound.excluded_range_low && val <= bound.excluded_range_high) {
+			return false;
+		  }
+	    }
       }
 
       return true;
@@ -1943,11 +2001,25 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
       }
       bound.op = effective_op;
 
+      // For excluded range constraint (op 'R'), value contains packed bounds:
+      //   - lower 32 bits = low bound
+      //   - upper 32 bits = high bound
+      if (op == 'R') {
+	    bound.is_excluded_range = true;
+	    // Sign-extend both 32-bit bounds
+	    int32_t low_raw = (int32_t)(value & 0xFFFFFFFF);
+	    int32_t high_raw = (int32_t)((value >> 32) & 0xFFFFFFFF);
+	    bound.excluded_range_low = (int64_t)low_raw;
+	    bound.excluded_range_high = (int64_t)high_raw;
+	    bound.has_const_bound = false;
+	    bound.const_bound = 0;
+	    bound.bound_prop_idx = 0;
+      }
       // For property-based size constraint (op 's') or property+offset constraints,
       // value contains packed data:
       //   - upper 32 bits = source property index
       //   - lower 32 bits = signed offset
-      if (op == 's' || is_prop_offset) {
+      else if (op == 's' || is_prop_offset) {
 	    bound.has_const_bound = true;  // There's an offset
 	    bound.has_prop_offset = true;  // Bound references property + offset
 	    bound.bound_prop_idx = (value >> 32) & 0xFFFFFFFF;  // Source property index
@@ -1987,6 +2059,12 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
       // Inside array constraint (not set from .constraint_bound directive)
       bound.is_inside_array = false;
       bound.inside_array_prop_idx = 0;
+      // Excluded range: already set above if op == 'R', otherwise initialize to false
+      if (op != 'R') {
+	    bound.is_excluded_range = false;
+	    bound.excluded_range_low = 0;
+	    bound.excluded_range_high = 0;
+      }
       class_def->add_constraint_bound(bound);
 
       free(class_label);

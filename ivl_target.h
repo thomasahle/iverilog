@@ -2516,6 +2516,16 @@ extern int         ivl_type_simple_bound_cond_has_const(ivl_type_t net, unsigned
 extern int64_t     ivl_type_simple_bound_cond_const(ivl_type_t net, unsigned idx);
 extern unsigned    ivl_type_simple_bound_cond_prop2(ivl_type_t net, unsigned idx);
 
+/*
+ * ivl_type_simple_bound_is_excluded_range returns 1 if this is an excluded range constraint.
+ * For "!(x inside {[lo:hi]})" - value must NOT be in the specified range.
+ * ivl_type_simple_bound_excluded_range_low returns the low bound of the excluded range.
+ * ivl_type_simple_bound_excluded_range_high returns the high bound of the excluded range.
+ */
+extern int         ivl_type_simple_bound_is_excluded_range(ivl_type_t net, unsigned idx);
+extern int64_t     ivl_type_simple_bound_excluded_range_low(ivl_type_t net, unsigned idx);
+extern int64_t     ivl_type_simple_bound_excluded_range_high(ivl_type_t net, unsigned idx);
+
 /* Unique constraint API - ensures array elements have distinct values.
  * ivl_type_unique_constraints returns the number of unique constraints.
  * ivl_type_unique_constraint_prop returns the property index for idx-th constraint.

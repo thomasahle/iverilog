@@ -8714,6 +8714,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			std::vector<std::pair<int64_t, int64_t>> discrete_values;
 			std::vector<class_type::simple_bound_t> ge_bounds;  // >= bounds
 			std::vector<class_type::simple_bound_t> le_bounds;  // <= bounds
+			// Excluded ranges: (low, high) pairs
+			std::vector<std::pair<int64_t, int64_t>> excluded_ranges;
 			bool has_simple_bounds = false;
 
 			// First collect class-level constraints (including inherited)
@@ -8768,6 +8770,13 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			              bound.property_idx, bound.op, bound.has_const_bound, (long long)bound.const_bound, i);
 #endif
 			      if (bound.property_idx != i) continue;
+			      // Handle excluded ranges specially (they don't use has_const_bound)
+			      if (bound.is_excluded_range) {
+				    if (!bound.is_soft) {
+					  excluded_ranges.push_back({bound.excluded_range_low, bound.excluded_range_high});
+				    }
+				    continue;
+			      }
 			      if (!bound.has_const_bound) continue;
 			      // For value generation, only use hard constraints (non-soft)
 			      // Soft constraints are checked afterwards but don't fail randomize()
@@ -8835,6 +8844,17 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			// Determine generation strategy
 			int64_t rval;
 			bool generated = false;
+
+			// Helper to check if value is excluded (by single values or ranges)
+			auto is_value_excluded = [&](int64_t val) -> bool {
+			      for (auto excl : excluded_values) {
+				    if (val == excl) return true;
+			      }
+			      for (auto& rng : excluded_ranges) {
+				    if (val >= rng.first && val <= rng.second) return true;
+			      }
+			      return false;
+			};
 
 #ifdef DEBUG_CONSTRAINTS
 			fprintf(stderr, "DEBUG: Property %zu: discrete_values.size()=%zu\n", i, discrete_values.size());
@@ -8969,11 +8989,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      int avoid_tries = 0;
 			      do {
 				    rval = low + (rand() % range_size);
-				    bool is_excluded = false;
-				    for (auto excl : excluded_values) {
-					  if (rval == excl) { is_excluded = true; break; }
-				    }
-				    if (!is_excluded) break;
+				    if (!is_value_excluded(rval)) break;
 				    avoid_tries++;
 			      } while (avoid_tries < 100);
 			      generated = true;
@@ -8982,26 +8998,20 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			// Only execute if no value has been generated yet (e.g., by discrete values)
 			if (!generated && has_class_constraints) {
 			      rval = defn->generate_constrained_random(inst, i, wid, cobj, inline_constraints);
-			      // Combine with inline bounds and excluded values
+			      // Combine with inline bounds and excluded values/ranges
 			      bool valid = (rval >= min_val && rval <= max_val);
 			      if (valid) {
-				    for (auto excl : excluded_values) {
-					  if (rval == excl) { valid = false; break; }
-				    }
+				    valid = !is_value_excluded(rval);
 			      }
 			      if (!valid && min_val <= max_val) {
-				    // Regenerate within inline bounds, avoiding excluded values
+				    // Regenerate within inline bounds, avoiding excluded values/ranges
 				    int64_t range = max_val - min_val + 1;
 				    int avoid_tries = 0;
 				    do {
 					  rval = min_val + (rand() % range);
-					  bool is_excluded = false;
-					  for (auto excl : excluded_values) {
-						if (rval == excl) { is_excluded = true; break; }
-					  }
-					  if (!is_excluded) break;
+					  if (!is_value_excluded(rval)) break;
 					  avoid_tries++;
-				    } while (avoid_tries < 100 && range > (int64_t)excluded_values.size());
+				    } while (avoid_tries < 100);
 			      }
 			      generated = true;
 			}
@@ -9013,44 +9023,37 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      int avoid_tries = 0;
 			      do {
 				    rval = min_val + (rand() % range);
-				    // Check if rval is in excluded_values
-				    bool is_excluded = false;
-				    for (auto excl : excluded_values) {
-					  if (rval == excl) { is_excluded = true; break; }
-				    }
-				    if (!is_excluded) break;
+				    if (!is_value_excluded(rval)) break;
 				    avoid_tries++;
-			      } while (avoid_tries < 100 && range > (int64_t)excluded_values.size());
+			      } while (avoid_tries < 100);
 			      generated = true;
 			}
 			// Priority 5: No constraints - purely random
 			// For randc, still need to exclude used values
+			// Also need to check excluded ranges
 			if (!generated) {
+			      bool has_exclusions = (is_randc || has_unique) && (!excluded_values.empty() || !excluded_ranges.empty());
 			      int avoid_tries = 0;
 			      do {
 				    // Generate purely random bits
 				    for (unsigned b = 0; b < wid; b++) {
 					  new_val.set_bit(b, (rand() & 1) ? BIT4_1 : BIT4_0);
 				    }
-				    // For randc or unique, check if value is in excluded_values
-				    if ((is_randc || has_unique) && !excluded_values.empty()) {
+				    // Check if value is in excluded_values or excluded_ranges
+				    if (has_exclusions || !excluded_ranges.empty()) {
 					  // Extract generated value
 					  rval = 0;
 					  for (unsigned b = 0; b < wid && b < 64; b++) {
 						if (new_val.value(b) == BIT4_1)
 						      rval |= (1LL << b);
 					  }
-					  bool is_excluded = false;
-					  for (auto excl : excluded_values) {
-						if (rval == excl) { is_excluded = true; break; }
-					  }
-					  if (!is_excluded) {
+					  if (!is_value_excluded(rval)) {
 						generated = true;
 						break;
 					  }
 					  avoid_tries++;
 				    } else {
-					  break;  // No randc exclusions to check
+					  break;  // No exclusions to check
 				    }
 			      } while (avoid_tries < 100);
 			}
@@ -10129,6 +10132,7 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 	    case 10: bound.op = 'm'; break; // Size > (strict min)
 	    case 11: bound.op = 'x'; break; // Size < (strict max)
 	    case 13: bound.op = 'I'; break; // Inside array
+	    case 14: bound.op = 'R'; break; // Excluded range
 	    default: bound.op = '='; break;
       }
       bound.is_soft = is_soft;
@@ -10140,6 +10144,25 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 	    bound.inside_array_prop_idx = cp->bit_idx[1];  // Array property index
 	    bound.const_bound = 0;
 	    bound.bound_prop_idx = 0;
+	    bound.is_excluded_range = false;
+	    bound.excluded_range_low = 0;
+	    bound.excluded_range_high = 0;
+      }
+      // For op_code 14 (excluded range), unpack the low and high bounds:
+      //   - lower 32 bits = low bound
+      //   - upper 32 bits = high bound
+      else if (op_code == 14) {
+	    uint64_t packed = cp->bit_idx[1];
+	    int32_t low = (int32_t)(packed & 0xFFFFFFFF);
+	    int32_t high = (int32_t)(packed >> 32);
+	    bound.has_const_bound = false;  // Not a simple constant bound
+	    bound.is_excluded_range = true;
+	    bound.excluded_range_low = low;
+	    bound.excluded_range_high = high;
+	    bound.const_bound = 0;
+	    bound.bound_prop_idx = 0;
+	    bound.is_inside_array = false;
+	    bound.inside_array_prop_idx = 0;
       }
       // For op_code 7 (property-based size), unpack the source_prop_idx and offset:
       //   - upper 16 bits = source property index
@@ -10153,12 +10176,18 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 	    bound.const_bound = (int64_t)value_raw;  // Offset (or negated divisor if negative)
 	    bound.is_inside_array = false;
 	    bound.inside_array_prop_idx = 0;
+	    bound.is_excluded_range = false;
+	    bound.excluded_range_low = 0;
+	    bound.excluded_range_high = 0;
       } else {
 	    bound.has_const_bound = true;
 	    bound.const_bound = (int64_t)(int32_t)cp->bit_idx[1];  // Sign-extend
 	    bound.bound_prop_idx = 0;
 	    bound.is_inside_array = false;
 	    bound.inside_array_prop_idx = 0;
+	    bound.is_excluded_range = false;
+	    bound.excluded_range_low = 0;
+	    bound.excluded_range_high = 0;
       }
 
       // Initialize is_foreach to false for inline constraints

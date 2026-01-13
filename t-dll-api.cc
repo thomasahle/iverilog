@@ -3754,6 +3754,30 @@ extern "C" unsigned ivl_type_simple_bound_cond_prop2(ivl_type_t net, unsigned id
       return class_type->get_simple_bound(idx).cond_prop2_idx;
 }
 
+extern "C" int ivl_type_simple_bound_is_excluded_range(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      return class_type->get_simple_bound(idx).is_excluded_range ? 1 : 0;
+}
+
+extern "C" int64_t ivl_type_simple_bound_excluded_range_low(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      return class_type->get_simple_bound(idx).excluded_range_low;
+}
+
+extern "C" int64_t ivl_type_simple_bound_excluded_range_high(ivl_type_t net, unsigned idx)
+{
+      const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);
+      if (class_type == 0)
+	    return 0;
+      return class_type->get_simple_bound(idx).excluded_range_high;
+}
+
 extern "C" unsigned ivl_type_unique_constraints(ivl_type_t net)
 {
       const netclass_t*class_type = dynamic_cast<const netclass_t*>(net);

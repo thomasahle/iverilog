@@ -9870,6 +9870,95 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    return false;
       }
 
+      // Check for negated constraint: !(x inside {[lo:hi]})
+      // Parser transforms "x inside {[lo:hi]}" to "(x >= lo) && (x <= hi)"
+      // So negated inside becomes "!((x >= lo) && (x <= hi))"
+      const PEUnary* unary_not = dynamic_cast<const PEUnary*>(expr);
+      if (unary_not != nullptr && unary_not->get_op() == '!') {
+	    // Get the operand - should be a binary AND for negated inside
+	    const PEBinary* and_expr = dynamic_cast<const PEBinary*>(unary_not->get_expr());
+	    if (and_expr != nullptr && and_expr->get_op() == 'a') {  // 'a' is AND
+		  // Check if both sides are comparisons
+		  const PEBComp* left_cmp = dynamic_cast<const PEBComp*>(and_expr->get_left());
+		  const PEBComp* right_cmp = dynamic_cast<const PEBComp*>(and_expr->get_right());
+		  if (left_cmp != nullptr && right_cmp != nullptr) {
+			// Look for >= and <= on the same property
+			char left_op = left_cmp->get_op();
+			char right_op = right_cmp->get_op();
+
+			// We need one 'G' (>=) and one 'L' (<=)
+			const PEBComp* ge_cmp = nullptr;
+			const PEBComp* le_cmp = nullptr;
+			if (left_op == 'G' && right_op == 'L') {
+			      ge_cmp = left_cmp;
+			      le_cmp = right_cmp;
+			} else if (left_op == 'L' && right_op == 'G') {
+			      ge_cmp = right_cmp;
+			      le_cmp = left_cmp;
+			}
+
+			if (ge_cmp != nullptr && le_cmp != nullptr) {
+			      // Extract property and bounds from >= (low bound)
+			      const PEIdent* ge_ident = dynamic_cast<const PEIdent*>(ge_cmp->get_left());
+			      const PENumber* ge_num = dynamic_cast<const PENumber*>(ge_cmp->get_right());
+			      // Try swapped: constant >= prop means prop <= constant
+			      bool ge_swapped = false;
+			      if (!ge_ident || !ge_num) {
+				    ge_ident = dynamic_cast<const PEIdent*>(ge_cmp->get_right());
+				    ge_num = dynamic_cast<const PENumber*>(ge_cmp->get_left());
+				    ge_swapped = true;
+			      }
+
+			      // Extract property and bounds from <= (high bound)
+			      const PEIdent* le_ident = dynamic_cast<const PEIdent*>(le_cmp->get_left());
+			      const PENumber* le_num = dynamic_cast<const PENumber*>(le_cmp->get_right());
+			      bool le_swapped = false;
+			      if (!le_ident || !le_num) {
+				    le_ident = dynamic_cast<const PEIdent*>(le_cmp->get_right());
+				    le_num = dynamic_cast<const PENumber*>(le_cmp->get_left());
+				    le_swapped = true;
+			      }
+
+			      if (ge_ident && ge_num && le_ident && le_num) {
+				    // Check that both comparisons are on the same property
+				    const pform_scoped_name_t& ge_path = ge_ident->path();
+				    const pform_scoped_name_t& le_path = le_ident->path();
+				    if (!ge_path.name.empty() && !le_path.name.empty()) {
+					  perm_string ge_prop = ge_path.name.back().name;
+					  perm_string le_prop = le_path.name.back().name;
+					  if (ge_prop == le_prop) {
+						// Find property index
+						int prop_idx = cls->property_idx_from_name(ge_prop);
+						if (prop_idx >= 0) {
+						      // Get the bounds (accounting for swapped operands)
+						      int64_t low_bound = ge_num->value().as_long();
+						      int64_t high_bound = le_num->value().as_long();
+						      // If ge was swapped, it's actually a <= comparison (high bound)
+						      // If le was swapped, it's actually a >= comparison (low bound)
+						      if (ge_swapped && le_swapped) {
+							    std::swap(low_bound, high_bound);
+						      } else if (ge_swapped) {
+							    std::swap(low_bound, high_bound);
+						      } else if (le_swapped) {
+							    std::swap(low_bound, high_bound);
+						      }
+						      // Ensure low <= high
+						      if (low_bound > high_bound)
+							    std::swap(low_bound, high_bound);
+
+						      // Add excluded range bound
+						      // 'R' is excluded range op, store low and high bounds
+						      cls->add_excluded_range_bound(constraint_name, prop_idx, low_bound, high_bound, is_soft);
+						      return true;
+						}
+					  }
+				    }
+			      }
+			}
+		  }
+	    }
+      }
+
       // Check for implication/conditional constraints with block syntax (-> { constraints })
       const PEConditionalConstraint* cond_cons = dynamic_cast<const PEConditionalConstraint*>(expr);
       if (cond_cons != nullptr) {

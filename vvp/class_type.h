@@ -151,6 +151,11 @@ class class_type : public __vpiHandle {
 	    // For "x inside {arr}" where arr is a dynamic array property
 	    bool is_inside_array; // true if this constrains value to be member of array
 	    size_t inside_array_prop_idx; // Property index of the array to check membership in
+	    // Excluded range constraint support
+	    // For "!(x inside {[low:high]})" - value must NOT be in range
+	    bool is_excluded_range;
+	    int64_t excluded_range_low;
+	    int64_t excluded_range_high;
       };
       void add_constraint_bound(const simple_bound_t& bound);
 	// Get constraint index from name, return -1 if not found

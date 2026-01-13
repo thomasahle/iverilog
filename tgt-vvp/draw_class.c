@@ -187,6 +187,7 @@ void draw_class_in_scope(ivl_type_t classtype)
 	    int cond_has_const = ivl_type_simple_bound_cond_has_const(classtype, bidx);
 
 	    int has_prop_offset = ivl_type_simple_bound_has_prop_offset(classtype, bidx);
+	    int is_excluded_range = ivl_type_simple_bound_is_excluded_range(classtype, bidx);
 
 	    /* For property+offset constraints (e.g., y <= x + 10), use lowercase operator
 	     * to signal that the value contains packed prop_idx and offset:
@@ -207,7 +208,16 @@ void draw_class_in_scope(ivl_type_t classtype)
 
 	    fprintf(vvp_out, ".constraint_bound C%p, \"%s\", %u, \"%c\", %d, %d, ",
 		    classtype, cons_name ? cons_name : "", prop_idx, effective_op, soft, has_const);
-	    if (op == 's' || has_prop_offset) {
+	    if (is_excluded_range) {
+		  /* Excluded range constraint: !(x inside {[lo:hi]})
+		   * Pack low and high bounds: low in lower 32 bits, high in upper 32 bits
+		   */
+		  int64_t low_bound = ivl_type_simple_bound_excluded_range_low(classtype, bidx);
+		  int64_t high_bound = ivl_type_simple_bound_excluded_range_high(classtype, bidx);
+		  int64_t packed_val = ((high_bound & 0xFFFFFFFF) << 32) | (low_bound & 0xFFFFFFFF);
+		  fprintf(vvp_out, "%" PRId64 ", %u, %u, %" PRId64 ", %d, ",
+			  packed_val, sysfunc_type, sysfunc_arg, weight, weight_per_value);
+	    } else if (op == 's' || has_prop_offset) {
 		  /* Property-based constraint with optional offset:
 		   * For 's' operator: arr.size() == src_prop + offset
 		   * For property+offset: y <= x + 10

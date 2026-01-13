@@ -1398,3 +1398,4 @@ sv_constraint_named_foreach_ne	normal,-g2012	ivltests
 sv_constraint_foreach_ne_inline	normal,-g2012	ivltests gold=sv_constraint_foreach_ne_inline.gold
 sv_constraint_foreach_eq_inline	normal,-g2012	ivltests gold=sv_constraint_foreach_eq_inline.gold
 sv_constraint_indexed	normal,-g2012	ivltests gold=sv_constraint_indexed.gold
+sv_negated_inside		normal,-g2012		gold=sv_negated_inside.gold
