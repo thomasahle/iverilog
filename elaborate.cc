@@ -4380,21 +4380,13 @@ static bool analyze_stmt_constraint_expr(const PExpr*expr,
       // Get the left operand - should be an identifier (property name)
       const PExpr*lhs = bin->get_left();
       const PEIdent*ident = dynamic_cast<const PEIdent*>(lhs);
-      if (!ident) {
-            cerr << "DEBUG: lhs is not PEIdent" << endl;
-            return false;
-      }
+      if (!ident) return false;
 
       const pform_scoped_name_t& scoped_path = ident->path();
-      cerr << "DEBUG: scoped_path.size() = " << scoped_path.size() << endl;
-      if (scoped_path.size() != 1) {
-            cerr << "DEBUG: scoped_path.size() != 1, returning false" << endl;
-            return false;
-      }
+      if (scoped_path.size() != 1) return false;
 
       const name_component_t& name_comp = scoped_path.name.front();
       property_name = name_comp.name;
-      cerr << "DEBUG: property_name = " << property_name << ", index.size() = " << name_comp.index.size() << endl;
 
       // Check for array index (e.g., data[0])
       if (!name_comp.index.empty()) {
@@ -5806,17 +5798,14 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 
 		  // Analyze inline constraints (if any)
 		  const std::list<PExpr*>& constraints = get_inline_constraints();
-		  cerr << "DEBUG: get_inline_constraints() returned " << constraints.size() << " constraints" << endl;
 		  // Tuple: (prop_idx, op_code, const_val, has_element_idx, element_idx)
 		  std::vector<std::tuple<size_t, int, int64_t, bool, int64_t>> bounds;
 
 		  for (const PExpr* cons : constraints) {
-			cerr << "DEBUG: Processing constraint" << endl;
 			// Use recursive extraction to handle AND expressions from 'inside'
 			// Tuple: (prop_name, op_code, const_val, has_element_idx, element_idx)
 			std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t>> extracted;
 			analyze_stmt_constraint_recursive(cons, extracted);
-			cerr << "DEBUG: analyze_stmt_constraint_recursive extracted " << extracted.size() << " bounds" << endl;
 
 			// Convert extracted bounds to property indices
 			for (const auto& ex : extracted) {
