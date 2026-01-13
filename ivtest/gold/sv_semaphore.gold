@@ -1,4 +1,3 @@
-WARNING: Semaphore blocking operations (get) are non-blocking stubs.
 Created semaphore with default count (0)
 try_get on empty: 0 (expected 0)
 Put 2 keys

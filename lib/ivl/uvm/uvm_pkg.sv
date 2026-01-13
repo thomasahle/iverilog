@@ -1578,7 +1578,9 @@ package uvm_pkg;
     endfunction
 
     // Get method - blocking task to retrieve next item
-    virtual task get(output T t);
+    // NOTE: NOT virtual due to Icarus bug where virtual task with parameterized
+    // output type T doesn't properly pass the value back to the caller.
+    task get(output T t);
       while (m_items.size() == 0) begin
         #1; // Wait for item to be written
       end
@@ -1664,7 +1666,9 @@ package uvm_pkg;
     endtask
 
     // Get method - blocking task to retrieve next item
-    virtual task get(output T t);
+    // NOTE: NOT virtual due to Icarus bug where virtual task with parameterized
+    // output type T doesn't properly pass the value back to the caller.
+    task get(output T t);
       while (m_items.size() == 0) begin
         #1; // Wait for item
       end
