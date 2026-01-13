@@ -1814,6 +1814,11 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			      int64_t packed_val = ((int64_t)src_prop_idx << 16) | (const_val & 0xFFFF);
 			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %llu;\n",
 				      prop_idx, encoded_op, (unsigned long long)(uint64_t)packed_val);
+			} else if ((op_code & 0xF) == 13) {
+			      /* Inside array constraint: value must be a member of array
+			       * Store the array property index in const_val */
+			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %llu;\n",
+				      prop_idx, encoded_op, (unsigned long long)src_prop_idx);
 			} else {
 			      fprintf(vvp_out, "    %%push_rand_bound %u, %u, %llu;\n",
 				      prop_idx, encoded_op, (unsigned long long)(uint64_t)const_val);

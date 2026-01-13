@@ -22,6 +22,7 @@
 # include  "factory_registry.h"
 # include  "vpi_priv.h"
 # include  "vvp_cobject.h"
+# include  "vvp_darray.h"
 # include  "config.h"
 # include  <algorithm>
 # include  <map>
@@ -792,6 +793,35 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 	    // Pick a random valid enum value
 	    size_t idx = rand() % enum_vals->size();
 	    return (*enum_vals)[idx];
+      }
+
+      // Check for "inside array" constraint - pick value from array property
+      // This handles patterns like: x inside {arr} where arr is a dynamic array property
+      for (const auto& bound : inline_constraints) {
+	    if (bound.property_idx == prop_idx && bound.is_inside_array) {
+		  // Get the array from the inside_array_prop_idx property
+		  size_t arr_prop_idx = bound.inside_array_prop_idx;
+		  if (arr_prop_idx < properties_.size()) {
+			// Try to get the property as an object and see if it's a dynamic array
+			vvp_object_t obj;
+			get_object(inst, arr_prop_idx, obj, 0);
+			vvp_darray* darray_ptr = obj.peek<vvp_darray>();
+			if (darray_ptr && darray_ptr->get_size() > 0) {
+			      // Pick a random element from the array
+			      size_t arr_size = darray_ptr->get_size();
+			      size_t idx = rand() % arr_size;
+			      vvp_vector4_t elem_val;
+			      darray_ptr->get_word(idx, elem_val);
+			      // Convert to int64_t
+			      int64_t result = 0;
+			      for (unsigned i = 0; i < elem_val.size() && i < 64; i++) {
+				    if (elem_val.value(i) == BIT4_1)
+					  result |= (int64_t(1) << i);
+			      }
+			      return result;
+			}
+		  }
+	    }
       }
 
       // Compute the type-based min/max based on width and signedness
@@ -1954,6 +1984,9 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
       bound.element_idx = 0;
       // Foreach constraint flag (applies to dynamic arrays)
       bound.is_foreach = false;
+      // Inside array constraint (not set from .constraint_bound directive)
+      bound.is_inside_array = false;
+      bound.inside_array_prop_idx = 0;
       class_def->add_constraint_bound(bound);
 
       free(class_label);

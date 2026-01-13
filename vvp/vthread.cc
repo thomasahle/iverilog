@@ -8900,6 +8900,36 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    generated = true;
 			      }
 			}
+			// Priority 1.5: Inside array constraint - pick from array elements
+			// Handles patterns like: x inside {arr} where arr is a dynamic array
+			if (!generated) {
+			      for (const auto& bound : inline_constraints) {
+				    if (bound.property_idx == i && bound.is_inside_array) {
+					  // Get the array from inside_array_prop_idx
+					  size_t arr_prop_idx = bound.inside_array_prop_idx;
+					  if (arr_prop_idx < defn->property_count()) {
+						vvp_object_t arr_obj;
+						defn->get_object(inst, arr_prop_idx, arr_obj, 0);
+						vvp_darray* darray_ptr = arr_obj.peek<vvp_darray>();
+						if (darray_ptr && darray_ptr->get_size() > 0) {
+						      // Pick a random element from the array
+						      size_t arr_size = darray_ptr->get_size();
+						      size_t arr_idx = rand() % arr_size;
+						      vvp_vector4_t elem_val;
+						      darray_ptr->get_word(arr_idx, elem_val);
+						      // Convert to int64_t
+						      rval = 0;
+						      for (unsigned bi = 0; bi < elem_val.size() && bi < 64; bi++) {
+							    if (elem_val.value(bi) == BIT4_1)
+								  rval |= (int64_t(1) << bi);
+						      }
+						      generated = true;
+						      break;
+						}
+					  }
+				    }
+			      }
+			}
 			// Priority 2: Multiple disjoint ranges (from dist {[a:b], [c:d], ...})
 			// Use weighted random selection based on range weights
 			if (!generated && !ranges.empty()) {
@@ -10098,25 +10128,41 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 	    case 9: bound.op = 'X'; break;  // Size <= (maximum)
 	    case 10: bound.op = 'm'; break; // Size > (strict min)
 	    case 11: bound.op = 'x'; break; // Size < (strict max)
+	    case 13: bound.op = 'I'; break; // Inside array
 	    default: bound.op = '='; break;
       }
       bound.is_soft = is_soft;
 
+      // For op_code 13 (inside array), store the array property index
+      if (op_code == 13) {
+	    bound.has_const_bound = false;  // Not a constant, it's an array reference
+	    bound.is_inside_array = true;
+	    bound.inside_array_prop_idx = cp->bit_idx[1];  // Array property index
+	    bound.const_bound = 0;
+	    bound.bound_prop_idx = 0;
+      }
       // For op_code 7 (property-based size), unpack the source_prop_idx and offset:
       //   - upper 16 bits = source property index
       //   - lower 16 bits = signed offset (negative indicates division by abs(offset))
-      if (op_code == 7) {
+      else if (op_code == 7) {
 	    int64_t packed = cp->bit_idx[1];
 	    bound.has_const_bound = false;  // Property-based, not constant
 	    bound.bound_prop_idx = (packed >> 16) & 0xFFFF;  // Source property index
 	    // Sign-extend the 16-bit offset
 	    int16_t value_raw = (int16_t)(packed & 0xFFFF);
 	    bound.const_bound = (int64_t)value_raw;  // Offset (or negated divisor if negative)
+	    bound.is_inside_array = false;
+	    bound.inside_array_prop_idx = 0;
       } else {
 	    bound.has_const_bound = true;
 	    bound.const_bound = (int64_t)(int32_t)cp->bit_idx[1];  // Sign-extend
 	    bound.bound_prop_idx = 0;
+	    bound.is_inside_array = false;
+	    bound.inside_array_prop_idx = 0;
       }
+
+      // Initialize is_foreach to false for inline constraints
+      bound.is_foreach = false;
 
       thr->push_inline_constraint(bound);
       return true;

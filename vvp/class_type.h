@@ -147,6 +147,10 @@ class class_type : public __vpiHandle {
 	    // Foreach constraint on dynamic array support
 	    // For named constraints like "constraint c { foreach(data[i]) data[i] != 0; }"
 	    bool is_foreach;      // true if this applies to all elements of dynamic array
+	    // Inside array constraint support
+	    // For "x inside {arr}" where arr is a dynamic array property
+	    bool is_inside_array; // true if this constrains value to be member of array
+	    size_t inside_array_prop_idx; // Property index of the array to check membership in
       };
       void add_constraint_bound(const simple_bound_t& bound);
 	// Get constraint index from name, return -1 if not found

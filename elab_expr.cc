@@ -362,6 +362,39 @@ static bool analyze_constraint_expr(const PExpr*expr,
       // Get the right operand (should be a constant - either number or named constant)
       const PExpr*rhs = bin->get_right();
 
+      // Special case: x inside {darray_property}
+      // The parser transforms this to x == darray_property, but the RHS is a dynamic array
+      // We detect this and create an "inside array" constraint (op_code 13)
+      if (op == 'e' && des && scope && source_prop_name) {
+            const PEIdent* rhs_ident = dynamic_cast<const PEIdent*>(rhs);
+            if (rhs_ident) {
+                  PExpr* rhs_nc = const_cast<PExpr*>(rhs);
+                  NetExpr* rhs_expr = rhs_nc->elaborate_expr(des, scope, -1, false);
+                  if (rhs_expr) {
+                        ivl_variable_type_t expr_type = rhs_expr->expr_type();
+                        if (expr_type == IVL_VT_DARRAY) {
+                              // This is an "inside array" constraint
+                              // Extract the array property name from the path
+                              const pform_scoped_name_t& rhs_path = rhs_ident->path();
+                              if (!rhs_path.name.empty()) {
+                                    // For "x inside {arr}" where arr is a property
+                                    // Use the last component of the path as the property name
+                                    // This works for both simple (arr) and chained (obj.arr) references
+                                    *source_prop_name = rhs_path.name.back().name;
+                                    op_code = 13;  // inside array
+                                    const_value = 0;
+                                    delete rhs_expr;
+                                    return true;
+                              }
+                              delete rhs_expr;
+                        } else {
+                              delete rhs_expr;
+                              // Fall through to normal constant extraction
+                        }
+                  }
+            }
+      }
+
       // First try: direct PENumber
       const PENumber*num = dynamic_cast<const PENumber*>(rhs);
       if (num) {
