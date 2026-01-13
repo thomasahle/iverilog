@@ -31,6 +31,7 @@
 class PEvent;
 class PExpr;
 class PFunction;
+class PLet;
 class PPackage;
 class AProcess;
 class PProcess;
@@ -239,6 +240,8 @@ class PScopeExtra : public PScope {
 	/* Task definitions within this module */
       std::map<perm_string,PTask*> tasks;
       std::map<perm_string,PFunction*> funcs;
+	/* Let declarations within this module. */
+      std::map<perm_string,PLet*> lets;
 	/* Class definitions within this module. */
       std::map<perm_string,PClass*> classes;
 	/* This is the lexical order of the classes, and is used by

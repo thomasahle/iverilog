@@ -190,6 +190,10 @@ class PLet : public PTaskFunc {
 
       void dump(std::ostream&, unsigned) const override;
 
+      // Accessors for expansion
+      const std::list<let_port_t*>* ports() const { return ports_; }
+      const PExpr* expr() const { return expr_; }
+
     private:
       std::list<let_port_t*>*ports_;
       PExpr*expr_;

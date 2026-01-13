@@ -1,0 +1,6 @@
+zero = 0
+one = 1
+meaning_of_life = 42
+four = 4
+PASSED
+./ivltests/sv_let_simple.v:44: $finish called at 0 (1s)

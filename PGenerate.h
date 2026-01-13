@@ -32,6 +32,7 @@ class Design;
 class NetScope;
 class PExpr;
 class PFunction;
+class PLet;
 class PProcess;
 class PTask;
 class PGate;
@@ -95,6 +96,8 @@ class PGenerate : public PNamedItem, public LexicalScope {
 	// Tasks instantiated within this scheme.
       std::map<perm_string,PTask*> tasks;
       std::map<perm_string,PFunction*>funcs;
+	// Let declarations within this scheme.
+      std::map<perm_string,PLet*> lets;
 
 	// Generate schemes can contain further generate schemes.
       std::list<PGenerate*> generate_schemes;

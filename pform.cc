@@ -3361,23 +3361,21 @@ void pform_make_let(const struct vlltype&loc,
                     list<PLet::let_port*>*ports,
                     PExpr*expr)
 {
-      LexicalScope*scope =  pform_peek_scope();
-
-      cerr << loc.get_fileline() << ": sorry: let declarations ("
-           << name << ") are not currently supported." << endl;
-      error_count += 1;
+      LexicalScope*scope = pform_peek_scope();
 
       PLet*res = new PLet(name, scope, ports, expr);
       FILE_NAME(res, loc);
 
-/*
-      cerr << "Found: ";
-      res->dump(cerr, 0);
-*/
+      PScopeExtra*scopex = find_nearest_scopex(scope);
+      ivl_assert(loc, scopex);
 
-      delete res;
-      delete ports;
-      delete expr;
+      if (pform_cur_generate) {
+	    add_local_symbol(pform_cur_generate, name, res);
+	    pform_cur_generate->lets[name] = res;
+      } else {
+	    add_local_symbol(scopex, name, res);
+	    scopex->lets[name] = res;
+      }
 }
 
 PLet::let_port_t* pform_make_let_port(data_type_t*data_type,

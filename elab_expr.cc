@@ -26,6 +26,9 @@
 # include "compiler.h"
 
 # include  "PPackage.h"
+# include  "PTask.h"
+# include  "Module.h"
+# include  "parse_api.h"
 # include  "pform.h"
 # include  "netlist.h"
 # include  "netclass.h"
@@ -45,6 +48,146 @@
 # include  <tuple>
 
 using namespace std;
+
+/*
+ * Helper to look up a let declaration in the scope hierarchy.
+ * Returns the PLet if found, nullptr otherwise.
+ */
+static const PLet* lookup_let_declaration(NetScope*scope, perm_string name)
+{
+      // Walk up the scope hierarchy
+      while (scope) {
+	    // Get the module name for this scope's root module
+	    NetScope* mod_scope = scope;
+	    while (mod_scope && mod_scope->type() != NetScope::MODULE)
+		  mod_scope = mod_scope->parent();
+
+	    if (mod_scope) {
+		  perm_string mod_name = mod_scope->module_name();
+		  auto mod_it = pform_modules.find(mod_name);
+		  if (mod_it != pform_modules.end()) {
+			Module* mod = mod_it->second;
+			auto let_it = mod->lets.find(name);
+			if (let_it != mod->lets.end()) {
+			      return let_it->second;
+			}
+		  }
+	    }
+
+	    // Move to parent scope
+	    scope = scope->parent();
+      }
+      return nullptr;
+}
+
+/*
+ * Helper to substitute let parameters in an expression.
+ * Returns the substituted PExpr (which may be the same as input if no substitution needed).
+ */
+static PExpr* substitute_let_params(const PExpr* expr,
+                                    const map<perm_string, PExpr*>& subst_map)
+{
+      if (expr == nullptr)
+	    return nullptr;
+
+      // Check if this is a parameter reference (simple identifier)
+      const PEIdent* ident = dynamic_cast<const PEIdent*>(expr);
+      if (ident) {
+	    const pform_scoped_name_t& path = ident->path();
+	    if (path.size() == 1 && path.package == 0) {
+		  perm_string name = peek_tail_name(path);
+		  auto it = subst_map.find(name);
+		  if (it != subst_map.end()) {
+			// Found a parameter - return the actual argument
+			return it->second;
+		  }
+	    }
+	    // Not a parameter - return as-is (cast away const since we're not modifying)
+	    return const_cast<PExpr*>(expr);
+      }
+
+      // Handle logical binary operators (PEBLogic: ||, &&, etc.)
+      const PEBLogic* logic = dynamic_cast<const PEBLogic*>(expr);
+      if (logic) {
+	    PExpr* new_left = substitute_let_params(logic->get_left(), subst_map);
+	    PExpr* new_right = substitute_let_params(logic->get_right(), subst_map);
+	    if (new_left != logic->get_left() || new_right != logic->get_right()) {
+		  PEBLogic* new_logic = new PEBLogic(logic->get_op(), new_left, new_right);
+		  new_logic->set_line(*logic);
+		  return new_logic;
+	    }
+	    return const_cast<PExpr*>(expr);
+      }
+
+      // Handle comparison operators (PEBComp)
+      const PEBComp* comp = dynamic_cast<const PEBComp*>(expr);
+      if (comp) {
+	    PExpr* new_left = substitute_let_params(comp->get_left(), subst_map);
+	    PExpr* new_right = substitute_let_params(comp->get_right(), subst_map);
+	    if (new_left != comp->get_left() || new_right != comp->get_right()) {
+		  PEBComp* new_comp = new PEBComp(comp->get_op(), new_left, new_right);
+		  new_comp->set_line(*comp);
+		  return new_comp;
+	    }
+	    return const_cast<PExpr*>(expr);
+      }
+
+      // Handle arithmetic binary operators (PEBinary base case)
+      const PEBinary* binary = dynamic_cast<const PEBinary*>(expr);
+      if (binary) {
+	    PExpr* new_left = substitute_let_params(binary->get_left(), subst_map);
+	    PExpr* new_right = substitute_let_params(binary->get_right(), subst_map);
+	    if (new_left != binary->get_left() || new_right != binary->get_right()) {
+		  PEBinary* new_binary = new PEBinary(binary->get_op(), new_left, new_right);
+		  new_binary->set_line(*binary);
+		  return new_binary;
+	    }
+	    return const_cast<PExpr*>(expr);
+      }
+
+      // Handle unary operators
+      const PEUnary* unary = dynamic_cast<const PEUnary*>(expr);
+      if (unary) {
+	    PExpr* new_operand = substitute_let_params(unary->get_expr(), subst_map);
+	    if (new_operand != unary->get_expr()) {
+		  PEUnary* new_unary = new PEUnary(unary->get_op(), new_operand);
+		  new_unary->set_line(*unary);
+		  return new_unary;
+	    }
+	    return const_cast<PExpr*>(expr);
+      }
+
+      // Note: PETernary doesn't have public getters for its subexpressions,
+      // so ternary operators in let expressions use the expr as-is.
+      // Most let expressions are simple enough not to need this.
+
+      // Handle function calls (substitute in arguments)
+      const PECallFunction* call = dynamic_cast<const PECallFunction*>(expr);
+      if (call) {
+	    const vector<named_pexpr_t>& old_args = call->parms();
+	    vector<named_pexpr_t> new_args;
+	    bool changed = false;
+	    for (const auto& arg : old_args) {
+		  PExpr* new_parm = substitute_let_params(arg.parm, subst_map);
+		  named_pexpr_t new_arg;
+		  new_arg.name = arg.name;
+		  new_arg.parm = new_parm;
+		  new_args.push_back(new_arg);
+		  if (new_parm != arg.parm)
+			changed = true;
+	    }
+	    if (changed) {
+		  perm_string fname = peek_tail_name(call->path());
+		  PECallFunction* new_call = new PECallFunction(fname, new_args);
+		  new_call->set_line(*call);
+		  return new_call;
+	    }
+	    return const_cast<PExpr*>(expr);
+      }
+
+      // For other expression types (numbers, strings, etc.), return as-is
+      return const_cast<PExpr*>(expr);
+}
 
 /*
  * Helper to analyze inline constraint expression and extract simple bounds.
@@ -2393,8 +2536,48 @@ unsigned PECallFunction::test_width(Design*des, NetScope*scope,
 		 << "search_results.path_tail: " << search_results.path_tail << endl;
       }
 
-      // Nothing found? Return nothing.
+      // Nothing found? Check for let declaration.
       if (!search_flag) {
+	    // Check if this might be a let declaration call
+	    if (path_.size() == 1 && path_.package == 0) {
+		  perm_string let_name = peek_tail_name(path_);
+		  const PLet* let_decl = lookup_let_declaration(scope, let_name);
+		  if (let_decl) {
+			// Found a let declaration - need to get width of substituted expression
+			const PExpr* let_expr = let_decl->expr();
+			const list<PLet::let_port_t*>* ports = let_decl->ports();
+
+			if (let_expr) {
+			      // Cast away const - test_width doesn't modify semantics
+			      PExpr* mutable_expr = const_cast<PExpr*>(let_expr);
+
+			      if (ports == nullptr || ports->empty()) {
+				    // No parameters - test width directly
+				    return mutable_expr->test_width(des, scope, mode);
+			      }
+
+			      // Has parameters - build substitution map and test width
+			      map<perm_string, PExpr*> subst_map;
+			      auto port_it = ports->begin();
+			      size_t arg_idx = 0;
+			      while (port_it != ports->end()) {
+				    PLet::let_port_t* port = *port_it;
+				    if (arg_idx < parms_.size() && parms_[arg_idx].parm) {
+					  subst_map[port->name_] = parms_[arg_idx].parm;
+				    } else if (port->def_) {
+					  subst_map[port->name_] = port->def_;
+				    }
+				    ++port_it;
+				    ++arg_idx;
+			      }
+
+			      PExpr* subst_expr = substitute_let_params(mutable_expr, subst_map);
+			      return subst_expr->test_width(des, scope, mode);
+			}
+		  }
+	    }
+
+	    // Not found and not a let - return zero width
 	    expr_width_ = 0;
 	    min_width_ = 0;
 	    signed_flag_ = false;
@@ -5393,6 +5576,48 @@ NetExpr* PECallFunction::elaborate_expr_(Design*des, NetScope*scope,
       }
 
       if (!search_flag) {
+	    // Check if this might be a let declaration call
+	    if (path_.size() == 1 && path_.package == 0) {
+		  perm_string let_name = peek_tail_name(path_);
+		  const PLet* let_decl = lookup_let_declaration(scope, let_name);
+		  if (let_decl) {
+			// Found a let declaration - elaborate it with argument substitution
+			const PExpr* let_expr = let_decl->expr();
+			const list<PLet::let_port_t*>* ports = let_decl->ports();
+
+			if (let_expr) {
+			      if (ports == nullptr || ports->empty()) {
+				    // No parameters - elaborate directly
+				    return let_expr->elaborate_expr(des, scope, UINT_MAX, flags);
+			      }
+
+			      // Has parameters - build substitution map
+			      map<perm_string, PExpr*> subst_map;
+			      auto port_it = ports->begin();
+			      size_t arg_idx = 0;
+			      while (port_it != ports->end()) {
+				    PLet::let_port_t* port = *port_it;
+				    if (arg_idx < parms_.size() && parms_[arg_idx].parm) {
+					  subst_map[port->name_] = parms_[arg_idx].parm;
+				    } else if (port->def_) {
+					  // Use default value
+					  subst_map[port->name_] = port->def_;
+				    }
+				    ++port_it;
+				    ++arg_idx;
+			      }
+
+			      // Substitute and elaborate
+			      PExpr* subst_expr = substitute_let_params(let_expr, subst_map);
+			      // Get the proper width from test_width
+			      width_mode_t mode = PExpr::SIZED;
+			      unsigned use_wid = subst_expr->test_width(des, scope, mode);
+			      if (use_wid == 0) use_wid = 32; // Default width
+			      return subst_expr->elaborate_expr(des, scope, use_wid, flags);
+			}
+		  }
+	    }
+
 	    cerr << get_fileline() << ": error: No function named `" << path_
 		 << "' found in this context (" << scope_path(scope) << ")."
 		 << endl;
@@ -10668,6 +10893,25 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
 	    return tmp;
       }
 
+
+	// Check if this is a let declaration with no arguments
+	// (accessed like an identifier rather than a function call)
+      if (path_.size() == 1 && path_.package == 0) {
+	    perm_string let_name = peek_tail_name(path_);
+	    const PLet* let_decl = lookup_let_declaration(scope, let_name);
+	    if (let_decl && (let_decl->ports() == nullptr || let_decl->ports()->empty())) {
+		  // Let declaration with no arguments - elaborate its expression
+		  const PExpr* let_expr = let_decl->expr();
+		  if (let_expr) {
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_expr_: "
+				   << "Found let declaration " << let_name
+				   << ", elaborating expression" << endl;
+			}
+			return let_expr->elaborate_expr(des, scope, expr_wid, flags);
+		  }
+	    }
+      }
 
 	// At this point we've exhausted all the possibilities that
 	// are not scopes. If this is not a system task argument, then
