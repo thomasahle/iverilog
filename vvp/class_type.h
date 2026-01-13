@@ -140,6 +140,10 @@ class class_type : public __vpiHandle {
 	    bool cond_has_const;  // true if condition compares to constant
 	    int64_t cond_const;   // Constant value for condition (if cond_has_const)
 	    size_t cond_prop2_idx;// Property index for condition (if !cond_has_const)
+	    // Indexed array element constraint support
+	    // For "data[0] == 42": constraint applies to specific array element
+	    bool has_element_idx; // true if this bound constrains specific array element
+	    int64_t element_idx;  // Array element index (if has_element_idx)
       };
       void add_constraint_bound(const simple_bound_t& bound);
 	// Get constraint index from name, return -1 if not found

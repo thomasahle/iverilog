@@ -8407,6 +8407,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
       // Randomize elements of dynamic arrays with size constraints
       // Apply element constraints (>= and <= bounds from inline constraints)
+      // Supports both global constraints (apply to all elements) and
+      // element-specific constraints (e.g., data[0] == 42)
       for (size_t prop_idx : darray_props_to_randomize) {
 	    vvp_object_t dar_obj;
 	    cobj->get_object(prop_idx, dar_obj, 0);
@@ -8415,14 +8417,14 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  unsigned elem_width = darray_elem_widths[prop_idx];
 		  size_t dar_size = dar->get_size();
 
-		  // Collect element constraints for this property from inline constraints
-		  int64_t elem_min = 0;
-		  int64_t elem_max = (1LL << elem_width) - 1;
-		  if (elem_width >= 64) elem_max = INT64_MAX;
+		  // Default constraints for all elements (global constraints without element index)
+		  int64_t default_elem_min = 0;
+		  int64_t default_elem_max = (1LL << elem_width) - 1;
+		  if (elem_width >= 64) default_elem_max = INT64_MAX;
 
-		  // Collect excluded values (from != constraints) and discrete values (from == constraints)
-		  std::vector<int64_t> excluded_vals;
-		  std::vector<int64_t> discrete_vals;  // For == constraints
+		  // Collect global (non-indexed) excluded and discrete values
+		  std::vector<int64_t> default_excluded_vals;
+		  std::vector<int64_t> default_discrete_vals;
 
 		  for (const auto& bound : inline_constraints) {
 			if (bound.property_idx != prop_idx) continue;
@@ -8431,40 +8433,92 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			// Skip size constraints - only element constraints
 			if (bound.op == 'S' || bound.op == 's' || bound.op == 'M' ||
 			    bound.op == 'X' || bound.op == 'm' || bound.op == 'x') continue;
+			// Skip element-indexed constraints here - handle them per-element
+			if (bound.has_element_idx) continue;
+
 			switch (bound.op) {
 			      case '>':  // value > const
-				    if (bound.const_bound + 1 > elem_min)
-					  elem_min = bound.const_bound + 1;
+				    if (bound.const_bound + 1 > default_elem_min)
+					  default_elem_min = bound.const_bound + 1;
 				    break;
 			      case 'G':  // value >= const
-				    if (bound.const_bound > elem_min)
-					  elem_min = bound.const_bound;
+				    if (bound.const_bound > default_elem_min)
+					  default_elem_min = bound.const_bound;
 				    break;
 			      case '<':  // value < const
-				    if (bound.const_bound - 1 < elem_max)
-					  elem_max = bound.const_bound - 1;
+				    if (bound.const_bound - 1 < default_elem_max)
+					  default_elem_max = bound.const_bound - 1;
 				    break;
 			      case 'L':  // value <= const
-				    if (bound.const_bound < elem_max)
-					  elem_max = bound.const_bound;
+				    if (bound.const_bound < default_elem_max)
+					  default_elem_max = bound.const_bound;
 				    break;
 			      case '!':  // value != const (exclusion)
-				    excluded_vals.push_back(bound.const_bound);
+				    default_excluded_vals.push_back(bound.const_bound);
 				    break;
 			      case '=':  // value == const (discrete value)
-				    discrete_vals.push_back(bound.const_bound);
+				    default_discrete_vals.push_back(bound.const_bound);
 				    break;
 			      default:
 				    break;
 			}
 		  }
 
-		  // Ensure valid range
-		  if (elem_min > elem_max) elem_min = elem_max;
-		  int64_t range = elem_max - elem_min + 1;
+		  // Ensure valid default range
+		  if (default_elem_min > default_elem_max) default_elem_min = default_elem_max;
+		  int64_t default_range = default_elem_max - default_elem_min + 1;
 
 		  for (size_t idx = 0; idx < dar_size; idx++) {
 			int64_t rval;
+
+			// Collect element-specific constraints for this index
+			int64_t elem_min = default_elem_min;
+			int64_t elem_max = default_elem_max;
+			std::vector<int64_t> excluded_vals = default_excluded_vals;
+			std::vector<int64_t> discrete_vals = default_discrete_vals;
+			bool has_specific_constraint = false;
+
+			for (const auto& bound : inline_constraints) {
+			      if (bound.property_idx != prop_idx) continue;
+			      if (!bound.has_const_bound) continue;
+			      if (bound.is_soft) continue;
+			      // Skip non-element constraints (already handled above)
+			      if (!bound.has_element_idx) continue;
+			      // Check if this constraint is for this specific element
+			      if ((size_t)bound.element_idx != idx) continue;
+
+			      has_specific_constraint = true;
+			      switch (bound.op) {
+				    case '>':
+					  if (bound.const_bound + 1 > elem_min)
+						elem_min = bound.const_bound + 1;
+					  break;
+				    case 'G':
+					  if (bound.const_bound > elem_min)
+						elem_min = bound.const_bound;
+					  break;
+				    case '<':
+					  if (bound.const_bound - 1 < elem_max)
+						elem_max = bound.const_bound - 1;
+					  break;
+				    case 'L':
+					  if (bound.const_bound < elem_max)
+						elem_max = bound.const_bound;
+					  break;
+				    case '!':
+					  excluded_vals.push_back(bound.const_bound);
+					  break;
+				    case '=':
+					  discrete_vals.push_back(bound.const_bound);
+					  break;
+				    default:
+					  break;
+			      }
+			}
+
+			// Ensure valid range
+			if (elem_min > elem_max) elem_min = elem_max;
+			int64_t range = elem_max - elem_min + 1;
 
 			// If we have discrete values from == constraints, use them
 			if (!discrete_vals.empty()) {
@@ -9992,14 +10046,20 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
       bound.property_idx = cp->number;
       unsigned encoded_op = cp->bit_idx[0];
 
-      // Decode weight and weight_per_value from upper bits:
+      // Decode from encoded_op bits:
       //   bits 0-3: op_code (4-bit operator, 0-15)
       //   bit 4: soft flag
-      //   bits 5-20: weight (up to 65535)
+      //   bits 5-14: weight (up to 1023)
+      //   bit 15: has_element_idx flag
+      //   bits 16-30: element_idx (up to 32767)
       //   bit 31: weight_per_value flag
-      bound.weight = (encoded_op >> 5) & 0xFFFF;
+      bound.weight = (encoded_op >> 5) & 0x3FF;  // 10 bits
       bound.weight_per_value = (encoded_op & (1u << 31)) != 0;
       if (bound.weight == 0) bound.weight = 1;  // Default weight if not specified
+
+      // Decode element index information
+      bound.has_element_idx = (encoded_op & (1u << 15)) != 0;
+      bound.element_idx = (encoded_op >> 16) & 0x7FFF;  // 15 bits
 
       int op_code = encoded_op & 0xF;  // 4-bit operator
       // Extract soft flag from bit 4
@@ -10054,10 +10114,20 @@ bool of_PUSH_RAND_BOUND_STACK(vthread_t thr, vvp_code_t cp)
       bound.property_idx = cp->number;
       unsigned encoded_op = cp->bit_idx[0];
 
-      // Decode weight and weight_per_value from upper bits
-      bound.weight = (encoded_op >> 5) & 0xFFFF;
+      // Decode from encoded_op bits:
+      //   bits 0-3: op_code (4-bit operator, 0-15)
+      //   bit 4: soft flag
+      //   bits 5-14: weight (up to 1023)
+      //   bit 15: has_element_idx flag
+      //   bits 16-30: element_idx (up to 32767)
+      //   bit 31: weight_per_value flag
+      bound.weight = (encoded_op >> 5) & 0x3FF;  // 10 bits
       bound.weight_per_value = (encoded_op & (1u << 31)) != 0;
       if (bound.weight == 0) bound.weight = 1;
+
+      // Decode element index information
+      bound.has_element_idx = (encoded_op & (1u << 15)) != 0;
+      bound.element_idx = (encoded_op >> 16) & 0x7FFF;  // 15 bits
 
       int op_code = encoded_op & 0xF;
       bool is_soft = (encoded_op & 0x10) != 0;

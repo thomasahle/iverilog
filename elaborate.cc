@@ -4347,13 +4347,20 @@ NetProc* PCallTask::elaborate_method_func_(NetScope*scope,
  * Helper to analyze inline constraint expression for statement-form randomize.
  * Returns true if expression is a simple comparison: property_name OP constant
  * On success, fills in: property_name, op_code, const_value
+ * Optional: has_element_idx, element_idx for indexed expressions like data[0] == 42
  * op_code encoding: 0='>', 1='<', 2='G' (>=), 3='L' (<=), 4='=', 5='!'
  */
 static bool analyze_stmt_constraint_expr(const PExpr*expr,
                                          perm_string& property_name,
                                          int& op_code,
-                                         int64_t& const_value)
+                                         int64_t& const_value,
+                                         bool& has_element_idx,
+                                         int64_t& element_idx)
 {
+      // Initialize output parameters
+      has_element_idx = false;
+      element_idx = 0;
+
       // Check if it's a binary comparison expression
       const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
       if (!bin) return false;
@@ -4373,11 +4380,35 @@ static bool analyze_stmt_constraint_expr(const PExpr*expr,
       // Get the left operand - should be an identifier (property name)
       const PExpr*lhs = bin->get_left();
       const PEIdent*ident = dynamic_cast<const PEIdent*>(lhs);
-      if (!ident) return false;
+      if (!ident) {
+            cerr << "DEBUG: lhs is not PEIdent" << endl;
+            return false;
+      }
 
       const pform_scoped_name_t& scoped_path = ident->path();
-      if (scoped_path.size() != 1) return false;
-      property_name = scoped_path.name.front().name;
+      cerr << "DEBUG: scoped_path.size() = " << scoped_path.size() << endl;
+      if (scoped_path.size() != 1) {
+            cerr << "DEBUG: scoped_path.size() != 1, returning false" << endl;
+            return false;
+      }
+
+      const name_component_t& name_comp = scoped_path.name.front();
+      property_name = name_comp.name;
+      cerr << "DEBUG: property_name = " << property_name << ", index.size() = " << name_comp.index.size() << endl;
+
+      // Check for array index (e.g., data[0])
+      if (!name_comp.index.empty()) {
+            // Get the first index component
+            const index_component_t& idx_comp = name_comp.index.front();
+            if (idx_comp.sel == index_component_t::SEL_BIT) {
+                  // Single bit select - extract constant index
+                  const PENumber* idx_num = dynamic_cast<const PENumber*>(idx_comp.msb);
+                  if (idx_num) {
+                        has_element_idx = true;
+                        element_idx = idx_num->value().as_long();
+                  }
+            }
+      }
 
       // Get the right operand (should be a constant number)
       const PExpr*rhs = bin->get_right();
@@ -4400,14 +4431,28 @@ static bool analyze_stmt_constraint_expr(const PExpr*expr,
       }
 
       return false;
+
+}
+
+// Overloaded version without element index parameters for backward compatibility
+static bool analyze_stmt_constraint_expr(const PExpr*expr,
+                                         perm_string& property_name,
+                                         int& op_code,
+                                         int64_t& const_value)
+{
+      bool has_element_idx;
+      int64_t element_idx;
+      return analyze_stmt_constraint_expr(expr, property_name, op_code, const_value,
+                                          has_element_idx, element_idx);
 }
 
 /*
  * Recursive helper to extract ALL bounds from a constraint expression.
  * Handles logical AND expressions (from 'inside' constraints).
+ * Tuple: (property_name, op_code, const_value, has_element_idx, element_idx)
  */
 static void analyze_stmt_constraint_recursive(const PExpr*expr,
-      std::vector<std::tuple<perm_string, int, int64_t>>& bounds)
+      std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t>>& bounds)
 {
       // Check for logical AND expression (from 'inside' constraints)
       const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
@@ -4429,8 +4474,12 @@ static void analyze_stmt_constraint_recursive(const PExpr*expr,
       perm_string prop_name;
       int op_code;
       int64_t const_value;
-      if (analyze_stmt_constraint_expr(expr, prop_name, op_code, const_value)) {
-            bounds.push_back(std::make_tuple(prop_name, op_code, const_value));
+      bool has_element_idx;
+      int64_t element_idx;
+      if (analyze_stmt_constraint_expr(expr, prop_name, op_code, const_value,
+                                       has_element_idx, element_idx)) {
+            bounds.push_back(std::make_tuple(prop_name, op_code, const_value,
+                                             has_element_idx, element_idx));
       }
 }
 
@@ -5757,22 +5806,30 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 
 		  // Analyze inline constraints (if any)
 		  const std::list<PExpr*>& constraints = get_inline_constraints();
-		  std::vector<std::tuple<size_t, int, int64_t>> bounds;
+		  cerr << "DEBUG: get_inline_constraints() returned " << constraints.size() << " constraints" << endl;
+		  // Tuple: (prop_idx, op_code, const_val, has_element_idx, element_idx)
+		  std::vector<std::tuple<size_t, int, int64_t, bool, int64_t>> bounds;
 
 		  for (const PExpr* cons : constraints) {
+			cerr << "DEBUG: Processing constraint" << endl;
 			// Use recursive extraction to handle AND expressions from 'inside'
-			std::vector<std::tuple<perm_string, int, int64_t>> extracted;
+			// Tuple: (prop_name, op_code, const_val, has_element_idx, element_idx)
+			std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t>> extracted;
 			analyze_stmt_constraint_recursive(cons, extracted);
+			cerr << "DEBUG: analyze_stmt_constraint_recursive extracted " << extracted.size() << " bounds" << endl;
 
 			// Convert extracted bounds to property indices
 			for (const auto& ex : extracted) {
 			      perm_string prop_name = std::get<0>(ex);
 			      int op_code = std::get<1>(ex);
 			      int64_t const_val = std::get<2>(ex);
+			      bool has_elem_idx = std::get<3>(ex);
+			      int64_t elem_idx = std::get<4>(ex);
 			      // Look up property index
 			      int pidx = class_type->property_idx_from_name(prop_name);
 			      if (pidx >= 0) {
-				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val));
+				    bounds.push_back(std::make_tuple((size_t)pidx, op_code, const_val,
+								    has_elem_idx, elem_idx));
 			      }
 			}
 		  }
@@ -5782,8 +5839,8 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  obj_expr->set_line(*this);
 
 		  // Generate call to $ivl_randomize system function
-		  // with extra parameters for inline constraints (6 params per bound)
-		  unsigned num_parms = 1 + bounds.size() * 6;
+		  // with extra parameters for inline constraints (8 params per bound)
+		  unsigned num_parms = 1 + bounds.size() * 8;
 		  NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
 						     &netvector_t::atom2s32, num_parms);
 		  sys_expr->set_line(*this);
@@ -5811,6 +5868,14 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 			// Source property index (not used for basic constraints)
 			NetEConst* src_const = new NetEConst(verinum((uint64_t)0, 32));
 			sys_expr->parm(parm_idx++, src_const);
+			// Has element index flag
+			bool has_elem_idx = std::get<3>(bound);
+			NetEConst* has_elem_const = new NetEConst(verinum((uint64_t)(has_elem_idx ? 1 : 0), 32));
+			sys_expr->parm(parm_idx++, has_elem_const);
+			// Element index
+			int64_t elem_idx = std::get<4>(bound);
+			NetEConst* elem_idx_const = new NetEConst(verinum((uint64_t)elem_idx, 32));
+			sys_expr->parm(parm_idx++, elem_idx_const);
 		  }
 
 		  // Create a temporary variable to hold the return value

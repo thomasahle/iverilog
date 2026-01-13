@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_constraint_indexed.v:66: $finish called at 0 (1s)

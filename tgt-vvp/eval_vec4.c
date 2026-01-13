@@ -1704,14 +1704,17 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    unsigned nparms = ivl_expr_parms(expr);
 
 	      /* Emit inline constraint bounds before %randomize
-	         Extra parameters come in sextuplets: prop_idx, op_code, value, weight, weight_per_value, source_prop_idx */
-	    for (unsigned idx = 1; idx + 5 < nparms; idx += 6) {
+	         Extra parameters come in octuplets: prop_idx, op_code, value, weight,
+	         weight_per_value, source_prop_idx, has_element_idx, element_idx */
+	    for (unsigned idx = 1; idx + 7 < nparms; idx += 8) {
 		  ivl_expr_t prop_expr = ivl_expr_parm(expr, idx);
 		  ivl_expr_t op_expr = ivl_expr_parm(expr, idx+1);
 		  ivl_expr_t val_expr = ivl_expr_parm(expr, idx+2);
 		  ivl_expr_t weight_expr = ivl_expr_parm(expr, idx+3);
 		  ivl_expr_t wpv_expr = ivl_expr_parm(expr, idx+4);
 		  ivl_expr_t src_expr = ivl_expr_parm(expr, idx+5);
+		  ivl_expr_t has_elem_expr = ivl_expr_parm(expr, idx+6);
+		  ivl_expr_t elem_idx_expr = ivl_expr_parm(expr, idx+7);
 
 		  /* Check that prop_idx and op_code are constants (required) */
 		  if (ivl_expr_type(prop_expr) != IVL_EX_NUMBER ||
@@ -1756,15 +1759,36 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			}
 		  }
 
-		  /* Encode weight in upper bits of op_code:
+		  /* Decode element index information */
+		  bool has_element_idx = false;
+		  unsigned element_idx = 0;
+		  if (ivl_expr_type(has_elem_expr) == IVL_EX_NUMBER) {
+			const char *he_bits = ivl_expr_bits(has_elem_expr);
+			has_element_idx = (he_bits[0] == '1');
+		  }
+		  if (ivl_expr_type(elem_idx_expr) == IVL_EX_NUMBER) {
+			const char *ei_bits = ivl_expr_bits(elem_idx_expr);
+			for (unsigned b = 0; b < ivl_expr_width(elem_idx_expr) && b < 32; b++) {
+			      if (ei_bits[b] == '1') element_idx |= (1u << b);
+			}
+		  }
+
+		  /* Encode in op_code bits:
 		     bits 0-3: op_code (4-bit operator, 0-15)
 		     bit 4: soft flag
-		     bits 5-20: weight (up to 65535)
+		     bits 5-14: weight (up to 1023, reduced from 16 bits)
+		     bit 15: has_element_idx flag
+		     bits 16-30: element_idx (up to 32767)
 		     bit 31: weight_per_value flag */
 		  unsigned encoded_op = op_code & 0xF;  /* 4-bit operator */
 		  if (op_code & 0x10) encoded_op |= (1u << 4);  /* soft flag */
-		  if (weight > 65535) weight = 65535;
+		  if (weight > 1023) weight = 1023;  /* Reduced to 10 bits */
 		  encoded_op |= (weight << 5);
+		  if (has_element_idx) {
+			encoded_op |= (1u << 15);  /* has_element_idx flag */
+			if (element_idx > 32767) element_idx = 32767;  /* 15 bits */
+			encoded_op |= (element_idx << 16);
+		  }
 		  if (weight_per_value) encoded_op |= (1u << 31);
 
 		  /* Check if value is a constant or needs runtime evaluation */
