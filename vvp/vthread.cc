@@ -8543,14 +8543,15 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			std::vector<int64_t> discrete_vals = default_discrete_vals;
 			bool has_specific_constraint = false;
 
-			for (const auto& bound : inline_constraints) {
-			      if (bound.property_idx != prop_idx) continue;
-			      if (!bound.has_const_bound) continue;
-			      if (bound.is_soft) continue;
-			      // Skip non-element constraints (already handled above)
-			      if (!bound.has_element_idx) continue;
+			// Lambda to process an element-indexed bound
+			auto process_element_bound = [&](const class_type::simple_bound_t& bound) {
+			      if (bound.property_idx != prop_idx) return;
+			      if (!bound.has_const_bound) return;
+			      if (bound.is_soft) return;
+			      // Only process element-indexed constraints
+			      if (!bound.has_element_idx) return;
 			      // Check if this constraint is for this specific element
-			      if ((size_t)bound.element_idx != idx) continue;
+			      if ((size_t)bound.element_idx != idx) return;
 
 			      has_specific_constraint = true;
 			      switch (bound.op) {
@@ -8579,6 +8580,24 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    default:
 					  break;
 			      }
+			};
+
+			// First check class-level element-indexed constraints (including inherited)
+			const class_type* cls_elem = defn;
+			while (cls_elem != nullptr) {
+			      for (size_t b = 0; b < cls_elem->constraint_bound_count(); b++) {
+				    const class_type::simple_bound_t& bound = cls_elem->get_constraint_bound(b);
+				    // Skip disabled constraints (via constraint_mode)
+				    if (!bound.constraint_name.empty() &&
+				        !cobj->is_constraint_enabled(bound.constraint_name)) continue;
+				    process_element_bound(bound);
+			      }
+			      cls_elem = cls_elem->get_parent();
+			}
+
+			// Then check inline constraints
+			for (const auto& bound : inline_constraints) {
+			      process_element_bound(bound);
 			}
 
 			// Ensure valid range

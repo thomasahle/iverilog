@@ -10079,6 +10079,91 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 			      continue;  // Already processed this body expression
 			}
 
+			// Check for conditional constraint in foreach body
+			// e.g., foreach(data[i]) if (i == 0) data[i] == 0;
+			// Also handles: foreach(data[i]) if (i == 0 || i == 4) data[i] == 0;
+			const PEConditionalConstraint* cond_cons = dynamic_cast<const PEConditionalConstraint*>(body_expr);
+			if (cond_cons != nullptr) {
+			      // Get the condition and extract element indices
+			      // Supports simple comparison (i == N) or OR of comparisons (i == 0 || i == 4)
+			      const PExpr* cond_expr = cond_cons->get_condition();
+			      std::vector<int64_t> elem_indices;
+
+			      // Helper lambda to extract index from a simple comparison
+			      auto extract_index_from_cmp = [&](const PExpr* expr) -> bool {
+				    const PEBComp* cmp = dynamic_cast<const PEBComp*>(expr);
+				    if (!cmp || (cmp->get_op() != 'e' && cmp->get_op() != 'E'))
+					  return false;
+				    const PEIdent* cond_ident = dynamic_cast<const PEIdent*>(cmp->get_left());
+				    const PENumber* cond_num = dynamic_cast<const PENumber*>(cmp->get_right());
+				    if (!cond_ident || !cond_num) {
+					  cond_ident = dynamic_cast<const PEIdent*>(cmp->get_right());
+					  cond_num = dynamic_cast<const PENumber*>(cmp->get_left());
+				    }
+				    if (cond_ident && cond_num) {
+					  perm_string cond_name = cond_ident->path().back().name;
+					  if (cond_name == loop_var) {
+						elem_indices.push_back(cond_num->value().as_long());
+						return true;
+					  }
+				    }
+				    return false;
+			      };
+
+			      // Check for simple comparison
+			      if (extract_index_from_cmp(cond_expr)) {
+				    // Got index from simple comparison
+			      }
+			      // Check for OR expression
+			      else {
+				    const PEBLogic* logic_expr = dynamic_cast<const PEBLogic*>(cond_expr);
+				    if (logic_expr && logic_expr->get_op() == 'o') { // 'o' is OR
+					  extract_index_from_cmp(logic_expr->get_left());
+					  extract_index_from_cmp(logic_expr->get_right());
+				    }
+			      }
+
+			      // If we extracted any element indices, process the body constraints for each
+			      if (!elem_indices.empty()) {
+				    for (int64_t elem_idx : elem_indices) {
+					  // Process body constraints with this element index
+					  for (PExpr* then_expr : cond_cons->get_if_constraints()) {
+						const PEBComp* body_cmp = dynamic_cast<const PEBComp*>(then_expr);
+						if (body_cmp) {
+						      char op = body_cmp->get_op();
+						      if (op == 'g') op = '>';
+						      else if (op == 'l') op = '<';
+						      else if (op == 'G') op = 'G';
+						      else if (op == 'L') op = 'L';
+						      else if (op == 'e') op = '=';
+						      else if (op == 'n') op = '!';
+						      else { continue; }  // Unknown operator
+
+						      // Get left (array element) and right (constant)
+						      const PEIdent* left_id = dynamic_cast<const PEIdent*>(body_cmp->get_left());
+						      const PENumber* right_n = dynamic_cast<const PENumber*>(body_cmp->get_right());
+						      if (!left_id || !right_n) {
+							    left_id = dynamic_cast<const PEIdent*>(body_cmp->get_right());
+							    right_n = dynamic_cast<const PENumber*>(body_cmp->get_left());
+							    // Swap operator
+							    if (op == '>') op = '<';
+							    else if (op == '<') op = '>';
+							    else if (op == 'G') op = 'L';
+							    else if (op == 'L') op = 'G';
+						      }
+						      if (left_id && right_n) {
+							    int64_t const_val = right_n->value().as_long();
+							    cls->add_indexed_element_bound(constraint_name, prop_idx, op, is_soft,
+							                                   true, const_val, elem_idx);
+							    any_extracted = true;
+						      }
+						}
+					  }
+				    }
+			      }
+			      continue;  // Processed conditional constraint
+			}
+
 			// Parse the body constraint to get bounds
 			// The body should be of form: array[i] OP constant
 			const PEBComp* cmp = dynamic_cast<const PEBComp*>(body_expr);

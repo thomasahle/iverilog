@@ -535,6 +535,8 @@ void netclass_t::add_simple_bound(perm_string constraint_name, size_t prop_idx, 
       bound.is_excluded_range = false;
       bound.excluded_range_low = 0;
       bound.excluded_range_high = 0;
+      bound.has_element_idx = false;
+      bound.element_idx = 0;
       simple_bounds_.push_back(bound);
 }
 
@@ -565,6 +567,40 @@ void netclass_t::add_excluded_range_bound(perm_string constraint_name, size_t pr
       bound.is_excluded_range = true;
       bound.excluded_range_low = low_bound;
       bound.excluded_range_high = high_bound;
+      bound.has_element_idx = false;
+      bound.element_idx = 0;
+      simple_bounds_.push_back(bound);
+}
+
+void netclass_t::add_indexed_element_bound(perm_string constraint_name, size_t prop_idx, char op, bool is_soft,
+                                           bool has_const, int64_t const_val, int64_t elem_idx)
+{
+      simple_bound_t bound;
+      bound.constraint_name = constraint_name;
+      bound.property_idx = prop_idx;
+      bound.op = op;
+      bound.is_soft = is_soft;
+      bound.has_const_bound = has_const;
+      bound.const_bound = const_val;
+      bound.bound_prop_idx = 0;
+      bound.has_prop_offset = false;
+      bound.is_foreach = false;  // Not a foreach - specific element only
+      bound.array_size = 0;
+      bound.sysfunc_type = SYSFUNC_NONE;
+      bound.sysfunc_arg_idx = 0;
+      bound.weight = 1;
+      bound.weight_per_value = true;
+      bound.has_condition = false;
+      bound.cond_prop_idx = 0;
+      bound.cond_op = '=';
+      bound.cond_has_const = true;
+      bound.cond_const = 0;
+      bound.cond_prop2_idx = 0;
+      bound.is_excluded_range = false;
+      bound.excluded_range_low = 0;
+      bound.excluded_range_high = 0;
+      bound.has_element_idx = true;
+      bound.element_idx = elem_idx;
       simple_bounds_.push_back(bound);
 }
 

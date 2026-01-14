@@ -2526,6 +2526,14 @@ extern int         ivl_type_simple_bound_is_excluded_range(ivl_type_t net, unsig
 extern int64_t     ivl_type_simple_bound_excluded_range_low(ivl_type_t net, unsigned idx);
 extern int64_t     ivl_type_simple_bound_excluded_range_high(ivl_type_t net, unsigned idx);
 
+/* Element-indexed constraint API - for conditional foreach constraints.
+ * Pattern: foreach(arr[i]) if (i == N) arr[i] == val;
+ * ivl_type_simple_bound_has_element_idx returns 1 if this constrains specific array element.
+ * ivl_type_simple_bound_element_idx returns the array element index (if has_element_idx).
+ */
+extern int         ivl_type_simple_bound_has_element_idx(ivl_type_t net, unsigned idx);
+extern int64_t     ivl_type_simple_bound_element_idx(ivl_type_t net, unsigned idx);
+
 /* Unique constraint API - ensures array elements have distinct values.
  * ivl_type_unique_constraints returns the number of unique constraints.
  * ivl_type_unique_constraint_prop returns the property index for idx-th constraint.

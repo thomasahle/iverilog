@@ -263,6 +263,10 @@ class netclass_t : public ivl_type_s {
 	    bool is_excluded_range;
 	    int64_t excluded_range_low;
 	    int64_t excluded_range_high;
+	    // Element-indexed constraint support - for conditional foreach
+	    // e.g., foreach(arr[i]) if (i == 0) arr[i] == 0;
+	    bool has_element_idx;  // true if this constrains specific array element
+	    int64_t element_idx;   // Array element index (if has_element_idx)
       };
       std::vector<simple_bound_t> simple_bounds_;
 
@@ -285,6 +289,10 @@ class netclass_t : public ivl_type_s {
                             bool cond_has_const = true, int64_t cond_const = 0, size_t cond_prop2 = 0,
                             bool is_foreach = false, size_t array_size = 0,
                             bool has_prop_offset = false);
+      // Add element-indexed constraint for specific array element
+      // Used for conditional foreach: foreach(arr[i]) if (i == N) arr[i] == val;
+      void add_indexed_element_bound(perm_string constraint_name, size_t prop_idx, char op, bool is_soft,
+                                     bool has_const, int64_t const_val, int64_t element_idx);
       void add_excluded_range_bound(perm_string constraint_name, size_t prop_idx,
                                     int64_t low_bound, int64_t high_bound, bool is_soft);
       size_t get_simple_bounds() const { return simple_bounds_.size(); }

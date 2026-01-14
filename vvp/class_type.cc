@@ -1963,7 +1963,8 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
                               unsigned sysfunc_type, unsigned sysfunc_arg,
                               int64_t weight, int weight_per_value,
                               int has_cond, unsigned cond_prop, char cond_op,
-                              int cond_has_const, int64_t cond_value)
+                              int cond_has_const, int64_t cond_value,
+                              int has_element_idx, int64_t element_idx)
 {
       // Look up the class definition from the label
       vpiHandle class_h = vvp_lookup_handle(class_label);
@@ -2056,9 +2057,10 @@ void compile_constraint_bound(char*class_label, char*constraint_name, unsigned p
 	    bound.cond_const = 0;
 	    bound.cond_prop2_idx = static_cast<size_t>(cond_value);
       }
-      // Indexed array element constraints (default: apply to all elements)
-      bound.has_element_idx = false;
-      bound.element_idx = 0;
+      // Indexed array element constraints - for conditional foreach patterns
+      // e.g., foreach(arr[i]) if (i == 0) arr[i] == 0;
+      bound.has_element_idx = (has_element_idx != 0);
+      bound.element_idx = element_idx;
       // Foreach constraint flag (applies to dynamic arrays)
       bound.is_foreach = false;
       // Inside array constraint (not set from .constraint_bound directive)

@@ -579,13 +579,16 @@ extern void compile_factory(char*type_name, char*class_label);
  * cond_prop: property index for condition expression
  * cond_op: condition comparison operator
  * cond_has_const: 1 if condition compares to constant
- * cond_value: constant value or property index for condition */
+ * cond_value: constant value or property index for condition
+ * has_element_idx: 1 if this constrains specific array element (conditional foreach)
+ * element_idx: array element index (if has_element_idx) */
 extern void compile_constraint_bound(char*class_label, char*constraint_name, unsigned prop_idx,
                                      char op, int soft, int has_const, int64_t value,
                                      unsigned sysfunc_type, unsigned sysfunc_arg,
                                      int64_t weight, int weight_per_value,
                                      int has_cond = 0, unsigned cond_prop = 0, char cond_op = '=',
-                                     int cond_has_const = 1, int64_t cond_value = 0);
+                                     int cond_has_const = 1, int64_t cond_value = 0,
+                                     int has_element_idx = 0, int64_t element_idx = 0);
 
 /* Unique constraint - ensures array elements have distinct values.
  * prop_idx: property index of array that must have unique elements */

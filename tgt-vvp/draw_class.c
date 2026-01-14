@@ -188,6 +188,8 @@ void draw_class_in_scope(ivl_type_t classtype)
 
 	    int has_prop_offset = ivl_type_simple_bound_has_prop_offset(classtype, bidx);
 	    int is_excluded_range = ivl_type_simple_bound_is_excluded_range(classtype, bidx);
+	    int has_element_idx = ivl_type_simple_bound_has_element_idx(classtype, bidx);
+	    int64_t element_idx = ivl_type_simple_bound_element_idx(classtype, bidx);
 
 	    /* For property+offset constraints (e.g., y <= x + 10), use lowercase operator
 	     * to signal that the value contains packed prop_idx and offset:
@@ -244,15 +246,27 @@ void draw_class_in_scope(ivl_type_t classtype)
 		  fprintf(vvp_out, "%u, %u, %u, %" PRId64 ", %d, ",
 			  prop2_idx, sysfunc_type, sysfunc_arg, weight, weight_per_value);
 	    }
-	    /* Emit condition fields */
+	    /* Emit condition fields and optional element_idx fields */
 	    if (cond_has_const) {
 		  int64_t cond_const = ivl_type_simple_bound_cond_const(classtype, bidx);
-		  fprintf(vvp_out, "%d, %u, \"%c\", %d, %" PRId64 " ;\n",
-			  has_cond, cond_prop, cond_op, cond_has_const, cond_const);
+		  if (has_element_idx) {
+			fprintf(vvp_out, "%d, %u, \"%c\", %d, %" PRId64 ", %d, %" PRId64 " ;\n",
+			        has_cond, cond_prop, cond_op, cond_has_const, cond_const,
+			        has_element_idx, element_idx);
+		  } else {
+			fprintf(vvp_out, "%d, %u, \"%c\", %d, %" PRId64 " ;\n",
+			        has_cond, cond_prop, cond_op, cond_has_const, cond_const);
+		  }
 	    } else {
 		  unsigned cond_prop2 = ivl_type_simple_bound_cond_prop2(classtype, bidx);
-		  fprintf(vvp_out, "%d, %u, \"%c\", %d, %u ;\n",
-			  has_cond, cond_prop, cond_op, cond_has_const, cond_prop2);
+		  if (has_element_idx) {
+			fprintf(vvp_out, "%d, %u, \"%c\", %d, %u, %d, %" PRId64 " ;\n",
+			        has_cond, cond_prop, cond_op, cond_has_const, cond_prop2,
+			        has_element_idx, element_idx);
+		  } else {
+			fprintf(vvp_out, "%d, %u, \"%c\", %d, %u ;\n",
+			        has_cond, cond_prop, cond_op, cond_has_const, cond_prop2);
+		  }
 	    }
       }
 
