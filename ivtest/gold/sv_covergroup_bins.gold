@@ -1,3 +1,4 @@
+./ivltests/sv_covergroup_bins.v:44: warning: Static variable initialization requires explicit lifetime in this context.
 ../lib/ivl/uvm/uvm_pkg.sv:2608: note: Detected run_test() call.
 Samples: 3
 PASSED - Covergroup with bins parsed correctly
