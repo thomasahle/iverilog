@@ -1405,3 +1405,4 @@ sv_constraint_dist_range	normal,-g2012	ivltests gold=sv_constraint_dist_range.go
 sv_dist_weight_check	normal,-g2012	ivltests gold=sv_dist_weight_check.gold
 sv_virtual_method_this	normal,-g2012	ivltests
 sv_virtual_method_this2	normal,-g2012	ivltests
+sv_virtual_task_fork	normal,-g2012	ivltests	gold=sv_virtual_task_fork.gold

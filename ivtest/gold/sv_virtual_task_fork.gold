@@ -1,0 +1,4 @@
+Test 1: Direct call d.run()
+PASSED: Derived::run called correctly
+Test 2: Call d.do_run() which forks this.run()
+PASSED: Derived::run called correctly

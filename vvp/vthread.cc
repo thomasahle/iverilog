@@ -4506,15 +4506,20 @@ bool of_FORK_VIRT(vthread_t thr, vvp_code_t cp)
 			      bool method_is_compatible = false;
 
 			      // Get the class that base_scope belongs to
-			      const char* base_scope_class_name = base_scope->scope_def_name();
-			      const char* actual_class_name = actual_class->class_name().c_str();
+			      // The base_scope is the method scope (e.g., Base.run),
+			      // so we need to get the parent which is the class scope (e.g., Base)
+			      const char* base_scope_class_name = 0;
+			      __vpiScope*class_scope = base_scope->scope;
+			      if (class_scope) {
+				    base_scope_class_name = class_scope->scope_def_name();
+			      }
 
 			      // Simple check: if the base scope's method entry matches the object's,
 			      // or if the base scope's class name is in the object's class hierarchy
 			      if (method->entry == cp->cptr2) {
 				    // Same entry point - definitely the right method
 				    method_is_compatible = true;
-			      } else if (base_scope_class_name && actual_class_name) {
+			      } else if (base_scope_class_name) {
 				    // Check if actual_class inherits from base_scope's class
 				    const class_type*check = actual_class;
 				    while (check != 0) {
