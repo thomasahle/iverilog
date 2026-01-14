@@ -1,25 +1,21 @@
-../lib/ivl/uvm/uvm_pkg.sv:2565: note: Detected run_test() call.
-./ivltests/sv_uvm_factory_override.v:82: note: Detected run_test() call.
-./ivltests/sv_uvm_factory_override.v:82: note: Found test class 'test' for run_test("test").
-./ivltests/sv_uvm_factory_override.v:82: note: UVM factory not fully implemented. Test phases may not execute correctly.
-UVM_INFO: run_test called with test_name='test'
-UVM_INFO: Looking up test 'test' in factory...
-UVM_INFO: Factory created test 'test' successfully
-UVM_INFO: Starting UVM phases...
-UVM_INFO: Running build_phase...
-Requesting type override: base_tx -> extended_tx
-UVM_INFO: Running connect_phase...
-UVM_INFO: Running end_of_elaboration_phase...
-UVM_INFO: Running start_of_simulation_phase...
-UVM_INFO: Running run_phase...
-base_tx: value=100
-base_tx: value=100
-PASSED - Factory creates base type (override not implemented)
-UVM_INFO: Waiting for all objections to drop...
-UVM_INFO: All objections dropped, ending run_phase...
-UVM_INFO: Running extract_phase...
-UVM_INFO: Running check_phase...
-UVM_INFO: Running report_phase...
-UVM_INFO: Running final_phase...
-UVM_INFO: UVM phases complete.
-../lib/ivl/uvm/uvm_pkg.sv:1359: $finish called at 0 (1s)
+../lib/ivl/uvm/uvm_pkg.sv:2608: note: Detected run_test() call.
+=== Factory Override Test ===
+
+Test 1: Create base_tx without override (using $ivl_factory_create)
+base_tx: value=100, type_info=base_tx
+  PASSED - Created base_tx as expected
+
+Test 2: Registering type override: base_tx -> extended_tx
+  Override registered
+
+Test 3: Create 'base_tx' after override (should get extended_tx)
+extended_tx: value=200, extra_value=999, type_info=extended_tx
+  PASSED - Factory created extended_tx via override!
+
+Test 4: Direct instantiation (should still be base_tx)
+base_tx: value=100, type_info=base_tx
+  PASSED - Direct instantiation creates base_tx
+
+=== Test Complete ===
+PASSED - Factory type override is working!
+./ivltests/sv_uvm_factory_override.v:116: $finish called at 0 (1s)

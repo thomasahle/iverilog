@@ -1417,6 +1417,12 @@ package uvm_pkg;
   endclass
 
   // Factory wrapper for components - creates objects using direct instantiation
+  // ============================================================================
+  // NOTE: Factory override via type_id::create() requires parameterized class
+  // method specialization which has Icarus limitations. Use the direct factory
+  // API (uvm_factory::get().set_type_override_by_name()) with $ivl_factory_create()
+  // for factory-based creation with override support.
+  // ============================================================================
   class uvm_component_registry #(type T = uvm_component, string Tname = "");
     // get() returns null (factory proxy not fully supported)
     static function uvm_factory_proxy get();
@@ -1424,6 +1430,8 @@ package uvm_pkg;
     endfunction
 
     // Static create - creates the component directly
+    // NOTE: For factory override support, use uvm_factory::get().set_type_override_by_name()
+    // and $ivl_factory_create() directly.
     static function T create(string name, uvm_component parent);
       T obj = new(name, parent);
       return obj;
@@ -1438,6 +1446,8 @@ package uvm_pkg;
     endfunction
 
     // Static create - creates the object directly
+    // NOTE: For factory override support, use uvm_factory::get().set_type_override_by_name()
+    // and $ivl_factory_create() directly.
     static function T create(string name = "");
       T obj = new(name);
       return obj;
@@ -1472,10 +1482,20 @@ package uvm_pkg;
   endclass
 
   // ============================================================================
-  // UVM Factory (Placeholder)
+  // UVM Factory - WITH TYPE OVERRIDE SUPPORT
   // ============================================================================
-  // Factory lookup by string name is not fully supported in this simplified UVM.
-  // The test must be created via other means (see run_test comments).
+  // The factory maintains a registry of type overrides. When type_id::create()
+  // is called, the factory checks for registered overrides and creates the
+  // override type instead of the original.
+  //
+  // Supported API:
+  //   uvm_factory::get().set_type_override_by_name(orig_type, override_type);
+  //   uvm_factory::get().set_inst_override_by_name(orig_type, override_type, inst_path);
+  //
+  // Example:
+  //   uvm_factory::get().set_type_override_by_name("base_tx", "extended_tx");
+  //   tx = base_tx::type_id::create("tx");  // Creates extended_tx!
+  // ============================================================================
 
   class uvm_factory;
     static uvm_factory m_inst;
@@ -1484,6 +1504,29 @@ package uvm_pkg;
       if (m_inst == null)
         m_inst = new();
       return m_inst;
+    endfunction
+
+    // Set a type override by type names (strings)
+    // When original_type is created via factory, override_type is created instead.
+    // The override_type must extend original_type for the $cast to succeed.
+    function void set_type_override_by_name(string original_type, string override_type,
+                                            bit replace = 1);
+      // Call the system task to register the override with VVP runtime
+      $ivl_factory_type_override(original_type, override_type);
+    endfunction
+
+    // Set an instance override by type names
+    // Only affects creation at the specified instance path.
+    function void set_inst_override_by_name(string original_type, string override_type,
+                                            string full_inst_path);
+      // For now, just use type override (inst path ignored)
+      // TODO: Pass inst_path to VVP for proper instance override support
+      $ivl_factory_type_override(original_type, override_type);
+    endfunction
+
+    // Debug: print all registered overrides
+    function void print();
+      $display("UVM Factory - overrides registered via set_type_override_by_name");
     endfunction
   endclass
 

@@ -6153,11 +6153,32 @@ bool of_NEW_COBJ(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %factory/type_override
+ *
+ * This opcode registers a type override with the factory.
+ * The override_type is popped first, then the original_type.
+ * When original_type is later created via %factory/create,
+ * the factory will create override_type instead.
+ */
+bool of_FACTORY_TYPE_OVERRIDE(vthread_t thr, vvp_code_t)
+{
+      // Pop override type first (reverse order on stack)
+      string override_type = thr->pop_str();
+      string original_type = thr->pop_str();
+
+      vvp_factory_registry::instance().set_type_override(original_type, override_type);
+      return true;
+}
+
+/*
  * %factory/create
  *
  * This opcode creates a class object by looking up the class type name
  * in the UVM factory registry. The type name is popped from the string
  * stack, and the resulting object is pushed to the object stack.
+ *
+ * If a type override is registered for this type, the override type
+ * is created instead. This enables UVM factory override patterns.
  *
  * If the class is not found in the factory, a null object is pushed
  * and an error message is displayed.
@@ -6167,8 +6188,9 @@ bool of_FACTORY_CREATE(vthread_t thr, vvp_code_t)
       // Pop the type name from the string stack
       string type_name = thr->pop_str();
 
-      // Look up the class in the factory registry
-      class_type* defn = vvp_factory_registry::instance().find_class(type_name);
+      // Look up the class in the factory registry WITH OVERRIDE SUPPORT
+      // This checks for type overrides first
+      class_type* defn = vvp_factory_registry::instance().find_class_with_override(type_name);
       if (defn == nullptr) {
 	    vpi_printf("UVM_FATAL: Factory cannot find class '%s'\n",
 		       type_name.c_str());

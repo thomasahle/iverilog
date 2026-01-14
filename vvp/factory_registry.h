@@ -67,6 +67,37 @@ public:
     // Get the number of registered classes
     size_t size() const { return registry_.size(); }
 
+    // ========================================================================
+    // Factory Type Override Support
+    // ========================================================================
+
+    // Set a type override: when creating original_type, create override_type instead.
+    // This is the core of UVM factory override functionality.
+    void set_type_override(const std::string& original_type,
+                           const std::string& override_type);
+
+    // Set an instance override: only affects a specific instance path.
+    // inst_path can contain wildcards (* matches any substring).
+    void set_inst_override(const std::string& inst_path,
+                           const std::string& original_type,
+                           const std::string& override_type);
+
+    // Find a class with override support.
+    // First checks instance overrides (if inst_path is not empty),
+    // then checks type overrides, then falls back to the original type.
+    class_type* find_class_with_override(const std::string& type_name,
+                                         const std::string& inst_path = "") const;
+
+    // Check if a type has an override registered
+    bool has_type_override(const std::string& type_name) const;
+
+    // Get the override type name (or original if no override)
+    std::string get_override_type(const std::string& type_name,
+                                  const std::string& inst_path = "") const;
+
+    // Debug: dump all overrides
+    void dump_overrides() const;
+
 private:
     // Private constructor for singleton
     vvp_factory_registry() = default;
@@ -85,6 +116,16 @@ private:
 
     // Map from type name to factory entry
     std::map<std::string, factory_entry> registry_;
+
+    // Map from original type name to override type name (for type overrides)
+    std::map<std::string, std::string> type_overrides_;
+
+    // Map from (inst_path, original_type) to override type name (for instance overrides)
+    // inst_path can contain wildcards
+    std::map<std::pair<std::string, std::string>, std::string> inst_overrides_;
+
+    // Helper: check if inst_path matches a pattern (with * wildcards)
+    static bool path_matches(const std::string& pattern, const std::string& path);
 };
 
 #endif /* IVL_factory_registry_H */

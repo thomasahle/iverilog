@@ -140,6 +140,7 @@ extern bool of_EVCTLC(vthread_t thr, vvp_code_t code);
 extern bool of_EVCTLI(vthread_t thr, vvp_code_t code);
 extern bool of_EVCTLS(vthread_t thr, vvp_code_t code);
 extern bool of_FACTORY_CREATE(vthread_t thr, vvp_code_t code);
+extern bool of_FACTORY_TYPE_OVERRIDE(vthread_t thr, vvp_code_t code);
 extern bool of_FILE_LINE(vthread_t thr, vvp_code_t code);
 extern bool of_FLAG_GET_VEC4(vthread_t thr, vvp_code_t code);
 extern bool of_FLAG_INV(vthread_t thr, vvp_code_t code);

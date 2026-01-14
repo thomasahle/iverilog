@@ -2434,6 +2434,25 @@ static int show_system_task_call(ivl_statement_t net)
 	    return 0;
       }
 
+      if (strcmp(stmt_name,"$ivl_factory_type_override") == 0) {
+	    /* $ivl_factory_type_override(original_type, override_type)
+	     * - Push original_type string to string stack
+	     * - Push override_type string to string stack
+	     * - Call %factory/type_override opcode */
+	    ivl_expr_t orig_type_expr = ivl_stmt_parm(net, 0);
+	    ivl_expr_t ovr_type_expr = ivl_stmt_parm(net, 1);
+
+	    show_stmt_file_line(net, "factory type override.");
+
+	    /* Push original_type string */
+	    draw_eval_string(orig_type_expr);
+	    /* Push override_type string */
+	    draw_eval_string(ovr_type_expr);
+	    /* Register the override */
+	    fprintf(vvp_out, "    %%factory/type_override;\n");
+	    return 0;
+      }
+
       if (strcmp(stmt_name,"$cast") == 0) {
 	    /* $cast(dest, src) as a task - check if src's actual type is compatible
 	     * with dest's declared type. If yes, assign. Return value is discarded.

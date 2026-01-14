@@ -3206,8 +3206,20 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 		  return 0;
 	    }
 
+	    // Check type first - string literals need special handling
+	    PExpr*arg_pexpr = parms_[0].parm;
+	    PExpr::width_mode_t mode = PExpr::SIZED;
+	    arg_pexpr->test_width(des, scope, mode);
+
 	    // Elaborate the string argument
-	    NetExpr*arg = elab_and_eval(des, scope, parms_[0].parm, -1);
+	    // Use the no-width version for strings to get proper NetECString
+	    NetExpr*arg = 0;
+	    if (arg_pexpr->expr_type() == IVL_VT_STRING) {
+		  arg = arg_pexpr->elaborate_expr(des, scope, (ivl_type_t)0, PExpr::NO_FLAGS);
+	    } else {
+		  // Try elab_and_eval for non-string types
+		  arg = elab_and_eval(des, scope, arg_pexpr, -1);
+	    }
 	    if (arg == 0) {
 		  cerr << get_fileline() << ": error: $ivl_factory_create "
 		       << "failed to elaborate type name argument." << endl;
@@ -3215,8 +3227,11 @@ NetExpr* PECallFunction::elaborate_sfunc_(Design*des, NetScope*scope,
 		  return 0;
 	    }
 
-	    // Verify it's a string type
-	    if (arg->expr_type() != IVL_VT_STRING) {
+	    // Verify it's a string type (either string or vector from literal)
+	    // Accept both IVL_VT_STRING and vector types (converted at runtime)
+	    if (arg->expr_type() != IVL_VT_STRING &&
+	        arg->expr_type() != IVL_VT_LOGIC &&
+	        arg->expr_type() != IVL_VT_BOOL) {
 		  cerr << get_fileline() << ": error: $ivl_factory_create "
 		       << "argument must be a string expression." << endl;
 		  des->errors += 1;
