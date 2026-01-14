@@ -1169,8 +1169,8 @@ sv_endinterface_label1	normal,-g2012		ivltests
 sv_class_module_scope1	normal,-g2012		ivltests
 sv_class_interface_scope1	normal,-g2012		ivltests
 sv_interface_inst3		normal,-g2012		ivltests
-# sv_interface_inst4 - NI: parameterized interface instantiation not yet implemented
-sv_interface_inst4		NI,-g2012		ivltests
+# sv_interface_inst4 - NOW WORKING with parameterized interface support
+sv_interface_inst4	normal,-g2012	ivltests	gold=sv_interface_inst4.gold
 sv_interface_inst5		normal,-g2012		ivltests
 sv_class_type_param_inherit1 normal,-g2012 ivltests
 sv_class_type_param_inherit2 normal,-g2012 ivltests
