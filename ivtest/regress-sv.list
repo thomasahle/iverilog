@@ -1413,3 +1413,4 @@ sv_method_on_prop_obj	normal,-g2012	ivltests
 sv_prop_obj_method_inherit	normal,-g2012	ivltests
 sv_uvm_factory_override	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_uvm_factory_override.gold
 sv_virtual_cast_bug	normal,-g2012	ivltests gold=sv_virtual_cast_bug.gold
+sv_covergroup_bins	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_covergroup_bins.gold
