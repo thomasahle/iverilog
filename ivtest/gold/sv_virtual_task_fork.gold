@@ -1,4 +1,6 @@
+./ivltests/sv_virtual_task_fork.v:25: warning: Static variable initialization requires explicit lifetime in this context.
 Test 1: Direct call d.run()
 PASSED: Derived::run called correctly
 Test 2: Call d.do_run() which forks this.run()
 PASSED: Derived::run called correctly
+./ivltests/sv_virtual_task_fork.v:37: $finish called at 1 (1s)

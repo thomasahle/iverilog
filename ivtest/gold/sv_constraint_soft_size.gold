@@ -1,7 +1,7 @@
 ./ivltests/sv_constraint_soft_size.v:25: warning: Static variable initialization requires explicit lifetime in this context.
 ./ivltests/sv_constraint_soft_size.v:26: warning: Static variable initialization requires explicit lifetime in this context.
 ./ivltests/sv_constraint_soft_size.v:27: warning: Static variable initialization requires explicit lifetime in this context.
-../lib/ivl/uvm/uvm_pkg.sv:2526: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2552: note: Detected run_test() call.
 Tested 10 randomizations, mismatches: 0
 PASSED
 ./ivltests/sv_constraint_soft_size.v:49: $finish called at 0 (1s)

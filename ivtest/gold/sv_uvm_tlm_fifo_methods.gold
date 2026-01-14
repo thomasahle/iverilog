@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2526: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2552: note: Detected run_test() call.
 ./ivltests/sv_uvm_tlm_fifo_methods.v:70: note: Detected run_test() call.
 ./ivltests/sv_uvm_tlm_fifo_methods.v:70: warning: Test class 'test_class' not found in scope for run_test().
 UVM_INFO: run_test called with test_name='test_class'
@@ -18,4 +18,4 @@ UVM_INFO: Running check_phase...
 UVM_INFO: Running report_phase...
 UVM_INFO: Running final_phase...
 UVM_INFO: UVM phases complete.
-../lib/ivl/uvm/uvm_pkg.sv:1328: $finish called at 0 (1s)
+../lib/ivl/uvm/uvm_pkg.sv:1354: $finish called at 0 (1s)
