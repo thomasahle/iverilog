@@ -5250,7 +5250,6 @@ bool of_LOAD_OBJ(vthread_t thr, vvp_code_t cp)
 
       vvp_object_t val = fun->get_object();
 
-
       thr->push_object(val);
 
       return true;
@@ -6684,6 +6683,7 @@ bool of_PROP_OBJ(vthread_t thr, vvp_code_t cp)
 
       vvp_object_t val;
       cobj->get_object(pid, val, idx);
+
       thr->push_object(val);
 
       return true;
@@ -6712,22 +6712,10 @@ static bool prop(vthread_t thr, vvp_code_t cp)
       vvp_object_t&obj = thr->peek_object();
       vvp_cobject*cobj = obj.peek<vvp_cobject>();
       if (!cobj) {
-	    __vpiScope*scope = vthread_scope(thr);
-	    fprintf(stderr, "ERROR prop<>: cobj null at pid=%u scope=%s obj.nil=%d\n",
-	            pid, scope ? scope->scope_name() : "(null)", obj.test_nil());
-	    // Push a default value and continue
+	      // Push a default value and continue gracefully
 	    ELEM val = ELEM();
 	    vthread_push(thr, val);
 	    return true;
-      }
-
-      // Debug: check if pid is out of range before calling get_from_obj
-      const class_type* ctype = cobj->get_class_type();
-      if (ctype && pid >= ctype->property_count()) {
-	    __vpiScope*scope = vthread_scope(thr);
-	    fprintf(stderr, "DEBUG prop<>: pid=%u >= count=%zu, class=%s, scope=%s\n",
-	            pid, ctype->property_count(), ctype->class_name().c_str(),
-	            scope ? scope->scope_name() : "(null)");
       }
 
       ELEM val;
@@ -11718,15 +11706,6 @@ bool of_STORE_OBJ(vthread_t thr, vvp_code_t cp)
 
       vvp_object_t val;
       thr->pop_object(val);
-
-      // Debug: check if target functor supports recv_object
-      if (cp->net && cp->net->fun) {
-            const char* functor_type = typeid(*cp->net->fun).name();
-            if (strstr(functor_type, "signal4_aa")) {
-                  fprintf(stderr, "ERROR of_STORE_OBJ: trying to store object to vec4 signal! functor=%s\n", functor_type);
-                  fprintf(stderr, "  ctx=%p\n", thr->wt_context);
-            }
-      }
 
       vvp_send_object(ptr, val, thr->wt_context);
 

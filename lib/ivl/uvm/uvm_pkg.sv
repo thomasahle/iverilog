@@ -806,9 +806,14 @@ package uvm_pkg;
     virtual task post_body();
     endtask
 
+    // Virtual function for p_sequencer setup - overridden by uvm_declare_p_sequencer macro
+    virtual function void m_set_p_sequencer();
+    endfunction
+
     virtual task start(uvm_sequencer_base sequencer, uvm_sequence_base parent_sequence = null);
       m_sequencer = sequencer;
       m_parent_sequence = parent_sequence;
+      m_set_p_sequencer();  // Set up p_sequencer for sequences that use uvm_declare_p_sequencer
       pre_body();
       body();
       post_body();

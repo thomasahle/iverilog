@@ -1794,9 +1794,6 @@ void class_type::set_object(class_type::inst_t obj, size_t pid,
 {
       char*buf = reinterpret_cast<char*> (obj);
       assert(pid < properties_.size());
-      // Debug: print class and property info for troubleshooting
-      // fprintf(stderr, "DEBUG: set_object on class '%s' property[%zu] '%s'\n",
-      //         class_name_.c_str(), pid, properties_[pid].name.c_str());
       properties_[pid].type->set_object(buf, val, idx);
 }
 
@@ -1805,9 +1802,6 @@ void class_type::get_object(class_type::inst_t obj, size_t pid,
 {
       char*buf = reinterpret_cast<char*> (obj);
       assert(pid < properties_.size());
-      // Debug: print class and property info for troubleshooting
-      // fprintf(stderr, "DEBUG: get_object on class '%s' property[%zu] '%s'\n",
-      //         class_name_.c_str(), pid, properties_[pid].name.c_str());
       properties_[pid].type->get_object(buf, val, idx);
 }
 
