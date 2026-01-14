@@ -1,0 +1,10 @@
+./ivltests/sv_interface_param.v:13: warning: Interface port `port` of type `data_if` has limited support. Some features may not work.
+./ivltests/sv_interface_param.v:20: warning: Interface port `port` of type `data_if` has limited support. Some features may not work.
+./ivltests/sv_interface_param.v:13: warning: Interface port `port` of type `data_if` has limited support. Some features may not work.
+./ivltests/sv_interface_param.v:20: warning: Interface port `port` of type `data_if` has limited support. Some features may not work.
+./ivltests/sv_interface_param.v:13: warning: Interface port `port` of type `data_if` has limited support. Some features may not work.
+./ivltests/sv_interface_param.v:20: warning: Interface port `port` of type `data_if` has limited support. Some features may not work.
+PASSED: Received correct data width 16
+PASSED: Received correct data width 8
+PASSED: Received correct data width 8
+./ivltests/sv_interface_param.v:49: $finish called at 10 (1s)

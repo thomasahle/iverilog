@@ -9277,24 +9277,121 @@ module_item
 	pform_make_modgates(@2, tmp1, 0, tmp_gates, $1);
       }
 
-  /* Interface inst with parameters: InterfaceName #(...) inst(); */
+  /* Interface inst with parameters: InterfaceName #(...) inst(port1, port2); or InterfaceName #(...) inst();
+     Uses class_specialization_params_opt to share non-terminal with class variable declarations.
+     The disambiguating token is IDENTIFIER '(' vs IDENTIFIER ';'.
+     We convert class_spec_params to expression list for pform_make_modgates. */
   | attribute_list_opt
-      TYPE_IDENTIFIER '#' '(' expression_list_with_nuls ')' gate_instance_list ';'
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
       { perm_string tmp1 = lex_strings.make($2.text);
 	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
-	tmp_parms->by_order = $5;
+	/* Convert class_spec_params to expression list */
+	std::list<PExpr*>*parm_list = new std::list<PExpr*>;
+	if ($5) {
+	    for (auto p : *$5) {
+		if (p->value_param)
+		    parm_list->push_back(p->value_param);
+		else if (p->type_param) {
+		    /* Type param - convert to expression if possible */
+		    PETypename*te = new PETypename(p->type_param);
+		    parm_list->push_back(te);
+		}
+	    }
+	}
+	tmp_parms->by_order = parm_list;
 	tmp_parms->by_name = 0;
-	pform_make_modgates(@2, tmp1, tmp_parms, $7, $1);
+	lgate tmp_gate;
+	tmp_gate.name = $7;
+	tmp_gate.parms = $9;
+	FILE_NAME(&tmp_gate, @7);
+	delete[]$7;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, tmp_parms, tmp_gates, $1);
       }
 
-  /* Interface inst with named parameters: InterfaceName #(.P(v)) inst(); */
+  /* Interface array inst with parameters: InterfaceName #(...) inst[N](...); */
   | attribute_list_opt
-      TYPE_IDENTIFIER '#' '(' parameter_value_byname_list ')' gate_instance_list ';'
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' IDENTIFIER dimensions '(' port_conn_expression_list_with_nuls ')' ';'
       { perm_string tmp1 = lex_strings.make($2.text);
 	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
-	tmp_parms->by_order = 0;
-	tmp_parms->by_name = $5;
-	pform_make_modgates(@2, tmp1, tmp_parms, $7, $1);
+	std::list<PExpr*>*parm_list = new std::list<PExpr*>;
+	if ($5) {
+	    for (auto p : *$5) {
+		if (p->value_param)
+		    parm_list->push_back(p->value_param);
+		else if (p->type_param) {
+		    PETypename*te = new PETypename(p->type_param);
+		    parm_list->push_back(te);
+		}
+	    }
+	}
+	tmp_parms->by_order = parm_list;
+	tmp_parms->by_name = 0;
+	lgate tmp_gate;
+	tmp_gate.name = $7;
+	tmp_gate.parms = $10;
+	tmp_gate.ranges = $8;
+	FILE_NAME(&tmp_gate, @7);
+	delete[]$7;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, tmp_parms, tmp_gates, $1);
+      }
+
+  /* Interface inst with parameters and named ports: InterfaceName #(...) inst(.clk(clk)); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' IDENTIFIER '(' port_name_list ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
+	std::list<PExpr*>*parm_list = new std::list<PExpr*>;
+	if ($5) {
+	    for (auto p : *$5) {
+		if (p->value_param)
+		    parm_list->push_back(p->value_param);
+		else if (p->type_param) {
+		    PETypename*te = new PETypename(p->type_param);
+		    parm_list->push_back(te);
+		}
+	    }
+	}
+	tmp_parms->by_order = parm_list;
+	tmp_parms->by_name = 0;
+	lgate tmp_gate;
+	tmp_gate.name = $7;
+	tmp_gate.parms = 0;
+	tmp_gate.parms_by_name = $9;
+	FILE_NAME(&tmp_gate, @7);
+	delete[]$7;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, tmp_parms, tmp_gates, $1);
+      }
+
+  /* Interface array with parameters and named ports: InterfaceName #(...) inst[N](.clk(clk)); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' IDENTIFIER dimensions '(' port_name_list ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
+	std::list<PExpr*>*parm_list = new std::list<PExpr*>;
+	if ($5) {
+	    for (auto p : *$5) {
+		if (p->value_param)
+		    parm_list->push_back(p->value_param);
+		else if (p->type_param) {
+		    PETypename*te = new PETypename(p->type_param);
+		    parm_list->push_back(te);
+		}
+	    }
+	}
+	tmp_parms->by_order = parm_list;
+	tmp_parms->by_name = 0;
+	lgate tmp_gate;
+	tmp_gate.name = $7;
+	tmp_gate.parms = 0;
+	tmp_gate.parms_by_name = $10;
+	tmp_gate.ranges = $8;
+	FILE_NAME(&tmp_gate, @7);
+	delete[]$7;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, tmp_parms, tmp_gates, $1);
       }
 
   /* Class variable declarations at module scope. This handles patterns like:
