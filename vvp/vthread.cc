@@ -8426,6 +8426,18 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  std::vector<int64_t> default_excluded_vals;
 		  std::vector<int64_t> default_discrete_vals;
 
+		  // Structure for weighted ranges in foreach dist constraints
+		  struct elem_weighted_range_t {
+			int64_t low, high, weight;
+			bool weight_per_value;
+		  };
+		  std::vector<elem_weighted_range_t> default_weighted_ranges;
+
+		  // Collect >= and <= bounds separately for weighted range pairing
+		  struct weighted_bound_t { int64_t val; int64_t weight; bool weight_per_value; };
+		  std::vector<weighted_bound_t> ge_bounds_elem;  // >= bounds
+		  std::vector<weighted_bound_t> le_bounds_elem;  // <= bounds
+
 		  // Lambda to process a constraint bound for dynamic array element constraints
 		  auto process_darray_elem_bound = [&](const class_type::simple_bound_t& bound) {
 			if (bound.property_idx != prop_idx) return;
@@ -8437,12 +8449,23 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			// Skip element-indexed constraints here - handle them per-element
 			if (bound.has_element_idx) return;
 
+			// For weighted dist: collect bounds with weights for later pairing
+			if (bound.weight > 1 || (bound.op == 'G' || bound.op == 'L')) {
+			      if (bound.op == 'G') {
+				    ge_bounds_elem.push_back({bound.const_bound, bound.weight, bound.weight_per_value});
+				    return;
+			      } else if (bound.op == 'L') {
+				    le_bounds_elem.push_back({bound.const_bound, bound.weight, bound.weight_per_value});
+				    return;
+			      }
+			}
+
 			switch (bound.op) {
 			      case '>':  // value > const
 				    if (bound.const_bound + 1 > default_elem_min)
 					  default_elem_min = bound.const_bound + 1;
 				    break;
-			      case 'G':  // value >= const
+			      case 'G':  // value >= const (handled above for weighted)
 				    if (bound.const_bound > default_elem_min)
 					  default_elem_min = bound.const_bound;
 				    break;
@@ -8450,7 +8473,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    if (bound.const_bound - 1 < default_elem_max)
 					  default_elem_max = bound.const_bound - 1;
 				    break;
-			      case 'L':  // value <= const
+			      case 'L':  // value <= const (handled above for weighted)
 				    if (bound.const_bound < default_elem_max)
 					  default_elem_max = bound.const_bound;
 				    break;
@@ -8483,6 +8506,27 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  // Then collect from inline constraints
 		  for (const auto& bound : inline_constraints) {
 			process_darray_elem_bound(bound);
+		  }
+
+		  // Pair >= and <= bounds into weighted ranges for foreach dist
+		  // Sort both lists by value to pair corresponding bounds
+		  std::sort(ge_bounds_elem.begin(), ge_bounds_elem.end(),
+		            [](const weighted_bound_t& a, const weighted_bound_t& b) { return a.val < b.val; });
+		  std::sort(le_bounds_elem.begin(), le_bounds_elem.end(),
+		            [](const weighted_bound_t& a, const weighted_bound_t& b) { return a.val < b.val; });
+		  // Pair bounds with matching weights
+		  size_t ge_idx = 0;
+		  for (const auto& le : le_bounds_elem) {
+			if (ge_idx < ge_bounds_elem.size()) {
+			      int64_t low = ge_bounds_elem[ge_idx].val;
+			      int64_t high = le.val;
+			      int64_t weight = ge_bounds_elem[ge_idx].weight;
+			      bool weight_per_value = ge_bounds_elem[ge_idx].weight_per_value;
+			      if (low <= high) {
+				    default_weighted_ranges.push_back({low, high, weight, weight_per_value});
+			      }
+			      ge_idx++;
+			}
 		  }
 
 		  // Ensure valid default range
@@ -8549,6 +8593,39 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    rval = discrete_vals[0];
 			      } else {
 				    rval = discrete_vals[rand() % discrete_vals.size()];
+			      }
+			} else if (!default_weighted_ranges.empty()) {
+			      // Use weighted selection for foreach dist constraints
+			      int64_t total_weight = 0;
+			      for (const auto& r : default_weighted_ranges) {
+				    if (r.weight_per_value) {
+					  int64_t range_size = r.high - r.low + 1;
+					  total_weight += r.weight * range_size;
+				    } else {
+					  total_weight += r.weight;
+				    }
+			      }
+			      if (total_weight > 0) {
+				    int64_t pick = rand() % total_weight;
+				    int64_t cumulative = 0;
+				    for (const auto& r : default_weighted_ranges) {
+					  int64_t range_weight;
+					  int64_t range_size = r.high - r.low + 1;
+					  if (r.weight_per_value) {
+						range_weight = r.weight * range_size;
+					  } else {
+						range_weight = r.weight;
+					  }
+					  cumulative += range_weight;
+					  if (pick < cumulative) {
+						// Pick random value in this range
+						rval = r.low + (rand() % range_size);
+						break;
+					  }
+				    }
+			      } else {
+				    // Fallback to simple range
+				    rval = elem_min + (rand() % range);
 			      }
 			} else {
 			      // Generate constrained random value, avoiding excluded values

@@ -10019,6 +10019,66 @@ static bool extract_simple_bound(netclass_t*cls, perm_string constraint_name, PE
 	    bool any_extracted = false;
 	    for (PExpr* body_expr : foreach_cons->get_body()) {
 		  if (body_expr != nullptr) {
+			// Check for dist constraint in foreach body
+			// e.g., foreach(data[i]) data[i] dist { [0:10] := 90, [11:255] := 10 };
+			const PEDistConstraint* foreach_dist = dynamic_cast<const PEDistConstraint*>(body_expr);
+			if (foreach_dist != nullptr) {
+			      // Process dist constraint with foreach flag
+			      const std::list<inside_range_t*>& items = foreach_dist->get_items();
+			      for (auto it = items.begin(); it != items.end(); ++it) {
+				    inside_range_t* rng = *it;
+
+				    // Extract weight
+				    int64_t weight = 1;
+				    bool weight_per_value = rng->weight_per_value;
+				    if (rng->weight) {
+					  const PENumber* w_num = dynamic_cast<const PENumber*>(rng->weight);
+					  if (w_num) {
+						weight = w_num->value().as_long();
+					  }
+				    }
+
+				    if (rng->single_val) {
+					  // Single value: create == constraint with weight
+					  const PENumber* num = dynamic_cast<const PENumber*>(rng->single_val);
+					  if (num) {
+						int64_t val = num->value().as_long();
+						cls->add_simple_bound(constraint_name, prop_idx, '=', is_soft,
+						                      true, val, 0,
+						                      netclass_t::SYSFUNC_NONE, 0,
+						                      weight, weight_per_value,
+						                      false, 0, '=', true, 0, 0,  // condition
+						                      true, array_size);  // foreach
+						any_extracted = true;
+					  }
+				    } else if (rng->low_val && rng->high_val) {
+					  // Range: create >= and <= constraints with weight
+					  const PENumber* lo_num = dynamic_cast<const PENumber*>(rng->low_val);
+					  const PENumber* hi_num = dynamic_cast<const PENumber*>(rng->high_val);
+					  if (lo_num && hi_num) {
+						int64_t lo = lo_num->value().as_long();
+						int64_t hi = hi_num->value().as_long();
+						// Add >= bound with foreach flag
+						cls->add_simple_bound(constraint_name, prop_idx, 'G', is_soft,
+						                      true, lo, 0,
+						                      netclass_t::SYSFUNC_NONE, 0,
+						                      weight, weight_per_value,
+						                      false, 0, '=', true, 0, 0,  // condition
+						                      true, array_size);  // foreach
+						// Add <= bound with foreach flag
+						cls->add_simple_bound(constraint_name, prop_idx, 'L', is_soft,
+						                      true, hi, 0,
+						                      netclass_t::SYSFUNC_NONE, 0,
+						                      weight, weight_per_value,
+						                      false, 0, '=', true, 0, 0,  // condition
+						                      true, array_size);  // foreach
+						any_extracted = true;
+					  }
+				    }
+			      }
+			      continue;  // Already processed this body expression
+			}
+
 			// Parse the body constraint to get bounds
 			// The body should be of form: array[i] OP constant
 			const PEBComp* cmp = dynamic_cast<const PEBComp*>(body_expr);
