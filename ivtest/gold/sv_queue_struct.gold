@@ -1,4 +1,11 @@
 Queue size: 3
+pkt_queue[0].data = aa
+pkt_queue[0].addr = 1
+pkt_queue[1].data = bb
+pkt_queue[1].addr = 2
+pkt_queue[2].data = cc
+pkt_queue[2].valid = 0
+pkt_queue[$].data = cc
 pkt_queue[0]: data=bb addr=2 valid=1
 pkt_queue[1]: data=cc addr=3 valid=0
 PASSED

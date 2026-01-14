@@ -1,6 +1,6 @@
-// Test queue of structs
+// Test queue of structs with direct member access
 // Verifies: typedef struct with queue operations
-// Note: Direct member access pkt_queue[i].member is limited - use temp variable
+// Tests direct pkt_queue[i].member access pattern
 
 module test;
 
@@ -12,7 +12,6 @@ module test;
 
   packet_t pkt_queue[$];
   packet_t pkt;
-  packet_t temp;
   int i;
 
   initial begin
@@ -38,47 +37,57 @@ module test;
       $finish;
     end
 
-    // Access struct members via temp variable (workaround)
-    temp = pkt_queue[0];
-    if (temp.data != 8'hAA) begin
-      $display("FAILED: Expected pkt_queue[0].data = AA, got %h", temp.data);
+    // Direct member access on queue elements
+    $display("pkt_queue[0].data = %h", pkt_queue[0].data);
+    $display("pkt_queue[0].addr = %h", pkt_queue[0].addr);
+    $display("pkt_queue[1].data = %h", pkt_queue[1].data);
+    $display("pkt_queue[1].addr = %h", pkt_queue[1].addr);
+    $display("pkt_queue[2].data = %h", pkt_queue[2].data);
+    $display("pkt_queue[2].valid = %b", pkt_queue[2].valid);
+
+    // Verify direct member access
+    if (pkt_queue[0].data !== 8'hAA) begin
+      $display("FAILED: Expected pkt_queue[0].data = AA, got %h", pkt_queue[0].data);
       $finish;
     end
 
-    temp = pkt_queue[1];
-    if (temp.addr != 4'h2) begin
-      $display("FAILED: Expected pkt_queue[1].addr = 2");
+    if (pkt_queue[1].addr !== 4'h2) begin
+      $display("FAILED: Expected pkt_queue[1].addr = 2, got %h", pkt_queue[1].addr);
       $finish;
     end
 
-    temp = pkt_queue[2];
-    if (temp.valid != 0) begin
-      $display("FAILED: Expected pkt_queue[2].valid = 0");
+    if (pkt_queue[2].valid !== 0) begin
+      $display("FAILED: Expected pkt_queue[2].valid = 0, got %b", pkt_queue[2].valid);
       $finish;
     end
 
     // Pop and verify
     pkt = pkt_queue.pop_front();
-    if (pkt.data != 8'hAA || pkt.addr != 4'h1) begin
+    if (pkt.data !== 8'hAA || pkt.addr !== 4'h1) begin
       $display("FAILED: pop_front returned wrong values");
       $finish;
     end
 
-    // Verify $ index via temp
-    temp = pkt_queue[$];
-    if (temp.data != 8'hCC) begin
-      $display("FAILED: Expected pkt_queue[$].data = CC");
+    // Verify $ index with direct member access
+    $display("pkt_queue[$].data = %h", pkt_queue[$].data);
+    if (pkt_queue[$].data !== 8'hCC) begin
+      $display("FAILED: Expected pkt_queue[$].data = CC, got %h", pkt_queue[$].data);
       $finish;
     end
 
-    // Iterate through remaining
+    // Iterate through remaining using direct access
     for (i = 0; i < pkt_queue.size(); i++) begin
-      temp = pkt_queue[i];
       $display("pkt_queue[%0d]: data=%h addr=%h valid=%b",
-               i, temp.data, temp.addr, temp.valid);
+               i, pkt_queue[i].data, pkt_queue[i].addr, pkt_queue[i].valid);
     end
 
-    $display("PASSED");
+    // Verify all values with combined condition
+    if (pkt_queue[0].data === 8'hBB && pkt_queue[0].addr === 4'h2 &&
+        pkt_queue[1].data === 8'hCC && pkt_queue[1].addr === 4'h3) begin
+      $display("PASSED");
+    end else begin
+      $display("FAILED: Remaining queue values incorrect");
+    end
     $finish;
   end
 

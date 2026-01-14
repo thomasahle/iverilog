@@ -193,10 +193,15 @@ static int get_vpi_taskfunc_signal_arg(struct args_info *result,
 	    if (ivl_expr_value(vexpr) == IVL_VT_STRING)
 		  return 0;
 
-	      /* If the sub-expression is a DARRAY, then this select
-		 is a dynamic-array word select. Handle that
-		 elsewhere. */
-	    if (ivl_expr_value(vexpr) == IVL_VT_DARRAY)
+	      /* If the sub-expression is a DARRAY or QUEUE, then this select
+		 is a dynamic-array/queue word select. Handle that
+		 elsewhere. Check both expression type and signal data type
+		 since indexed elements return the element type, not container type. */
+	    ivl_signal_t vsig = ivl_expr_signal(vexpr);
+	    if (ivl_expr_value(vexpr) == IVL_VT_DARRAY ||
+	        ivl_expr_value(vexpr) == IVL_VT_QUEUE ||
+		(vsig && (ivl_signal_data_type(vsig) == IVL_VT_DARRAY ||
+		          ivl_signal_data_type(vsig) == IVL_VT_QUEUE)))
 		  return 0;
 
 	      /* Part select is always unsigned. If the expression is signed

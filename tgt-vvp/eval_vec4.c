@@ -2220,6 +2220,23 @@ static void draw_signal_vec4(ivl_expr_t expr)
 	    return;
       }
 
+	/* Check if this is a dynamic array or queue signal FIRST
+	   (before checking dimensions, since queues have 0 dimensions) */
+      ivl_variable_type_t dtype = ivl_signal_data_type(sig);
+      if (dtype == IVL_VT_DARRAY || dtype == IVL_VT_QUEUE) {
+	    /* For dynamic arrays and queues, use %load/dar/vec4 */
+	    ivl_expr_t word_idx = ivl_expr_oper1(expr);
+	    if (word_idx) {
+		  draw_eval_expr_into_integer(word_idx, 3);
+		  fprintf(vvp_out, "    %%load/dar/vec4 v%p_0;\n", sig);
+	    } else {
+		  /* No word index - this shouldn't happen for indexed queue access,
+		     but handle it by loading the signal directly */
+		  fprintf(vvp_out, "    %%load/vec4 v%p_0;\n", sig);
+	    }
+	    return;
+      }
+
 	/* Handle the simple case, a signal expression that is a
 	   simple vector, no array dimensions. */
       if (ivl_signal_dimensions(sig) == 0) {

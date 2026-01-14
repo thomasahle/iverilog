@@ -10596,10 +10596,12 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
                   scope->is_const_func(false);
             }
 
-	      // If this is a struct, and there are members in the
-	      // member_path, then generate an expression that
-	      // reflects the member selection.
-	    if (sr.net->struct_type() && !sr.path_tail.empty()) {
+	      // If this is a struct (but not a queue/darray of structs),
+	      // and there are members in the member_path, then generate
+	      // an expression that reflects the member selection.
+	      // Queue/darray of structs is handled separately below.
+	    if (sr.net->struct_type() && !sr.path_tail.empty()
+		&& !sr.net->queue_type() && !sr.net->darray_type()) {
 		  if (debug_elaborate) {
 			cerr << get_fileline() << ": PEIdent::elaborate_expr: "
 			        "Ident " << sr.path_head
@@ -10698,6 +10700,119 @@ NetExpr* PEIdent::elaborate_expr_(Design*des, NetScope*scope,
 			NetEProperty*prop_expr = new NetEProperty(array_sig, pidx, prop_index);
 			prop_expr->set_line(*this);
 			return prop_expr;
+		  }
+
+		  // Check if element type is a struct
+		  const netstruct_t*elem_struct = dynamic_cast<const netstruct_t*>(element_type);
+		  if (elem_struct) {
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_expr: "
+				   << "Ident " << sr.path_head
+				   << " is queue/darray of struct elements, looking for member "
+				   << sr.path_tail << endl;
+			}
+
+			// Get the index expression
+			const index_component_t&use_index = sr.path_head.back().index.back();
+			ivl_assert(*this, use_index.lsb == 0);
+
+			NetExpr*index_expr = nullptr;
+			if (use_index.sel == index_component_t::SEL_BIT_LAST) {
+			      // Handle $ index: compute size() - 1
+			      NetESignal*queue_sig = new NetESignal(sr.net);
+			      queue_sig->set_line(*this);
+
+			      NetESFunc*size_expr = new NetESFunc("$size", &netvector_t::atom2s32, 1);
+			      size_expr->set_line(*this);
+			      size_expr->parm(0, queue_sig);
+
+			      NetEConst*one = new NetEConst(verinum((uint64_t)1, 32));
+			      one->set_line(*this);
+
+			      NetEBinary*last_idx = new NetEBinary('-', size_expr, one, 32, true);
+			      last_idx->set_line(*this);
+
+			      // If there's an offset ($-n), subtract it
+			      if (use_index.msb) {
+				    NetExpr*offset = elab_and_eval(des, scope, use_index.msb, -1, false);
+				    if (offset) {
+					  index_expr = new NetEBinary('-', last_idx, offset, 32, true);
+					  index_expr->set_line(*this);
+				    } else {
+					  index_expr = last_idx;
+				    }
+			      } else {
+				    index_expr = last_idx;
+			      }
+			} else {
+			      ivl_assert(*this, use_index.msb != 0);
+			      index_expr = elab_and_eval(des, scope, use_index.msb, -1, false);
+			      if (!index_expr)
+				    return 0;
+			}
+
+			// Get the member name from path_tail
+			const name_component_t& member_comp = sr.path_tail.front();
+			const perm_string& member_name = member_comp.name;
+
+			// Find the member in the struct and get its offset
+			unsigned long member_off = 0;
+			const netstruct_t::member_t* member = nullptr;
+
+			if (elem_struct->packed()) {
+			      // Packed structs use MSB-first offsets
+			      member = elem_struct->packed_member(member_name, member_off);
+			} else {
+			      // Unpacked structs use LSB-first offsets
+			      int member_idx = elem_struct->member_idx_from_name(member_name);
+			      if (member_idx >= 0) {
+				    member = elem_struct->get_member(member_idx);
+				    member_off = 0;
+				    for (int i = 0; i < member_idx; i++) {
+					  const netstruct_t::member_t* prev_member = elem_struct->get_member(i);
+					  if (prev_member && prev_member->net_type) {
+						long pw = prev_member->net_type->packed_width();
+						if (pw > 0)
+						      member_off += pw;
+					  }
+				    }
+			      }
+			}
+
+			if (member == nullptr) {
+			      cerr << get_fileline() << ": error: Member " << member_name
+				   << " is not a member of struct element type." << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			ivl_type_t member_type = member->net_type;
+			unsigned long member_wid = member_type->packed_width();
+
+			if (debug_elaborate) {
+			      cerr << get_fileline() << ": PEIdent::elaborate_expr: "
+				   << "Struct member " << member_name
+				   << " at offset " << member_off
+				   << " with width " << member_wid
+				   << endl;
+			}
+
+			// Get the struct element width
+			unsigned long struct_wid = elem_struct->packed_width();
+
+			// Create an indexed signal expression to get the queue element
+			NetESignal*queue_sig = new NetESignal(sr.net, index_expr);
+			queue_sig->set_line(*this);
+
+			// Now select the member bits from the struct element
+			// For the select, we need a constant offset expression
+			NetEConst*off_expr = new NetEConst(verinum((uint64_t)member_off, 32));
+			off_expr->set_line(*this);
+
+			NetESelect*sel = new NetESelect(queue_sig, off_expr, member_wid, member_type);
+			sel->set_line(*this);
+
+			return sel;
 		  }
 		  } // end if (darray found)
 	    }

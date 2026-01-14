@@ -1420,3 +1420,4 @@ sv_param_class_module_level	normal,-g2012	ivltests	gold=sv_param_class_module_le
 sv_param_class_real_type_bug	normal,-g2012	ivltests	gold=sv_param_class_real_type_bug.gold
 sv_covergroup_sample_args2	normal,-g2012,-I../local_install/lib/ivl/uvm	ivltests	gold=sv_covergroup_sample_args2.gold
 sv_interface_param	normal,-g2012	ivltests	gold=sv_interface_param.gold
+sv_queue_struct	normal,-g2012	ivltests	gold=sv_queue_struct.gold
