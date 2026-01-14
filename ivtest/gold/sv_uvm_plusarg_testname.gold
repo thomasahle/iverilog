@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2608: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2610: note: Detected run_test() call.
 ./ivltests/sv_uvm_plusarg_testname.v:42: note: Detected run_test() call.
 ./ivltests/sv_uvm_plusarg_testname.v:42: note: Found test class 'default_test' for run_test("default_test").
 ./ivltests/sv_uvm_plusarg_testname.v:42: note: UVM factory not fully implemented. Test phases may not execute correctly.

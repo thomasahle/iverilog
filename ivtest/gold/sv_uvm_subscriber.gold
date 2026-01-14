@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2608: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2610: note: Detected run_test() call.
 UVM_INFO @ 0: $unit::my_subscriber.write [my_subscriber] Received transaction: value=42 (count=1)
 UVM_INFO @ 0: $unit::my_subscriber.write [my_subscriber] Received transaction: value=100 (count=2)
 PASSED: uvm_subscriber received 2 transactions correctly
