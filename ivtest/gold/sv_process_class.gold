@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2557: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2565: note: Detected run_test() call.
 Got process handle from self()
 Process status: RUNNING
 await() completed (no-op stub)

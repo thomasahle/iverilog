@@ -1,5 +1,5 @@
 ./ivltests/sv_uvm_tlm_analysis_fifo.v:30: warning: Static variable initialization requires explicit lifetime in this context.
-../lib/ivl/uvm/uvm_pkg.sv:2557: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2565: note: Detected run_test() call.
 Writing transaction: addr=0x00001234, data=0x0000abcd
 FIFO size after write: 1
 PASSED: TLM analysis_port -> export -> FIFO chain works correctly

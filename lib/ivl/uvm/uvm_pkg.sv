@@ -1619,7 +1619,9 @@ package uvm_pkg;
     endtask
 
     // Try_get - non-blocking get
-    virtual function bit try_get(output T t);
+    // NOTE: NOT virtual due to Icarus bug where virtual function with parameterized
+    // output type T doesn't properly pass the value back to the caller.
+    function bit try_get(output T t);
       if (m_items.size() > 0) begin
         t = m_items.pop_front();
         return 1;
@@ -1628,7 +1630,8 @@ package uvm_pkg;
     endfunction
 
     // Peek - look at next item without removing
-    virtual function bit try_peek(output T t);
+    // NOTE: NOT virtual due to Icarus bug (same as try_get)
+    function bit try_peek(output T t);
       if (m_items.size() > 0) begin
         t = m_items[0];
         return 1;
@@ -1652,7 +1655,8 @@ package uvm_pkg;
     endfunction
 
     // Peek - blocking task to look at next item without removing
-    virtual task peek(output T t);
+    // NOTE: NOT virtual due to Icarus bug (same as try_get)
+    task peek(output T t);
       while (m_items.size() == 0) begin
         #1; // Wait for item to be written
       end
@@ -1716,7 +1720,9 @@ package uvm_pkg;
     endfunction
 
     // Try_get - non-blocking get
-    virtual function bit try_get(output T t);
+    // NOTE: NOT virtual due to Icarus bug where virtual function with parameterized
+    // output type T doesn't properly pass the value back to the caller.
+    function bit try_get(output T t);
       if (m_items.size() > 0) begin
         t = m_items.pop_front();
         return 1;
@@ -1725,7 +1731,8 @@ package uvm_pkg;
     endfunction
 
     // Peek - look at next item without removing (non-blocking)
-    virtual function bit try_peek(output T t);
+    // NOTE: NOT virtual due to Icarus bug (same as try_get)
+    function bit try_peek(output T t);
       if (m_items.size() > 0) begin
         t = m_items[0];
         return 1;
@@ -1734,7 +1741,8 @@ package uvm_pkg;
     endfunction
 
     // Peek - blocking task to look at next item without removing
-    virtual task peek(output T t);
+    // NOTE: NOT virtual due to Icarus bug (same as try_get)
+    task peek(output T t);
       while (m_items.size() == 0) begin
         #1; // Wait for item
       end

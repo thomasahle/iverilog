@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2557: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2565: note: Detected run_test() call.
 ./ivltests/sv_uvm_build_phase_inherit.v:101: note: Detected run_test() call.
 ./ivltests/sv_uvm_build_phase_inherit.v:101: note: Found test class 'derived_test' for run_test("derived_test").
 ./ivltests/sv_uvm_build_phase_inherit.v:101: note: UVM factory not fully implemented. Test phases may not execute correctly.
