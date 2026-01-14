@@ -4600,6 +4600,29 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	      $$ = 0;
 	}
       }
+  | '(' expression ')' K_IMPLIES_OV '(' expression ')'
+      { /* Separately parenthesized antecedent AND consequent: (a) |-> (b) = !a || b
+           This is different from (a |-> (b)) which has outer parentheses.
+           This pattern appears in AXI4 assertions like:
+           (awvalid==1 && awready==0) |=> ($stable(awid) && $stable(awaddr)) */
+	PEUnary*not_ante = new PEUnary('!', $2);
+	FILE_NAME(not_ante, @2);
+	PEBLogic*impl = new PEBLogic('o', not_ante, $6);
+	FILE_NAME(impl, @2);
+	$$ = impl;
+      }
+  | '(' expression ')' K_IMPLIES_NOV '(' expression ')'
+      { /* Separately parenthesized antecedent AND consequent: (a) |=> (b) = !$past(a) || b */
+	std::vector<named_pexpr_t> past_parms(1);
+	past_parms[0].parm = $2;
+	PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	FILE_NAME(past_call, @2);
+	PEUnary*not_past = new PEUnary('!', past_call);
+	FILE_NAME(not_past, @2);
+	PEBLogic*impl = new PEBLogic('o', not_past, $6);
+	FILE_NAME(impl, @2);
+	$$ = impl;
+      }
   | '(' expression K_IMPLIES_OV '(' expression ')' ')'
       { /* Parenthesized implication with paren consequent: (a |-> (b)) = !a || b */
 	PEUnary*not_ante = new PEUnary('!', $2);
