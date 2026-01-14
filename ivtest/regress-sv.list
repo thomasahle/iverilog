@@ -1411,3 +1411,4 @@ sv_constraint_cond_else	normal,-g2012	ivltests	gold=sv_constraint_cond_else.gold
 sv_enum_methods_order	normal,-g2012	ivltests
 sv_method_on_prop_obj	normal,-g2012	ivltests
 sv_prop_obj_method_inherit	normal,-g2012	ivltests
+sv_uvm_factory_override	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_uvm_factory_override.gold
