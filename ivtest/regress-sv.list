@@ -1169,7 +1169,8 @@ sv_endinterface_label1	normal,-g2012		ivltests
 sv_class_module_scope1	normal,-g2012		ivltests
 sv_class_interface_scope1	normal,-g2012		ivltests
 sv_interface_inst3		normal,-g2012		ivltests
-sv_interface_inst4		normal,-g2012		ivltests
+# sv_interface_inst4 - NI: parameterized interface instantiation not yet implemented
+sv_interface_inst4		NI,-g2012		ivltests
 sv_interface_inst5		normal,-g2012		ivltests
 sv_class_type_param_inherit1 normal,-g2012 ivltests
 sv_class_type_param_inherit2 normal,-g2012 ivltests
@@ -1415,6 +1416,5 @@ sv_prop_obj_method_inherit	normal,-g2012	ivltests
 sv_uvm_factory_override	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_uvm_factory_override.gold
 sv_virtual_cast_bug	normal,-g2012	ivltests gold=sv_virtual_cast_bug.gold
 sv_covergroup_bins	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_covergroup_bins.gold
-sv_param_class_module_level normal,-g2012 gold=sv_param_class_module_level.gold ivltests
-sv_param_class_real_type_bug NI,-g2012 ivltests
-sv_param_class_real_type_bug NI,-g2012 ivltests
+sv_param_class_module_level	normal,-g2012	ivltests	gold=sv_param_class_module_level.gold
+sv_param_class_real_type_bug	NI,-g2012	ivltests

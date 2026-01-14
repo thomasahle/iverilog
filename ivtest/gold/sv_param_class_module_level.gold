@@ -1,2 +1,2 @@
 PASSED
-./ivltests/sv_param_class_module_level.sv:46: $finish called at 0 (1s)
+./ivltests/sv_param_class_module_level.v:46: $finish called at 0 (1s)
