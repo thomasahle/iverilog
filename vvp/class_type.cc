@@ -1438,7 +1438,6 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 	    size_t prop_idx = entry.first;
 	    auto ranges_it = weighted_ranges.find(prop_idx);
 	    bool has_ranges = (ranges_it != weighted_ranges.end() && !ranges_it->second.empty());
-	    bool has_values = !entry.second.empty();
 
 	    // If only one value and no ranges, skip (handled normally)
 	    if (entry.second.size() <= 1 && !has_ranges)
@@ -1521,10 +1520,16 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 
       for (const auto& bound : all_bounds) {
 	    // Skip weighted equality constraints we already handled above
+	    // We need to skip if either:
+	    // 1. There are multiple discrete values for this property, OR
+	    // 2. There are ranges for this property (discrete value + range uses OR logic)
 	    if (bound.op == '=' && bound.has_const_bound && bound.weight > 0 &&
 		!bound.is_soft && bound.sysfunc_type == SYSFUNC_NONE) {
 		  auto it = weighted_eq_values.find(bound.property_idx);
-		  if (it != weighted_eq_values.end() && it->second.size() > 1)
+		  auto range_it = weighted_ranges.find(bound.property_idx);
+		  bool has_multiple_values = (it != weighted_eq_values.end() && it->second.size() > 1);
+		  bool has_ranges = (range_it != weighted_ranges.end() && !range_it->second.empty());
+		  if (has_multiple_values || has_ranges)
 			continue;  // Already checked with OR logic
 	    }
 	    // Skip weighted range bounds we already handled above

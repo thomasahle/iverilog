@@ -8864,10 +8864,90 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			}
 #endif
 
-			// Priority 0: Discrete values from == constraints (from inline constraints like x == val)
+			// Priority 0: Weighted dist constraints - handle both discrete values AND ranges together
+			// When dist constraints are present (weights > 1), we need to do weighted selection
+			// across both discrete values and ranges, not just discrete values alone.
+			// Check if this looks like a dist constraint (weights > 1)
+			bool has_weighted_dist = false;
+			for (const auto& dv : discrete_values) {
+			      if (dv.second > 1) { has_weighted_dist = true; break; }
+			}
+			for (const auto& r : ranges) {
+			      if (r.weight > 1) { has_weighted_dist = true; break; }
+			}
+
+			if (has_weighted_dist && (!discrete_values.empty() || !ranges.empty())) {
+			      // Calculate total weight from both discrete values and ranges
+			      int64_t total_weight = 0;
+			      for (const auto& dv : discrete_values) {
+				    total_weight += dv.second;
+			      }
+			      for (const auto& r : ranges) {
+				    if (r.weight_per_value) {
+					  // := means weight per value
+					  int64_t range_size = r.high - r.low + 1;
+					  total_weight += r.weight * range_size;
+				    } else {
+					  // :/ means weight per range
+					  total_weight += r.weight;
+				    }
+			      }
+
+			      // Weighted random selection
+			      int64_t pick = rand() % total_weight;
+			      int64_t cumulative = 0;
+
+			      // First check discrete values
+			      bool found = false;
+			      for (size_t j = 0; j < discrete_values.size(); j++) {
+				    cumulative += discrete_values[j].second;
+				    if (pick < cumulative) {
+					  rval = discrete_values[j].first;
+					  found = true;
+					  break;
+				    }
+			      }
+
+			      // Then check ranges
+			      if (!found) {
+				    for (size_t j = 0; j < ranges.size(); j++) {
+					  int64_t range_weight;
+					  if (ranges[j].weight_per_value) {
+						int64_t range_size = ranges[j].high - ranges[j].low + 1;
+						range_weight = ranges[j].weight * range_size;
+					  } else {
+						range_weight = ranges[j].weight;
+					  }
+					  cumulative += range_weight;
+					  if (pick < cumulative) {
+						// Selected this range - pick random value within it
+						int64_t low = ranges[j].low;
+						int64_t high = ranges[j].high;
+						int64_t range_size = high - low + 1;
+						rval = low + (rand() % range_size);
+						found = true;
+						break;
+					  }
+				    }
+			      }
+
+			      if (!found && !discrete_values.empty()) {
+				    // Fallback to last discrete value
+				    rval = discrete_values.back().first;
+			      } else if (!found && !ranges.empty()) {
+				    // Fallback to last range
+				    int64_t low = ranges.back().low;
+				    int64_t high = ranges.back().high;
+				    rval = low + (rand() % (high - low + 1));
+			      }
+			      generated = true;
+#ifdef DEBUG_CONSTRAINTS
+			      fprintf(stderr, "DEBUG: Property %zu: Using weighted dist value %lld\n", i, (long long)rval);
+#endif
+			}
+			// Non-weighted discrete values (from inline constraints like x == val)
 			// These take highest priority as they represent explicit value requests
-			// Use weighted random selection if weights are present
-			if (!discrete_values.empty()) {
+			else if (!discrete_values.empty()) {
 			      // Calculate total weight
 			      int64_t total_weight = 0;
 			      for (const auto& dv : discrete_values) {
