@@ -66,6 +66,50 @@ covergroup_type_t::~covergroup_type_t()
       }
 }
 
+/*
+ * Calculate the total number of bins from all coverpoints.
+ * Each explicit bin counts as 1 (or array_count if bin[N] form).
+ * If a coverpoint has no explicit bins, it's assumed to have auto bins
+ * which we estimate at 16 for now (typical default).
+ */
+int covergroup_type_t::calculate_bins_count() const
+{
+      int total_bins = 0;
+
+      for (pform_coverpoint_t* cp : coverpoints) {
+            if (cp->bins.empty()) {
+                  // No explicit bins - use auto bins default
+                  total_bins += 16;
+            } else {
+                  for (pform_bin_t* bin : cp->bins) {
+                        // Skip ignore_bins as they don't contribute to coverage
+                        if (bin->kind == pform_bin_t::IGNORE_BIN)
+                              continue;
+                        // Count the bin(s)
+                        if (bin->array_count > 0) {
+                              total_bins += bin->array_count;
+                        } else {
+                              // Single bin or auto-sized array bin
+                              total_bins += 1;
+                        }
+                  }
+            }
+      }
+
+      // Cross coverage bins are product of crossed coverpoint bins
+      // For now, just add a placeholder count for each cross
+      for (pform_cross_t* cross : crosses) {
+            (void)cross; // Unused for now
+            total_bins += 16; // Placeholder
+      }
+
+      // Ensure at least 1 bin
+      if (total_bins == 0)
+            total_bins = 1;
+
+      return total_bins;
+}
+
 atom_type_t size_type (atom_type_t::INT, true);
 
 PNamedItem::SymbolType enum_type_t::symbol_type() const

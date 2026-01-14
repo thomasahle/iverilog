@@ -283,6 +283,19 @@ ivl_type_t virtual_interface_type_t::elaborate_type_raw(Design*des, NetScope*) c
  */
 ivl_type_t covergroup_type_t::elaborate_type_raw(Design*des, NetScope*scope) const
 {
+      // Calculate the bins count from coverpoints
+      int bins_count = calculate_bins_count();
+
+      // Store the bins count in the Design for later use during code generation
+      // This allows the constructor to set m_target_bins correctly
+      des->set_covergroup_bins_count(covergroup_name, bins_count);
+
+      if (debug_elaborate) {
+            cerr << get_fileline() << ": debug: Covergroup '" << covergroup_name
+                 << "' has " << coverpoints.size() << " coverpoints with "
+                 << bins_count << " total bins." << endl;
+      }
+
       // Try to find the __ivl_covergroup class
       perm_string stub_name = perm_string::literal("__ivl_covergroup");
 

@@ -5414,6 +5414,16 @@ class Design {
 
       unsigned int in_fork = 0;
 
+	// Covergroup bins count storage
+	// Maps covergroup name to total bins count for coverage calculation
+      void set_covergroup_bins_count(perm_string name, int count) {
+	    covergroup_bins_count_[name] = count;
+      }
+      int get_covergroup_bins_count(perm_string name) const {
+	    auto it = covergroup_bins_count_.find(name);
+	    return (it != covergroup_bins_count_.end()) ? it->second : 16;
+      }
+
     private:
       NetScope* find_scope_(NetScope*, const hname_t&name,
                             NetScope::TYPE type = NetScope::MODULE) const;
@@ -5450,6 +5460,9 @@ class Design {
 
 	// Map the design arguments to values.
       std::map<std::string,const char*> flags_;
+
+	// Map of covergroup names to their bins counts
+      std::map<perm_string,int> covergroup_bins_count_;
 
       int des_precision_;
       delay_sel_t des_delay_sel_;

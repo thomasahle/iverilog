@@ -599,6 +599,9 @@ struct covergroup_type_t : public data_type_t {
       ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
       void pform_dump(std::ostream&out, unsigned indent) const override;
 
+      // Calculate total bins count from all coverpoints
+      int calculate_bins_count() const;
+
       perm_string covergroup_name;
 
       // Sample arguments (from covergroup declaration)
