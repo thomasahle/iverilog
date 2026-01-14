@@ -933,9 +933,11 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 
 /* Note: GLR parsing has been experimentally tested (2026-01-14).
    Bison 3.8.2 GLR mode works but requires extensive disambiguation (%dprec)
-   to avoid "syntax is ambiguous" errors. The const-correctness and mid-rule
-   action fixes in property_qual.h and tf_port_item rules are prerequisites
-   for GLR mode and have been retained.
+   to avoid "syntax is ambiguous" errors. GLR causes ~140 more failures in
+   basic class/module declarations due to lexer timing issues - the lexer
+   tokenizes class names as IDENTIFIER before mid-rule actions register them
+   as TYPE_IDENTIFIER. The 2 remaining LALR limitations (sva_comprehensive,
+   sva_paren_implication) are acceptable edge cases.
 
    To enable GLR in the future, uncomment these lines and add %dprec directives:
    %glr-parser
