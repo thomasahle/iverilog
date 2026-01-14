@@ -49,7 +49,24 @@ module test;
     tc.sample_data(200, 5);  // very_high addr, burst cmd
 
     $display("Samples: %0d", tc.addr_cg.get_sample_count());
-    $display("PASSED - Covergroup with bins parsed correctly");
+    $display("Coverage: %0d%%", $rtoi(tc.addr_cg.get_coverage()));
+
+    // Verify sample count
+    if (tc.addr_cg.get_sample_count() != 3) begin
+      $display("FAILED: Expected 3 samples, got %0d", tc.addr_cg.get_sample_count());
+      $finish;
+    end
+
+    // Verify coverage percentage
+    // addr_cp: 32, 100, 200 = 3 unique values
+    // cmd_cp: 1, 2, 5 = 3 unique values
+    // Total: 6 unique values / 7 bins = 85.7% -> 85%
+    if ($rtoi(tc.addr_cg.get_coverage()) < 80 || $rtoi(tc.addr_cg.get_coverage()) > 90) begin
+      $display("FAILED: Expected ~85%% coverage, got %0d%%", $rtoi(tc.addr_cg.get_coverage()));
+      $finish;
+    end
+
+    $display("PASSED");
     $finish;
   end
 endmodule

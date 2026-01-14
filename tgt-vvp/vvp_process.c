@@ -2267,15 +2267,38 @@ static int show_system_task_call(ivl_statement_t net)
 	    show_stmt_file_line(net, "covergroup: sample");
 
 	    unsigned parm_count = ivl_stmt_parm_count(net);
-	    if (parm_count != 1)
+	    if (parm_count < 1)
 		  return 1;
 
 	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);
 
-	    /* The argument is the covergroup property expression */
+	    /* The first argument is the covergroup property expression */
 	    if (ivl_expr_type(parm0) == IVL_EX_PROPERTY) {
+		  /* Extract bins count from arg 1 (if present) */
+		  unsigned bins_count = 16;  /* Default */
+		  unsigned cp_start = 1;
+		  if (parm_count >= 2) {
+			ivl_expr_t bins_expr = ivl_stmt_parm(net, 1);
+			if (ivl_expr_type(bins_expr) == IVL_EX_NUMBER) {
+			      bins_count = ivl_expr_uvalue(bins_expr);
+			      cp_start = 2;
+			}
+		  }
+
+		  /* Evaluate coverpoint values (args 2, 3, ...) */
+		  unsigned cp_count = parm_count - cp_start;
+		  for (unsigned idx = cp_start; idx < parm_count; idx++) {
+			ivl_expr_t cp_expr = ivl_stmt_parm(net, idx);
+			/* Evaluate coverpoint value to integer register */
+			draw_eval_vec4(cp_expr);
+			/* Move to integer register */
+			fprintf(vvp_out, "    %%ix/vec4 %u;\n", idx - cp_start);
+		  }
+
 		  draw_eval_object(parm0);  /* Push covergroup object to stack */
-		  fprintf(vvp_out, "    %%cvg/sample;\n");
+		  /* Pack cp_count in lower 8 bits, bins_count in upper 24 bits */
+		  unsigned packed = (bins_count << 8) | (cp_count & 0xFF);
+		  fprintf(vvp_out, "    %%cvg/sample %u;\n", packed);
 		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 		  return 0;
 	    }

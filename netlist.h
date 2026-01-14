@@ -5283,6 +5283,50 @@ struct elaborator_work_item_t {
 };
 
 /*
+ * Structures for covergroup bin tracking.
+ * A bin range specifies either a single value or a range [low:high].
+ */
+struct covergroup_bin_range_t {
+      int64_t low;
+      int64_t high;
+      bool is_range;  // true if [low:high], false if single value (low only)
+      covergroup_bin_range_t(int64_t l, int64_t h, bool r) : low(l), high(h), is_range(r) {}
+      covergroup_bin_range_t(int64_t val) : low(val), high(val), is_range(false) {}
+};
+
+/*
+ * A bin specification within a coverpoint.
+ */
+struct covergroup_bin_t {
+      std::string name;
+      bool is_ignore;    // ignore_bins
+      bool is_illegal;   // illegal_bins
+      std::vector<covergroup_bin_range_t> ranges;
+      covergroup_bin_t() : is_ignore(false), is_illegal(false) {}
+};
+
+/*
+ * A coverpoint within a covergroup.
+ * For simple coverpoints that reference class properties, we store the property name.
+ * More complex expressions would need expression elaboration.
+ */
+struct covergroup_coverpoint_t {
+      std::string name;           // coverpoint name
+      std::string property_name;  // name of referenced class property (empty if complex expr)
+      std::vector<covergroup_bin_t> bins;
+      int auto_bins_count;        // for auto bins (0 if explicit bins)
+      covergroup_coverpoint_t() : auto_bins_count(16) {}
+};
+
+/*
+ * Information about a covergroup's coverpoints and bins.
+ * Stored in Design during elaboration, used during code generation for sample().
+ */
+struct covergroup_info_t {
+      std::vector<covergroup_coverpoint_t> coverpoints;
+};
+
+/*
  * This class contains an entire design. It includes processes and a
  * netlist, and can be passed around from function to function.
  */
@@ -5424,6 +5468,16 @@ class Design {
 	    return (it != covergroup_bins_count_.end()) ? it->second : 16;
       }
 
+	// Covergroup coverpoint info storage
+	// Maps covergroup name to detailed coverpoint/bins info for runtime tracking
+      void set_covergroup_info(perm_string name, const covergroup_info_t& info) {
+	    covergroup_info_[name] = info;
+      }
+      const covergroup_info_t* get_covergroup_info(perm_string name) const {
+	    auto it = covergroup_info_.find(name);
+	    return (it != covergroup_info_.end()) ? &it->second : nullptr;
+      }
+
     private:
       NetScope* find_scope_(NetScope*, const hname_t&name,
                             NetScope::TYPE type = NetScope::MODULE) const;
@@ -5463,6 +5517,9 @@ class Design {
 
 	// Map of covergroup names to their bins counts
       std::map<perm_string,int> covergroup_bins_count_;
+
+	// Map of covergroup names to coverpoint/bins info
+      std::map<perm_string,covergroup_info_t> covergroup_info_;
 
       int des_precision_;
       delay_sel_t des_delay_sel_;

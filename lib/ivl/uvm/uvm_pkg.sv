@@ -1546,7 +1546,7 @@ package uvm_pkg;
     // Properties for basic coverage tracking
     protected int m_sample_count;        // Number of times sample() called
     protected int m_target_bins;         // Expected number of bins to hit
-    protected int m_bins_hit[int];       // Track unique values sampled
+    protected int m_bins_hit[string];    // Track unique values sampled (string keys)
     protected bit m_enabled;             // Whether coverage collection is active
     protected string m_inst_name;        // Instance name
 
@@ -1569,18 +1569,20 @@ package uvm_pkg;
       // This gives approximate coverage based on distinct objects sampled
       if (arg1 != null) begin
         // Use object's internal identifier as bin key
-        int key;
-        key = m_sample_count; // Simple: each sample is a bin
+        string key;
+        $sformat(key, "obj:%0d", m_sample_count); // Simple: each sample is a bin
         m_bins_hit[key] = 1;
       end
     endfunction
 
-    // Get coverage percentage based on samples vs target
-    // Uses sample count since %cvg/sample updates m_sample_count directly
+    // Get coverage percentage based on unique values hit vs target bins
+    // %cvg/sample tracks unique (coverpoint, value) pairs in m_bins_hit
     virtual function real get_coverage();
+      int unique_hits;
+      unique_hits = m_bins_hit.size();
       if (m_target_bins <= 0) return 100.0;
-      if (m_sample_count >= m_target_bins) return 100.0;
-      return (real'(m_sample_count) / real'(m_target_bins)) * 100.0;
+      if (unique_hits >= m_target_bins) return 100.0;
+      return (real'(unique_hits) / real'(m_target_bins)) * 100.0;
     endfunction
 
     // Get instance coverage - same as get_coverage for this stub

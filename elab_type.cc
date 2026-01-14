@@ -273,6 +273,48 @@ ivl_type_t virtual_interface_type_t::elaborate_type_raw(Design*des, NetScope*) c
 }
 
 /*
+ * Helper function to extract a simple property name from a coverpoint expression.
+ * Returns empty string if the expression is too complex (not a simple identifier).
+ */
+static string extract_coverpoint_property_name(PExpr* expr)
+{
+      // Check if expression is a simple PEIdent
+      PEIdent* ident = dynamic_cast<PEIdent*>(expr);
+      if (!ident)
+            return "";
+
+      // Check for a single-component name (simple property reference)
+      const pform_scoped_name_t& path = ident->path();
+      if (path.package != nullptr)
+            return "";  // Has package scope - too complex
+
+      if (path.name.size() != 1)
+            return "";  // Hierarchical path - too complex
+
+      // Get the simple property name
+      const name_component_t& comp = path.name.front();
+      if (!comp.index.empty())
+            return "";  // Has index - too complex
+
+      return comp.name.str();
+}
+
+/*
+ * Helper function to evaluate a constant expression for bin range values.
+ * Returns true if successful, false if expression is not constant.
+ */
+static bool eval_bin_range_const(PExpr* expr, int64_t& value)
+{
+      PENumber* num = dynamic_cast<PENumber*>(expr);
+      if (num) {
+            value = num->value().as_long();
+            return true;
+      }
+      // Could extend to handle more constant expressions
+      return false;
+}
+
+/*
  * Covergroup type elaboration.
  * Covergroups are implemented via the __ivl_covergroup class from the UVM
  * library. This class provides sample() and get_coverage() methods that
@@ -290,10 +332,71 @@ ivl_type_t covergroup_type_t::elaborate_type_raw(Design*des, NetScope*scope) con
       // This allows the constructor to set m_target_bins correctly
       des->set_covergroup_bins_count(covergroup_name, bins_count);
 
+      // Build coverpoint info for runtime bin tracking
+      covergroup_info_t cg_info;
+      for (const pform_coverpoint_t* pcp : coverpoints) {
+            covergroup_coverpoint_t ecp;
+
+            // Get coverpoint name
+            if (!pcp->name.nil())
+                  ecp.name = pcp->name.str();
+
+            // Try to extract simple property name from expression
+            if (pcp->expr) {
+                  ecp.property_name = extract_coverpoint_property_name(pcp->expr);
+            }
+
+            // Convert bins info
+            if (pcp->bins.empty()) {
+                  // No explicit bins - auto bins
+                  ecp.auto_bins_count = 16;  // Default auto bin count
+            } else {
+                  ecp.auto_bins_count = 0;
+                  for (const pform_bin_t* pbin : pcp->bins) {
+                        covergroup_bin_t ebin;
+                        ebin.name = pbin->name.str();
+                        ebin.is_ignore = (pbin->kind == pform_bin_t::IGNORE_BIN);
+                        ebin.is_illegal = (pbin->kind == pform_bin_t::ILLEGAL_BIN);
+
+                        // Convert bin ranges
+                        for (const pform_bin_range_t& pr : pbin->ranges) {
+                              int64_t low_val = 0, high_val = 0;
+                              switch (pr.type) {
+                              case pform_bin_range_t::DISCRETE:
+                                    if (eval_bin_range_const(pr.low_expr, low_val)) {
+                                          ebin.ranges.push_back(covergroup_bin_range_t(low_val));
+                                    }
+                                    break;
+                              case pform_bin_range_t::RANGE:
+                                    if (eval_bin_range_const(pr.low_expr, low_val) &&
+                                        eval_bin_range_const(pr.high_expr, high_val)) {
+                                          ebin.ranges.push_back(covergroup_bin_range_t(low_val, high_val, true));
+                                    }
+                                    break;
+                              default:
+                                    // UNBOUNDED_HIGH/UNBOUNDED_LOW not yet handled
+                                    break;
+                              }
+                        }
+                        ecp.bins.push_back(ebin);
+                  }
+            }
+            cg_info.coverpoints.push_back(ecp);
+      }
+
+      // Store the covergroup info for runtime bin tracking
+      des->set_covergroup_info(covergroup_name, cg_info);
+
       if (debug_elaborate) {
             cerr << get_fileline() << ": debug: Covergroup '" << covergroup_name
                  << "' has " << coverpoints.size() << " coverpoints with "
                  << bins_count << " total bins." << endl;
+            for (const covergroup_coverpoint_t& cp : cg_info.coverpoints) {
+                  cerr << "    coverpoint '" << cp.name << "'"
+                       << " property='" << cp.property_name << "'"
+                       << " bins=" << cp.bins.size()
+                       << " auto_bins=" << cp.auto_bins_count << endl;
+            }
       }
 
       // Try to find the __ivl_covergroup class

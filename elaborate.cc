@@ -4069,6 +4069,10 @@ NetProc* PCallTask::elaborate_queue_method_(Design*des, NetScope*scope,
  * This private method is called to elaborate covergroup property methods on class
  * objects. For example: obj.my_covergroup.sample()
  * Unlike queue methods, covergroup methods don't need element type handling.
+ *
+ * For sample(), we also look up the covergroup info and generate code to read
+ * coverpoint properties from the parent class object. These values are passed
+ * to %cvg/sample for actual bin tracking.
  */
 NetProc* PCallTask::elaborate_covergroup_prop_method_(Design*des, NetScope*scope,
 					    NetNet*net,
@@ -4077,18 +4081,87 @@ NetProc* PCallTask::elaborate_covergroup_prop_method_(Design*des, NetScope*scope
 					    perm_string method_name,
 					    const char *sys_task_name) const
 {
+      (void)scope;  // Unused
+
       // Create a NetEProperty expression for the covergroup property
       NetEProperty*prop_expr = new NetEProperty(net, pidx);
       prop_expr->set_line(*this);
 
-      // For sample(), no additional arguments are needed
-      vector<NetExpr*>argv (1);
-      argv[0] = prop_expr;
+      // Start with just the covergroup object
+      vector<NetExpr*>argv;
+      argv.push_back(prop_expr);
+
+      // For sample(), try to include coverpoint property values for bin tracking
+      if (strcmp(method_name.str(), "sample") == 0) {
+            // Get the covergroup property name (which is the covergroup name)
+            const char* cg_name_str = class_type->get_prop_name(pidx);
+            perm_string cg_name = perm_string::literal(cg_name_str);
+
+            if (debug_elaborate) {
+                  cerr << get_fileline() << ": covergroup.sample: "
+                       << "Looking up covergroup '" << cg_name_str << "'" << endl;
+            }
+
+            // Look up covergroup info
+            const covergroup_info_t* cg_info = des->get_covergroup_info(cg_name);
+            if (cg_info) {
+                  if (debug_elaborate) {
+                        cerr << get_fileline() << ": covergroup.sample: "
+                             << "Found " << cg_info->coverpoints.size() << " coverpoints" << endl;
+                  }
+
+                  // Add bins count as second argument (after covergroup object)
+                  int bins_count = des->get_covergroup_bins_count(cg_name);
+                  verinum bins_val((uint64_t)bins_count, 32);
+                  NetEConst* bins_const = new NetEConst(bins_val);
+                  bins_const->set_line(*this);
+                  argv.push_back(bins_const);
+
+                  // For each coverpoint with a simple property reference,
+                  // add an expression to read that property
+                  for (const covergroup_coverpoint_t& cp : cg_info->coverpoints) {
+                        if (debug_elaborate) {
+                              cerr << get_fileline() << ": covergroup.sample: "
+                                   << "Coverpoint '" << cp.name
+                                   << "' property_name='" << cp.property_name << "'" << endl;
+                        }
+                        if (!cp.property_name.empty()) {
+                              // Find the sibling property by name
+                              perm_string prop_name = perm_string::literal(cp.property_name.c_str());
+                              int sibling_idx = class_type->property_idx_from_name(prop_name);
+                              if (sibling_idx >= 0) {
+                                    NetEProperty* cp_expr = new NetEProperty(net, sibling_idx);
+                                    cp_expr->set_line(*this);
+                                    argv.push_back(cp_expr);
+
+                                    if (debug_elaborate) {
+                                          cerr << get_fileline() << ": covergroup.sample: "
+                                               << "Adding coverpoint '" << cp.name
+                                               << "' property '" << cp.property_name
+                                               << "' (idx=" << sibling_idx << ")" << endl;
+                                    }
+                              } else {
+                                    if (debug_elaborate) {
+                                          cerr << get_fileline() << ": covergroup.sample: "
+                                               << "Property '" << cp.property_name
+                                               << "' not found in class" << endl;
+                                    }
+                              }
+                        }
+                  }
+            } else {
+                  if (debug_elaborate) {
+                        cerr << get_fileline() << ": covergroup.sample: "
+                             << "No covergroup info found for '" << cg_name_str << "'" << endl;
+                  }
+            }
+      }
 
       if (debug_elaborate) {
 	    cerr << get_fileline() << ": PCallTask::elaborate_covergroup_prop_method_: "
 	         << "Creating system task " << sys_task_name
-	         << " for method " << method_name << endl;
+	         << " for method " << method_name
+	         << " with " << argv.size() << " args" << endl;
       }
 
       NetSTask*sys = new NetSTask(sys_task_name, IVL_SFUNC_AS_TASK_IGNORE, argv);

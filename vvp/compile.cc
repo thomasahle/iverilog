@@ -164,7 +164,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%config_db/set/v", of_CONFIG_DB_SET_V, 1, {OA_NUMBER,   OA_NONE, OA_NONE} },
       { "%constraint_mode/get", of_CONSTRAINT_MODE_GET, 1, {OA_STRING, OA_NONE, OA_NONE} },
       { "%constraint_mode/set", of_CONSTRAINT_MODE_SET, 2, {OA_STRING, OA_BIT1, OA_NONE} },
-      { "%cvg/sample",  of_CVG_SAMPLE,  0, {OA_NONE, OA_NONE, OA_NONE} },
+      { "%cvg/sample",  of_CVG_SAMPLE,  1, {OA_NUMBER, OA_NONE, OA_NONE} },
       { "%cvt/rv",   of_CVT_RV,  0, {OA_NONE,   OA_NONE,     OA_NONE} },
       { "%cvt/rv/s", of_CVT_RV_S,0, {OA_NONE,   OA_NONE,     OA_NONE} },
       { "%cvt/sr", of_CVT_SR, 1,  {OA_BIT1,     OA_NONE,     OA_NONE} },

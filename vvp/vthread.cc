@@ -13984,12 +13984,19 @@ bool of_QPROP_REVERSE(vthread_t thr, vvp_code_t)
 }
 
 /*
- * %cvg/sample - sample a covergroup property
+ * %cvg/sample packed - sample a covergroup property with coverpoint values
+ * packed = (bins_count << 8) | cp_count
  * Covergroup object is on top of the object stack.
- * Increments the sample counter in the __ivl_covergroup class.
+ * Coverpoint values are in integer registers 0..cp_count-1.
+ * Increments the sample counter and tracks unique values per coverpoint.
  */
-bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t)
+bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t cp)
 {
+      // Unpack the coverpoint count and bins count from opcode
+      unsigned packed = cp->number;
+      unsigned cp_count = packed & 0xFF;
+      unsigned bins_count = packed >> 8;
+
       // Get covergroup object from stack
       vvp_object_t&cvg_obj = thr->peek_object();
       vvp_cobject*cobj = cvg_obj.peek<vvp_cobject>();
@@ -14008,6 +14015,55 @@ bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t)
 		  new_count.set_bit(b, ((count >> b) & 1) ? BIT4_1 : BIT4_0);
 	    }
 	    cobj->set_vec4(3, new_count);
+
+	    // Set m_target_bins (property 4) to bins_count
+	    // This overrides the default value from the constructor
+	    if (bins_count > 0) {
+		  vvp_vector4_t target_bins(32);
+		  for (unsigned b = 0; b < 32; b++) {
+			target_bins.set_bit(b, ((bins_count >> b) & 1) ? BIT4_1 : BIT4_0);
+		  }
+		  cobj->set_vec4(4, target_bins);
+	    }
+
+	    // Track unique coverpoint values in m_bins_hit (property 0)
+	    // m_bins_hit is an associative array with string keys
+	    // Key format: "cp<idx>:<value>" to identify coverpoint and value
+	    if (cp_count > 0) {
+		  // Get or create m_bins_hit associative array once before the loop
+		  vvp_object_t bins_obj;
+		  cobj->get_object(0, bins_obj, 0);
+		  vvp_assoc*bins = bins_obj.peek<vvp_assoc>();
+
+		  if (bins == 0) {
+			// Create a new associative array if it doesn't exist
+			vvp_assoc_vec4*new_bins = new vvp_assoc_vec4(32);
+			bins_obj.reset(new_bins);
+			cobj->set_object(0, bins_obj, 0);
+			bins = new_bins;
+		  }
+
+		  // For each coverpoint value, if this value hasn't been seen before,
+		  // add it to the associative array with value 1
+		  for (unsigned idx = 0; idx < cp_count; idx++) {
+			// Read coverpoint value from integer register
+			int64_t cp_value = thr->words[idx].w_int;
+
+			// Create string key encoding coverpoint index and value
+			char key_buf[64];
+			snprintf(key_buf, sizeof(key_buf), "cp%u:%lld",
+				 idx, (long long)cp_value);
+			string key_str(key_buf);
+
+			// Check if this value has been seen before
+			if (!bins->exists(key_str)) {
+			      // Not seen before, add it with value 1
+			      vvp_vector4_t one(32);
+			      one.set_bit(0, BIT4_1);
+			      bins->set_word(key_str, one);
+			}
+		  }
+	    }
       }
       return true;
 }
