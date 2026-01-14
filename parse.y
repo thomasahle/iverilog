@@ -9305,6 +9305,37 @@ module_item
 	delete[]$2.text;
       }
 
+  /* Parameterized class variable declarations at module scope.
+     Pattern: Container#(int) var; or Container#(ItemType) var = new();
+     This handles parameterized class types like uvm_tlm_fifo#(type).
+     The key distinction from interface instantiation is the lack of ( port_list )
+     after the variable name. */
+
+  | attribute_list_opt
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' list_of_variable_decl_assignments ';'
+      { pform_set_type_referenced(@2, $2.text);
+	typeref_t*tmp = new typeref_t($2.type);
+	FILE_NAME(tmp, @2);
+	if ($5) {
+	      tmp->set_spec_params($5);
+	}
+	pform_make_var(@2, $7, tmp, $1, false);
+	delete[]$2.text;
+      }
+
+  /* Parameterized class variable with explicit package scope */
+  | attribute_list_opt
+      package_scope TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' list_of_variable_decl_assignments ';'
+      { lex_in_package_scope(0);
+	typeref_t*tmp = new typeref_t($3.type, $2);
+	FILE_NAME(tmp, @3);
+	if ($6) {
+	      tmp->set_spec_params($6);
+	}
+	pform_make_var(@3, $8, tmp, $1, false);
+	delete[]$3.text;
+      }
+
   /* Continuous assignment can have an optional drive strength, then
      an optional delay3 that applies to all the assignments in the
      cont_assign_list. */
