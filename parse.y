@@ -4367,6 +4367,28 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	      $$ = 0;
 	}
       }
+  | expression K_IMPLIES_OV '(' expression ')'
+      { /* Parenthesized consequent: a |-> (b) = !a || b
+           This rule explicitly handles parenthesized consequent to avoid
+           LALR(1) conflict with '(' expression K_IMPLIES_OV property_expr ')' */
+	PEUnary*not_ante = new PEUnary('!', $1);
+	FILE_NAME(not_ante, @1);
+	PEBLogic*impl = new PEBLogic('o', not_ante, $4);
+	FILE_NAME(impl, @1);
+	$$ = impl;
+      }
+  | expression K_IMPLIES_NOV '(' expression ')'
+      { /* Parenthesized consequent: a |=> (b) = !$past(a) || b */
+	std::vector<named_pexpr_t> past_parms(1);
+	past_parms[0].parm = $1;
+	PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	FILE_NAME(past_call, @1);
+	PEUnary*not_past = new PEUnary('!', past_call);
+	FILE_NAME(not_past, @1);
+	PEBLogic*impl = new PEBLogic('o', not_past, $4);
+	FILE_NAME(impl, @1);
+	$$ = impl;
+      }
   | expression K_IMPLIES_NOV property_expr
       { /* |=> non-overlapping implication: a |=> b means "if a was true on previous
            clock cycle, then b must be true now" = !$past(a) || b
@@ -4419,6 +4441,26 @@ property_expr /* IEEE1800-2012 A.2.10 */
 	      delete $2;
 	      $$ = 0;
 	}
+      }
+  | '(' expression K_IMPLIES_OV '(' expression ')' ')'
+      { /* Parenthesized implication with paren consequent: (a |-> (b)) = !a || b */
+	PEUnary*not_ante = new PEUnary('!', $2);
+	FILE_NAME(not_ante, @2);
+	PEBLogic*impl = new PEBLogic('o', not_ante, $5);
+	FILE_NAME(impl, @2);
+	$$ = impl;
+      }
+  | '(' expression K_IMPLIES_NOV '(' expression ')' ')'
+      { /* Parenthesized implication with paren consequent: (a |=> (b)) = !$past(a) || b */
+	std::vector<named_pexpr_t> past_parms(1);
+	past_parms[0].parm = $2;
+	PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
+	FILE_NAME(past_call, @2);
+	PEUnary*not_past = new PEUnary('!', past_call);
+	FILE_NAME(not_past, @2);
+	PEBLogic*impl = new PEBLogic('o', not_past, $5);
+	FILE_NAME(impl, @2);
+	$$ = impl;
       }
   | '(' expression K_IMPLIES_OV property_expr ')'
       { /* Parenthesized |-> implication: (a |-> b) = !a || b */

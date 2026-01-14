@@ -1,2 +1,2 @@
 PASSED - SVA parenthesized implication patterns parsed successfully
-ivltests/sva_paren_implication.v:47: $finish called at 0 (1s)
+./ivltests/sva_paren_implication.v:47: $finish called at 0 (1s)
