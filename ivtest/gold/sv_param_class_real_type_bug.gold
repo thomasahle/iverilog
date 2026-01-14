@@ -1,3 +1,4 @@
 PASSED: Integer value preserved through set/get
 PASSED: Direct property access preserves real 3.14
 PASSED
+./ivltests/sv_param_class_real_type_bug.v:56: $finish called at 0 (1s)
