@@ -1,4 +1,5 @@
+../local_install/lib/ivl/uvm/uvm_pkg.sv:2610: note: Detected run_test() call.
 Sample count: 10
 Coverage: 31.25%
 PASSED
-./ivltests/sv_covergroup_sample_args2.sv:78: $finish called at 0 (1s)
+./ivltests/sv_covergroup_sample_args2.v:78: $finish called at 0 (1s)
