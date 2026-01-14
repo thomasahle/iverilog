@@ -300,6 +300,12 @@ template <class T> class property_real : public class_property_t {
       void set_real(char*buf, double val) override;
       double get_real(char*buf) override;
 
+      // Support for parameterized class specialization where the code was
+      // generated for a base class method with T=int but actual type is real.
+      // Convert vec4 to real by treating it as integer and casting.
+      void set_vec4(char*buf, const vvp_vector4_t&val, uint64_t idx) override;
+      void get_vec4(char*buf, vvp_vector4_t&val, uint64_t idx) override;
+
       string get_string(char*buf) override
       { T*tmp = reinterpret_cast<T*> (buf+offset_);
 	return std::to_string(*tmp);
@@ -473,6 +479,35 @@ template <class T> void property_real<T>::copy(char*dst, char*src)
       T*dst_obj = reinterpret_cast<T*> (dst+offset_);
       T*src_obj = reinterpret_cast<T*> (src+offset_);
       *dst_obj = *src_obj;
+}
+
+// Support for parameterized class specialization: convert vec4 to real.
+// When code was generated with T=int but actual type is real, the vec4
+// value is converted to a signed integer and then cast to double.
+template <class T> void property_real<T>::set_vec4(char*buf, const vvp_vector4_t&val, uint64_t)
+{
+      T*tmp = reinterpret_cast<T*>(buf+offset_);
+      // Convert vec4 to signed integer, then cast to real
+      int64_t int_val;
+      if (!vector4_to_value(val, int_val, true, true)) {
+	    // If conversion fails due to X/Z values, use 0
+	    int_val = 0;
+      }
+      *tmp = static_cast<T>(int_val);
+}
+
+// Convert real to vec4 (for when code expects vec4 but property is real)
+// Note: Method code was generated with T=int default, so use 32 bits.
+template <class T> void property_real<T>::get_vec4(char*buf, vvp_vector4_t&val, uint64_t)
+{
+      T*tmp = reinterpret_cast<T*>(buf+offset_);
+      // Cast real to 32-bit signed integer (matching int default type)
+      int32_t int_val = static_cast<int32_t>(*tmp);
+      // Create 32-bit vec4 to match int type expected by generated code
+      val = vvp_vector4_t(32, BIT4_0);
+      for (unsigned bit = 0; bit < 32; bit++) {
+	    val.set_bit(bit, (int_val & (1U << bit)) ? BIT4_1 : BIT4_0);
+      }
 }
 
 void property_string::set_string(char*buf, const string&val)

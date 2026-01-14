@@ -1417,6 +1417,6 @@ sv_uvm_factory_override	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_uvm_fac
 sv_virtual_cast_bug	normal,-g2012	ivltests gold=sv_virtual_cast_bug.gold
 sv_covergroup_bins	normal,-g2012,-I../lib/ivl/uvm		ivltests gold=sv_covergroup_bins.gold
 sv_param_class_module_level	normal,-g2012	ivltests	gold=sv_param_class_module_level.gold
-sv_param_class_real_type_bug	NI,-g2012	ivltests
+sv_param_class_real_type_bug	normal,-g2012	ivltests	gold=sv_param_class_real_type_bug.gold
 sv_covergroup_sample_args2	normal,-g2012,-I../local_install/lib/ivl/uvm	ivltests	gold=sv_covergroup_sample_args2.gold
 sv_interface_param	normal,-g2012	ivltests	gold=sv_interface_param.gold
