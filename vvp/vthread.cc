@@ -274,6 +274,7 @@ struct vthread_s {
 	    stack_obj_[stack_obj_size_] = obj;
 	    stack_obj_size_ += 1;
       }
+      inline bool has_objects() const { return stack_obj_size_ > 0; }
 
 	/* My parent sets this when it wants me to wake it up. */
       unsigned i_am_joining      :1;
@@ -4485,7 +4486,12 @@ bool of_FORK_VIRT(vthread_t thr, vvp_code_t cp)
       vvp_code_t target_code = cp->cptr2;
       __vpiScope*target_scope = base_scope;
 
-      // If we found 'this', try to do virtual dispatch
+      // If we found 'this', try to do virtual dispatch and validate the object
+      // The validation is critical: we need to ensure the object's method matches
+      // the intended method. In UVM, both sequence and sequencer have wait_for_grant,
+      // but they're different methods. We validate by checking if the object's method
+      // entry point is compatible (same method or override in same class hierarchy).
+      bool valid_this = false;
       if (found_this && !obj.test_nil()) {
 	    vvp_cobject*cobj = obj.peek<vvp_cobject>();
 	    if (cobj) {
@@ -4493,11 +4499,75 @@ bool of_FORK_VIRT(vthread_t thr, vvp_code_t cp)
 		  if (actual_class) {
 			const class_type::method_info*method = actual_class->get_method(method_name);
 			if (method && method->entry) {
-			      target_code = method->entry;
-			      target_scope = method->scope;
+			      // Check if this method is the one we're supposed to call.
+			      // The base_scope tells us which class's method we want.
+			      // If the object's class is in the same hierarchy as base_scope's class,
+			      // then the method is valid.
+			      bool method_is_compatible = false;
+
+			      // Get the class that base_scope belongs to
+			      const char* base_scope_class_name = base_scope->scope_def_name();
+			      const char* actual_class_name = actual_class->class_name().c_str();
+
+			      // Simple check: if the base scope's method entry matches the object's,
+			      // or if the base scope's class name is in the object's class hierarchy
+			      if (method->entry == cp->cptr2) {
+				    // Same entry point - definitely the right method
+				    method_is_compatible = true;
+			      } else if (base_scope_class_name && actual_class_name) {
+				    // Check if actual_class inherits from base_scope's class
+				    const class_type*check = actual_class;
+				    while (check != 0) {
+					  if (check->class_name() == base_scope_class_name) {
+						// Found the base class - method is compatible
+						method_is_compatible = true;
+						break;
+					  }
+					  check = check->get_parent();
+				    }
+			      }
+
+			      if (method_is_compatible) {
+				    target_code = method->entry;
+				    target_scope = method->scope;
+				    valid_this = true;
+			      } else {
+				    // Object has method but it's from a different class hierarchy
+				    found_this = false;
+			      }
+			} else {
+			      // Object doesn't have this method - wrong object type!
+			      found_this = false;
 			}
 		  }
 	    }
+      }
+
+      // If context-based lookup returned wrong object type, try object stack
+      if (!found_this && thr->has_objects()) {
+	    // Check if there's an object on the stack that has the method
+	    vvp_object_t&stack_obj = thr->peek_object();
+	    vvp_cobject*cobj = stack_obj.peek<vvp_cobject>();
+	    if (cobj) {
+		  const class_type*actual_class = cobj->get_class_type();
+		  if (actual_class) {
+			const class_type::method_info*method = actual_class->get_method(method_name);
+			if (method && method->entry) {
+			      obj = stack_obj;
+			      thr->pop_object(1);  // Remove from stack since we're using it
+			      target_code = method->entry;
+			      target_scope = method->scope;
+			      found_this = true;
+			      valid_this = true;
+			}
+		  }
+	    }
+      }
+
+      // Final validation: ensure obj is used only if it's the valid this
+      if (found_this && !valid_this) {
+	    // We found something but it's not a valid this - don't use it
+	    obj.reset();
       }
 
       // Create child thread with resolved method
@@ -6646,6 +6716,14 @@ static bool prop(vthread_t thr, vvp_code_t cp)
 	    return true;
       }
 
+      // Debug: check if pid is out of range before calling get_from_obj
+      const class_type* ctype = cobj->get_class_type();
+      if (ctype && pid >= ctype->property_count()) {
+	    __vpiScope*scope = vthread_scope(thr);
+	    fprintf(stderr, "DEBUG prop<>: pid=%u >= count=%zu, class=%s, scope=%s\n",
+	            pid, ctype->property_count(), ctype->class_name().c_str(),
+	            scope ? scope->scope_name() : "(null)");
+      }
 
       ELEM val;
       get_from_obj(pid, cobj, val);
