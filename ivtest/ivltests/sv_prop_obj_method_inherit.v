@@ -1,0 +1,1 @@
+sv_prop_obj_method_inherit.sv

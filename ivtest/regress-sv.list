@@ -1409,3 +1409,5 @@ sv_virtual_method_this2	normal,-g2012	ivltests
 sv_virtual_task_fork	normal,-g2012	ivltests	gold=sv_virtual_task_fork.gold
 sv_constraint_cond_else	normal,-g2012	ivltests	gold=sv_constraint_cond_else.gold
 sv_enum_methods_order	normal,-g2012	ivltests
+sv_method_on_prop_obj	normal,-g2012	ivltests
+sv_prop_obj_method_inherit	normal,-g2012	ivltests
