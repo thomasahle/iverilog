@@ -1,0 +1,1 @@
+sv_virtual_cast_bug.sv

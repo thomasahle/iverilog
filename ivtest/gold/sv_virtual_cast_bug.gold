@@ -1,0 +1,10 @@
+Test 1: Direct call to test()...
+Derived::test: about to cast
+Derived::test: cast succeeded, value=42
+Test 1: PASSED
+Test 2: Indirect call through call_test()...
+call_test: calling test()
+Derived::test: about to cast
+Derived::test: cast succeeded, value=42
+Test 2: PASSED
+./ivltests/sv_virtual_cast_bug.v:56: $finish called at 0 (1s)

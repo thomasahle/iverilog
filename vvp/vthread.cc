@@ -1845,6 +1845,89 @@ bool of_CALLF_VIRT_VOID(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * Helper function to copy scope parameters from base scope to derived scope.
+ * This is needed when virtual dispatch redirects to a derived class's method,
+ * because the code generator stores parameters to the base class's scope variables
+ * before the virtual call instruction. The derived class's scope has its own
+ * variables that need to be initialized.
+ *
+ * base_context is the context where parameters were stored (for base scope)
+ * derived_context is the newly allocated context for the derived scope
+ */
+static void copy_scope_parameters(__vpiScope*base_scope, __vpiScope*derived_scope,
+				  vvp_context_t base_context, vvp_context_t derived_context)
+{
+      // Don't do anything if scopes are the same
+      if (base_scope == derived_scope)
+	    return;
+
+      // Build a map of base scope variable names to their nets
+      std::map<std::string, vvp_net_t*> base_vars;
+      for (unsigned idx = 0; idx < base_scope->intern.size(); ++idx) {
+	    vpiHandle item = base_scope->intern[idx];
+	    if (item->get_type_code() == vpiClassVar) {
+		  const char* name_tmp = item->vpi_get_str(vpiName);
+		  if (name_tmp) {
+			// Copy name to avoid buffer reuse by subsequent vpi_get_str calls
+			std::string name(name_tmp);
+			__vpiBaseVar*var = dynamic_cast<__vpiBaseVar*>(item);
+			if (var) {
+			      vvp_net_t*net = var->get_net();
+			      if (net)
+				    base_vars[name] = net;
+			}
+		  }
+	    }
+      }
+
+      // Copy values to matching variables in derived scope
+      for (unsigned idx = 0; idx < derived_scope->intern.size(); ++idx) {
+	    vpiHandle item = derived_scope->intern[idx];
+	    if (item->get_type_code() == vpiClassVar) {
+		  const char* name_tmp = item->vpi_get_str(vpiName);
+		  if (name_tmp) {
+			std::string name(name_tmp);
+			auto it = base_vars.find(name);
+			if (it != base_vars.end()) {
+			      // Found matching variable - copy the object value
+			      __vpiBaseVar*derived_var = dynamic_cast<__vpiBaseVar*>(item);
+			      if (derived_var) {
+				    vvp_net_t*base_net = it->second;
+				    vvp_net_t*derived_net = derived_var->get_net();
+				    if (base_net && base_net->fun && derived_net && derived_net->fun) {
+					  // Handle context-aware (automatic) variables
+					  vvp_fun_signal_object_aa*base_fun_aa =
+						dynamic_cast<vvp_fun_signal_object_aa*>(base_net->fun);
+					  vvp_fun_signal_object_aa*derived_fun_aa =
+						dynamic_cast<vvp_fun_signal_object_aa*>(derived_net->fun);
+					  if (base_fun_aa && derived_fun_aa && base_context && derived_context) {
+						vvp_object_t obj = base_fun_aa->get_object_from_context(base_context);
+						if (!obj.test_nil()) {
+						      derived_fun_aa->set_object_in_context(derived_context, obj);
+						}
+					  } else {
+						// Handle non-automatic variables
+						vvp_fun_signal_object*base_fun =
+						      dynamic_cast<vvp_fun_signal_object*>(base_net->fun);
+						vvp_fun_signal_object*derived_fun =
+						      dynamic_cast<vvp_fun_signal_object*>(derived_net->fun);
+						if (base_fun && derived_fun) {
+						      vvp_object_t obj = base_fun->get_object();
+						      if (!obj.test_nil()) {
+							    vvp_net_ptr_t ptr(derived_net, 0);
+							    vvp_send_object(ptr, obj, derived_context);
+						      }
+						}
+					  }
+				    }
+			      }
+			}
+		  }
+	    }
+      }
+}
+
+/*
  * Helper function for virtual method dispatch. Finds the '@' (this) variable,
  * gets the actual class type, and looks up the method. Returns the method info
  * or nullptr if virtual dispatch should fall back to base class call.
@@ -1907,6 +1990,7 @@ static const class_type::method_info* resolve_virtual_method(vvp_code_t cp)
 
 bool of_CALLF_VIRT_VEC4(vthread_t thr, vvp_code_t cp)
 {
+      __vpiScope*base_scope = cp->scope;
       const class_type::method_info*method = resolve_virtual_method(cp);
       vvp_code_t entry;
       __vpiScope*scope;
@@ -1915,7 +1999,7 @@ bool of_CALLF_VIRT_VEC4(vthread_t thr, vvp_code_t cp)
 	    scope = method->scope;
       } else {
 	    entry = cp->cptr2;
-	    scope = cp->scope;
+	    scope = base_scope;
       }
 
       vthread_t child = vthread_new(entry, scope);
@@ -1926,11 +2010,53 @@ bool of_CALLF_VIRT_VEC4(vthread_t thr, vvp_code_t cp)
       thr->push_vec4(vvp_vector4_t(scope_func->get_func_width(), scope_func->get_func_init_val()));
       child->args_vec4.push_back(0);
 
+      // When virtual dispatch changes the scope, we need to allocate a new context
+      // for the derived scope and copy parameters from base context to it
+      if (method && scope != base_scope && scope->is_automatic()) {
+	    vvp_context_t new_context = vthread_alloc_context(scope);
+	    copy_scope_parameters(base_scope, scope, thr->wt_context, new_context);
+	    child->wt_context = new_context;
+	    child->rd_context = new_context;
+
+	    // Propagate fork_this from parent if parent has it set
+	    if (thr->fork_this_net_ != 0) {
+		  child->fork_this_net_ = thr->fork_this_net_;
+		  if (!thr->fork_this_obj_.test_nil()) {
+			child->fork_this_obj_ = thr->fork_this_obj_;
+		  } else if (thr->wt_context) {
+			vvp_fun_signal_object_aa*fun_aa =
+			      dynamic_cast<vvp_fun_signal_object_aa*>(thr->fork_this_net_->fun);
+			if (fun_aa) {
+			      child->fork_this_obj_ = fun_aa->get_object_from_context(thr->wt_context);
+			}
+		  }
+	    }
+
+	    // Inline call execution (context already set)
+	    child->parent = thr;
+	    thr->children.insert(child);
+	    assert(thr->children.size()==1);
+	    assert(child->parent_scope->get_type_code() == vpiFunction);
+	    child->is_scheduled = 1;
+	    child->i_am_in_function = 1;
+	    vthread_run(child);
+	    running_thread = thr;
+
+	    if (child->i_have_ended) {
+		  do_join(thr, child);
+		  return true;
+	    } else {
+		  thr->i_am_joining = 1;
+		  return false;
+	    }
+      }
+
       return do_callf_void(thr, child);
 }
 
 bool of_CALLF_VIRT_REAL(vthread_t thr, vvp_code_t cp)
 {
+      __vpiScope*base_scope = cp->scope;
       const class_type::method_info*method = resolve_virtual_method(cp);
       vvp_code_t entry;
       __vpiScope*scope;
@@ -1939,7 +2065,7 @@ bool of_CALLF_VIRT_REAL(vthread_t thr, vvp_code_t cp)
 	    scope = method->scope;
       } else {
 	    entry = cp->cptr2;
-	    scope = cp->scope;
+	    scope = base_scope;
       }
 
       vthread_t child = vthread_new(entry, scope);
@@ -1947,14 +2073,52 @@ bool of_CALLF_VIRT_REAL(vthread_t thr, vvp_code_t cp)
       thr->push_real(0.0);
       child->args_real.push_back(0);
 
+      // When virtual dispatch changes the scope, allocate new context and copy params
+      if (method && scope != base_scope && scope->is_automatic()) {
+	    vvp_context_t new_context = vthread_alloc_context(scope);
+	    copy_scope_parameters(base_scope, scope, thr->wt_context, new_context);
+	    child->wt_context = new_context;
+	    child->rd_context = new_context;
+
+	    if (thr->fork_this_net_ != 0) {
+		  child->fork_this_net_ = thr->fork_this_net_;
+		  if (!thr->fork_this_obj_.test_nil()) {
+			child->fork_this_obj_ = thr->fork_this_obj_;
+		  } else if (thr->wt_context) {
+			vvp_fun_signal_object_aa*fun_aa =
+			      dynamic_cast<vvp_fun_signal_object_aa*>(thr->fork_this_net_->fun);
+			if (fun_aa) {
+			      child->fork_this_obj_ = fun_aa->get_object_from_context(thr->wt_context);
+			}
+		  }
+	    }
+
+	    child->parent = thr;
+	    thr->children.insert(child);
+	    assert(thr->children.size()==1);
+	    assert(child->parent_scope->get_type_code() == vpiFunction);
+	    child->is_scheduled = 1;
+	    child->i_am_in_function = 1;
+	    vthread_run(child);
+	    running_thread = thr;
+
+	    if (child->i_have_ended) {
+		  do_join(thr, child);
+		  return true;
+	    } else {
+		  thr->i_am_joining = 1;
+		  return false;
+	    }
+      }
+
       return do_callf_void(thr, child);
 }
 
 bool of_CALLF_VIRT_STR(vthread_t thr, vvp_code_t cp)
 {
+      __vpiScope*base_scope = cp->scope;
       const class_type::method_info*method = resolve_virtual_method(cp);
       vvp_code_t entry;
-      __vpiScope*base_scope = cp->scope;
       __vpiScope*scope;
       if (method) {
 	    entry = method->entry;
@@ -1969,11 +2133,50 @@ bool of_CALLF_VIRT_STR(vthread_t thr, vvp_code_t cp)
       thr->push_str("");
       child->args_str.push_back(0);
 
+      // When virtual dispatch changes the scope, allocate new context and copy params
+      if (method && scope != base_scope && scope->is_automatic()) {
+	    vvp_context_t new_context = vthread_alloc_context(scope);
+	    copy_scope_parameters(base_scope, scope, thr->wt_context, new_context);
+	    child->wt_context = new_context;
+	    child->rd_context = new_context;
+
+	    if (thr->fork_this_net_ != 0) {
+		  child->fork_this_net_ = thr->fork_this_net_;
+		  if (!thr->fork_this_obj_.test_nil()) {
+			child->fork_this_obj_ = thr->fork_this_obj_;
+		  } else if (thr->wt_context) {
+			vvp_fun_signal_object_aa*fun_aa =
+			      dynamic_cast<vvp_fun_signal_object_aa*>(thr->fork_this_net_->fun);
+			if (fun_aa) {
+			      child->fork_this_obj_ = fun_aa->get_object_from_context(thr->wt_context);
+			}
+		  }
+	    }
+
+	    child->parent = thr;
+	    thr->children.insert(child);
+	    assert(thr->children.size()==1);
+	    assert(child->parent_scope->get_type_code() == vpiFunction);
+	    child->is_scheduled = 1;
+	    child->i_am_in_function = 1;
+	    vthread_run(child);
+	    running_thread = thr;
+
+	    if (child->i_have_ended) {
+		  do_join(thr, child);
+		  return true;
+	    } else {
+		  thr->i_am_joining = 1;
+		  return false;
+	    }
+      }
+
       return do_callf_void(thr, child);
 }
 
 bool of_CALLF_VIRT_OBJ(vthread_t thr, vvp_code_t cp)
 {
+      __vpiScope*base_scope = cp->scope;
       const class_type::method_info*method = resolve_virtual_method(cp);
       vvp_code_t entry;
       __vpiScope*scope;
@@ -1982,10 +2185,49 @@ bool of_CALLF_VIRT_OBJ(vthread_t thr, vvp_code_t cp)
 	    scope = method->scope;
       } else {
 	    entry = cp->cptr2;
-	    scope = cp->scope;
+	    scope = base_scope;
       }
 
       vthread_t child = vthread_new(entry, scope);
+
+      // When virtual dispatch changes the scope, allocate new context and copy params
+      if (method && scope != base_scope && scope->is_automatic()) {
+	    vvp_context_t new_context = vthread_alloc_context(scope);
+	    copy_scope_parameters(base_scope, scope, thr->wt_context, new_context);
+	    child->wt_context = new_context;
+	    child->rd_context = new_context;
+
+	    if (thr->fork_this_net_ != 0) {
+		  child->fork_this_net_ = thr->fork_this_net_;
+		  if (!thr->fork_this_obj_.test_nil()) {
+			child->fork_this_obj_ = thr->fork_this_obj_;
+		  } else if (thr->wt_context) {
+			vvp_fun_signal_object_aa*fun_aa =
+			      dynamic_cast<vvp_fun_signal_object_aa*>(thr->fork_this_net_->fun);
+			if (fun_aa) {
+			      child->fork_this_obj_ = fun_aa->get_object_from_context(thr->wt_context);
+			}
+		  }
+	    }
+
+	    child->parent = thr;
+	    thr->children.insert(child);
+	    assert(thr->children.size()==1);
+	    assert(child->parent_scope->get_type_code() == vpiFunction);
+	    child->is_scheduled = 1;
+	    child->i_am_in_function = 1;
+	    vthread_run(child);
+	    running_thread = thr;
+
+	    if (child->i_have_ended) {
+		  do_join(thr, child);
+		  return true;
+	    } else {
+		  thr->i_am_joining = 1;
+		  return false;
+	    }
+      }
+
       return do_callf_void(thr, child);
 }
 
