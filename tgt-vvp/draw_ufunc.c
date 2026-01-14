@@ -22,12 +22,54 @@
 # include  <stdlib.h>
 # include  <assert.h>
 
+/*
+ * Handle passing an entire unpacked array to a function port.
+ * We generate code to copy each element from the source array
+ * to the port array element by element.
+ */
+static void function_argument_array(ivl_signal_t port, ivl_expr_t expr)
+{
+      unsigned count = ivl_signal_array_count(port);
+      unsigned idx;
+
+      /* The expression should be a signal reference to an array.
+       * IVL_EX_ARRAY is the special case where an array is passed as a whole. */
+      if (ivl_expr_type(expr) != IVL_EX_SIGNAL &&
+	  ivl_expr_type(expr) != IVL_EX_ARRAY) {
+	    fprintf(stderr, "XXXX function array argument is not a signal (type=%d)?!\n",
+		    ivl_expr_type(expr));
+	    vvp_errors += 1;
+	    return;
+      }
+
+      ivl_signal_t src_sig = ivl_expr_signal(expr);
+      if (ivl_signal_dimensions(src_sig) == 0) {
+	    fprintf(stderr, "XXXX function array argument has no dimensions?!\n");
+	    vvp_errors += 1;
+	    return;
+      }
+
+      /* Copy element by element from source to port */
+      for (idx = 0; idx < count; idx++) {
+	    /* Load source element */
+	    fprintf(vvp_out, "    %%ix/load 3, %u, 0;\n", idx);
+	    fprintf(vvp_out, "    %%flag_set/imm 4, 0;\n");
+	    fprintf(vvp_out, "    %%load/vec4a v%p, 3;\n", src_sig);
+
+	    /* Store to port element */
+	    fprintf(vvp_out, "    %%store/vec4a v%p, 3, 0;\n", port);
+      }
+}
+
 static void function_argument_logic(ivl_signal_t port, ivl_expr_t expr)
 {
       unsigned ewidth, pwidth;
 
-	/* ports cannot be arrays. */
-      assert(ivl_signal_dimensions(port) == 0);
+      /* If port is an array, use the array copy helper */
+      if (ivl_signal_dimensions(port) > 0) {
+	    function_argument_array(port, expr);
+	    return;
+      }
 
       ewidth = ivl_expr_width(expr);
       pwidth = ivl_signal_width(port);
@@ -40,8 +82,12 @@ static void function_argument_logic(ivl_signal_t port, ivl_expr_t expr)
 
 static void function_argument_real(ivl_signal_t port, ivl_expr_t expr)
 {
-	/* ports cannot be arrays. */
-      assert(ivl_signal_dimensions(port) == 0);
+      /* Array ports of real type are not supported for now */
+      if (ivl_signal_dimensions(port) > 0) {
+	    fprintf(stderr, "XXXX real array function arguments not supported\n");
+	    vvp_errors += 1;
+	    return;
+      }
 
       draw_eval_real(expr);
 }
@@ -110,6 +156,11 @@ static void draw_send_function_argument(ivl_signal_t port, ivl_expr_t expr)
 {
       ivl_variable_type_t dtype = ivl_signal_data_type(port);
       ivl_variable_type_t etype = expr ? ivl_expr_value(expr) : IVL_VT_NO_TYPE;
+
+      /* Array ports are handled directly by function_argument_array which
+       * does element-by-element copy. Skip them here. */
+      if (ivl_signal_dimensions(port) > 0)
+	    return;
 
       /* Special case: if port expects scalar but expression is class,
        * this is likely a type parameter mismatch from specialized class

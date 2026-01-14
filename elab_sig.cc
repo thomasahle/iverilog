@@ -851,11 +851,7 @@ void PTaskFunc::elaborate_sig_ports_(Design*des, NetScope*scope,
 	    // Note: Verilog-2001 only allowed input ports in functions, but SystemVerilog
 	    // extended this to allow all port directions. Functions with output/inout/ref
 	    // can only be called in contexts where those values can be assigned.
-	    if (tmp->unpacked_dimensions() != 0) {
-		  cerr << get_fileline() << ": sorry: Subroutine ports with "
-			  "unpacked dimensions are not yet supported." << endl;
-		 des->errors += 1;
-	    }
+	    // Note: Unpacked array ports now supported (Session 120)
       }
 }
 

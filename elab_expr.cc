@@ -6083,8 +6083,17 @@ unsigned PECallFunction::elaborate_arguments_(Design*des, NetScope*scope,
 	    PExpr *tmp = args[idx];
 
 	    if (tmp) {
+		  // If the port has unpacked dimensions, create a proper
+		  // netuarray_t type so that elaborate_rval_expr can do
+		  // proper type matching for passing entire arrays.
+		  NetNet *port = def->port(pidx);
+		  ivl_type_t port_type = port->net_type();
+		  if (port->unpacked_dimensions() > 0) {
+			netranges_t dims = port->unpacked_dims();
+			port_type = new netuarray_t(dims, port->net_type());
+		  }
 		  parms[pidx] = elaborate_rval_expr(des, scope,
-						    def->port(pidx)->net_type(),
+						    port_type,
 						    tmp, need_const);
 		  if (parms[pidx] == 0) {
 			parm_errors += 1;
@@ -10359,6 +10368,18 @@ NetExpr* PEIdent::elaborate_expr(Design*des, NetScope*scope,
 	        (check_type->base_type() == IVL_VT_BOOL ||
 	         check_type->base_type() == IVL_VT_LOGIC)) {
 	          type_mismatch_ok = true;
+	    }
+	    // If context is an unpacked array and the source has matching unpacked
+	    // dimensions with compatible element types, allow it. This enables
+	    // passing unpacked arrays to function parameters.
+	    if (const netuarray_t* uarray = dynamic_cast<const netuarray_t*>(check_type)) {
+	          if (net->unpacked_dimensions() > 0 &&
+	              uarray->element_type()->type_compatible(net->net_type())) {
+			// Compare unpacked dimension counts
+			if (uarray->static_dimensions().size() == net->unpacked_dimensions()) {
+			      type_mismatch_ok = true;
+			}
+	          }
 	    }
       }
       if (check_type && ! check_type->type_compatible(net->net_type()) && !type_mismatch_ok) {

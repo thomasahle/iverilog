@@ -6310,7 +6310,15 @@ NetProc* PCallTask::elaborate_build_call_(Design*des, NetScope*scope,
 	    NetExpr*rv = 0;
 
 	    if (args[parms_idx]) {
-		  rv = elaborate_rval_expr(des, scope, port->net_type(),
+		  // If the port has unpacked dimensions, create a proper
+		  // netuarray_t type so that elaborate_rval_expr can do
+		  // proper type matching for passing entire arrays.
+		  ivl_type_t port_type = port->net_type();
+		  if (port->unpacked_dimensions() > 0) {
+			netranges_t dims = port->unpacked_dims();
+			port_type = new netuarray_t(dims, port->net_type());
+		  }
+		  rv = elaborate_rval_expr(des, scope, port_type,
 					   args[parms_idx]);
 		  if (const NetEEvent*evt = dynamic_cast<NetEEvent*> (rv)) {
 			cerr << evt->get_fileline() << ": error: An event '"

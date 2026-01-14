@@ -1021,6 +1021,25 @@ NetExpr* elab_and_eval(Design*des, NetScope*scope, PExpr*pe,
 		  return tmp;
 	    }
 
+	    // Special case: when target is netuarray_t and the expression is
+	    // a signal representing an unpacked array, allow it if the element
+	    // types are compatible. This enables passing unpacked arrays to
+	    // function parameters with unpacked array types.
+	    if (const netuarray_t* target_uarray = dynamic_cast<const netuarray_t*>(lv_net_type)) {
+		  if (NetESignal* sig = dynamic_cast<NetESignal*>(tmp)) {
+			NetNet* net = sig->sig();
+			if (net && net->unpacked_dimensions() > 0) {
+			      // Check if element types are compatible
+			      if (target_uarray->element_type()->type_compatible(net->net_type())) {
+				    // Check dimension count match
+				    if (target_uarray->static_dimensions().size() == net->unpacked_dimensions()) {
+					  return tmp;
+				    }
+			      }
+			}
+		  }
+	    }
+
 	    cerr << tmp->get_fileline() << ": error: "
 		    "The expression '" << *pe << "' cannot be implicitly "
 		    "cast to the target type." << endl;
