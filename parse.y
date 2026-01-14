@@ -9328,6 +9328,31 @@ module_item
 	delete[]$2.text;
       }
 
+  /* Package-scoped type variable declarations at module scope.
+     Pattern: pkg::type_name var; where type_name is a typedef in package pkg.
+     This enables patterns like: p3::p3_type p3_var; */
+  | attribute_list_opt
+      package_scope TYPE_IDENTIFIER list_of_variable_decl_assignments ';'
+      { lex_in_package_scope(0);
+	typeref_t*type = new typeref_t($3.type, $2);
+	FILE_NAME(type, @3);
+	pform_make_var(@3, $4, type, $1, false);
+	delete[]$3.text;
+      }
+
+  /* Package-scoped type with array dimensions at module scope.
+     Pattern: pkg::type_name [dims] var; */
+  | attribute_list_opt
+      package_scope TYPE_IDENTIFIER dimensions list_of_variable_decl_assignments ';'
+      { lex_in_package_scope(0);
+	typeref_t*base = new typeref_t($3.type, $2);
+	FILE_NAME(base, @3);
+	parray_type_t*tmp = new parray_type_t(base, $4);
+	FILE_NAME(tmp, @3);
+	pform_make_var(@3, $5, tmp, $1, false);
+	delete[]$3.text;
+      }
+
   /* Parameterized class variable declarations at module scope.
      Pattern: Container#(int) var; or Container#(ItemType) var = new();
      This handles parameterized class types like uvm_tlm_fifo#(type).
