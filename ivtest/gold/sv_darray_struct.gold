@@ -1,0 +1,11 @@
+Array size: 3
+pkt_array[0].data = aa
+pkt_array[0].addr = 1
+pkt_array[1].data = bb
+pkt_array[1].addr = 2
+pkt_array[2].data = cc
+pkt_array[2].valid = 0
+pkt_array[0]: data=aa addr=1 valid=1
+pkt_array[1]: data=bb addr=2 valid=1
+pkt_array[2]: data=cc addr=3 valid=0
+PASSED
