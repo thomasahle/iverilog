@@ -1,0 +1,4 @@
+Sample count: 10
+Coverage: 31.25%
+PASSED
+./ivltests/sv_covergroup_sample_args2.sv:78: $finish called at 0 (1s)

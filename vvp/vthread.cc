@@ -14029,20 +14029,21 @@ bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t cp)
 	    // Track unique coverpoint values in m_bins_hit (property 0)
 	    // m_bins_hit is an associative array with string keys
 	    // Key format: "cp<idx>:<value>" to identify coverpoint and value
+
+	    // Get or create m_bins_hit associative array
+	    vvp_object_t bins_obj;
+	    cobj->get_object(0, bins_obj, 0);
+	    vvp_assoc*bins = bins_obj.peek<vvp_assoc>();
+
+	    if (bins == 0) {
+		  // Create a new associative array if it doesn't exist
+		  vvp_assoc_vec4*new_bins = new vvp_assoc_vec4(32);
+		  bins_obj.reset(new_bins);
+		  cobj->set_object(0, bins_obj, 0);
+		  bins = new_bins;
+	    }
+
 	    if (cp_count > 0) {
-		  // Get or create m_bins_hit associative array once before the loop
-		  vvp_object_t bins_obj;
-		  cobj->get_object(0, bins_obj, 0);
-		  vvp_assoc*bins = bins_obj.peek<vvp_assoc>();
-
-		  if (bins == 0) {
-			// Create a new associative array if it doesn't exist
-			vvp_assoc_vec4*new_bins = new vvp_assoc_vec4(32);
-			bins_obj.reset(new_bins);
-			cobj->set_object(0, bins_obj, 0);
-			bins = new_bins;
-		  }
-
 		  // For each coverpoint value, if this value hasn't been seen before,
 		  // add it to the associative array with value 1
 		  for (unsigned idx = 0; idx < cp_count; idx++) {
@@ -14062,6 +14063,19 @@ bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t cp)
 			      one.set_bit(0, BIT4_1);
 			      bins->set_word(key_str, one);
 			}
+		  }
+	    } else {
+		  // For parameterized covergroups (sample with arguments), cp_count is 0
+		  // because coverpoint values aren't evaluated yet. Track each sample
+		  // call as a bin hit to provide approximate coverage progress.
+		  // Use sample count as key to count unique samples.
+		  char key_buf[64];
+		  snprintf(key_buf, sizeof(key_buf), "sample:%llu", (unsigned long long)count);
+		  string key_str(key_buf);
+		  if (!bins->exists(key_str)) {
+			vvp_vector4_t one(32);
+			one.set_bit(0, BIT4_1);
+			bins->set_word(key_str, one);
 		  }
 	    }
       }
