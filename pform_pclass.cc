@@ -423,13 +423,21 @@ bool pform_in_class()
  */
 void pform_covergroup_declaration(const struct vlltype&loc,
 				  const char* covergroup_name,
-				  vector<pform_tf_port_t>* sample_ports)
+				  vector<pform_tf_port_t>* sample_ports,
+				  vector<pform_coverpoint_t*>* coverpoints)
 {
       (void)sample_ports;  // TODO: Use sample ports to generate proper method signature
 
       if (!pform_cur_class) {
 	    // Covergroups outside classes not yet supported
 	    yywarn(loc, "warning: Covergroup outside class context not yet supported.");
+	    // Clean up parsed coverpoints
+	    if (coverpoints) {
+		  for (pform_coverpoint_t* cp : *coverpoints) {
+			delete cp;
+		  }
+		  delete coverpoints;
+	    }
 	    return;
       }
 
@@ -441,13 +449,22 @@ void pform_covergroup_declaration(const struct vlltype&loc,
       covergroup_type_t* cg_type = new covergroup_type_t(cg_name);
       FILE_NAME(cg_type, loc);
 
+      // Transfer coverpoints to the covergroup type
+      if (coverpoints) {
+	    for (pform_coverpoint_t* cp : *coverpoints) {
+		  cg_type->coverpoints.push_back(cp);
+	    }
+	    delete coverpoints;  // Delete vector but not contents (transferred)
+      }
+
       // Add the covergroup as a property of the enclosing class
       pform_cur_class->type->properties[cg_name]
 	    = class_type_t::prop_info_t(property_qualifier_t::make_none(), cg_type);
       FILE_NAME(&pform_cur_class->type->properties[cg_name], loc);
 
-      // Note: Coverpoints/bins are parsed but not individually tracked.
+      // Note: Coverpoints are now stored in cg_type->coverpoints.
       // __ivl_covergroup provides sample() counting and basic coverage reporting.
+      // Full bin coverage tracking would evaluate coverpoint expressions during sample().
 }
 
 /*

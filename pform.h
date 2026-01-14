@@ -193,7 +193,8 @@ extern void pform_class_property_virtual_interface(const struct vlltype&loc,
 				 PExpr*init_expr);
 extern void pform_covergroup_declaration(const struct vlltype&loc,
 				 const char* covergroup_name,
-				 std::vector<pform_tf_port_t>* sample_ports);
+				 std::vector<pform_tf_port_t>* sample_ports,
+				 std::vector<pform_coverpoint_t*>* coverpoints);
 extern void pform_class_constraint(const struct vlltype&loc,
 				 bool is_static, const char* name,
 				 std::list<PExpr*>* expressions);

@@ -1081,6 +1081,16 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
       LexicalScope::lifetime_t lifetime;
 
       enum typedef_t::basic_type typedef_basic_type;
+
+      // Covergroup bins support
+      pform_bin_range_t* bin_range;
+      std::vector<pform_bin_range_t>* bin_ranges;
+      pform_bin_t* bin_item;
+      std::vector<pform_bin_t*>* bin_items;
+      pform_coverpoint_t* coverpoint;
+      std::vector<pform_coverpoint_t*>* coverpoints;
+      pform_cross_t* cross;
+      pform_bin_t::bin_kind_e bin_kind;
 };
 
 %token <text>      IDENTIFIER SYSTEM_IDENTIFIER STRING TIME_LITERAL
@@ -1375,6 +1385,18 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <letter> compressed_operator
 
 %type <typedef_basic_type> typedef_basic_type
+
+  /* Covergroup bins types */
+%type <bin_kind>    bins_keyword
+%type <bin_range>   bins_value
+%type <bin_ranges>  bins_values
+%type <bin_item>    bins_item
+%type <bin_items>   bins_list bins_list_opt
+%type <coverpoint>  coverpoint_declaration
+%type <coverpoints> covergroup_body_item_list covergroup_body_item_list_opt
+%type <cross>       cross_declaration
+%type <expr>        coverpoint_iff_opt bins_iff_opt
+%type <int_val>     bins_array_opt
 
 %token K_TAND
 %nonassoc K_PLUS_EQ K_MINUS_EQ K_MUL_EQ K_DIV_EQ K_MOD_EQ K_AND_EQ K_OR_EQ
@@ -2529,7 +2551,7 @@ covergroup_declaration /* IEEE1800-2017: A.2.11 */
   : K_covergroup IDENTIFIER covergroup_port_list_opt coverage_event_opt ';'
     covergroup_body_item_list_opt
     K_endgroup label_opt
-      { pform_covergroup_declaration(@1, $2, 0);
+      { pform_covergroup_declaration(@1, $2, 0, $6);
         delete[]$2;
       }
   ;
@@ -2553,18 +2575,37 @@ coverage_event_opt
 
 covergroup_body_item_list_opt
   : covergroup_body_item_list
+      { $$ = $1; }
   |
+      { $$ = nullptr; }
   ;
 
 covergroup_body_item_list
-  : covergroup_body_item_list covergroup_body_item
-  | covergroup_body_item
-  ;
-
-covergroup_body_item
-  : coverage_option ';'
+  : covergroup_body_item_list coverpoint_declaration
+      { $$ = $1;
+        if ($2) {
+              if (!$$) $$ = new std::vector<pform_coverpoint_t*>();
+              $$->push_back($2);
+        }
+      }
+  | covergroup_body_item_list cross_declaration
+      { $$ = $1;
+        /* Cross declarations stored elsewhere - TODO: add cross support */
+        delete $2;
+      }
+  | covergroup_body_item_list coverage_option ';'
+      { $$ = $1; /* Options don't generate coverpoints */ }
   | coverpoint_declaration
+      { $$ = new std::vector<pform_coverpoint_t*>();
+        if ($1) $$->push_back($1);
+      }
   | cross_declaration
+      { $$ = nullptr;
+        /* Cross stored elsewhere - TODO: add cross support */
+        delete $1;
+      }
+  | coverage_option ';'
+      { $$ = nullptr; }
   ;
 
 coverage_option
@@ -2579,16 +2620,52 @@ coverage_option
 
 coverpoint_declaration
   : IDENTIFIER ':' K_coverpoint expression coverpoint_iff_opt bins_or_empty
-      { delete[]$1; }
+      { $$ = new pform_coverpoint_t();
+        $$->name = lex_strings.make($1);
+        $$->expr = $4;
+        $$->iff_expr = $5;
+        $$->has_auto_bins = true;  /* bins_or_empty means auto bins */
+        delete[]$1;
+      }
   | IDENTIFIER ':' K_coverpoint expression coverpoint_iff_opt '{' bins_list_opt '}'
-      { delete[]$1; }
+      { $$ = new pform_coverpoint_t();
+        $$->name = lex_strings.make($1);
+        $$->expr = $4;
+        $$->iff_expr = $5;
+        if ($7) {
+              for (pform_bin_t* b : *$7) {
+                    $$->bins.push_back(b);
+              }
+              delete $7;
+        }
+        $$->has_auto_bins = ($$->bins.empty());
+        delete[]$1;
+      }
   | K_coverpoint expression coverpoint_iff_opt bins_or_empty
+      { $$ = new pform_coverpoint_t();
+        $$->expr = $2;
+        $$->iff_expr = $3;
+        $$->has_auto_bins = true;
+      }
   | K_coverpoint expression coverpoint_iff_opt '{' bins_list_opt '}'
+      { $$ = new pform_coverpoint_t();
+        $$->expr = $2;
+        $$->iff_expr = $3;
+        if ($5) {
+              for (pform_bin_t* b : *$5) {
+                    $$->bins.push_back(b);
+              }
+              delete $5;
+        }
+        $$->has_auto_bins = ($$->bins.empty());
+      }
   ;
 
 coverpoint_iff_opt
   : K_iff '(' expression ')'
+      { $$ = $3; }
   |
+      { $$ = nullptr; }
   ;
 
 bins_or_empty
@@ -2597,59 +2674,140 @@ bins_or_empty
 
 bins_list_opt
   : bins_list
+      { $$ = $1; }
   |
+      { $$ = nullptr; }
   ;
 
 bins_list
   : bins_list bins_item
+      { $$ = $1;
+        if ($2) $$->push_back($2);
+      }
   | bins_item
+      { $$ = new std::vector<pform_bin_t*>();
+        if ($1) $$->push_back($1);
+      }
   ;
 
 bins_item
   : bins_keyword IDENTIFIER bins_array_opt '=' '{' bins_values '}' bins_iff_opt ';'
-      { delete[]$2; }
+      { $$ = new pform_bin_t();
+        $$->kind = $1;
+        $$->name = lex_strings.make($2);
+        $$->array_count = $3;
+        if ($6) {
+              $$->ranges = *$6;
+              delete $6;
+        }
+        $$->iff_expr = $8;
+        delete[]$2;
+      }
   | bins_keyword IDENTIFIER bins_array_opt '=' K_default bins_iff_opt ';'
-      { delete[]$2; }
+      { $$ = new pform_bin_t();
+        $$->kind = pform_bin_t::DEFAULT_BIN;
+        $$->name = lex_strings.make($2);
+        $$->array_count = 0;
+        $$->iff_expr = $6;
+        delete[]$2;
+      }
   | bins_keyword IDENTIFIER bins_array_opt '=' K_default K_sequence bins_iff_opt ';'
-      { delete[]$2; }
+      { $$ = new pform_bin_t();
+        $$->kind = pform_bin_t::DEFAULT_BIN;
+        $$->name = lex_strings.make($2);
+        $$->array_count = 0;
+        $$->iff_expr = $7;
+        delete[]$2;
+      }
   | coverage_option ';'
+      { $$ = nullptr; /* Options not bins */ }
   | K_type_option '.' IDENTIFIER '=' expression ';'
-      { delete[]$3; }
+      { $$ = nullptr; /* Type options not bins */
+        delete[]$3;
+      }
   ;
 
 bins_keyword
   : K_bins
+      { $$ = pform_bin_t::BIN; }
   | K_illegal_bins
+      { $$ = pform_bin_t::ILLEGAL_BIN; }
   | K_ignore_bins
+      { $$ = pform_bin_t::IGNORE_BIN; }
   ;
 
 bins_array_opt
   : '[' expression ']'
+      { /* For bins[N], we'd need elaboration to get the value.
+         * For now, use -1 to indicate expression-based count.
+         * The actual count could be computed during elaboration. */
+        $$ = -1;
+        delete $2;  /* Expression not used - would need elab to evaluate */
+      }
   | '[' ']'
+      { $$ = -1; /* auto bins */ }
   |
+      { $$ = 0; /* no array */ }
   ;
 
 bins_values
   : bins_values ',' bins_value
+      { $$ = $1;
+        $$->push_back(*$3);
+        delete $3;
+      }
   | bins_value
+      { $$ = new std::vector<pform_bin_range_t>();
+        $$->push_back(*$1);
+        delete $1;
+      }
   ;
 
 bins_value
   : expression
+      { $$ = new pform_bin_range_t();
+        $$->type = pform_bin_range_t::DISCRETE;
+        $$->low_expr = $1;
+        $$->high_expr = nullptr;
+      }
   | '[' expression ':' expression ']'
+      { $$ = new pform_bin_range_t();
+        $$->type = pform_bin_range_t::RANGE;
+        $$->low_expr = $2;
+        $$->high_expr = $4;
+      }
   | '[' expression ':' '$' ']'   /* Unbounded upper limit */
+      { $$ = new pform_bin_range_t();
+        $$->type = pform_bin_range_t::UNBOUNDED_HIGH;
+        $$->low_expr = $2;
+        $$->high_expr = nullptr;
+      }
   | '[' '$' ':' expression ']'   /* Unbounded lower limit */
+      { $$ = new pform_bin_range_t();
+        $$->type = pform_bin_range_t::UNBOUNDED_LOW;
+        $$->low_expr = nullptr;
+        $$->high_expr = $4;
+      }
   ;
 
 bins_iff_opt
   : K_iff '(' expression ')'
+      { $$ = $3; }
   |
+      { $$ = nullptr; }
   ;
 
 cross_declaration
   : IDENTIFIER ':' K_cross cross_item_list cross_iff_opt cross_body
-      { delete[]$1; }
+      { $$ = new pform_cross_t();
+        $$->name = lex_strings.make($1);
+        /* TODO: capture cross_item_list and iff_expr */
+        delete[]$1;
+      }
   | K_cross cross_item_list cross_iff_opt cross_body
+      { $$ = new pform_cross_t();
+        /* TODO: capture cross_item_list and iff_expr */
+      }
   ;
 
 cross_item_list
