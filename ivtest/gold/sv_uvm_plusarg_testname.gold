@@ -1,4 +1,4 @@
-../lib/ivl/uvm/uvm_pkg.sv:2552: note: Detected run_test() call.
+../lib/ivl/uvm/uvm_pkg.sv:2557: note: Detected run_test() call.
 ./ivltests/sv_uvm_plusarg_testname.v:42: note: Detected run_test() call.
 ./ivltests/sv_uvm_plusarg_testname.v:42: note: Found test class 'default_test' for run_test("default_test").
 ./ivltests/sv_uvm_plusarg_testname.v:42: note: UVM factory not fully implemented. Test phases may not execute correctly.
@@ -20,4 +20,4 @@ UVM_INFO: Running check_phase...
 UVM_INFO: Running report_phase...
 UVM_INFO: Running final_phase...
 UVM_INFO: UVM phases complete.
-../lib/ivl/uvm/uvm_pkg.sv:1354: $finish called at 0 (1s)
+../lib/ivl/uvm/uvm_pkg.sv:1359: $finish called at 0 (1s)
