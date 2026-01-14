@@ -1,0 +1,2 @@
+PASSED: All 40 variable-to-variable constraints enforced
+./ivltests/sv_constraint_var_to_var.v:60: $finish called at 0 (1s)

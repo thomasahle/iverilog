@@ -1164,8 +1164,9 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 			      if (prop_val.value(i) == BIT4_1)
 				    bval |= (int64_t(1) << i);
 			}
-			// Handle signed values
-			if (prop_val.size() < 64 && prop_val.size() > 0 &&
+			// Handle signed values - ONLY sign-extend if property is signed
+			bool is_signed_prop = properties_[bound.bound_prop_idx].type->is_signed();
+			if (is_signed_prop && prop_val.size() < 64 && prop_val.size() > 0 &&
 			    prop_val.value(prop_val.size()-1) == BIT4_1) {
 			      for (unsigned i = prop_val.size(); i < 64; i++)
 				    bval |= (int64_t(1) << i);
@@ -1186,8 +1187,9 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 			      if (prop_val.value(i) == BIT4_1)
 				    bval |= (int64_t(1) << i);
 			}
-			// Handle signed values
-			if (prop_val.size() < 64 && prop_val.size() > 0 &&
+			// Handle signed values - ONLY sign-extend if property is signed
+			bool is_signed_prop = properties_[bound.bound_prop_idx].type->is_signed();
+			if (is_signed_prop && prop_val.size() < 64 && prop_val.size() > 0 &&
 			    prop_val.value(prop_val.size()-1) == BIT4_1) {
 			      for (unsigned i = prop_val.size(); i < 64; i++)
 				    bval |= (int64_t(1) << i);
@@ -1610,8 +1612,9 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 			if (prop_val.value(i) == BIT4_1)
 			      val |= (int64_t(1) << i);
 		  }
-		  // Handle signed values
-		  if (prop_val.size() < 64 && prop_val.size() > 0 &&
+		  // Handle signed values - ONLY sign-extend if property is signed
+		  bool is_signed_prop = properties_[bound.property_idx].type->is_signed();
+		  if (is_signed_prop && prop_val.size() < 64 && prop_val.size() > 0 &&
 		      prop_val.value(prop_val.size()-1) == BIT4_1) {
 			// Sign extend
 			for (unsigned i = prop_val.size(); i < 64; i++)
@@ -1633,8 +1636,9 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 			      if (bound_prop_val.value(i) == BIT4_1)
 				    bound_val |= (int64_t(1) << i);
 			}
-			// Handle signed values
-			if (bound_prop_val.size() < 64 && bound_prop_val.size() > 0 &&
+			// Handle signed values - ONLY sign-extend if property is signed
+			bool is_signed_bound = properties_[bound.bound_prop_idx].type->is_signed();
+			if (is_signed_bound && bound_prop_val.size() < 64 && bound_prop_val.size() > 0 &&
 			    bound_prop_val.value(bound_prop_val.size()-1) == BIT4_1) {
 			      for (unsigned i = bound_prop_val.size(); i < 64; i++)
 				    bound_val |= (int64_t(1) << i);
@@ -1655,8 +1659,9 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 			      if (bound_prop_val.value(i) == BIT4_1)
 				    bound_val |= (int64_t(1) << i);
 			}
-			// Handle signed values
-			if (bound_prop_val.size() < 64 && bound_prop_val.size() > 0 &&
+			// Handle signed values - ONLY sign-extend if property is signed
+			bool is_signed_bound = properties_[bound.bound_prop_idx].type->is_signed();
+			if (is_signed_bound && bound_prop_val.size() < 64 && bound_prop_val.size() > 0 &&
 			    bound_prop_val.value(bound_prop_val.size()-1) == BIT4_1) {
 			      for (unsigned i = bound_prop_val.size(); i < 64; i++)
 				    bound_val |= (int64_t(1) << i);
