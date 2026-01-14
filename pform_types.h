@@ -536,9 +536,61 @@ struct pform_constraint_t : public LineInfo {
 };
 
 /*
+ * A bin range represents a value or range of values for a coverpoint bin.
+ */
+struct pform_bin_range_t {
+      enum range_type_e { DISCRETE, RANGE, UNBOUNDED_HIGH, UNBOUNDED_LOW };
+      range_type_e type;
+      PExpr* low_expr;       // For DISCRETE: the value; for RANGE: low bound
+      PExpr* high_expr;      // For RANGE: high bound; for UNBOUNDED: the bound
+
+      inline pform_bin_range_t()
+            : type(DISCRETE), low_expr(nullptr), high_expr(nullptr) { }
+};
+
+/*
+ * A bin specification for a coverpoint.
+ */
+struct pform_bin_t {
+      enum bin_kind_e { BIN, ILLEGAL_BIN, IGNORE_BIN, DEFAULT_BIN };
+      bin_kind_e kind;
+      perm_string name;
+      int array_count;       // For bins[N]: the N; -1 for auto, 0 for none
+      std::vector<pform_bin_range_t> ranges;
+      PExpr* iff_expr;       // Optional iff condition
+
+      inline pform_bin_t()
+            : kind(BIN), array_count(0), iff_expr(nullptr) { }
+};
+
+/*
+ * A coverpoint declaration within a covergroup.
+ */
+struct pform_coverpoint_t {
+      perm_string name;      // Optional coverpoint name (can be anonymous)
+      PExpr* expr;           // The expression being covered
+      PExpr* iff_expr;       // Optional iff condition
+      std::vector<pform_bin_t*> bins;  // Explicit bins
+      bool has_auto_bins;    // True if auto bins should be generated
+
+      inline pform_coverpoint_t()
+            : expr(nullptr), iff_expr(nullptr), has_auto_bins(true) { }
+      ~pform_coverpoint_t();
+};
+
+/*
+ * A cross coverage declaration.
+ */
+struct pform_cross_t {
+      perm_string name;
+      std::vector<perm_string> cross_items;  // Names of coverpoints to cross
+      PExpr* iff_expr;
+      // Cross can also have bins - not yet implemented
+};
+
+/*
  * The covergroup_type_t represents a covergroup declaration.
- * Covergroups are parsed but not fully elaborated - they become stub
- * objects with no-op sample() and get_coverage() methods.
+ * Covergroups contain coverpoints and crosses for functional coverage.
  */
 struct covergroup_type_t : public data_type_t {
       inline explicit covergroup_type_t(perm_string n) : covergroup_name(n) { }
@@ -548,6 +600,13 @@ struct covergroup_type_t : public data_type_t {
       void pform_dump(std::ostream&out, unsigned indent) const override;
 
       perm_string covergroup_name;
+
+      // Sample arguments (from covergroup declaration)
+      std::vector<pform_tf_port_t*> sample_args;
+
+      // Coverpoints and crosses
+      std::vector<pform_coverpoint_t*> coverpoints;
+      std::vector<pform_cross_t*> crosses;
 };
 
 /*

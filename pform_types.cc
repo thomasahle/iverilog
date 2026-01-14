@@ -49,8 +49,21 @@ virtual_interface_type_t::~virtual_interface_type_t()
 {
 }
 
+pform_coverpoint_t::~pform_coverpoint_t()
+{
+      for (pform_bin_t* bin : bins) {
+            delete bin;
+      }
+}
+
 covergroup_type_t::~covergroup_type_t()
 {
+      for (pform_coverpoint_t* cp : coverpoints) {
+            delete cp;
+      }
+      for (pform_cross_t* cross : crosses) {
+            delete cross;
+      }
 }
 
 atom_type_t size_type (atom_type_t::INT, true);
