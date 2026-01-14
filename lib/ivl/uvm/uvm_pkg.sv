@@ -839,13 +839,15 @@ package uvm_pkg;
     virtual task start_item(uvm_sequence_item item, int set_priority = -1);
       item.set_sequencer(m_sequencer);
       item.set_parent_sequence(this);
+      // Block until sequencer has room - prevents sequence from flooding queue
+      // Always call wait_for_grant since m_sequencer should be set by start()
+      m_sequencer.wait_for_grant();
     endtask
 
     // Note: Using base class type since Icarus doesn't fully support
     // type parameter coercion in method calls
     virtual task finish_item(uvm_sequence_item item, int set_priority = -1);
-      if (m_sequencer != null)
-        m_sequencer.send_request(item);
+      m_sequencer.send_request(item);
     endtask
   endclass
 
@@ -895,6 +897,10 @@ package uvm_pkg;
     bit item_done_flag;
     uvm_sequence_item current_item;
 
+    // Grant mechanism for start_item blocking
+    int pending_grants;
+    bit driver_ready;
+
     function new(string name = "", uvm_component parent = null);
       super.new(name, parent);
       queue_head = 0;
@@ -902,6 +908,8 @@ package uvm_pkg;
       queue_count = 0;
       item_done_flag = 0;
       current_item = null;
+      pending_grants = 0;
+      driver_ready = 0;
     endfunction
 
     virtual function string get_type_name();
@@ -931,6 +939,8 @@ package uvm_pkg;
     endtask
 
     virtual task get_next_item(output uvm_sequence_item item);
+      // Signal that driver is ready (allows sequences to queue items)
+      driver_ready = 1;
       // Poll until item is available
       while (queue_count == 0) begin
         #1;
@@ -950,6 +960,22 @@ package uvm_pkg;
     virtual function bit has_item();
       return queue_count > 0;
     endfunction
+
+    // Wait for grant from sequencer - implements start_item blocking
+    // This prevents sequences from flooding the queue when driver isn't ready
+    virtual task wait_for_grant();
+      // If driver hasn't started yet, wait until it does (or allow first item)
+      if (!driver_ready && queue_count > 0) begin
+        // Block until driver calls get_next_item()
+        while (!driver_ready) begin
+          #1;
+        end
+      end
+      // After driver is ready, just enforce queue limit
+      while (queue_count >= 60) begin
+        #1;
+      end
+    endtask
   endclass
 
   // ============================================================================
