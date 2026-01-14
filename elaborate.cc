@@ -1420,7 +1420,10 @@ void PGModule::elaborate_mod_(Design*des, Module*rmod, NetScope*scope) const
 		  // The path might be an indexed interface array (e.g., intf_arr[i])
 		  // Evaluate the index for each instance
 		  name_component_t path_comp = iface_path.back();
-		  if (!path_comp.index.empty()) {
+		  // Only process if the index is a bit select, not a part select.
+		  // Part selects on regular signals will be handled later as expressions.
+		  if (!path_comp.index.empty() &&
+		      path_comp.index.front().sel == index_component_t::SEL_BIT) {
 			perm_string port_name = rmod->get_port_name(idx);
 			for (unsigned inst = 0; inst < instance.size(); inst++) {
 			      NetScope*inst_scope = instance[instance.size()-inst-1];
@@ -1638,8 +1641,11 @@ void PGModule::elaborate_mod_(Design*des, Module*rmod, NetScope*scope) const
 				    } else if (!iface_path.empty()) {
 					  // The path might have an index that needs evaluation
 					  // (e.g., intf_arr[i] where i is a genvar)
+					  // Only process bit selects - part selects are handled
+					  // later as regular signal expressions.
 					  name_component_t path_comp = iface_path.back();
-					  if (!path_comp.index.empty()) {
+					  if (!path_comp.index.empty() &&
+					      path_comp.index.front().sel == index_component_t::SEL_BIT) {
 						// Evaluate the index in the current scope context
 						bool error_flag = false;
 						hname_t hpath = eval_path_component(des, scope, path_comp, error_flag);
