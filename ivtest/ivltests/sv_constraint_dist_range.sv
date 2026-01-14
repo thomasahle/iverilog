@@ -35,9 +35,6 @@ module test;
       else count_other++;
     end
 
-    $display("count_range=%0d (in [1:3]) count_100=%0d count_other=%0d",
-             count_range, count_100, count_other);
-
     // With := semantics, range [1:3] has total weight 150 (50 * 3 values)
     // Value 100 has weight 50
     // Total = 200
