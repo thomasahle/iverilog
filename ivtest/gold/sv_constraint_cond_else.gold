@@ -1,0 +1,3 @@
+Pass: 40, Fail: 0
+PASSED
+./ivltests/sv_constraint_cond_else.v:61: $finish called at 0 (1s)

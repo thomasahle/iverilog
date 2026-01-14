@@ -9796,15 +9796,17 @@ static bool process_if_else_chain(netclass_t* cls, perm_string constraint_name,
 			      const netenum_t* enum_type = dynamic_cast<const netenum_t*>(prop_type);
 			      if (enum_type != nullptr) {
 				    // It's an enum - get all valid values
-				    // The iterator dereferences to std::pair<perm_string, verinum>
-				    netenum_t::iterator enum_it = enum_type->first_name();
-				    while (enum_it != enum_type->end_name()) {
-					  const verinum& enum_val = enum_it->second;
-					  int64_t val = enum_val.as_long();
-					  if (covered_values.find(val) == covered_values.end()) {
-						remaining_values.push_back(val);
+				    // Use size() and name_at() to iterate in declaration order
+				    for (size_t i = 0; i < enum_type->size(); i++) {
+					  perm_string name = enum_type->name_at(i);
+					  netenum_t::iterator it = enum_type->find_name(name);
+					  if (it != enum_type->end_name()) {
+						const verinum& enum_val = it->second;
+						int64_t val = enum_val.as_long();
+						if (covered_values.find(val) == covered_values.end()) {
+						      remaining_values.push_back(val);
+						}
 					  }
-					  ++enum_it;
 				    }
 			      }
 			}
