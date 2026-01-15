@@ -343,6 +343,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%qpop/f/str", of_QPOP_F_STR, 1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },
       { "%qpop/f/v",   of_QPOP_F_V,   2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
       { "%qproduct",   of_QPRODUCT,   2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
+      { "%qproduct/m", of_QPRODUCT_M, 3,{OA_FUNC_PTR,OA_BIT1,OA_BIT2} },
 	/* Queue property method stubs (data from stacks) */
       { "%qprop/delete",     of_QPROP_DELETE,      0,{OA_NONE,OA_NONE,OA_NONE} },
       { "%qprop/delete/elem",of_QPROP_DELETE_ELEM, 0,{OA_NONE,OA_NONE,OA_NONE} },
@@ -365,6 +366,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%qsort",      of_QSORT,      1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },
       { "%qsort/m",    of_QSORT_M,    3,{OA_FUNC_PTR,OA_BIT1,OA_BIT2} },
       { "%qsum",       of_QSUM,       2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
+      { "%qsum/m",     of_QSUM_M,     3,{OA_FUNC_PTR,OA_BIT1,OA_BIT2} },
       { "%qunique",    of_QUNIQUE,    1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },
       { "%qunique/m",  of_QUNIQUE_M,  3,{OA_FUNC_PTR,OA_BIT1,OA_BIT2} },
       { "%qunique_index", of_QUNIQUE_INDEX, 1,{OA_FUNC_PTR,OA_NONE,OA_NONE} },

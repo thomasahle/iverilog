@@ -1440,6 +1440,62 @@ vvp_object_t vvp_queue_vec4::max_by_member(unsigned offset, unsigned width)
       return obj;
 }
 
+/*
+ * sum_by_member - Return the sum of a struct member field from all elements
+ *
+ * Extracts the specified member field from each element and returns
+ * the sum of all values as an int64_t.
+ */
+int64_t vvp_queue_vec4::sum_by_member(unsigned offset, unsigned width)
+{
+      if (queue.empty()) {
+	    return 0;
+      }
+
+      int64_t sum = 0;
+      for (const auto& elem : queue) {
+	    vvp_vector4_t member = extract_member_bits(elem, offset, width);
+	    // Convert member bits to integer value (unsigned)
+	    int64_t val = 0;
+	    for (unsigned i = 0; i < width && i < 64; i++) {
+		  if (member.value(i) == BIT4_1) {
+			val |= (int64_t(1) << i);
+		  }
+	    }
+	    sum += val;
+      }
+
+      return sum;
+}
+
+/*
+ * product_by_member - Return the product of a struct member field from all elements
+ *
+ * Extracts the specified member field from each element and returns
+ * the product of all values as an int64_t.
+ */
+int64_t vvp_queue_vec4::product_by_member(unsigned offset, unsigned width)
+{
+      if (queue.empty()) {
+	    return 1;  // Identity element for multiplication
+      }
+
+      int64_t product = 1;
+      for (const auto& elem : queue) {
+	    vvp_vector4_t member = extract_member_bits(elem, offset, width);
+	    // Convert member bits to integer value (unsigned)
+	    int64_t val = 0;
+	    for (unsigned i = 0; i < width && i < 64; i++) {
+		  if (member.value(i) == BIT4_1) {
+			val |= (int64_t(1) << i);
+		  }
+	    }
+	    product *= val;
+      }
+
+      return product;
+}
+
 vvp_object_t vvp_queue_vec4::min_index(void)
 {
       if (queue.empty()) {

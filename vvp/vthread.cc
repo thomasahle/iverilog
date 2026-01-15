@@ -7629,6 +7629,36 @@ bool of_QSUM(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qsum/m <var-label>, <member_offset>, <member_width>
+ * Push the sum of a struct member field from all queue elements.
+ */
+bool of_QSUM_M(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned member_offset = cp->bit_idx[0];
+      unsigned member_width = cp->bit_idx[1];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue_vec4*queue = dynamic_cast<vvp_queue_vec4*>(obj->get_object().peek<vvp_queue>());
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return 0
+	    vvp_vector4_t val(32, BIT4_0);
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      int64_t result = queue->sum_by_member(member_offset, member_width);
+      vvp_vector4_t val(32);
+      for (unsigned i = 0; i < 32; i++) {
+	    val.set_bit(i, (result >> i) & 1 ? BIT4_1 : BIT4_0);
+      }
+      thr->push_vec4(val);
+      return true;
+}
+
+/*
  * %qproduct <var-label>, <width>
  * Push the product of all elements to the vec4 stack.
  */
@@ -7650,6 +7680,37 @@ bool of_QPRODUCT(vthread_t thr, vvp_code_t cp)
 
       vvp_vector4_t result = queue->product_val(wid);
       thr->push_vec4(result);
+      return true;
+}
+
+/*
+ * %qproduct/m <var-label>, <member_offset>, <member_width>
+ * Push the product of a struct member field from all queue elements.
+ */
+bool of_QPRODUCT_M(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned member_offset = cp->bit_idx[0];
+      unsigned member_width = cp->bit_idx[1];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue_vec4*queue = dynamic_cast<vvp_queue_vec4*>(obj->get_object().peek<vvp_queue>());
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return 1 for empty queue (identity element for multiplication)
+	    vvp_vector4_t val(32, BIT4_0);
+	    val.set_bit(0, BIT4_1);  // Return 1
+	    thr->push_vec4(val);
+	    return true;
+      }
+
+      int64_t result = queue->product_by_member(member_offset, member_width);
+      vvp_vector4_t val(32);
+      for (unsigned i = 0; i < 32; i++) {
+	    val.set_bit(i, (result >> i) & 1 ? BIT4_1 : BIT4_0);
+      }
+      thr->push_vec4(val);
       return true;
 }
 

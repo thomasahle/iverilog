@@ -1435,6 +1435,25 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	    return;
       }
 
+      /* Queue sum_by_member/product_by_member - sum/product with (item.field) for packed structs */
+      if (strcmp(ivl_expr_name(expr),"$ivl_queue_method$sum_by_member")==0 ||
+          strcmp(ivl_expr_name(expr),"$ivl_queue_method$product_by_member")==0) {
+	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+	    ivl_expr_t offset_expr = ivl_expr_parm(expr, 1);
+	    ivl_expr_t width_expr = ivl_expr_parm(expr, 2);
+	    const char* op = (strcmp(ivl_expr_name(expr),"$ivl_queue_method$sum_by_member")==0)
+		  ? "sum" : "product";
+
+	    unsigned offset = ivl_expr_uvalue(offset_expr);
+	    unsigned width = ivl_expr_uvalue(width_expr);
+
+	    /* Simple signal case - the signal is a queue variable */
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%q%s/m v%p_0, %u, %u;\n",
+		    op, ivl_expr_signal(arg), offset, width);
+	    return;
+      }
+
       if (strcmp(ivl_expr_name(expr),"$ivl_darray_method$sum")==0 ||
           strcmp(ivl_expr_name(expr),"$ivl_darray_method$product")==0) {
 	    ivl_expr_t arg = ivl_expr_parm(expr, 0);

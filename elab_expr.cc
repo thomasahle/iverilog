@@ -8752,19 +8752,84 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    }
 
 	    // sum() and product() methods - return single element value
+	    // Supports with (item.field) clause for queues of packed structs
 	    if (method_name == "sum" || method_name == "product") {
 		  if (parms_.size() != 0) {
 			cerr << get_fileline() << ": error: " << method_name
 			     << "() method takes no arguments" << endl;
 			des->errors += 1;
 		  }
-		  // Return type is the element type of the queue
+		  // Return type is int for sum/product (accumulator type)
 		  const netqueue_t*queue_type = search_results.net->queue_type();
-		  ivl_type_t element_type = queue_type->element_type();
+		  ivl_type_t result_type = &netvector_t::atom2s32;
 		  perm_string fname = method_name == "sum"
 			? perm_string::literal("$ivl_queue_method$sum")
 			: perm_string::literal("$ivl_queue_method$product");
-		  NetESFunc*sys_expr = new NetESFunc(fname, element_type, 1);
+
+		  // Check for with clause: sum with (item.field)
+		  if (with_expr_) {
+			PEIdent* ident = dynamic_cast<PEIdent*>(with_expr_);
+			if (ident) {
+			      const pform_name_t& with_path = ident->path().name;
+			      // For item.field pattern, path should have 2 components
+			      if (with_path.size() == 2) {
+				    auto it = with_path.begin();
+				    perm_string item_name = (*it).name;
+				    ++it;
+				    perm_string field_name = (*it).name;
+
+				    // Get element type of queue to find struct info
+				    const netstruct_t* struct_type = nullptr;
+				    if (queue_type) {
+					  struct_type = dynamic_cast<const netstruct_t*>(queue_type->element_type());
+				    }
+
+				    if (struct_type && struct_type->packed()) {
+					  // Find the member and calculate bit offset
+					  int member_offset = -1;
+					  int member_width = 0;
+
+					  // For packed structs, calculate MSB-to-LSB offset
+					  long offset = struct_type->packed_width();
+					  for (const netstruct_t::member_t& m : struct_type->members()) {
+						long mwid = m.net_type->packed_width();
+						offset -= mwid;
+						if (m.name == field_name) {
+						      member_offset = offset;
+						      member_width = mwid;
+						      break;
+						}
+					  }
+
+					  if (member_offset >= 0) {
+						// Use sum_by_member/product_by_member variant
+						fname = method_name == "sum"
+						      ? perm_string::literal("$ivl_queue_method$sum_by_member")
+						      : perm_string::literal("$ivl_queue_method$product_by_member");
+						NetESFunc*sys_expr = new NetESFunc(fname, result_type, 3);
+						sys_expr->set_line(*this);
+						sys_expr->parm(0, sub_expr);
+						NetEConst* offset_expr = new NetEConst(verinum(member_offset));
+						offset_expr->set_line(*this);
+						sys_expr->parm(1, offset_expr);
+						NetEConst* width_expr = new NetEConst(verinum(member_width));
+						width_expr->set_line(*this);
+						sys_expr->parm(2, width_expr);
+						return sys_expr;
+					  } else {
+						cerr << get_fileline() << ": error: struct member '"
+						     << field_name << "' not found for " << method_name << " with clause." << endl;
+						des->errors += 1;
+					  }
+				    } else {
+					  cerr << get_fileline() << ": warning: " << method_name << " with clause "
+					       << "only supported for queues of packed structs." << endl;
+				    }
+			      }
+			}
+		  }
+
+		  NetESFunc*sys_expr = new NetESFunc(fname, result_type, 1);
 		  sys_expr->set_line(*this);
 		  sys_expr->parm(0, sub_expr);
 		  return sys_expr;

@@ -1427,3 +1427,4 @@ sv_find_struct	normal,-g2012		ivltests gold=sv_find_struct.gold
 sv_sort_with	normal,-g2012	ivltests	gold=sv_sort_with.gold
 sv_unique_with		normal,-g2012		ivltests	gold=sv_unique_with.gold
 sv_minmax_with		normal,-g2012		ivltests	gold=sv_minmax_with.gold
+sv_sum_product_with	normal,-g2012	ivltests	gold=sv_sum_product_with.gold

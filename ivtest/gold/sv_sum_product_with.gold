@@ -1,0 +1,12 @@
+Queue contents:
+  q[0]: id=1, value=10
+  q[1]: id=2, value=20
+  q[2]: id=3, value=30
+q.sum with (item.value) = 60 (expected 60)
+q.sum with (item.id) = 6 (expected 6)
+q.product with (item.value) = 6000 (expected 6000)
+q.product with (item.id) = 6 (expected 6)
+sum with empty queue = 0 (expected 0)
+product with empty queue = 1 (expected 1)
+PASSED
+./ivltests/sv_sum_product_with.sv:80: $finish called at 0 (1s)
