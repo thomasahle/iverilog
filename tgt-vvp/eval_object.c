@@ -468,10 +468,14 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    else if (strcmp(method, "find") == 0) mode = 3;
 	    else if (strcmp(method, "find_first") == 0) mode = 4;
 	    else if (strcmp(method, "find_last") == 0) mode = 5;
-	    /* Struct member variants */
+	    /* Struct member variants - index methods */
 	    else if (strcmp(method, "find_index_struct") == 0) mode = 0;
 	    else if (strcmp(method, "find_first_index_struct") == 0) mode = 1;
 	    else if (strcmp(method, "find_last_index_struct") == 0) mode = 2;
+	    /* Struct member variants - element methods */
+	    else if (strcmp(method, "find_struct") == 0) mode = 3;
+	    else if (strcmp(method, "find_first_struct") == 0) mode = 4;
+	    else if (strcmp(method, "find_last_struct") == 0) mode = 5;
 
 	    /* Handle struct member access pattern (5 parameters) */
 	    if (nparms >= 5 && strstr(method, "_struct") != NULL) {

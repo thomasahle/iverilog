@@ -8476,6 +8476,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // 'item == value', 'item > value', 'item < value', etc.
 		  NetExpr*cmp_value = nullptr;
 		  int cmp_op = 0;  // Comparison operator: 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge
+		  int item_prop_idx = 0;  // 0=simple item, >0=class property, <0=encoded struct member
 		  PEBinary*bin_with = dynamic_cast<PEBinary*>(with_expr_);
 
 		  // Check for supported comparison operators
@@ -8494,17 +8495,19 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      case 'G': cmp_op = 5; break;  // >=
 			}
 
-			// Check if left or right side is 'item'
+			// Check if left or right side is 'item' or 'item.property'
 			PEIdent*left_id = dynamic_cast<PEIdent*>(bin_with->get_left());
 			PEIdent*right_id = dynamic_cast<PEIdent*>(bin_with->get_right());
 			PExpr*value_expr = nullptr;
+			PEIdent*item_id = nullptr;
 
-			if (left_id && peek_head_name(left_id->path()) == perm_string::literal("item")
-			    && left_id->path().name.size() == 1) {
+			// Check for 'item' or 'item.property' on left or right side
+			if (left_id && peek_head_name(left_id->path()) == perm_string::literal("item")) {
 			      value_expr = bin_with->get_right();
-			} else if (right_id && peek_head_name(right_id->path()) == perm_string::literal("item")
-			           && right_id->path().name.size() == 1) {
+			      item_id = left_id;
+			} else if (right_id && peek_head_name(right_id->path()) == perm_string::literal("item")) {
 			      value_expr = bin_with->get_left();
+			      item_id = right_id;
 			      // Swap comparison direction if item is on right side
 			      // e.g., "25 < item" becomes "item > 25"
 			      switch (cmp_op) {
@@ -8516,19 +8519,115 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      }
 			}
 
-			if (value_expr) {
+			if (value_expr && item_id) {
 			      cmp_value = elab_and_eval(des, scope, value_expr, -1, false);
+
+			      // Check if this is item.property pattern (path has 2 components)
+			      if (item_id->path().name.size() == 2) {
+				    // Get the property name from second component
+				    pform_name_t::const_iterator prop_it = item_id->path().name.begin();
+				    ++prop_it;  // Skip "item"
+				    perm_string item_prop_name = prop_it->name;
+
+				    // Get element type
+				    ivl_type_t element_type = queue_type->element_type();
+
+				    // Try class type first
+				    bool found_class_prop = false;
+				    const netclass_t*elem_class = dynamic_cast<const netclass_t*>(element_type);
+				    if (elem_class) {
+					  item_prop_idx = elem_class->property_idx_from_name(item_prop_name);
+					  if (item_prop_idx >= 0) {
+						found_class_prop = true;
+					  } else {
+						cerr << get_fileline() << ": error: Property '"
+						     << item_prop_name << "' not found in class '"
+						     << elem_class->get_name() << "'." << endl;
+						des->errors += 1;
+						return 0;
+					  }
+				    }
+
+				    // Try struct type if not a class
+				    if (!found_class_prop) {
+					  const netstruct_t*elem_struct = dynamic_cast<const netstruct_t*>(element_type);
+					  if (elem_struct) {
+						unsigned long member_off = 0;
+						const netstruct_t::member_t*member = nullptr;
+
+						if (elem_struct->packed()) {
+						      member = elem_struct->packed_member(item_prop_name, member_off);
+						} else {
+						      int member_idx = elem_struct->member_idx_from_name(item_prop_name);
+						      if (member_idx >= 0) {
+							    for (int i = 0; i < member_idx; i++) {
+								  const netstruct_t::member_t*m = elem_struct->get_member(i);
+								  if (m) member_off += m->net_type->packed_width();
+							    }
+							    member = elem_struct->get_member(member_idx);
+						      }
+						}
+
+						if (member) {
+						      unsigned member_wid = member->net_type->packed_width();
+						      // Encode offset and width for struct member access
+						      // Use negative value to signal struct mode
+						      item_prop_idx = -((int)(member_off * 65536 + member_wid));
+						} else {
+						      cerr << get_fileline() << ": error: Member '"
+							   << item_prop_name << "' not found in struct." << endl;
+						      des->errors += 1;
+						      return 0;
+						}
+					  }
+				    }
+			      }
 			}
 		  }
 
 		  if (cmp_value) {
-			// 'item OP value' case - pass queue, cmp_op, and value to VVP
-			NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 3);
-			sys_expr->set_line(*this);
-			sys_expr->parm(0, sub_expr);
-			sys_expr->parm(1, new NetEConst(verinum(cmp_op)));
-			sys_expr->parm(2, cmp_value);
-			return sys_expr;
+			if (item_prop_idx > 0) {
+			      // 'item.property OP value' case for CLASS - pass queue, property index, cmp_op, and value
+			      NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 4);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, sub_expr);
+			      sys_expr->parm(1, new NetEConst(verinum(item_prop_idx)));
+			      sys_expr->parm(2, new NetEConst(verinum(cmp_op)));
+			      sys_expr->parm(3, cmp_value);
+			      return sys_expr;
+			} else if (item_prop_idx < 0) {
+			      // 'item.member OP value' case for STRUCT - decode offset/width
+			      int encoded = -item_prop_idx;
+			      int member_off = encoded / 65536;
+			      int member_wid = encoded % 65536;
+
+			      // Use different function name to distinguish struct member access
+			      perm_string struct_fname;
+			      if (method_name == "find_last")
+				    struct_fname = perm_string::literal("$ivl_array_locator$find_last_struct");
+			      else if (method_name == "find_first")
+				    struct_fname = perm_string::literal("$ivl_array_locator$find_first_struct");
+			      else
+				    struct_fname = perm_string::literal("$ivl_array_locator$find_struct");
+
+			      // Pass queue, member_offset, member_width, cmp_op, and value
+			      NetESFunc*sys_expr = new NetESFunc(struct_fname, queue_type, 5);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, sub_expr);
+			      sys_expr->parm(1, new NetEConst(verinum(member_off)));
+			      sys_expr->parm(2, new NetEConst(verinum(member_wid)));
+			      sys_expr->parm(3, new NetEConst(verinum(cmp_op)));
+			      sys_expr->parm(4, cmp_value);
+			      return sys_expr;
+			} else {
+			      // Simple 'item OP value' case - pass queue, cmp_op, and value to VVP
+			      NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 3);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, sub_expr);
+			      sys_expr->parm(1, new NetEConst(verinum(cmp_op)));
+			      sys_expr->parm(2, cmp_value);
+			      return sys_expr;
+			}
 		  }
 
 		  // Try to detect "item inside {...}" pattern

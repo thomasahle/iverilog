@@ -7886,59 +7886,61 @@ bool of_DRSORT(vthread_t thr, vvp_code_t cp)
  */
 static bool vec4_compare(const vvp_vector4_t& elem, const vvp_vector4_t& cmp_val, int cmp_op)
 {
+      // Convert both vectors to 64-bit integers for comparison.
+      // This handles width differences (e.g., 8-bit field vs 32-bit comparison value).
+      uint64_t elem_val = 0;
+      uint64_t cmp_val_int = 0;
+
+      // Get element value (unsigned interpretation for basic value)
+      unsigned elem_wid = elem.size();
+      for (unsigned i = 0; i < elem_wid && i < 64; i++) {
+	    if (elem.value(i) == BIT4_1)
+		  elem_val |= (1ULL << i);
+      }
+
+      // Get comparison value (unsigned interpretation for basic value)
+      unsigned cmp_wid = cmp_val.size();
+      for (unsigned i = 0; i < cmp_wid && i < 64; i++) {
+	    if (cmp_val.value(i) == BIT4_1)
+		  cmp_val_int |= (1ULL << i);
+      }
+
       switch (cmp_op) {
-	    case 0: // eq (==)
-		  return elem.eeq(cmp_val);
-	    case 1: // ne (!=)
-		  return !elem.eeq(cmp_val);
-	    case 2: // lt (<)
+	    case 0: // eq (==) - unsigned comparison
+		  return elem_val == cmp_val_int;
+	    case 1: // ne (!=) - unsigned comparison
+		  return elem_val != cmp_val_int;
+	    case 2: // lt (<) - signed comparison
 	    case 3: // le (<=)
 	    case 4: // gt (>)
 	    case 5: // ge (>=)
 		  {
-			// Convert to signed integers for comparison
-			int64_t elem_val = 0;
-			int64_t cmp_val_int = 0;
-			bool elem_neg = false;
-			bool cmp_neg = false;
+			// Sign extend for signed comparison
+			int64_t elem_signed = (int64_t)elem_val;
+			int64_t cmp_signed = (int64_t)cmp_val_int;
 
-			// Get element value
-			unsigned wid = elem.size();
-			if (wid > 0) {
-			      // Check sign bit for signed comparison
-			      elem_neg = (elem.value(wid - 1) == BIT4_1);
-			      for (unsigned i = 0; i < wid && i < 64; i++) {
-				    if (elem.value(i) == BIT4_1)
-					  elem_val |= (1ULL << i);
-			      }
-			      if (elem_neg && wid < 64) {
-				    // Sign extend
-				    for (unsigned i = wid; i < 64; i++)
-					  elem_val |= (1ULL << i);
+			// Check if sign extension needed
+			if (elem_wid > 0 && elem_wid < 64) {
+			      if (elem.value(elem_wid - 1) == BIT4_1) {
+				    // Sign extend negative value
+				    for (unsigned i = elem_wid; i < 64; i++)
+					  elem_signed |= (1ULL << i);
 			      }
 			}
-
-			// Get comparison value
-			wid = cmp_val.size();
-			if (wid > 0) {
-			      cmp_neg = (cmp_val.value(wid - 1) == BIT4_1);
-			      for (unsigned i = 0; i < wid && i < 64; i++) {
-				    if (cmp_val.value(i) == BIT4_1)
-					  cmp_val_int |= (1ULL << i);
-			      }
-			      if (cmp_neg && wid < 64) {
-				    // Sign extend
-				    for (unsigned i = wid; i < 64; i++)
-					  cmp_val_int |= (1ULL << i);
+			if (cmp_wid > 0 && cmp_wid < 64) {
+			      if (cmp_val.value(cmp_wid - 1) == BIT4_1) {
+				    // Sign extend negative value
+				    for (unsigned i = cmp_wid; i < 64; i++)
+					  cmp_signed |= (1ULL << i);
 			      }
 			}
 
 			// Perform signed comparison
 			switch (cmp_op) {
-			      case 2: return (int64_t)elem_val < (int64_t)cmp_val_int;
-			      case 3: return (int64_t)elem_val <= (int64_t)cmp_val_int;
-			      case 4: return (int64_t)elem_val > (int64_t)cmp_val_int;
-			      case 5: return (int64_t)elem_val >= (int64_t)cmp_val_int;
+			      case 2: return elem_signed < cmp_signed;
+			      case 3: return elem_signed <= cmp_signed;
+			      case 4: return elem_signed > cmp_signed;
+			      case 5: return elem_signed >= cmp_signed;
 			}
 		  }
 		  break;
@@ -8280,10 +8282,11 @@ bool of_QFIND_PROP(vthread_t thr, vvp_code_t cp)
  * %qfind_struct <packed_mode> <member_off> <member_wid>
  * Find elements in a vec4 queue where item.member matches a value.
  * packed_mode: mode in lower 8 bits, cmp_op in upper bits
- * Mode: 0=find_index (all), 1=find_first_index, 2=find_last_index
+ * Mode: 0=find_index (all), 1=find_first_index, 2=find_last_index (return indices)
+ *       3=find (all), 4=find_first, 5=find_last (return elements)
  * cmp_op: 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge
  * Queue is on object stack, comparison value is on vec4 stack.
- * Pushes result queue (of int indices) onto object stack.
+ * Pushes result queue (of int indices or elements) onto object stack.
  */
 bool of_QFIND_STRUCT(vthread_t thr, vvp_code_t cp)
 {
@@ -8365,6 +8368,38 @@ bool of_QFIND_STRUCT(vthread_t thr, vvp_code_t cp)
 		  vvp_vector4_t member_val = extract_member(elem);
 		  if (vec4_compare(member_val, cmp_val, cmp_op)) {
 			result->push_back(make_idx_vec(i - 1), 0);
+			break;
+		  }
+	    }
+      } else if (mode == 3) {
+	    // find: return all matching elements
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  vec_queue->get_word(i, elem);
+		  vvp_vector4_t member_val = extract_member(elem);
+		  if (vec4_compare(member_val, cmp_val, cmp_op)) {
+			result->push_back(elem, 0);
+		  }
+	    }
+      } else if (mode == 4) {
+	    // find_first: return first matching element
+	    for (size_t i = 0; i < qsize; i++) {
+		  vvp_vector4_t elem;
+		  vec_queue->get_word(i, elem);
+		  vvp_vector4_t member_val = extract_member(elem);
+		  if (vec4_compare(member_val, cmp_val, cmp_op)) {
+			result->push_back(elem, 0);
+			break;
+		  }
+	    }
+      } else if (mode == 5) {
+	    // find_last: return last matching element
+	    for (size_t i = qsize; i > 0; i--) {
+		  vvp_vector4_t elem;
+		  vec_queue->get_word(i - 1, elem);
+		  vvp_vector4_t member_val = extract_member(elem);
+		  if (vec4_compare(member_val, cmp_val, cmp_op)) {
+			result->push_back(elem, 0);
 			break;
 		  }
 	    }

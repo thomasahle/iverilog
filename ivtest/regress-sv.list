@@ -1423,3 +1423,4 @@ sv_covergroup_sample_args2	normal,-g2012,-I../local_install/lib/ivl/uvm	ivltests
 sv_interface_param	normal,-g2012	ivltests	gold=sv_interface_param.gold
 sv_queue_struct	normal,-g2012	ivltests	gold=sv_queue_struct.gold
 sv_darray_struct	normal,-g2012	ivltests	gold=sv_darray_struct.gold
+sv_find_struct	normal,-g2012		ivltests gold=sv_find_struct.gold

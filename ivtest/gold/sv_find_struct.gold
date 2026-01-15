@@ -1,0 +1,2 @@
+PASSED
+./ivltests/sv_find_struct.v:40: $finish called at 0 (1s)
