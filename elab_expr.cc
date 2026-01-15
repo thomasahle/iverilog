@@ -8279,7 +8279,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // Try to analyze the 'with' clause for simple cases like 'item == value',
 		  // 'item > value', 'item < value', etc. or 'item.property == value'
 		  NetExpr*cmp_value = nullptr;
-		  int item_prop_idx = -1;  // Property index for item.property pattern
+		  int item_prop_idx = 0;  // 0=simple item, >0=class property, <0=encoded struct member
 		  int cmp_op = 0;  // Comparison operator: 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge
 		  PEBinary*bin_with = dynamic_cast<PEBinary*>(with_expr_);
 
@@ -8337,10 +8337,13 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    perm_string item_prop_name = prop_it->name;
 
 				    // Try class type first
+				    bool found_class_prop = false;
 				    const netclass_t*elem_class = dynamic_cast<const netclass_t*>(element_type);
 				    if (elem_class) {
 					  item_prop_idx = elem_class->property_idx_from_name(item_prop_name);
-					  if (item_prop_idx < 0) {
+					  if (item_prop_idx >= 0) {
+						found_class_prop = true;
+					  } else {
 						cerr << get_fileline() << ": error: Property '"
 						     << item_prop_name << "' not found in class '"
 						     << elem_class->get_name() << "'." << endl;
@@ -8350,7 +8353,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    }
 
 				    // Try struct type if not a class
-				    if (item_prop_idx < 0) {
+				    if (!found_class_prop) {
 					  const netstruct_t*elem_struct = dynamic_cast<const netstruct_t*>(element_type);
 					  if (elem_struct) {
 						unsigned long member_off = 0;
