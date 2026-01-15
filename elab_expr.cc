@@ -8669,6 +8669,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    }
 
 	    // min() and max() methods - return queue with min/max element(s)
+	    // Supports with (item.field) clause for queues of packed structs
 	    if (method_name == "min" || method_name == "max") {
 		  if (parms_.size() != 0) {
 			cerr << get_fileline() << ": error: " << method_name
@@ -8680,6 +8681,70 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  perm_string fname = method_name == "min"
 			? perm_string::literal("$ivl_queue_method$min")
 			: perm_string::literal("$ivl_queue_method$max");
+
+		  // Check for with clause: min/max with (item.field)
+		  if (with_expr_) {
+			PEIdent* ident = dynamic_cast<PEIdent*>(with_expr_);
+			if (ident) {
+			      const pform_name_t& with_path = ident->path().name;
+			      // For item.field pattern, path should have 2 components
+			      if (with_path.size() == 2) {
+				    auto it = with_path.begin();
+				    perm_string item_name = (*it).name;
+				    ++it;
+				    perm_string field_name = (*it).name;
+
+				    // Get element type of queue to find struct info
+				    const netstruct_t* struct_type = nullptr;
+				    if (queue_type) {
+					  struct_type = dynamic_cast<const netstruct_t*>(queue_type->element_type());
+				    }
+
+				    if (struct_type && struct_type->packed()) {
+					  // Find the member and calculate bit offset
+					  int member_offset = -1;
+					  int member_width = 0;
+
+					  // For packed structs, calculate MSB-to-LSB offset
+					  long offset = struct_type->packed_width();
+					  for (const netstruct_t::member_t& m : struct_type->members()) {
+						long mwid = m.net_type->packed_width();
+						offset -= mwid;
+						if (m.name == field_name) {
+						      member_offset = offset;
+						      member_width = mwid;
+						      break;
+						}
+					  }
+
+					  if (member_offset >= 0) {
+						// Use min_by_member/max_by_member variant
+						fname = method_name == "min"
+						      ? perm_string::literal("$ivl_queue_method$min_by_member")
+						      : perm_string::literal("$ivl_queue_method$max_by_member");
+						NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 3);
+						sys_expr->set_line(*this);
+						sys_expr->parm(0, sub_expr);
+						NetEConst* offset_expr = new NetEConst(verinum(member_offset));
+						offset_expr->set_line(*this);
+						sys_expr->parm(1, offset_expr);
+						NetEConst* width_expr = new NetEConst(verinum(member_width));
+						width_expr->set_line(*this);
+						sys_expr->parm(2, width_expr);
+						return sys_expr;
+					  } else {
+						cerr << get_fileline() << ": error: struct member '"
+						     << field_name << "' not found for " << method_name << " with clause." << endl;
+						des->errors += 1;
+					  }
+				    } else {
+					  cerr << get_fileline() << ": warning: " << method_name << " with clause "
+					       << "only supported for queues of packed structs." << endl;
+				    }
+			      }
+			}
+		  }
+
 		  NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 1);
 		  sys_expr->set_line(*this);
 		  sys_expr->parm(0, sub_expr);

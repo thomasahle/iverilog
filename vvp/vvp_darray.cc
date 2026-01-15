@@ -1368,6 +1368,78 @@ vvp_object_t vvp_queue_vec4::unique_index_by_member(unsigned offset, unsigned wi
       return obj;
 }
 
+/*
+ * min_by_member - Return element(s) with minimum value for struct member
+ *
+ * Returns a queue containing element(s) with the minimum value for the
+ * specified struct member field.
+ */
+vvp_object_t vvp_queue_vec4::min_by_member(unsigned offset, unsigned width)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+
+      // Find the minimum member value first (use unsigned comparison for bit fields)
+      vvp_vector4_t min_member = extract_member_bits(queue[0], offset, width);
+      for (size_t i = 1; i < queue.size(); i++) {
+	    vvp_vector4_t member = extract_member_bits(queue[i], offset, width);
+	    // compare_gtge(min_member, member) returns BIT4_1 if min_member > member (unsigned)
+	    if (compare_gtge(min_member, member, BIT4_0) == BIT4_1) {
+		  min_member = member;
+	    }
+      }
+
+      // Return all elements that have this minimum member value
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      for (const auto& elem : queue) {
+	    vvp_vector4_t member = extract_member_bits(elem, offset, width);
+	    if (member.eeq(min_member)) {
+		  result->queue.push_back(elem);
+	    }
+      }
+
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
+/*
+ * max_by_member - Return element(s) with maximum value for struct member
+ *
+ * Returns a queue containing element(s) with the maximum value for the
+ * specified struct member field.
+ */
+vvp_object_t vvp_queue_vec4::max_by_member(unsigned offset, unsigned width)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+
+      // Find the maximum member value first (use unsigned comparison for bit fields)
+      vvp_vector4_t max_member = extract_member_bits(queue[0], offset, width);
+      for (size_t i = 1; i < queue.size(); i++) {
+	    vvp_vector4_t member = extract_member_bits(queue[i], offset, width);
+	    // compare_gtge(member, max_member) returns BIT4_1 if member > max_member (unsigned)
+	    if (compare_gtge(member, max_member, BIT4_0) == BIT4_1) {
+		  max_member = member;
+	    }
+      }
+
+      // Return all elements that have this maximum member value
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      for (const auto& elem : queue) {
+	    vvp_vector4_t member = extract_member_bits(elem, offset, width);
+	    if (member.eeq(max_member)) {
+		  result->queue.push_back(elem);
+	    }
+      }
+
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
 vvp_object_t vvp_queue_vec4::min_index(void)
 {
       if (queue.empty()) {

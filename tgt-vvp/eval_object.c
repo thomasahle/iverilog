@@ -635,6 +635,23 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    return 0;
       }
 
+      /* Queue min_by_member/max_by_member - min/max with (item.field) for packed structs */
+      if (strcmp(name, "$ivl_queue_method$min_by_member") == 0 ||
+          strcmp(name, "$ivl_queue_method$max_by_member") == 0) {
+	    ivl_expr_t arg = ivl_expr_parm(ex, 0);
+	    ivl_expr_t offset_expr = ivl_expr_parm(ex, 1);
+	    ivl_expr_t width_expr = ivl_expr_parm(ex, 2);
+	    const char* op = (strcmp(name, "$ivl_queue_method$min_by_member") == 0) ? "min" : "max";
+
+	    unsigned offset = ivl_expr_uvalue(offset_expr);
+	    unsigned width = ivl_expr_uvalue(width_expr);
+
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%q%s/m v%p_0, %u, %u;\n",
+		    op, ivl_expr_signal(arg), offset, width);
+	    return 0;
+      }
+
       /* Queue unique() method - returns queue with unique elements */
       if (strcmp(name, "$ivl_queue_method$unique") == 0) {
 	    ivl_expr_t arg = ivl_expr_parm(ex, 0);

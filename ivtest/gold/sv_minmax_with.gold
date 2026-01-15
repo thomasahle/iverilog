@@ -1,0 +1,18 @@
+Queue contents:
+  q[0]: id=0x01, prio=0x50
+  q[1]: id=0x02, prio=0x10
+  q[2]: id=0x03, prio=0xc0
+  q[3]: id=0x04, prio=0x30
+  q[4]: id=0x05, prio=0x10
+min with (item.prio): 2 element(s)
+  result[0]: id=0x02, prio=0x10
+  result[1]: id=0x05, prio=0x10
+max with (item.prio): 1 element(s)
+  result[0]: id=0x03, prio=0xc0
+min with (item.id): 1 element(s)
+  result[0]: id=0x01, prio=0x50
+max with (item.id): 1 element(s)
+  result[0]: id=0x05, prio=0x10
+min with empty queue: 0 element(s)
+max with empty queue: 0 element(s)
+PASSED

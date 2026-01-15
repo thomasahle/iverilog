@@ -7550,6 +7550,60 @@ bool of_QMAX(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qmin/m <var-label>, <offset>, <width>
+ * Push a new queue containing element(s) with minimum member value.
+ * Uses bit offset and width to extract member value for comparison.
+ */
+bool of_QMIN_M(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned member_offset = cp->bit_idx[0];
+      unsigned member_width = cp->bit_idx[1];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue_vec4*queue = dynamic_cast<vvp_queue_vec4*>(obj->get_object().peek<vvp_queue>());
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return an empty queue
+	    vvp_object_t result;
+	    thr->push_object(result);
+	    return true;
+      }
+
+      vvp_object_t result = queue->min_by_member(member_offset, member_width);
+      thr->push_object(result);
+      return true;
+}
+
+/*
+ * %qmax/m <var-label>, <offset>, <width>
+ * Push a new queue containing element(s) with maximum member value.
+ * Uses bit offset and width to extract member value for comparison.
+ */
+bool of_QMAX_M(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned member_offset = cp->bit_idx[0];
+      unsigned member_width = cp->bit_idx[1];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue_vec4*queue = dynamic_cast<vvp_queue_vec4*>(obj->get_object().peek<vvp_queue>());
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return an empty queue
+	    vvp_object_t result;
+	    thr->push_object(result);
+	    return true;
+      }
+
+      vvp_object_t result = queue->max_by_member(member_offset, member_width);
+      thr->push_object(result);
+      return true;
+}
+
+/*
  * %qsum <var-label>, <width>
  * Push the sum of all elements to the vec4 stack.
  */
