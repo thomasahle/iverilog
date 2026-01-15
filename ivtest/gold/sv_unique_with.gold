@@ -1,0 +1,21 @@
+Before unique:
+  q[0]: prio=50, data=0xaa
+  q[1]: prio=10, data=0xbb
+  q[2]: prio=50, data=0xcc
+  q[3]: prio=20, data=0xdd
+  q[4]: prio=10, data=0xee
+  q[5]: prio=30, data=0xff
+
+After unique with (item.prio):
+  result[0]: prio=50, data=0xaa
+  result[1]: prio=10, data=0xbb
+  result[2]: prio=20, data=0xdd
+  result[3]: prio=30, data=0xff
+
+unique_index with (item.prio):
+  index[0] = 0 (q[0].prio = 50)
+  index[1] = 1 (q[1].prio = 10)
+  index[2] = 3 (q[3].prio = 20)
+  index[3] = 5 (q[5].prio = 30)
+
+PASSED: All unique with clause tests passed!

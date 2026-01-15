@@ -8486,6 +8486,33 @@ bool of_QUNIQUE(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qunique/m <var-label>, <offset>, <width>
+ * Push a queue with elements unique by member to the object stack.
+ * Uses bit offset and width to extract member value for comparison.
+ */
+bool of_QUNIQUE_M(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned member_offset = cp->bit_idx[0];
+      unsigned member_width = cp->bit_idx[1];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue_vec4*queue = dynamic_cast<vvp_queue_vec4*>(obj->get_object().peek<vvp_queue>());
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return an empty queue
+	    vvp_object_t result;
+	    thr->push_object(result);
+	    return true;
+      }
+
+      vvp_object_t result = queue->unique_by_member(member_offset, member_width);
+      thr->push_object(result);
+      return true;
+}
+
+/*
  * %qunique_index <var-label>
  * Push a queue of indices of first unique occurrences to the object stack.
  */
@@ -8505,6 +8532,33 @@ bool of_QUNIQUE_INDEX(vthread_t thr, vvp_code_t cp)
       }
 
       vvp_object_t result = queue->unique_index();
+      thr->push_object(result);
+      return true;
+}
+
+/*
+ * %qunique_index/m <var-label>, <offset>, <width>
+ * Push a queue of indices of first unique occurrences by member to the object stack.
+ * Uses bit offset and width to extract member value for comparison.
+ */
+bool of_QUNIQUE_INDEX_M(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned member_offset = cp->bit_idx[0];
+      unsigned member_width = cp->bit_idx[1];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue_vec4*queue = dynamic_cast<vvp_queue_vec4*>(obj->get_object().peek<vvp_queue>());
+      if (queue == 0 || queue->get_size() == 0) {
+	    // Return an empty queue
+	    vvp_object_t result;
+	    thr->push_object(result);
+	    return true;
+      }
+
+      vvp_object_t result = queue->unique_index_by_member(member_offset, member_width);
       thr->push_object(result);
       return true;
 }

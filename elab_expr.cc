@@ -8706,6 +8706,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    }
 
 	    // unique() method - returns queue with unique elements
+	    // Supports with (item.field) clause for queues of packed structs
 	    if (method_name == "unique") {
 		  if (parms_.size() != 0) {
 			cerr << get_fileline() << ": error: " << method_name
@@ -8715,6 +8716,68 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // Return type is same as source queue type
 		  const netqueue_t*queue_type = search_results.net->queue_type();
 		  perm_string fname = perm_string::literal("$ivl_queue_method$unique");
+
+		  // Check for with clause: unique with (item.field)
+		  if (with_expr_) {
+			PEIdent* ident = dynamic_cast<PEIdent*>(with_expr_);
+			if (ident) {
+			      const pform_name_t& with_path = ident->path().name;
+			      // For item.field pattern, path should have 2 components
+			      if (with_path.size() == 2) {
+				    auto it = with_path.begin();
+				    perm_string item_name = (*it).name;
+				    ++it;
+				    perm_string field_name = (*it).name;
+
+				    // Get element type of queue to find struct info
+				    const netstruct_t* struct_type = nullptr;
+				    if (queue_type) {
+					  struct_type = dynamic_cast<const netstruct_t*>(queue_type->element_type());
+				    }
+
+				    if (struct_type && struct_type->packed()) {
+					  // Find the member and calculate bit offset
+					  int member_offset = -1;
+					  int member_width = 0;
+
+					  // For packed structs, calculate MSB-to-LSB offset
+					  long offset = struct_type->packed_width();
+					  for (const netstruct_t::member_t& m : struct_type->members()) {
+						long mwid = m.net_type->packed_width();
+						offset -= mwid;
+						if (m.name == field_name) {
+						      member_offset = offset;
+						      member_width = mwid;
+						      break;
+						}
+					  }
+
+					  if (member_offset >= 0) {
+						// Use unique_by_member variant
+						fname = perm_string::literal("$ivl_queue_method$unique_by_member");
+						NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 3);
+						sys_expr->set_line(*this);
+						sys_expr->parm(0, sub_expr);
+						NetEConst* offset_expr = new NetEConst(verinum(member_offset));
+						offset_expr->set_line(*this);
+						sys_expr->parm(1, offset_expr);
+						NetEConst* width_expr = new NetEConst(verinum(member_width));
+						width_expr->set_line(*this);
+						sys_expr->parm(2, width_expr);
+						return sys_expr;
+					  } else {
+						cerr << get_fileline() << ": error: struct member '"
+						     << field_name << "' not found for unique with clause." << endl;
+						des->errors += 1;
+					  }
+				    } else {
+					  cerr << get_fileline() << ": warning: unique with clause "
+					       << "only supported for queues of packed structs." << endl;
+				    }
+			      }
+			}
+		  }
+
 		  NetESFunc*sys_expr = new NetESFunc(fname, queue_type, 1);
 		  sys_expr->set_line(*this);
 		  sys_expr->parm(0, sub_expr);
@@ -8722,6 +8785,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 	    }
 
 	    // unique_index() method - returns queue of indices of first unique occurrences
+	    // Supports with (item.field) clause for queues of packed structs
 	    if (method_name == "unique_index") {
 		  if (parms_.size() != 0) {
 			cerr << get_fileline() << ": error: " << method_name
@@ -8731,6 +8795,69 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  // Return type is queue of int (indices)
 		  static netqueue_t int_queue_type(&netvector_t::atom2s32, -1);
 		  perm_string fname = perm_string::literal("$ivl_queue_method$unique_index");
+
+		  // Check for with clause: unique_index with (item.field)
+		  if (with_expr_) {
+			PEIdent* ident = dynamic_cast<PEIdent*>(with_expr_);
+			if (ident) {
+			      const pform_name_t& with_path = ident->path().name;
+			      // For item.field pattern, path should have 2 components
+			      if (with_path.size() == 2) {
+				    auto it = with_path.begin();
+				    perm_string item_name = (*it).name;
+				    ++it;
+				    perm_string field_name = (*it).name;
+
+				    // Get element type of queue to find struct info
+				    const netqueue_t*queue_type = search_results.net->queue_type();
+				    const netstruct_t* struct_type = nullptr;
+				    if (queue_type) {
+					  struct_type = dynamic_cast<const netstruct_t*>(queue_type->element_type());
+				    }
+
+				    if (struct_type && struct_type->packed()) {
+					  // Find the member and calculate bit offset
+					  int member_offset = -1;
+					  int member_width = 0;
+
+					  // For packed structs, calculate MSB-to-LSB offset
+					  long offset = struct_type->packed_width();
+					  for (const netstruct_t::member_t& m : struct_type->members()) {
+						long mwid = m.net_type->packed_width();
+						offset -= mwid;
+						if (m.name == field_name) {
+						      member_offset = offset;
+						      member_width = mwid;
+						      break;
+						}
+					  }
+
+					  if (member_offset >= 0) {
+						// Use unique_index_by_member variant
+						fname = perm_string::literal("$ivl_queue_method$unique_index_by_member");
+						NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 3);
+						sys_expr->set_line(*this);
+						sys_expr->parm(0, sub_expr);
+						NetEConst* offset_expr = new NetEConst(verinum(member_offset));
+						offset_expr->set_line(*this);
+						sys_expr->parm(1, offset_expr);
+						NetEConst* width_expr = new NetEConst(verinum(member_width));
+						width_expr->set_line(*this);
+						sys_expr->parm(2, width_expr);
+						return sys_expr;
+					  } else {
+						cerr << get_fileline() << ": error: struct member '"
+						     << field_name << "' not found for unique_index with clause." << endl;
+						des->errors += 1;
+					  }
+				    } else {
+					  cerr << get_fileline() << ": warning: unique_index with clause "
+					       << "only supported for queues of packed structs." << endl;
+				    }
+			      }
+			}
+		  }
+
 		  NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 1);
 		  sys_expr->set_line(*this);
 		  sys_expr->parm(0, sub_expr);

@@ -1281,6 +1281,93 @@ vvp_object_t vvp_queue_vec4::unique_index(void)
       return obj;
 }
 
+/*
+ * unique_by_member - Return queue with elements unique by struct member
+ *
+ * Returns elements with unique values for the specified struct member.
+ * Preserves order of first occurrence.
+ */
+vvp_object_t vvp_queue_vec4::unique_by_member(unsigned offset, unsigned width)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+
+      // Create result queue with unique elements based on member value
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      std::vector<vvp_vector4_t> seen_members;  // Track member values we've already seen
+
+      for (const auto& elem : queue) {
+	    // Extract member bits
+	    vvp_vector4_t member = extract_member_bits(elem, offset, width);
+
+	    // Check if member value already exists in seen values
+	    bool found = false;
+	    for (const auto& existing : seen_members) {
+		  if (member.eeq(existing)) {
+			found = true;
+			break;
+		  }
+	    }
+	    if (!found) {
+		  // First occurrence of this member value - add element to result
+		  seen_members.push_back(member);
+		  result->queue.push_back(elem);
+	    }
+      }
+
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
+/*
+ * unique_index_by_member - Return indices of first occurrences with unique member values
+ *
+ * Returns a queue of indices where each index points to the first element
+ * with a unique value for the specified struct member.
+ */
+vvp_object_t vvp_queue_vec4::unique_index_by_member(unsigned offset, unsigned width)
+{
+      if (queue.empty()) {
+	    return vvp_object_t();
+      }
+
+      // Create result queue with indices of first occurrence of each unique member value
+      vvp_queue_vec4* result = new vvp_queue_vec4();
+      std::vector<vvp_vector4_t> seen_members;  // Track member values we've already seen
+
+      for (size_t idx = 0; idx < queue.size(); idx++) {
+	    const vvp_vector4_t& elem = queue[idx];
+
+	    // Extract member bits
+	    vvp_vector4_t member = extract_member_bits(elem, offset, width);
+
+	    // Check if member value already exists in seen values
+	    bool found = false;
+	    for (const auto& existing : seen_members) {
+		  if (member.eeq(existing)) {
+			found = true;
+			break;
+		  }
+	    }
+	    if (!found) {
+		  // First occurrence of this member value - add index to result
+		  seen_members.push_back(member);
+		  // Convert index to vvp_vector4_t (32-bit int)
+		  vvp_vector4_t idx_vec(32);
+		  for (unsigned i = 0; i < 32; i++) {
+			idx_vec.set_bit(i, (idx >> i) & 1 ? BIT4_1 : BIT4_0);
+		  }
+		  result->queue.push_back(idx_vec);
+	    }
+      }
+
+      vvp_object_t obj;
+      obj.reset(result);
+      return obj;
+}
+
 vvp_object_t vvp_queue_vec4::min_index(void)
 {
       if (queue.empty()) {

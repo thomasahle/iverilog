@@ -669,6 +669,36 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    return 0;
       }
 
+      /* Queue unique_by_member() - unique with (item.field) for packed structs */
+      if (strcmp(name, "$ivl_queue_method$unique_by_member") == 0) {
+	    ivl_expr_t arg = ivl_expr_parm(ex, 0);
+	    ivl_expr_t offset_expr = ivl_expr_parm(ex, 1);
+	    ivl_expr_t width_expr = ivl_expr_parm(ex, 2);
+
+	    unsigned offset = ivl_expr_uvalue(offset_expr);
+	    unsigned width = ivl_expr_uvalue(width_expr);
+
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%qunique/m v%p_0, %u, %u;\n",
+		    ivl_expr_signal(arg), offset, width);
+	    return 0;
+      }
+
+      /* Queue unique_index_by_member() - unique_index with (item.field) for packed structs */
+      if (strcmp(name, "$ivl_queue_method$unique_index_by_member") == 0) {
+	    ivl_expr_t arg = ivl_expr_parm(ex, 0);
+	    ivl_expr_t offset_expr = ivl_expr_parm(ex, 1);
+	    ivl_expr_t width_expr = ivl_expr_parm(ex, 2);
+
+	    unsigned offset = ivl_expr_uvalue(offset_expr);
+	    unsigned width = ivl_expr_uvalue(width_expr);
+
+	    assert(ivl_expr_type(arg) == IVL_EX_SIGNAL);
+	    fprintf(vvp_out, "    %%qunique_index/m v%p_0, %u, %u;\n",
+		    ivl_expr_signal(arg), offset, width);
+	    return 0;
+      }
+
       /* Queue min_index() method - returns queue of indices of minimum elements */
       if (strcmp(name, "$ivl_queue_method$min_index") == 0) {
 	    ivl_expr_t arg = ivl_expr_parm(ex, 0);

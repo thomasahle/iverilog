@@ -289,6 +289,8 @@ class vvp_queue_vec4 : public vvp_queue {
       vvp_vector4_t product_val(unsigned wid) override;
       vvp_object_t unique_val(void) override;
       vvp_object_t unique_index(void) override;
+      vvp_object_t unique_by_member(unsigned offset, unsigned width);
+      vvp_object_t unique_index_by_member(unsigned offset, unsigned width);
       vvp_object_t min_index(void) override;
       vvp_object_t max_index(void) override;
 
