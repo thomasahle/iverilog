@@ -1,2 +1,4 @@
+../lib/ivl/uvm/uvm_pkg.sv:2610: note: Detected run_test() call.
 Workaround test passed: pkg::Container#(int) works at module level
 PASSED
+./ivltests/sv_uvm_tlm_fifo3.v:70: $finish called at 0 (1s)

@@ -1,2 +1,2 @@
 PASSED
-./ivltests/sv_find_index_struct.sv:90: $finish called at 0 (1s)
+./ivltests/sv_find_index_struct.v:90: $finish called at 0 (1s)

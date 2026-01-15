@@ -9,3 +9,4 @@ pkt_queue[$].data = cc
 pkt_queue[0]: data=bb addr=2 valid=1
 pkt_queue[1]: data=cc addr=3 valid=0
 PASSED
+./ivltests/sv_queue_struct.v:91: $finish called at 0 (1s)

@@ -9,3 +9,4 @@ pkt_array[0]: data=aa addr=1 valid=1
 pkt_array[1]: data=bb addr=2 valid=1
 pkt_array[2]: data=cc addr=3 valid=0
 PASSED
+./ivltests/sv_darray_struct.v:76: $finish called at 0 (1s)
