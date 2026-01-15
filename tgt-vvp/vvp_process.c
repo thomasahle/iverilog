@@ -2262,6 +2262,48 @@ static int show_system_task_call(ivl_statement_t net)
 	    return 0;
       }
 
+      /* Handle sort_by_member for queue of structs: sort with (item.field) */
+      if (strcmp(stmt_name,"$ivl_queue_method$sort_by_member") == 0) {
+	    show_stmt_file_line(net, "queue: sort_by_member");
+
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 3)
+		  return 1;
+
+	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);  /* queue */
+	    ivl_expr_t parm1 = ivl_stmt_parm(net,1);  /* member offset */
+	    ivl_expr_t parm2 = ivl_stmt_parm(net,2);  /* member width */
+
+	    assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
+	    ivl_signal_t var = ivl_expr_signal(parm0);
+	    unsigned offset = ivl_expr_uvalue(parm1);
+	    unsigned width = ivl_expr_uvalue(parm2);
+
+	    fprintf(vvp_out, "    %%qsort/m v%p_0, %u, %u;\n", var, offset, width);
+	    return 0;
+      }
+
+      /* Handle rsort_by_member for queue of structs: rsort with (item.field) */
+      if (strcmp(stmt_name,"$ivl_queue_method$rsort_by_member") == 0) {
+	    show_stmt_file_line(net, "queue: rsort_by_member");
+
+	    unsigned parm_count = ivl_stmt_parm_count(net);
+	    if (parm_count != 3)
+		  return 1;
+
+	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);  /* queue */
+	    ivl_expr_t parm1 = ivl_stmt_parm(net,1);  /* member offset */
+	    ivl_expr_t parm2 = ivl_stmt_parm(net,2);  /* member width */
+
+	    assert(ivl_expr_type(parm0) == IVL_EX_SIGNAL);
+	    ivl_signal_t var = ivl_expr_signal(parm0);
+	    unsigned offset = ivl_expr_uvalue(parm1);
+	    unsigned width = ivl_expr_uvalue(parm2);
+
+	    fprintf(vvp_out, "    %%qrsort/m v%p_0, %u, %u;\n", var, offset, width);
+	    return 0;
+      }
+
       /* Handle covergroup sample() method on class properties */
       if (strcmp(stmt_name,"$ivl_covergroup_method$sample") == 0) {
 	    show_stmt_file_line(net, "covergroup: sample");

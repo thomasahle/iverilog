@@ -7452,6 +7452,56 @@ bool of_QRSORT(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %qsort/m <var-label>, <offset>, <width>
+ * Sort the queue by struct member in ascending order.
+ * Elements are sorted by the bits at [offset +: width].
+ */
+bool of_QSORT_M(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned member_offset = cp->bit_idx[0];
+      unsigned member_width = cp->bit_idx[1];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue_vec4*queue = dynamic_cast<vvp_queue_vec4*>(obj->get_object().peek<vvp_queue>());
+      if (queue == 0) {
+	    cerr << thr->get_fileline()
+	         << "Warning: sort() with clause on empty or nil queue." << endl;
+	    return true;
+      }
+
+      queue->sort_by_member(member_offset, member_width, false);
+      return true;
+}
+
+/*
+ * %qrsort/m <var-label>, <offset>, <width>
+ * Sort the queue by struct member in descending order.
+ * Elements are sorted by the bits at [offset +: width].
+ */
+bool of_QRSORT_M(vthread_t thr, vvp_code_t cp)
+{
+      vvp_net_t*net = cp->net;
+      unsigned member_offset = cp->bit_idx[0];
+      unsigned member_width = cp->bit_idx[1];
+
+      vvp_fun_signal_object*obj = dynamic_cast<vvp_fun_signal_object*> (net->fun);
+      assert(obj);
+
+      vvp_queue_vec4*queue = dynamic_cast<vvp_queue_vec4*>(obj->get_object().peek<vvp_queue>());
+      if (queue == 0) {
+	    cerr << thr->get_fileline()
+	         << "Warning: rsort() with clause on empty or nil queue." << endl;
+	    return true;
+      }
+
+      queue->sort_by_member(member_offset, member_width, true);
+      return true;
+}
+
+/*
  * %qmin <var-label>
  * Push a new queue containing the minimum element(s) to the object stack.
  */

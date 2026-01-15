@@ -306,9 +306,15 @@ class PCallTask  : public Statement {
         // For randomize() with { inline constraints }
       std::list<PExpr*> inline_constraints_;
 
+        // For array methods with (expression) clause like sort with (item.field)
+      PExpr* with_expr_ = nullptr;
+
     public:
       void set_inline_constraints(std::list<PExpr*>* cons);
       const std::list<PExpr*>& get_inline_constraints() const { return inline_constraints_; }
+
+      void set_with_expr(PExpr* expr) { with_expr_ = expr; }
+      PExpr* get_with_expr() const { return with_expr_; }
 };
 
 class PCase  : public Statement {

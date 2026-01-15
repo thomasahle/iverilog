@@ -282,6 +282,7 @@ class vvp_queue_vec4 : public vvp_queue {
       void reverse(void) override;
       void sort(void) override;
       void rsort(void) override;
+      void sort_by_member(unsigned offset, unsigned width, bool descending);
       vvp_object_t min_val(void) override;
       vvp_object_t max_val(void) override;
       vvp_vector4_t sum_val(unsigned wid) override;

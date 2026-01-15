@@ -240,6 +240,8 @@ extern bool of_QSHUFFLE(vthread_t thr, vvp_code_t code);
 extern bool of_QREVERSE(vthread_t thr, vvp_code_t code);
 extern bool of_QSORT(vthread_t thr, vvp_code_t code);
 extern bool of_QRSORT(vthread_t thr, vvp_code_t code);
+extern bool of_QSORT_M(vthread_t thr, vvp_code_t code);
+extern bool of_QRSORT_M(vthread_t thr, vvp_code_t code);
 extern bool of_QSUM(vthread_t thr, vvp_code_t code);
 extern bool of_QUNIQUE(vthread_t thr, vvp_code_t code);
 extern bool of_QUNIQUE_INDEX(vthread_t thr, vvp_code_t code);

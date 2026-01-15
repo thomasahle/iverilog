@@ -1120,6 +1120,44 @@ void vvp_queue_vec4::rsort(void)
       std::sort(queue.begin(), queue.end(), vec4_greater);
 }
 
+// Helper: Extract bits at [offset +: width] from a vvp_vector4_t
+static vvp_vector4_t extract_member_bits(const vvp_vector4_t& val, unsigned offset, unsigned width)
+{
+      vvp_vector4_t result(width);
+      for (unsigned i = 0; i < width; i++) {
+	    if (offset + i < val.size())
+		  result.set_bit(i, val.value(offset + i));
+	    else
+		  result.set_bit(i, BIT4_0);
+      }
+      return result;
+}
+
+void vvp_queue_vec4::sort_by_member(unsigned offset, unsigned width, bool descending)
+{
+      if (queue.size() <= 1) return;
+
+      // Sort using extracted member bits for comparison
+      // We use a stable sort to preserve order of equal elements
+      if (descending) {
+	    std::stable_sort(queue.begin(), queue.end(),
+		  [offset, width](const vvp_vector4_t& a, const vvp_vector4_t& b) {
+			vvp_vector4_t a_member = extract_member_bits(a, offset, width);
+			vvp_vector4_t b_member = extract_member_bits(b, offset, width);
+			// For descending, a > b means a comes first
+			return compare_gtge_signed(a_member, b_member, BIT4_0) == BIT4_1;
+		  });
+      } else {
+	    std::stable_sort(queue.begin(), queue.end(),
+		  [offset, width](const vvp_vector4_t& a, const vvp_vector4_t& b) {
+			vvp_vector4_t a_member = extract_member_bits(a, offset, width);
+			vvp_vector4_t b_member = extract_member_bits(b, offset, width);
+			// For ascending, b > a means a comes first (a < b)
+			return compare_gtge_signed(b_member, a_member, BIT4_0) == BIT4_1;
+		  });
+      }
+}
+
 vvp_object_t vvp_queue_vec4::min_val(void)
 {
       if (queue.empty()) {

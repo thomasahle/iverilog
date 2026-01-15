@@ -11118,6 +11118,24 @@ subroutine_call
 	delete $2;
 	$$ = tmp;
       }
+    /* Array method with expression clause: q.sort with (item.field) without parens */
+  | hierarchy_identifier K_with '(' expression ')'
+      { pform_requires_sv(@2, "Array method with clause");
+	std::list<named_pexpr_t> empty_args;
+	PCallTask*tmp = pform_make_call_task(@1, *$1, empty_args);
+	tmp->set_with_expr($4);
+	delete $1;
+	$$ = tmp;
+      }
+    /* Array method with expression clause: q.sort() with (item.field) with parens */
+  | hierarchy_identifier argument_list_parens K_with '(' expression ')'
+      { pform_requires_sv(@3, "Array method with clause");
+	PCallTask*tmp = pform_make_call_task(@1, *$1, *$2);
+	tmp->set_with_expr($5);
+	delete $1;
+	delete $2;
+	$$ = tmp;
+      }
   | class_hierarchy_identifier argument_list_parens_opt
       { PCallTask*tmp = new PCallTask(*$1, *$2);
 	FILE_NAME(tmp, @1);

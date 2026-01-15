@@ -1,0 +1,22 @@
+Before sort:
+  q[0]: prio=50, data=0xaa
+  q[1]: prio=10, data=0xbb
+  q[2]: prio=30, data=0xcc
+  q[3]: prio=20, data=0xdd
+  q[4]: prio=40, data=0xee
+
+After sort with (item.prio):
+  q[0]: prio=10, data=0xbb
+  q[1]: prio=20, data=0xdd
+  q[2]: prio=30, data=0xcc
+  q[3]: prio=40, data=0xee
+  q[4]: prio=50, data=0xaa
+
+After rsort with (item.prio):
+  q[0]: prio=50, data=0xaa
+  q[1]: prio=40, data=0xee
+  q[2]: prio=30, data=0xcc
+  q[3]: prio=20, data=0xdd
+  q[4]: prio=10, data=0xbb
+
+PASSED: All sort with clause tests passed!

@@ -5154,10 +5154,10 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
 		  sys->set_line(*this);
 		  return sys;
-	    } else if (method_name == "sort") {
-		  // sort() takes no arguments (with clause not yet supported)
+	    } else if (method_name == "sort" || method_name == "rsort") {
+		  // sort()/rsort() takes no arguments (with clause is supported)
 		  if (parms_.size() != 0) {
-			cerr << get_fileline() << ": error: sort() "
+			cerr << get_fileline() << ": error: " << method_name << "() "
 			     << "method takes no arguments." << endl;
 			des->errors += 1;
 			return 0;
@@ -5166,23 +5166,83 @@ NetProc* PCallTask::elaborate_method_(Design*des, NetScope*scope,
 		  sig->set_line(*this);
 		  vector<NetExpr*>argv (1);
 		  argv[0] = sig;
-		  NetSTask*sys = new NetSTask("$ivl_queue_method$sort",
-		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
-		  sys->set_line(*this);
-		  return sys;
-	    } else if (method_name == "rsort") {
-		  // rsort() takes no arguments (with clause not yet supported)
-		  if (parms_.size() != 0) {
-			cerr << get_fileline() << ": error: rsort() "
-			     << "method takes no arguments." << endl;
-			des->errors += 1;
-			return 0;
+
+		  // Check for with clause: sort with (item.field)
+		  PExpr* with_expr = get_with_expr();
+		  perm_string sys_name = (method_name == "sort")
+			? perm_string::literal("$ivl_queue_method$sort")
+			: perm_string::literal("$ivl_queue_method$rsort");
+
+		  if (with_expr) {
+			// Check if with expression is item.field pattern
+			PEIdent* ident = dynamic_cast<PEIdent*>(with_expr);
+			if (ident) {
+			      const pform_name_t& with_path = ident->path().name;
+			      // For item.field pattern, path should have 2 components
+			      if (with_path.size() == 2) {
+				    auto it = with_path.begin();
+				    perm_string item_name = (*it).name;
+				    ++it;
+				    perm_string field_name = (*it).name;
+				    // item_name should be "item" (iterator variable)
+				    // field_name is the struct member to sort by
+
+				    // Get element type of queue to find struct info
+				    const netqueue_t* queue_type = net->queue_type();
+				    const netstruct_t* struct_type = nullptr;
+				    if (queue_type) {
+					  struct_type = dynamic_cast<const netstruct_t*>(queue_type->element_type());
+				    }
+
+				    if (struct_type && struct_type->packed()) {
+					  // Find the member and calculate bit offset
+					  int member_offset = -1;
+					  int member_width = 0;
+
+					  // For packed structs, calculate MSB-to-LSB offset
+					  // Members are stored from MSB to LSB
+					  long offset = struct_type->packed_width();
+					  for (const netstruct_t::member_t& m : struct_type->members()) {
+						long mwid = m.net_type->packed_width();
+						offset -= mwid;
+						if (m.name == field_name) {
+						      member_offset = offset;
+						      member_width = mwid;
+						      break;
+						}
+					  }
+
+					  if (member_offset >= 0) {
+						// Use sort_by_member variant
+						sys_name = (method_name == "sort")
+						      ? perm_string::literal("$ivl_queue_method$sort_by_member")
+						      : perm_string::literal("$ivl_queue_method$rsort_by_member");
+						// Add member offset and width as arguments
+						NetEConst* offset_expr = new NetEConst(verinum(member_offset));
+						offset_expr->set_line(*this);
+						argv.push_back(offset_expr);
+						NetEConst* width_expr = new NetEConst(verinum(member_width));
+						width_expr->set_line(*this);
+						argv.push_back(width_expr);
+					  } else {
+						cerr << get_fileline() << ": error: struct member '"
+						     << field_name << "' not found for sort with clause." << endl;
+						des->errors += 1;
+						return 0;
+					  }
+				    } else {
+					  cerr << get_fileline() << ": warning: sort with clause "
+					       << "only supported for queues of packed structs." << endl;
+					  // Fall back to regular sort
+				    }
+			      } else if (with_path.size() == 1) {
+				    // Just "item" - same as default sort behavior
+				    // No special handling needed
+			      }
+			}
 		  }
-		  NetESignal*sig = new NetESignal(net);
-		  sig->set_line(*this);
-		  vector<NetExpr*>argv (1);
-		  argv[0] = sig;
-		  NetSTask*sys = new NetSTask("$ivl_queue_method$rsort",
+
+		  NetSTask*sys = new NetSTask(sys_name,
 		                              IVL_SFUNC_AS_TASK_IGNORE, argv);
 		  sys->set_line(*this);
 		  return sys;

@@ -1424,3 +1424,4 @@ sv_interface_param	normal,-g2012	ivltests	gold=sv_interface_param.gold
 sv_queue_struct	normal,-g2012	ivltests	gold=sv_queue_struct.gold
 sv_darray_struct	normal,-g2012	ivltests	gold=sv_darray_struct.gold
 sv_find_struct	normal,-g2012		ivltests gold=sv_find_struct.gold
+sv_sort_with	normal,-g2012	ivltests	gold=sv_sort_with.gold
