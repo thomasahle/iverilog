@@ -6713,7 +6713,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 					  ++it;  // Skip "item"
 					  perm_string item_prop_name = it->name;
 
-					  // Get the class type from queue element type
+					  // Try class type first
 					  const netclass_t*elem_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
 					  if (elem_class) {
 						item_prop_idx = elem_class->property_idx_from_name(item_prop_name);
@@ -6723,6 +6723,46 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 							   << elem_class->get_name() << "'." << endl;
 						      des->errors += 1;
 						      return 0;
+						}
+					  }
+
+					  // Try struct type if not a class
+					  if (item_prop_idx < 0) {
+						const netstruct_t*elem_struct = dynamic_cast<const netstruct_t*>(darray_type->element_type());
+						if (elem_struct) {
+						      unsigned long member_off = 0;
+						      const netstruct_t::member_t*member = nullptr;
+
+						      if (elem_struct->packed()) {
+							    // For packed structs, use packed_member() which
+							    // calculates the MSB-to-LSB offset correctly.
+							    member = elem_struct->packed_member(item_prop_name, member_off);
+						      } else {
+							    // For unpacked structs, members are stored in
+							    // declaration order (first member at low bits).
+							    // Calculate offset by summing widths of preceding members.
+							    int member_idx = elem_struct->member_idx_from_name(item_prop_name);
+							    if (member_idx >= 0) {
+								  for (int i = 0; i < member_idx; i++) {
+									const netstruct_t::member_t*m = elem_struct->get_member(i);
+									if (m) member_off += m->net_type->packed_width();
+								  }
+								  member = elem_struct->get_member(member_idx);
+							    }
+						      }
+
+						      if (member) {
+							    // Encode offset and width for struct member access
+							    // Use negative property index to signal struct mode
+							    // prop_idx encodes: -(offset * 65536 + width)
+							    unsigned member_wid = member->net_type->packed_width();
+							    item_prop_idx = -((int)(member_off * 65536 + member_wid));
+						      } else {
+							    cerr << get_fileline() << ": error: Member '"
+								 << item_prop_name << "' not found in struct." << endl;
+							    des->errors += 1;
+							    return 0;
+						      }
 						}
 					  }
 				    }
@@ -8296,7 +8336,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 				    ++prop_it;  // Skip "item"
 				    perm_string item_prop_name = prop_it->name;
 
-				    // Get the class type from queue element type
+				    // Try class type first
 				    const netclass_t*elem_class = dynamic_cast<const netclass_t*>(element_type);
 				    if (elem_class) {
 					  item_prop_idx = elem_class->property_idx_from_name(item_prop_name);
@@ -8308,19 +8348,83 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 						return 0;
 					  }
 				    }
+
+				    // Try struct type if not a class
+				    if (item_prop_idx < 0) {
+					  const netstruct_t*elem_struct = dynamic_cast<const netstruct_t*>(element_type);
+					  if (elem_struct) {
+						unsigned long member_off = 0;
+						const netstruct_t::member_t*member = nullptr;
+
+						if (elem_struct->packed()) {
+						      // For packed structs, use packed_member() which
+						      // calculates the MSB-to-LSB offset correctly.
+						      member = elem_struct->packed_member(item_prop_name, member_off);
+						} else {
+						      // For unpacked structs in queues, members are stored in
+						      // declaration order (first member at low bits).
+						      // Calculate offset by summing widths of preceding members.
+						      int member_idx = elem_struct->member_idx_from_name(item_prop_name);
+						      if (member_idx >= 0) {
+							    for (int i = 0; i < member_idx; i++) {
+								  const netstruct_t::member_t*m = elem_struct->get_member(i);
+								  if (m) member_off += m->net_type->packed_width();
+							    }
+							    member = elem_struct->get_member(member_idx);
+						      }
+						}
+
+						if (member) {
+						      unsigned member_wid = member->net_type->packed_width();
+						      // Encode offset and width for struct member access
+						      // Use negative value to signal struct mode
+						      item_prop_idx = -((int)(member_off * 65536 + member_wid));
+						} else {
+						      cerr << get_fileline() << ": error: Member '"
+							   << item_prop_name << "' not found in struct." << endl;
+						      des->errors += 1;
+						      return 0;
+						}
+					  }
+				    }
 			      }
 			}
 		  }
 
 		  if (cmp_value) {
-			if (item_prop_idx >= 0) {
-			      // 'item.property OP value' case - pass queue, property index, cmp_op, and value
+			if (item_prop_idx > 0) {
+			      // 'item.property OP value' case for CLASS - pass queue, property index, cmp_op, and value
 			      NetESFunc*sys_expr = new NetESFunc(fname, &int_queue_type, 4);
 			      sys_expr->set_line(*this);
 			      sys_expr->parm(0, sub_expr);
 			      sys_expr->parm(1, new NetEConst(verinum(item_prop_idx)));
 			      sys_expr->parm(2, new NetEConst(verinum(cmp_op)));
 			      sys_expr->parm(3, cmp_value);
+			      return sys_expr;
+			} else if (item_prop_idx < 0) {
+			      // 'item.member OP value' case for STRUCT - decode offset/width and pass separately
+			      // Decode: encoded = -(offset * 65536 + width)
+			      int encoded = -item_prop_idx;
+			      int member_off = encoded / 65536;
+			      int member_wid = encoded % 65536;
+
+			      // Use different function name to distinguish struct member access
+			      perm_string struct_fname;
+			      if (method_name == "find_last_index")
+				    struct_fname = perm_string::literal("$ivl_array_locator$find_last_index_struct");
+			      else if (method_name == "find_first_index")
+				    struct_fname = perm_string::literal("$ivl_array_locator$find_first_index_struct");
+			      else
+				    struct_fname = perm_string::literal("$ivl_array_locator$find_index_struct");
+
+			      // Pass queue, member_offset, member_width, cmp_op, and value
+			      NetESFunc*sys_expr = new NetESFunc(struct_fname, &int_queue_type, 5);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, sub_expr);
+			      sys_expr->parm(1, new NetEConst(verinum(member_off)));
+			      sys_expr->parm(2, new NetEConst(verinum(member_wid)));
+			      sys_expr->parm(3, new NetEConst(verinum(cmp_op)));
+			      sys_expr->parm(4, cmp_value);
 			      return sys_expr;
 			} else {
 			      // Simple 'item OP value' case - pass queue, cmp_op, and value to VVP

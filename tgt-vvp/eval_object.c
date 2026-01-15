@@ -468,6 +468,63 @@ static int eval_object_sfunc(ivl_expr_t ex)
 	    else if (strcmp(method, "find") == 0) mode = 3;
 	    else if (strcmp(method, "find_first") == 0) mode = 4;
 	    else if (strcmp(method, "find_last") == 0) mode = 5;
+	    /* Struct member variants */
+	    else if (strcmp(method, "find_index_struct") == 0) mode = 0;
+	    else if (strcmp(method, "find_first_index_struct") == 0) mode = 1;
+	    else if (strcmp(method, "find_last_index_struct") == 0) mode = 2;
+
+	    /* Handle struct member access pattern (5 parameters) */
+	    if (nparms >= 5 && strstr(method, "_struct") != NULL) {
+		  /* item.member OP value pattern for STRUCT - use %qfind_struct opcode */
+		  /* Args: queue, member_off, member_wid, cmp_op, value */
+		  ivl_expr_t off_arg = ivl_expr_parm(ex, 1);
+		  ivl_expr_t wid_arg = ivl_expr_parm(ex, 2);
+		  ivl_expr_t cmp_op_arg = ivl_expr_parm(ex, 3);
+		  ivl_expr_t cmp_arg = ivl_expr_parm(ex, 4);
+
+		  /* Evaluate the queue onto object stack */
+		  draw_eval_object(queue_arg);
+
+		  /* Evaluate the comparison value onto vec4 stack */
+		  draw_eval_vec4(cmp_arg);
+
+		  /* Get member offset (should be a constant) */
+		  int member_off = 0;
+		  if (ivl_expr_type(off_arg) == IVL_EX_NUMBER) {
+			const char*bits = ivl_expr_bits(off_arg);
+			unsigned wid = ivl_expr_width(off_arg);
+			for (unsigned i = 0; i < wid; i++) {
+			      if (bits[i] == '1') member_off |= (1 << i);
+			}
+		  }
+
+		  /* Get member width (should be a constant) */
+		  int member_wid = 0;
+		  if (ivl_expr_type(wid_arg) == IVL_EX_NUMBER) {
+			const char*bits = ivl_expr_bits(wid_arg);
+			unsigned wid = ivl_expr_width(wid_arg);
+			for (unsigned i = 0; i < wid; i++) {
+			      if (bits[i] == '1') member_wid |= (1 << i);
+			}
+		  }
+
+		  /* Get the comparison operator (should be a constant) */
+		  int cmp_op = 0;  /* 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge */
+		  if (ivl_expr_type(cmp_op_arg) == IVL_EX_NUMBER) {
+			const char*bits = ivl_expr_bits(cmp_op_arg);
+			unsigned wid = ivl_expr_width(cmp_op_arg);
+			for (unsigned i = 0; i < wid; i++) {
+			      if (bits[i] == '1') cmp_op |= (1 << i);
+			}
+		  }
+
+		  /* Emit the qfind_struct opcode with packed mode/cmp_op, offset, width */
+		  /* Encode: mode in lower 8 bits, cmp_op in upper bits of first arg */
+		  unsigned packed_mode = mode | (cmp_op << 8);
+		  fprintf(vvp_out, "    %%qfind_struct %u, %d, %d; // %s (item.member pattern)\n",
+			  packed_mode, member_off, member_wid, method);
+		  return 0;
+	    }
 
 	    if (nparms >= 4) {
 		  /* item.property OP value pattern - use %qfind_prop opcode */

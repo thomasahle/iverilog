@@ -323,6 +323,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%qfind",      of_QFIND,      2,{OA_NUMBER,OA_BIT1,OA_NONE} },
       { "%qfind_inside", of_QFIND_INSIDE, 2,{OA_NUMBER,OA_BIT1,OA_NONE} },
       { "%qfind_prop", of_QFIND_PROP, 3,{OA_NUMBER,OA_BIT1,OA_BIT2} },
+      { "%qfind_struct", of_QFIND_STRUCT, 3,{OA_NUMBER,OA_BIT1,OA_BIT2} },
       { "%qinsert/obj", of_QINSERT_OBJ, 2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
       { "%qinsert/real",of_QINSERT_REAL,2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
       { "%qinsert/str", of_QINSERT_STR, 2,{OA_FUNC_PTR,OA_BIT1,OA_NONE} },
