@@ -142,6 +142,8 @@ class netclass_t : public ivl_type_s {
       void set_type_param_override(perm_string param_name, ivl_type_t type);
       bool get_type_param_override(perm_string param_name, ivl_type_t &type) const;
       bool has_type_param_overrides() const { return !type_param_overrides_.empty(); }
+      void set_value_param_override(perm_string param_name);
+      bool has_value_param_overrides() const { return has_value_param_overrides_; }
 
 	// Check if this class has any PROPERTY type overrides that are class types.
 	// This is used to determine if methods need re-elaboration. Methods only
@@ -210,6 +212,7 @@ class netclass_t : public ivl_type_s {
 	// Maps type parameter names (e.g., "T") to their specialized types.
 	// Used during method re-elaboration to resolve type parameters.
       std::map<perm_string, ivl_type_t> type_param_overrides_;
+      bool has_value_param_overrides_ = false;
 
 	// Cache for specialized method scopes. When a method is called on
 	// a specialized class instance, the method may need to be re-elaborated

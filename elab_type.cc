@@ -808,6 +808,9 @@ ivl_type_t typeref_t::elaborate_type_raw(Design*des, NetScope*s) const
                                                 spec_scope->set_parameter(formal->name, net_expr, *this);
                                           }
                                     }
+                                    if (actual->value_param) {
+                                          spec_class->set_value_param_override(formal->name);
+                                    }
                               }
 
                               ++param_it;

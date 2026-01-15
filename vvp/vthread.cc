@@ -28,6 +28,7 @@
 # include  "vvp_cobject.h"
 # include  "vvp_darray.h"
 # include  "class_type.h"
+# include  "covergroup.h"
 # include  "factory_registry.h"
 # include  "config_db.h"
 #ifdef CHECK_WITH_VALGRIND
@@ -14350,6 +14351,8 @@ bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t cp)
       unsigned packed = cp->number;
       unsigned cp_count = packed & 0xFF;
       unsigned bins_count = packed >> 8;
+      unsigned cvg_id = cp->bit_idx[0];
+      const cvg_info_t* cg_info = cvginfo_get(cvg_id);
 
       // Get covergroup object from stack
       vvp_object_t&cvg_obj = thr->peek_object();
@@ -14380,9 +14383,10 @@ bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t cp)
 		  cobj->set_vec4(4, target_bins);
 	    }
 
-	    // Track unique coverpoint values in m_bins_hit (property 0)
+	    // Track covergroup bins in m_bins_hit (property 0)
 	    // m_bins_hit is an associative array with string keys
-	    // Key format: "cp<idx>:<value>" to identify coverpoint and value
+	    // Key format: "cp<idx>:bin<bin_idx>" for explicit bins, or
+	    // "cp<idx>:<value>" for auto bins
 
 	    // Get or create m_bins_hit associative array
 	    vvp_object_t bins_obj;
@@ -14398,21 +14402,53 @@ bool of_CVG_SAMPLE(vthread_t thr, vvp_code_t cp)
 	    }
 
 	    if (cp_count > 0) {
-		  // For each coverpoint value, if this value hasn't been seen before,
-		  // add it to the associative array with value 1
+		  // For each coverpoint value, mark matching bins as hit.
 		  for (unsigned idx = 0; idx < cp_count; idx++) {
 			// Read coverpoint value from integer register
 			int64_t cp_value = thr->words[idx].w_int;
 
-			// Create string key encoding coverpoint index and value
+			bool used_explicit = false;
+			if (cg_info && idx < cg_info->coverpoints.size()) {
+			      const cvg_coverpoint_t& cp = cg_info->coverpoints[idx];
+			      if (!cp.bins.empty()) {
+				    used_explicit = true;
+				    for (unsigned b = 0; b < cp.bins.size(); b++) {
+					  const cvg_bin_t& bin = cp.bins[b];
+					  if (bin.is_ignore || bin.is_illegal)
+						continue;
+
+					  bool in_range = false;
+					  for (const cvg_bin_range_t& range : bin.ranges) {
+						if (cp_value >= range.low && cp_value <= range.high) {
+						      in_range = true;
+						      break;
+						}
+					  }
+					  if (!in_range)
+						continue;
+
+					  char key_buf[64];
+					  snprintf(key_buf, sizeof(key_buf), "cp%u:bin%u", idx, b);
+					  string key_str(key_buf);
+					  if (!bins->exists(key_str)) {
+						vvp_vector4_t one(32);
+						one.set_bit(0, BIT4_1);
+						bins->set_word(key_str, one);
+					  }
+				    }
+			      }
+			}
+
+			if (used_explicit)
+			      continue;
+
+			// Auto bins or unknown bin info: use value-based key
 			char key_buf[64];
 			snprintf(key_buf, sizeof(key_buf), "cp%u:%lld",
 				 idx, (long long)cp_value);
 			string key_str(key_buf);
 
-			// Check if this value has been seen before
 			if (!bins->exists(key_str)) {
-			      // Not seen before, add it with value 1
 			      vvp_vector4_t one(32);
 			      one.set_bit(0, BIT4_1);
 			      bins->set_word(key_str, one);

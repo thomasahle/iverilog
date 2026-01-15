@@ -2414,7 +2414,7 @@ static NetFuncDef* find_function_definition(Design*des, NetScope*,
       return 0;
 }
 
-unsigned PECallFunction::test_width_method_(Design*, NetScope*,
+unsigned PECallFunction::test_width_method_(Design*des, NetScope*,
 					    const symbol_search_results&search_results,
 					    width_mode_t&)
 {
@@ -2614,7 +2614,7 @@ unsigned PECallFunction::test_width_method_(Design*, NetScope*,
 		  // Not a class type, but uses IVL_VT_CLASS base - could be a special type
 		  return 0;
 	    }
-	    NetScope*method = class_type->method_from_name(method_name);
+	    NetScope*method = class_type->get_method_for_call(des, method_name);
 
 	    if (method == 0) {
 		  return 0;
@@ -4614,7 +4614,7 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 			// and could be a method call without parentheses
 			if (member_path.empty()) {
 			      // This is the last path component - check for method
-			      NetScope* func = current_class->method_from_name(member_comp.name);
+			      NetScope* func = current_class->get_method_for_call(des, member_comp.name);
 			      if (func && func->type() == NetScope::FUNC) {
 				    NetFuncDef* func_def = func->func_def();
 				    if (!func_def) {
@@ -5135,9 +5135,9 @@ NetExpr* PEIdent::elaborate_expr_class_field_(Design*des, NetScope*scope,
 	    // Property not found - check if it's a method call without parentheses
 	    // SystemVerilog allows calling methods without parentheses when
 	    // all parameters have default values.
-	    NetScope* func = class_type->method_from_name(comp.name);
+	    NetScope* func = class_type->get_method_for_call(des, comp.name);
 	    if (debug_elaborate) {
-		  cerr << get_fileline() << ": debug: method_from_name('"
+		  cerr << get_fileline() << ": debug: get_method_for_call('"
 		       << comp.name << "') on class " << class_type->get_name()
 		       << " returned " << (func ? func->basename().str() : "NULL")
 		       << endl;
@@ -7059,7 +7059,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      return sys_expr;
 			}
 
-			NetScope* func = current_class->method_from_name(method_name);
+			NetScope* func = current_class->get_method_for_call(des, method_name);
 			if (func && func->type() == NetScope::FUNC) {
 			      NetFuncDef* func_def = func->func_def();
 			      if (!func_def) {
@@ -7366,7 +7366,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      }
 
 			      // Find the method in the element class
-			      NetScope* method_scope = element_class->method_from_name(final_method);
+			      NetScope* method_scope = element_class->get_method_for_call(des, final_method);
 			      if (!method_scope || method_scope->type() != NetScope::FUNC) {
 				    cerr << get_fileline() << ": error: "
 					 << "Method '" << final_method << "' not found in class "
@@ -7481,7 +7481,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			      }
 
 			      // Find the method in the nested class
-			      NetScope*method_scope = next_class->method_from_name(final_method);
+			      NetScope*method_scope = next_class->get_method_for_call(des, final_method);
 			      if (method_scope && method_scope->type() == NetScope::FUNC) {
 				    NetFuncDef*func_def = method_scope->func_def();
 				    if (!func_def) {

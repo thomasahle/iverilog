@@ -4104,18 +4104,27 @@ NetProc* PCallTask::elaborate_covergroup_prop_method_(Design*des, NetScope*scope
 
             // Look up covergroup info
             const covergroup_info_t* cg_info = des->get_covergroup_info(cg_name);
+            int bins_count = des->get_covergroup_bins_count(cg_name);
+
+            if (debug_elaborate) {
+                  cerr << get_fileline() << ": covergroup.sample: "
+                       << "Using bins_count=" << bins_count << endl;
+            }
+
+            // Add bins count as second argument (after covergroup object)
+            verinum bins_val((uint64_t)bins_count, 32);
+            NetEConst* bins_const = new NetEConst(bins_val);
+            bins_const->set_line(*this);
+            argv.push_back(bins_const);
+
+            std::vector<NetExpr*> cp_exprs;
+            std::vector<int64_t> bin_info;
+
             if (cg_info) {
                   if (debug_elaborate) {
                         cerr << get_fileline() << ": covergroup.sample: "
                              << "Found " << cg_info->coverpoints.size() << " coverpoints" << endl;
                   }
-
-                  // Add bins count as second argument (after covergroup object)
-                  int bins_count = des->get_covergroup_bins_count(cg_name);
-                  verinum bins_val((uint64_t)bins_count, 32);
-                  NetEConst* bins_const = new NetEConst(bins_val);
-                  bins_const->set_line(*this);
-                  argv.push_back(bins_const);
 
                   // For each coverpoint with a simple property reference,
                   // add an expression to read that property
@@ -4132,7 +4141,22 @@ NetProc* PCallTask::elaborate_covergroup_prop_method_(Design*des, NetScope*scope
                               if (sibling_idx >= 0) {
                                     NetEProperty* cp_expr = new NetEProperty(net, sibling_idx);
                                     cp_expr->set_line(*this);
-                                    argv.push_back(cp_expr);
+                                    cp_exprs.push_back(cp_expr);
+
+                                    // Encode bin info for this coverpoint
+                                    bin_info.push_back(cp.auto_bins_count);
+                                    bin_info.push_back(static_cast<int64_t>(cp.bins.size()));
+                                    for (const covergroup_bin_t& bin : cp.bins) {
+                                          int64_t flags = 0;
+                                          if (bin.is_ignore) flags |= 1;
+                                          if (bin.is_illegal) flags |= 2;
+                                          bin_info.push_back(flags);
+                                          bin_info.push_back(static_cast<int64_t>(bin.ranges.size()));
+                                          for (const covergroup_bin_range_t& range : bin.ranges) {
+                                                bin_info.push_back(range.low);
+                                                bin_info.push_back(range.high);
+                                          }
+                                    }
 
                                     if (debug_elaborate) {
                                           cerr << get_fileline() << ": covergroup.sample: "
@@ -4154,6 +4178,30 @@ NetProc* PCallTask::elaborate_covergroup_prop_method_(Design*des, NetScope*scope
                         cerr << get_fileline() << ": covergroup.sample: "
                              << "No covergroup info found for '" << cg_name_str << "'" << endl;
                   }
+            }
+
+            // Add coverpoint count and values (after bins count)
+            verinum cp_count_val((uint64_t)cp_exprs.size(), 32);
+            NetEConst* cp_count_const = new NetEConst(cp_count_val);
+            cp_count_const->set_line(*this);
+            argv.push_back(cp_count_const);
+
+            for (NetExpr* cp_expr : cp_exprs) {
+                  argv.push_back(cp_expr);
+            }
+
+            // Add bin info count and data (after coverpoint values)
+            verinum bin_info_count_val((uint64_t)bin_info.size(), 32);
+            NetEConst* bin_info_count_const = new NetEConst(bin_info_count_val);
+            bin_info_count_const->set_line(*this);
+            argv.push_back(bin_info_count_const);
+
+            for (int64_t val : bin_info) {
+                  verinum bin_val((uint64_t)val, 64);
+                  bin_val.has_sign(true);
+                  NetEConst* bin_const = new NetEConst(bin_val);
+                  bin_const->set_line(*this);
+                  argv.push_back(bin_const);
             }
       }
 

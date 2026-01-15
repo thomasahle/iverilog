@@ -90,7 +90,7 @@ static struct __vpiModPath*modpath_dst = 0;
 %token K_CONCAT K_CONCAT8 K_DEBUG K_DELAY K_DFF_N K_DFF_N_ACLR
 %token K_DFF_N_ASET K_DFF_P K_DFF_P_ACLR K_DFF_P_ASET
 %token K_ENUM2 K_ENUM2_S K_ENUM4 K_ENUM4_S K_EVENT K_EVENT_OR
-%token K_CONSTRAINT_BOUND K_CONSTRAINT_UNIQUE K_ENUM_BOUND K_EXPORT K_FACTORY K_EXTEND_S K_FUNCTOR K_IMPORT K_ISLAND K_LATCH K_MODPATH
+%token K_CONSTRAINT_BOUND K_CONSTRAINT_UNIQUE K_CVGINFO K_ENUM_BOUND K_EXPORT K_FACTORY K_EXTEND_S K_FUNCTOR K_IMPORT K_ISLAND K_LATCH K_MODPATH
 %token K_NET K_NET_S K_NET_R K_NET_2S K_NET_2U
 %token K_NET8 K_NET8_2S K_NET8_2U K_NET8_S
 %token K_PARAM_STR K_PARAM_L K_PARAM_REAL K_PART K_PART_PV
@@ -136,6 +136,7 @@ static struct __vpiModPath*modpath_dst = 0;
 %type <enum_name> enum_type_name
 %type <enum_namev> enum_type_names
 %type <enum_vals> enum_value_list
+%type <enum_vals> cvginfo_value_list
 
 %%
 
@@ -951,6 +952,10 @@ statement
   | K_ENUM_BOUND T_SYMBOL ',' T_NUMBER ',' T_NUMBER enum_value_list ';'
       { compile_enum_bound($2, $4, $6, $7.values, $7.count); }
 
+  /* Covergroup bin info: .cvginfo id, "name", cp_count, bins_count, data... ; */
+  | K_CVGINFO T_NUMBER T_STRING T_NUMBER T_NUMBER cvginfo_value_list ';'
+      { compile_cvginfo($2, $3, $4, $5, $6.values, $6.count); }
+
   | enum_type
       { ; }
 
@@ -1044,6 +1049,16 @@ enum_value_list
       { $$ = $1; enum_values_add(&$$, $3); }
   | enum_value_list ',' '-' T_NUMBER
       { $$ = $1; enum_values_add(&$$, -$4); }
+  ;
+
+/* Space-separated list of numbers for .cvginfo directive */
+cvginfo_value_list
+  : /* empty */
+      { enum_values_init(&$$); }
+  | cvginfo_value_list T_NUMBER
+      { $$ = $1; enum_values_add(&$$, $2); }
+  | cvginfo_value_list '-' T_NUMBER
+      { $$ = $1; enum_values_add(&$$, -$3); }
   ;
 
 local_flag

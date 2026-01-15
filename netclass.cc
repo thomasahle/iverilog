@@ -67,6 +67,12 @@ void netclass_t::set_type_param_override(perm_string param_name, ivl_type_t type
       type_param_overrides_[param_name] = type;
 }
 
+void netclass_t::set_value_param_override(perm_string param_name)
+{
+      (void)param_name;
+      has_value_param_overrides_ = true;
+}
+
 bool netclass_t::get_type_param_override(perm_string param_name, ivl_type_t &type) const
 {
       auto it = type_param_overrides_.find(param_name);
@@ -141,7 +147,10 @@ NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) 
 
       // If not a specialized class, or if we don't have an inherited method,
       // just return whatever we have
-      if (!has_type_param_overrides() || !inherited) {
+      if (!inherited) {
+	    return inherited;
+      }
+      if (!has_type_param_overrides() && !has_value_param_overrides()) {
 	    return inherited;
       }
 
@@ -150,6 +159,7 @@ NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) 
 	    cerr << "get_method_for_call: class=" << get_name()
 	         << " method=" << method_name
 	         << " has_type_param_overrides=" << has_type_param_overrides()
+	         << " has_value_param_overrides=" << has_value_param_overrides()
 	         << " has_class_type_property_overrides=" << has_class_type_property_overrides()
 	         << " has_class_type_param_overrides=" << has_class_type_param_overrides()
 	         << " class_scope_=" << (class_scope_ ? "set" : "null")
@@ -168,7 +178,9 @@ NetScope* netclass_t::get_method_for_call(Design* des, perm_string method_name) 
       //    This is needed for $cast(item, t) to work correctly with the specialized type
       //
       // If neither condition is true, the inherited methods work fine.
-      if (!has_class_type_property_overrides() && !has_class_type_param_overrides()) {
+      if (!has_value_param_overrides()
+          && !has_class_type_property_overrides()
+          && !has_class_type_param_overrides()) {
 	    return inherited;
       }
 

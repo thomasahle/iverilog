@@ -598,5 +598,7 @@ extern void compile_constraint_unique(char*class_label, unsigned prop_idx);
  * This constrains randomization to only produce valid enum values. */
 extern void compile_enum_bound(char*class_label, unsigned prop_idx,
                                unsigned num_values, int64_t* values, unsigned count);
+extern void compile_cvginfo(unsigned id, char*name, unsigned cp_count,
+                            unsigned bins_count, int64_t* values, unsigned count);
 
 #endif /* IVL_compile_H */

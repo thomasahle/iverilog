@@ -82,8 +82,9 @@ int covergroup_type_t::calculate_bins_count() const
                   total_bins += 16;
             } else {
                   for (pform_bin_t* bin : cp->bins) {
-                        // Skip ignore_bins as they don't contribute to coverage
-                        if (bin->kind == pform_bin_t::IGNORE_BIN)
+                        // Skip ignore_bins and illegal_bins as they don't contribute to coverage
+                        if (bin->kind == pform_bin_t::IGNORE_BIN ||
+                            bin->kind == pform_bin_t::ILLEGAL_BIN)
                               continue;
                         // Count the bin(s)
                         if (bin->array_count > 0) {

@@ -28,6 +28,88 @@ unsigned thread_count = 0;
 
 unsigned transient_id = 0;
 
+struct cvginfo_entry {
+      char*key;
+      unsigned id;
+      struct cvginfo_entry*next;
+};
+
+static struct cvginfo_entry* cvginfo_list = 0;
+static unsigned cvginfo_next_id = 1;
+
+static int64_t expr_to_int64(ivl_expr_t expr)
+{
+      unsigned long val = ivl_expr_uvalue(expr);
+      if (ivl_expr_signed(expr)) {
+            unsigned wid = ivl_expr_width(expr);
+            if (wid > 0 && wid < 64) {
+                  unsigned long sign_bit = 1UL << (wid - 1);
+                  if (val & sign_bit) {
+                        unsigned long mask = ~((1UL << wid) - 1);
+                        val |= mask;
+                  }
+            }
+      }
+      return (int64_t)val;
+}
+
+static unsigned find_cvginfo_id(const char*key)
+{
+      for (struct cvginfo_entry*cur = cvginfo_list; cur; cur = cur->next) {
+            if (strcmp(cur->key, key) == 0)
+                  return cur->id;
+      }
+      return 0;
+}
+
+static unsigned register_cvginfo(const char*key, unsigned cp_count,
+                                 unsigned bins_count,
+                                 const int64_t*values, unsigned value_count)
+{
+      unsigned existing = find_cvginfo_id(key);
+      if (existing)
+            return existing;
+
+      struct cvginfo_entry*node = (struct cvginfo_entry*)calloc(1, sizeof(*node));
+      node->key = strdup(key);
+      node->id = cvginfo_next_id++;
+      node->next = cvginfo_list;
+      cvginfo_list = node;
+
+      fprintf(vvp_out, ".cvginfo %u \"%s\" %u %u",
+              node->id, vvp_mangle_name(key), cp_count, bins_count);
+      for (unsigned i = 0; i < value_count; i++) {
+            if (values[i] < 0)
+                  fprintf(vvp_out, " -%llu", (unsigned long long)(-values[i]));
+            else
+                  fprintf(vvp_out, " %llu", (unsigned long long)values[i]);
+      }
+      fprintf(vvp_out, ";\n");
+
+      return node->id;
+}
+
+static void build_covergroup_key(ivl_expr_t expr, char*buf, size_t buf_len)
+{
+      const char*prop_name = ivl_expr_name(expr);
+      const char*class_name = 0;
+
+      ivl_expr_t base = ivl_expr_property_base(expr);
+      if (base) {
+            ivl_type_t base_type = ivl_expr_net_type(base);
+            if (base_type && ivl_type_base(base_type) == IVL_VT_CLASS)
+                  class_name = ivl_type_name(base_type);
+      }
+
+      if (class_name && prop_name) {
+            snprintf(buf, buf_len, "%s::%s", class_name, prop_name);
+      } else if (prop_name) {
+            snprintf(buf, buf_len, "%s", prop_name);
+      } else {
+            snprintf(buf, buf_len, "covergroup");
+      }
+}
+
 /*
  * This file includes the code needed to generate VVP code for
  * processes. Scopes are already declared, we generate here the
@@ -800,13 +882,130 @@ static int show_stmt_case(ivl_statement_t net, ivl_scope_t sscope)
 
       unsigned idx, default_case;
 
-      if (qual != IVL_CASE_QUALITY_BASIC && qual != IVL_CASE_QUALITY_PRIORITY) {
-	    fprintf(stderr, "%s:%u: vvp.tgt sorry: "
-		    "Case unique/unique0 qualities are ignored.\n",
-		    ivl_stmt_file(net), ivl_stmt_lineno(net));
-      }
-
       show_stmt_file_line(net, "Case statement.");
+
+      if (qual == IVL_CASE_QUALITY_UNIQUE || qual == IVL_CASE_QUALITY_UNIQUE0) {
+	    default_case = count;
+	    local_count += count + 3;
+
+	    int*match_flags = (int*)calloc(count, sizeof(*match_flags));
+	    for (idx = 0; idx < count; idx++)
+		  match_flags[idx] = -1;
+
+	    int any_flag = allocate_flag();
+	    int seen_flag = allocate_flag();
+	    int multi_flag = allocate_flag();
+	    int tmp_flag1 = allocate_flag();
+	    int tmp_flag2 = allocate_flag();
+
+	    fprintf(vvp_out, "    %%flag_set/imm %d, 0;\n", any_flag);
+	    fprintf(vvp_out, "    %%flag_set/imm %d, 0;\n", seen_flag);
+	    fprintf(vvp_out, "    %%flag_set/imm %d, 0;\n", multi_flag);
+
+	    draw_eval_vec4(expr);
+
+	    int eq_flag = 6;
+	    if (ivl_statement_type(net) == IVL_ST_CASEX ||
+	        ivl_statement_type(net) == IVL_ST_CASEZ)
+		  eq_flag = 4;
+
+	    for (idx = 0 ;  idx < count ;  idx += 1) {
+		  ivl_expr_t cex = ivl_stmt_case_expr(net, idx);
+		  if (cex == 0) {
+			default_case = idx;
+			continue;
+		  }
+
+		  match_flags[idx] = allocate_flag();
+		  fprintf(vvp_out, "    %%dup/vec4;\n");
+		  draw_eval_vec4(cex);
+
+		  switch (ivl_statement_type(net)) {
+		      case IVL_ST_CASE:
+			fprintf(vvp_out, "    %%cmp/u;\n");
+			break;
+		      case IVL_ST_CASEX:
+			fprintf(vvp_out, "    %%cmp/x;\n");
+			break;
+		      case IVL_ST_CASEZ:
+			fprintf(vvp_out, "    %%cmp/z;\n");
+			break;
+		      default:
+			assert(0);
+		  }
+
+		  fprintf(vvp_out, "    %%flag_mov %d, %d;\n", match_flags[idx], eq_flag);
+		  fprintf(vvp_out, "    %%flag_or %d, %d;\n", any_flag, match_flags[idx]);
+
+		  fprintf(vvp_out, "    %%flag_mov %d, %d;\n", tmp_flag1, seen_flag);
+		  fprintf(vvp_out, "    %%flag_mov %d, %d;\n", tmp_flag2, match_flags[idx]);
+		  fprintf(vvp_out, "    %%flag_inv %d;\n", tmp_flag1);
+		  fprintf(vvp_out, "    %%flag_inv %d;\n", tmp_flag2);
+		  fprintf(vvp_out, "    %%flag_or %d, %d;\n", tmp_flag1, tmp_flag2);
+		  fprintf(vvp_out, "    %%flag_inv %d;\n", tmp_flag1);
+		  fprintf(vvp_out, "    %%flag_or %d, %d;\n", multi_flag, tmp_flag1);
+		  fprintf(vvp_out, "    %%flag_or %d, %d;\n", seen_flag, match_flags[idx]);
+	    }
+
+	    fprintf(vvp_out, "    %%jmp/0 T_%u.%u, %d;\n",
+		    thread_count, local_base+count, multi_flag);
+	    fprintf(vvp_out, "    %%vpi_call/w %u %u \"$warning\", "
+		    "\"value matched multiple unique/unique0 case items\" {0 0 0};\n",
+		    ivl_file_table_index(ivl_stmt_file(net)),
+		    ivl_stmt_lineno(net));
+	    fprintf(vvp_out, "T_%u.%u ;\n", thread_count, local_base+count);
+
+	    if (qual == IVL_CASE_QUALITY_UNIQUE && default_case == count) {
+		  fprintf(vvp_out, "    %%jmp/1 T_%u.%u, %d;\n",
+			  thread_count, local_base+count+1, any_flag);
+		  fprintf(vvp_out, "    %%vpi_call/w %u %u \"$warning\", "
+			  "\"value is unhandled for unique case statement\" {0 0 0};\n",
+			  ivl_file_table_index(ivl_stmt_file(net)),
+			  ivl_stmt_lineno(net));
+		  fprintf(vvp_out, "T_%u.%u ;\n", thread_count, local_base+count+1);
+	    }
+
+	    for (idx = 0 ;  idx < count ;  idx += 1) {
+		  if (match_flags[idx] < 0)
+			continue;
+		  fprintf(vvp_out, "    %%jmp/1 T_%u.%u, %d;\n",
+			  thread_count, local_base+idx, match_flags[idx]);
+	    }
+
+	    if (default_case < count) {
+		  ivl_statement_t cst = ivl_stmt_case_stmt(net, default_case);
+		  rc += show_statement(cst, sscope);
+	    }
+
+	    fprintf(vvp_out, "    %%jmp T_%u.%u;\n", thread_count,
+		    local_base+count+2);
+
+	    for (idx = 0 ;  idx < count ;  idx += 1) {
+		  ivl_statement_t cst = ivl_stmt_case_stmt(net, idx);
+		  if (idx == default_case)
+			continue;
+		  fprintf(vvp_out, "T_%u.%u ;\n", thread_count, local_base+idx);
+		  rc += show_statement(cst, sscope);
+		  fprintf(vvp_out, "    %%jmp T_%u.%u;\n", thread_count,
+			  local_base+count+2);
+	    }
+
+	    fprintf(vvp_out, "T_%u.%u ;\n", thread_count, local_base+count+2);
+	    fprintf(vvp_out, "    %%pop/vec4 1;\n");
+
+	    for (idx = 0 ; idx < count ; idx++) {
+		  if (match_flags[idx] >= 0)
+			clr_flag(match_flags[idx]);
+	    }
+	    clr_flag(any_flag);
+	    clr_flag(seen_flag);
+	    clr_flag(multi_flag);
+	    clr_flag(tmp_flag1);
+	    clr_flag(tmp_flag2);
+	    free(match_flags);
+
+	    return rc;
+      }
 
       local_count += count + 1;
 
@@ -2309,38 +2508,64 @@ static int show_system_task_call(ivl_statement_t net)
 	    show_stmt_file_line(net, "covergroup: sample");
 
 	    unsigned parm_count = ivl_stmt_parm_count(net);
-	    if (parm_count < 1)
+	    if (parm_count < 3)
 		  return 1;
 
 	    ivl_expr_t parm0 = ivl_stmt_parm(net,0);
 
 	    /* The first argument is the covergroup property expression */
 	    if (ivl_expr_type(parm0) == IVL_EX_PROPERTY) {
-		  /* Extract bins count from arg 1 (if present) */
-		  unsigned bins_count = 16;  /* Default */
-		  unsigned cp_start = 1;
-		  if (parm_count >= 2) {
-			ivl_expr_t bins_expr = ivl_stmt_parm(net, 1);
-			if (ivl_expr_type(bins_expr) == IVL_EX_NUMBER) {
-			      bins_count = ivl_expr_uvalue(bins_expr);
-			      cp_start = 2;
-			}
+		  unsigned bins_count = 16;
+		  unsigned cp_count = 0;
+
+		  ivl_expr_t bins_expr = ivl_stmt_parm(net, 1);
+		  if (ivl_expr_type(bins_expr) == IVL_EX_NUMBER)
+			bins_count = ivl_expr_uvalue(bins_expr);
+
+		  ivl_expr_t cp_count_expr = ivl_stmt_parm(net, 2);
+		  if (ivl_expr_type(cp_count_expr) == IVL_EX_NUMBER)
+			cp_count = ivl_expr_uvalue(cp_count_expr);
+
+		  unsigned cp_start = 3;
+		  unsigned cp_end = cp_start + cp_count;
+		  if (cp_end > parm_count) cp_end = parm_count;
+
+		  /* Evaluate coverpoint values */
+		  for (unsigned idx = cp_start; idx < cp_end; idx++) {
+			ivl_expr_t cp_expr = ivl_stmt_parm(net, idx);
+			draw_eval_vec4(cp_expr);
+			fprintf(vvp_out, "    %%ix/vec4 %u;\n", idx - cp_start);
 		  }
 
-		  /* Evaluate coverpoint values (args 2, 3, ...) */
-		  unsigned cp_count = parm_count - cp_start;
-		  for (unsigned idx = cp_start; idx < parm_count; idx++) {
-			ivl_expr_t cp_expr = ivl_stmt_parm(net, idx);
-			/* Evaluate coverpoint value to integer register */
-			draw_eval_vec4(cp_expr);
-			/* Move to integer register */
-			fprintf(vvp_out, "    %%ix/vec4 %u;\n", idx - cp_start);
+		  /* Parse bin info and emit covergroup definition once */
+		  unsigned cvg_id = 0;
+		  unsigned bin_info_count = 0;
+		  unsigned bin_info_idx = cp_end;
+		  if (bin_info_idx < parm_count) {
+			ivl_expr_t bin_info_expr = ivl_stmt_parm(net, bin_info_idx);
+			if (ivl_expr_type(bin_info_expr) == IVL_EX_NUMBER)
+			      bin_info_count = ivl_expr_uvalue(bin_info_expr);
+		  }
+
+		  if (bin_info_count && (bin_info_idx + 1 + bin_info_count) <= parm_count) {
+			int64_t*bin_info_vals = (int64_t*)calloc(bin_info_count, sizeof(int64_t));
+			for (unsigned idx = 0; idx < bin_info_count; idx++) {
+			      ivl_expr_t info_expr = ivl_stmt_parm(net, bin_info_idx + 1 + idx);
+			      if (ivl_expr_type(info_expr) == IVL_EX_NUMBER)
+				    bin_info_vals[idx] = expr_to_int64(info_expr);
+			}
+
+			char key_buf[256];
+			build_covergroup_key(parm0, key_buf, sizeof(key_buf));
+			cvg_id = register_cvginfo(key_buf, cp_count, bins_count,
+			                          bin_info_vals, bin_info_count);
+			free(bin_info_vals);
 		  }
 
 		  draw_eval_object(parm0);  /* Push covergroup object to stack */
 		  /* Pack cp_count in lower 8 bits, bins_count in upper 24 bits */
 		  unsigned packed = (bins_count << 8) | (cp_count & 0xFF);
-		  fprintf(vvp_out, "    %%cvg/sample %u;\n", packed);
+		  fprintf(vvp_out, "    %%cvg/sample %u, %u;\n", packed, cvg_id);
 		  fprintf(vvp_out, "    %%pop/obj 1, 0;\n");
 		  return 0;
 	    }
