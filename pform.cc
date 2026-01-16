@@ -3750,6 +3750,13 @@ vector<PWire*>* pform_make_udp_input_ports(list<pform_ident_t>*names)
 PProcess* pform_make_behavior(ivl_process_type_t type, Statement*st,
 			      list<named_pexpr_t>*attr)
 {
+	// If statement is null (e.g., from unsupported cover statement),
+	// just return null - don't create a process.
+      if (st == 0) {
+	    delete attr;
+	    return 0;
+      }
+
 	// Add an implicit @* around the statement for the always_comb and
 	// always_latch statements.
       if ((type == IVL_PR_ALWAYS_COMB) || (type == IVL_PR_ALWAYS_LATCH)) {

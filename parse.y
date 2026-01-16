@@ -9360,27 +9360,27 @@ module_item
 
   | attribute_list_opt K_always statement_item
       { PProcess*tmp = pform_make_behavior(IVL_PR_ALWAYS, $3, $1);
-	FILE_NAME(tmp, @2);
+	if (tmp) FILE_NAME(tmp, @2);
       }
   | attribute_list_opt K_always_comb statement_item
       { PProcess*tmp = pform_make_behavior(IVL_PR_ALWAYS_COMB, $3, $1);
-	FILE_NAME(tmp, @2);
+	if (tmp) FILE_NAME(tmp, @2);
       }
   | attribute_list_opt K_always_ff statement_item
       { PProcess*tmp = pform_make_behavior(IVL_PR_ALWAYS_FF, $3, $1);
-	FILE_NAME(tmp, @2);
+	if (tmp) FILE_NAME(tmp, @2);
       }
   | attribute_list_opt K_always_latch statement_item
       { PProcess*tmp = pform_make_behavior(IVL_PR_ALWAYS_LATCH, $3, $1);
-	FILE_NAME(tmp, @2);
+	if (tmp) FILE_NAME(tmp, @2);
       }
   | attribute_list_opt K_initial statement_item
       { PProcess*tmp = pform_make_behavior(IVL_PR_INITIAL, $3, $1);
-	FILE_NAME(tmp, @2);
+	if (tmp) FILE_NAME(tmp, @2);
       }
   | attribute_list_opt K_final statement_item
       { PProcess*tmp = pform_make_behavior(IVL_PR_FINAL, $3, $1);
-	FILE_NAME(tmp, @2);
+	if (tmp) FILE_NAME(tmp, @2);
       }
 
   | attribute_list_opt K_analog analog_statement
