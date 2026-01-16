@@ -3526,9 +3526,14 @@ data_type /* IEEE1800-2005: A.2.2.1 */
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
       }
-    /* Mailbox type: mailbox mb; */
+    /* Mailbox type: mailbox mb; or mailbox #(type) mb; */
   | K_mailbox
       { mailbox_type_t*tmp = new mailbox_type_t;
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+  | K_mailbox '#' '(' data_type ')'
+      { mailbox_type_t*tmp = new mailbox_type_t($4);
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
       }

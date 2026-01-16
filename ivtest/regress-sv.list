@@ -1431,3 +1431,4 @@ sv_sum_product_with	normal,-g2012	ivltests	gold=sv_sum_product_with.gold
 sv_streaming_concat	normal,-g2012	ivltests	gold=sv_streaming_concat.gold
 sv_unique_priority_if  normal,-g2012 ivltests
 sv_statement_labels  normal,-g2012 ivltests
+sv_mailbox_param  normal,-g2012 ivltests

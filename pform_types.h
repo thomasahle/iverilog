@@ -489,13 +489,20 @@ struct semaphore_type_t : public data_type_t {
  * The mailbox_type_t represents the SystemVerilog mailbox built-in class.
  * Mailboxes are FIFO queues for inter-process communication with put(), get(),
  * try_put(), try_get(), peek(), try_peek(), and num() methods.
+ * Can be parameterized with element type: mailbox #(string) m;
  */
 struct mailbox_type_t : public data_type_t {
-      inline explicit mailbox_type_t() { }
+      inline explicit mailbox_type_t() : element_type_(nullptr) { }
+      inline explicit mailbox_type_t(data_type_t*et) : element_type_(et) { }
       ~mailbox_type_t() override;
+
+      data_type_t* element_type() const { return element_type_; }
 
       ivl_type_t elaborate_type_raw(Design*des, NetScope*scope) const override;
       void pform_dump(std::ostream&out, unsigned indent) const override;
+
+    private:
+      data_type_t* element_type_;  // Type parameter, or nullptr for generic mailbox
 };
 
 /*
