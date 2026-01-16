@@ -239,8 +239,8 @@ PChainConstructor::~PChainConstructor()
 {
 }
 
-PCondit::PCondit(PExpr*ex, Statement*i, Statement*e)
-: expr_(ex), if_(i), else_(e)
+PCondit::PCondit(PExpr*ex, Statement*i, Statement*e, ivl_case_quality_t q)
+: quality_(q), expr_(ex), if_(i), else_(e)
 {
 }
 

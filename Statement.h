@@ -87,6 +87,10 @@ class Statement : virtual public LineInfo {
       virtual void elaborate_scope(Design*des, NetScope*scope) const;
       virtual void elaborate_sig(Design*des, NetScope*scope) const;
 
+        // SystemVerilog statement labels (e.g., "name: begin ... end")
+        // Default implementation does nothing; PBlock overrides to set name
+      virtual void set_statement_label(const char*) { }
+
       std::map<perm_string,PExpr*> attributes;
 };
 
@@ -384,7 +388,8 @@ class PChainConstructor : public Statement {
 class PCondit  : public Statement {
 
     public:
-      PCondit(PExpr*ex, Statement*i, Statement*e);
+      PCondit(PExpr*ex, Statement*i, Statement*e,
+              ivl_case_quality_t q = IVL_CASE_QUALITY_BASIC);
       ~PCondit() override;
 
       virtual NetProc* elaborate(Design*des, NetScope*scope) const override;
@@ -392,7 +397,10 @@ class PCondit  : public Statement {
       virtual void elaborate_sig(Design*des, NetScope*scope) const override;
       virtual void dump(std::ostream&out, unsigned ind) const override;
 
+      ivl_case_quality_t quality() const { return quality_; }
+
     private:
+      ivl_case_quality_t quality_;
       PExpr*expr_;
       Statement*if_;
       Statement*else_;

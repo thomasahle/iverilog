@@ -1021,7 +1021,21 @@ void PChainConstructor::dump(ostream&out, unsigned ind) const
 
 void PCondit::dump(ostream&out, unsigned ind) const
 {
-      out << setw(ind) << "" << "if (" << *expr_ << ")" << endl;
+      out << setw(ind) << "";
+      switch (quality_) {
+          case IVL_CASE_QUALITY_UNIQUE:
+            out << "unique ";
+            break;
+          case IVL_CASE_QUALITY_UNIQUE0:
+            out << "unique0 ";
+            break;
+          case IVL_CASE_QUALITY_PRIORITY:
+            out << "priority ";
+            break;
+          default:
+            break;
+      }
+      out << "if (" << *expr_ << ")" << endl;
       if (if_)
 	    if_->dump(out, ind+3);
       else

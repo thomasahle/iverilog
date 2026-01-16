@@ -11275,6 +11275,26 @@ statement_item /* This is roughly statement_item in the LRM */
 	$$ = tmp;
       }
 
+    /* SystemVerilog allows prefix statement labels: name: begin ... end: name */
+  | IDENTIFIER ':' K_begin
+      { PBlock*tmp = pform_push_block_scope(@3, $1, PBlock::BL_SEQ);
+	current_block_stack.push(tmp);
+      }
+    block_item_decls_opt statement_or_null_list_opt K_end label_opt
+      { pform_pop_scope();
+	assert(! current_block_stack.empty());
+	PBlock*tmp = current_block_stack.top();
+	current_block_stack.pop();
+	if ($6) {
+	    std::vector<Statement*>& existing = tmp->get_statements();
+	    existing.insert(existing.end(), $6->begin(), $6->end());
+	}
+	delete $6;
+	check_end_label(@8, "block", $1, $8);
+	delete[]$1;
+	$$ = tmp;
+      }
+
   /* fork-join blocks are very similar to begin-end blocks. In fact,
      from the parser's perspective there is no real difference. All we
      need to do is remember that this is a parallel block so that the
@@ -11321,6 +11341,27 @@ statement_item /* This is roughly statement_item in the LRM */
 	delete $6;
 	check_end_label(@8, "fork", $2, $8);
 	delete[]$2;
+	$$ = tmp;
+      }
+
+    /* SystemVerilog allows prefix statement labels: name: fork ... join: name */
+  | IDENTIFIER ':' K_fork
+      { PBlock*tmp = pform_push_block_scope(@3, $1, PBlock::BL_PAR);
+	current_block_stack.push(tmp);
+      }
+    block_item_decls_opt statement_or_null_list_opt join_keyword label_opt
+      { pform_pop_scope();
+	assert(! current_block_stack.empty());
+	PBlock*tmp = current_block_stack.top();
+	current_block_stack.pop();
+	tmp->set_join_type($7);
+	if ($6) {
+	    std::vector<Statement*>& existing = tmp->get_statements();
+	    existing.insert(existing.end(), $6->begin(), $6->end());
+	}
+	delete $6;
+	check_end_label(@8, "fork", $1, $8);
+	delete[]$1;
 	$$ = tmp;
       }
 
@@ -11550,6 +11591,37 @@ statement_item /* This is roughly statement_item in the LRM */
   | K_if '(' expression ')' statement_or_null K_else statement_or_null
       { PCondit*tmp = new PCondit($3, $5, $7);
 	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+    /* SystemVerilog unique/priority/unique0 if statements */
+  | K_unique K_if '(' expression ')' statement_or_null %prec less_than_K_else
+      { PCondit*tmp = new PCondit($4, $6, 0, IVL_CASE_QUALITY_UNIQUE);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  | K_unique K_if '(' expression ')' statement_or_null K_else statement_or_null
+      { PCondit*tmp = new PCondit($4, $6, $8, IVL_CASE_QUALITY_UNIQUE);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  | K_unique0 K_if '(' expression ')' statement_or_null %prec less_than_K_else
+      { PCondit*tmp = new PCondit($4, $6, 0, IVL_CASE_QUALITY_UNIQUE0);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  | K_unique0 K_if '(' expression ')' statement_or_null K_else statement_or_null
+      { PCondit*tmp = new PCondit($4, $6, $8, IVL_CASE_QUALITY_UNIQUE0);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  | K_priority K_if '(' expression ')' statement_or_null %prec less_than_K_else
+      { PCondit*tmp = new PCondit($4, $6, 0, IVL_CASE_QUALITY_PRIORITY);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  | K_priority K_if '(' expression ')' statement_or_null K_else statement_or_null
+      { PCondit*tmp = new PCondit($4, $6, $8, IVL_CASE_QUALITY_PRIORITY);
+	FILE_NAME(tmp, @2);
 	$$ = tmp;
       }
   | K_if '(' error ')' statement_or_null %prec less_than_K_else
