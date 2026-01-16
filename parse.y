@@ -9161,6 +9161,74 @@ module_item
 	pform_make_modgates(@2, tmp1, tmp_parms, tmp_gates, $1);
       }
 
+  /* Interface inst with named parameter overrides: InterfaceName #(.WIDTH(16)) inst(...); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER '#' '(' parameter_value_byname_list ')' IDENTIFIER '(' port_conn_expression_list_with_nuls ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
+	tmp_parms->by_order = 0;
+	tmp_parms->by_name = $5;
+	lgate tmp_gate;
+	tmp_gate.name = $7;
+	tmp_gate.parms = $9;
+	FILE_NAME(&tmp_gate, @7);
+	delete[]$7;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, tmp_parms, tmp_gates, $1);
+      }
+
+  /* Interface array inst with named parameter overrides: InterfaceName #(.WIDTH(16)) inst[N](...); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER '#' '(' parameter_value_byname_list ')' IDENTIFIER dimensions '(' port_conn_expression_list_with_nuls ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
+	tmp_parms->by_order = 0;
+	tmp_parms->by_name = $5;
+	lgate tmp_gate;
+	tmp_gate.name = $7;
+	tmp_gate.parms = $10;
+	tmp_gate.ranges = $8;
+	FILE_NAME(&tmp_gate, @7);
+	delete[]$7;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, tmp_parms, tmp_gates, $1);
+      }
+
+  /* Interface inst with named parameter overrides and named ports: InterfaceName #(.WIDTH(16)) inst(.clk(clk)); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER '#' '(' parameter_value_byname_list ')' IDENTIFIER '(' port_name_list ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
+	tmp_parms->by_order = 0;
+	tmp_parms->by_name = $5;
+	lgate tmp_gate;
+	tmp_gate.name = $7;
+	tmp_gate.parms = 0;
+	tmp_gate.parms_by_name = $9;
+	FILE_NAME(&tmp_gate, @7);
+	delete[]$7;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, tmp_parms, tmp_gates, $1);
+      }
+
+  /* Interface array with named parameter overrides and named ports: InterfaceName #(.WIDTH(16)) inst[N](.clk(clk)); */
+  | attribute_list_opt
+      TYPE_IDENTIFIER '#' '(' parameter_value_byname_list ')' IDENTIFIER dimensions '(' port_name_list ')' ';'
+      { perm_string tmp1 = lex_strings.make($2.text);
+	struct parmvalue_t*tmp_parms = new struct parmvalue_t;
+	tmp_parms->by_order = 0;
+	tmp_parms->by_name = $5;
+	lgate tmp_gate;
+	tmp_gate.name = $7;
+	tmp_gate.parms = 0;
+	tmp_gate.parms_by_name = $10;
+	tmp_gate.ranges = $8;
+	FILE_NAME(&tmp_gate, @7);
+	delete[]$7;
+	std::vector<lgate>*tmp_gates = new std::vector<lgate>(1, tmp_gate);
+	pform_make_modgates(@2, tmp1, tmp_parms, tmp_gates, $1);
+      }
+
   /* Class variable declarations at module scope. This handles patterns like:
      ClassName obj;
      ClassName obj = new();
