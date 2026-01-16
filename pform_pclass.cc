@@ -18,6 +18,7 @@
  */
 
 # include  <cstdarg>
+# include  <stack>
 # include  "pform.h"
 # include  "PClass.h"
 # include  "PExpr.h"
@@ -28,7 +29,9 @@ using namespace std;
 
 /*
  * The functions here help the parser put together class type declarations.
+ * Use a stack to support nested class declarations.
  */
+static std::stack<PClass*> pform_class_stack;
 static PClass*pform_cur_class = 0;
 
 /*
@@ -62,7 +65,8 @@ void pform_start_class_declaration(const struct vlltype&loc,
 {
       PClass*class_scope = pform_push_class_scope(loc, type->name);
       class_scope->type = type;
-      ivl_assert(loc, pform_cur_class == 0);
+      // Save the current class context for nested class support
+      pform_class_stack.push(pform_cur_class);
       pform_cur_class = class_scope;
 
       ivl_assert(loc, type->base_type == 0);
@@ -402,7 +406,9 @@ void pform_end_class_declaration(const struct vlltype&loc)
 	    pform_pop_scope();
       }
 
-      pform_cur_class = 0;
+      // Restore the outer class context for nested class support
+      pform_cur_class = pform_class_stack.top();
+      pform_class_stack.pop();
       pform_pop_scope();
 }
 

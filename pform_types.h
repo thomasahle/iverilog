@@ -629,7 +629,10 @@ struct class_param_t : public LineInfo {
 
 struct class_type_t : public data_type_t {
 
-      inline explicit class_type_t(perm_string n) : name(n) { }
+      perm_string name;
+
+      inline explicit class_type_t(perm_string n)
+	    : name(n), virtual_class(false), is_interface_class(false) { }
 
       void pform_dump(std::ostream&out, unsigned indent) const override;
       void pform_dump_init(std::ostream&out, unsigned indent) const;
@@ -644,6 +647,17 @@ struct class_type_t : public data_type_t {
       std::list<class_spec_param_t*> base_type_params;
 
       bool virtual_class;
+
+	// This is true if this is an interface class (declared with
+	// "interface class" keywords). Interface classes are implicitly
+	// abstract and can only contain pure virtual methods.
+      bool is_interface_class;
+
+	// List of interfaces this class implements. For non-interface
+	// classes, these are the "implements" list. For interface classes,
+	// these are additional base interfaces (interface classes can
+	// extend multiple interface classes).
+      std::vector<data_type_t*> implemented_interfaces;
 
 	// Class type parameters from parameterized class declaration.
 	// For example: class foo #(type T = int, int WIDTH = 8);
@@ -679,8 +693,6 @@ struct class_type_t : public data_type_t {
       std::map<perm_string, pform_constraint_t*> constraints;
 
       ivl_type_t elaborate_type_raw(Design*, NetScope*) const override;
-
-      perm_string name;
 
       virtual SymbolType symbol_type() const override;
 };

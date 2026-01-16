@@ -28,6 +28,7 @@
 # include  "compiler.h"
 # include  "pform.h"
 # include  "PExpr.h"
+# include  "sva_expr.h"
 # include  "Statement.h"
 # include  "PSpec.h"
 # include  "PTimingCheck.h"
@@ -70,7 +71,9 @@ static struct {
    task/function that is currently in progress. */
 static PTask* current_task = 0;
 static PFunction* current_function = 0;
+static PClass* pclass_for_extern_ = 0;  // For parameterized class extern methods
 static stack<PBlock*> current_block_stack;
+static std::vector<Statement*>* pending_block_item_statements = nullptr;
 
 /* The variable declaration rules need to know if a lifetime has been
    specified. */
@@ -110,7 +113,8 @@ static std::list<named_pexpr_t>*attributes_in_context = 0;
    Maps property name to property_spec (clocking_event, expr, optional ports). */
 struct stored_property_t {
       PEventStatement* clocking_event;
-      PExpr* expr;
+      PSvaExpr* expr;
+      PExpr* disable;
       std::vector<perm_string> port_names;  // Formal parameter names
 };
 static std::map<perm_string, stored_property_t> named_properties;
@@ -119,17 +123,19 @@ static std::map<perm_string, stored_property_t> named_properties;
    Sequences are like properties but without disable iff. */
 struct stored_sequence_t {
       PEventStatement* clocking_event;
-      PExpr* expr;
+      PSvaExpr* expr;
       std::vector<perm_string> port_names;  // Formal parameter names
 };
 static std::map<perm_string, stored_sequence_t> named_sequences;
 
-static void store_named_property(const char* name, PEventStatement* clk, PExpr* e,
+static void store_named_property(const char* name, PEventStatement* clk, PSvaExpr* e,
+                                 PExpr* disable,
                                  std::vector<pform_tf_port_t>* ports = 0)
 {
       stored_property_t prop;
       prop.clocking_event = clk;
       prop.expr = e;
+      prop.disable = disable;
       /* Extract port names for parameter substitution.
          In SVA mode, port->port is null but port->name is set. */
       if (ports) {
@@ -157,7 +163,7 @@ static stored_property_t* lookup_named_property(perm_string name)
       return 0;
 }
 
-static void store_named_sequence(const char* name, PEventStatement* clk, PExpr* e,
+static void store_named_sequence(const char* name, PEventStatement* clk, PSvaExpr* e,
                                  std::vector<pform_tf_port_t>* ports = 0)
 {
       stored_sequence_t seq;
@@ -190,118 +196,13 @@ static stored_sequence_t* lookup_named_sequence(perm_string name)
 static std::map<perm_string, PExpr*> property_param_subst;
 
 /* Forward declarations */
-static PExpr* resolve_sequence_references(PExpr* expr);
-static PExpr* substitute_property_params(PExpr* expr);
+static PSvaExpr* resolve_sequence_references(PSvaExpr* expr, bool* changed);
+static PSvaExpr* resolve_sequence_references(PSvaExpr* expr);
+static PSvaExpr* substitute_property_params(PSvaExpr* expr);
+static PExpr* substitute_property_params_expr(PExpr* expr);
 
-/* Resolve sequence references within an expression tree.
-   Returns a new expression with sequence names replaced by their expressions.
-   This allows properties to reference named sequences. */
-static PExpr* resolve_sequence_references(PExpr* expr)
-{
-      if (expr == 0)
-            return 0;
-
-      /* Check if this is a simple identifier - might be a sequence name */
-      PEIdent* ident = dynamic_cast<PEIdent*>(expr);
-      if (ident) {
-            const pform_scoped_name_t& path = ident->path();
-            if (path.size() == 1 && path.package == 0) {
-                  perm_string name = peek_head_name(path);
-                  if (name != 0) {
-                        /* Check if this is a non-parameterized sequence */
-                        stored_sequence_t* seq = lookup_named_sequence(name);
-                        if (seq && seq->port_names.empty()) {
-                              /* Replace with sequence expression */
-                              return seq->expr;
-                        }
-                  }
-            }
-            return expr;  /* Not a sequence - return as-is */
-      }
-
-      /* Handle logical binary operators (PEBLogic: ||, &&, ->, <->) */
-      PEBLogic* logic = dynamic_cast<PEBLogic*>(expr);
-      if (logic) {
-            PExpr* new_left = resolve_sequence_references(logic->get_left());
-            PExpr* new_right = resolve_sequence_references(logic->get_right());
-            if (new_left != logic->get_left() || new_right != logic->get_right()) {
-                  PEBLogic* new_logic = new PEBLogic(logic->get_op(), new_left, new_right);
-                  new_logic->set_line(*logic);
-                  return new_logic;
-            }
-            return expr;
-      }
-
-      /* Handle unary operators (e.g., ! for negation) */
-      PEUnary* unary = dynamic_cast<PEUnary*>(expr);
-      if (unary) {
-            PExpr* new_operand = resolve_sequence_references(unary->get_expr());
-            if (new_operand != unary->get_expr()) {
-                  PEUnary* new_unary = new PEUnary(unary->get_op(), new_operand);
-                  new_unary->set_line(*unary);
-                  return new_unary;
-            }
-            return expr;
-      }
-
-      /* Note: PETernary (?:) and PEBinary (arithmetic) don't have public accessors,
-         but these operators are rarely used with sequence references, so skip them */
-
-      /* Handle function calls - might be a parameterized sequence */
-      PECallFunction* call = dynamic_cast<PECallFunction*>(expr);
-      if (call) {
-            const pform_scoped_name_t& call_path = call->path();
-            if (call_path.size() == 1 && call_path.package == 0) {
-                  perm_string name = peek_head_name(call_path);
-                  if (name != 0) {
-                        stored_sequence_t* seq = lookup_named_sequence(name);
-                        if (seq && !seq->port_names.empty()) {
-                              /* Parameterized sequence - substitute arguments */
-                              const std::vector<named_pexpr_t>& args = call->parms();
-                              if (args.size() == seq->port_names.size()) {
-                                    /* Build substitution map */
-                                    std::map<perm_string, PExpr*> saved_subst = property_param_subst;
-                                    property_param_subst.clear();
-                                    for (size_t i = 0; i < args.size(); i++) {
-                                          property_param_subst[seq->port_names[i]] = args[i].parm;
-                                    }
-                                    PExpr* substituted = substitute_property_params(seq->expr);
-                                    property_param_subst = saved_subst;
-                                    return substituted;
-                              }
-                        }
-                  }
-            }
-            /* Not a sequence - recursively resolve arguments */
-            const std::vector<named_pexpr_t>& old_args = call->parms();
-            std::vector<named_pexpr_t> new_args;
-            bool changed = false;
-            for (auto& arg : old_args) {
-                  PExpr* new_parm = resolve_sequence_references(arg.parm);
-                  named_pexpr_t new_arg;
-                  new_arg.name = arg.name;
-                  new_arg.parm = new_parm;
-                  new_args.push_back(new_arg);
-                  if (new_parm != arg.parm)
-                        changed = true;
-            }
-            if (changed) {
-                  perm_string fname = peek_head_name(call->path());
-                  PECallFunction* new_call = new PECallFunction(fname, new_args);
-                  new_call->set_line(*call);
-                  return new_call;
-            }
-            return expr;
-      }
-
-      /* For other expression types, return as-is */
-      return expr;
-}
-
-/* Substitute parameters in an expression tree.
-   Returns a new expression with formal parameters replaced by actual arguments.
-   Only handles common cases - returns original expr for unsupported patterns. */
-static PExpr* substitute_property_params(PExpr* expr)
+/* Substitute parameters in a PExpr tree. */
+static PExpr* substitute_property_params_expr(PExpr* expr)
 {
       if (expr == 0)
             return 0;
@@ -329,7 +230,7 @@ static PExpr* substitute_property_params(PExpr* expr)
             std::vector<named_pexpr_t> new_args;
             bool changed = false;
             for (auto& arg : old_args) {
-                  PExpr* new_parm = substitute_property_params(arg.parm);
+                  PExpr* new_parm = substitute_property_params_expr(arg.parm);
                   named_pexpr_t new_arg;
                   new_arg.name = arg.name;
                   new_arg.parm = new_parm;
@@ -350,8 +251,8 @@ static PExpr* substitute_property_params(PExpr* expr)
       /* Handle logical binary operators (PEBLogic: ||, &&, ->, <->) */
       PEBLogic* logic = dynamic_cast<PEBLogic*>(expr);
       if (logic) {
-            PExpr* new_left = substitute_property_params(logic->get_left());
-            PExpr* new_right = substitute_property_params(logic->get_right());
+            PExpr* new_left = substitute_property_params_expr(logic->get_left());
+            PExpr* new_right = substitute_property_params_expr(logic->get_right());
             if (new_left != logic->get_left() || new_right != logic->get_right()) {
                   /* Create a new PEBLogic expression with substituted operands */
                   PEBLogic* new_logic = new PEBLogic(logic->get_op(), new_left, new_right);
@@ -365,8 +266,8 @@ static PExpr* substitute_property_params(PExpr* expr)
          Must check before PEBinary since PEBComp inherits from PEBinary */
       PEBComp* comp = dynamic_cast<PEBComp*>(expr);
       if (comp) {
-            PExpr* new_left = substitute_property_params(comp->get_left());
-            PExpr* new_right = substitute_property_params(comp->get_right());
+            PExpr* new_left = substitute_property_params_expr(comp->get_left());
+            PExpr* new_right = substitute_property_params_expr(comp->get_right());
             if (new_left != comp->get_left() || new_right != comp->get_right()) {
                   /* Create a new PEBComp expression with substituted operands */
                   PEBComp* new_comp = new PEBComp(comp->get_op(), new_left, new_right);
@@ -379,8 +280,8 @@ static PExpr* substitute_property_params(PExpr* expr)
       /* Handle other binary operators */
       PEBinary* binary = dynamic_cast<PEBinary*>(expr);
       if (binary) {
-            PExpr* new_left = substitute_property_params(binary->get_left());
-            PExpr* new_right = substitute_property_params(binary->get_right());
+            PExpr* new_left = substitute_property_params_expr(binary->get_left());
+            PExpr* new_right = substitute_property_params_expr(binary->get_right());
             if (new_left != binary->get_left() || new_right != binary->get_right()) {
                   /* Create a new binary expression with substituted operands */
                   PEBinary* new_binary = new PEBinary(binary->get_op(), new_left, new_right);
@@ -393,7 +294,7 @@ static PExpr* substitute_property_params(PExpr* expr)
       /* Handle unary operators */
       PEUnary* unary = dynamic_cast<PEUnary*>(expr);
       if (unary) {
-            PExpr* new_operand = substitute_property_params(unary->get_expr());
+            PExpr* new_operand = substitute_property_params_expr(unary->get_expr());
             if (new_operand != unary->get_expr()) {
                   PEUnary* new_unary = new PEUnary(unary->get_op(), new_operand);
                   new_unary->set_line(*unary);  /* Copy file/line info */
@@ -406,123 +307,449 @@ static PExpr* substitute_property_params(PExpr* expr)
       return expr;
 }
 
+static PSvaExpr* make_sva_atom(PExpr* expr, const struct vlltype& loc)
+{
+      if (!expr)
+            return 0;
+      PSvaExpr* node = PSvaExpr::make_atom(expr);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_implies(PSvaExpr* ant, PSvaExpr* cons, bool nonoverlap,
+                                  const struct vlltype& loc)
+{
+      if (!ant || !cons) {
+            delete ant;
+            delete cons;
+            return 0;
+      }
+      PSvaExpr* node = PSvaExpr::make_implies(ant, cons, nonoverlap);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_and(PSvaExpr* left, PSvaExpr* right, const struct vlltype& loc)
+{
+      if (!left || !right) {
+            delete left;
+            delete right;
+            return 0;
+      }
+      PSvaExpr* node = PSvaExpr::make_and(left, right);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_or(PSvaExpr* left, PSvaExpr* right, const struct vlltype& loc)
+{
+      if (!left || !right) {
+            delete left;
+            delete right;
+            return 0;
+      }
+      PSvaExpr* node = PSvaExpr::make_or(left, right);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_concat(PSvaExpr* left, int min_delay, int max_delay,
+                                 PSvaExpr* right, const struct vlltype& loc)
+{
+      if (!left || !right) {
+            delete left;
+            delete right;
+            return 0;
+      }
+      PSvaExpr* node = PSvaExpr::make_concat(left, min_delay, max_delay, right);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_concat_expr(PSvaExpr* left, PExpr* min_delay_expr,
+                                      PExpr* max_delay_expr, bool max_unbounded,
+                                      PSvaExpr* right, const struct vlltype& loc)
+{
+      if (!left || !right) {
+            delete left;
+            delete right;
+            return 0;
+      }
+      PSvaExpr* node = PSvaExpr::make_concat_expr(left, min_delay_expr, max_delay_expr,
+                                                  max_unbounded, right);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_delay(PSvaExpr* child, int min_delay, int max_delay,
+                                const struct vlltype& loc)
+{
+      if (!child)
+            return 0;
+      PSvaExpr* node = PSvaExpr::make_delay(min_delay, max_delay, child);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_delay_expr(PSvaExpr* child, PExpr* min_delay_expr,
+                                     PExpr* max_delay_expr, bool max_unbounded,
+                                     const struct vlltype& loc)
+{
+      if (!child)
+            return 0;
+      PSvaExpr* node = PSvaExpr::make_delay_expr(min_delay_expr, max_delay_expr,
+                                                 max_unbounded, child);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_repeat(PSvaExpr* child, int min_rep, int max_rep,
+                                 PSvaExpr::RepeatKind kind, const struct vlltype& loc)
+{
+      if (!child)
+            return 0;
+      PSvaExpr* node = PSvaExpr::make_repeat(child, min_rep, max_rep, kind);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_throughout(PSvaExpr* cond, PSvaExpr* seq,
+                                     const struct vlltype& loc)
+{
+      if (!cond || !seq) {
+            delete cond;
+            delete seq;
+            return 0;
+      }
+      PSvaExpr* node = PSvaExpr::make_throughout(cond, seq);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_until(PSvaExpr* left, PSvaExpr* right, bool strong, bool with,
+                                const struct vlltype& loc)
+{
+      if (!left || !right) {
+            delete left;
+            delete right;
+            return 0;
+      }
+      PSvaExpr* node = PSvaExpr::make_until(left, right, strong, with);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_first_match(PSvaExpr* child, const struct vlltype& loc)
+{
+      if (!child)
+            return 0;
+      PSvaExpr* node = PSvaExpr::make_first_match(child);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+static PSvaExpr* make_sva_if(PExpr* cond, PSvaExpr* then_expr, PSvaExpr* else_expr,
+                             const struct vlltype& loc)
+{
+      if (!cond || !then_expr) {
+            delete cond;
+            delete then_expr;
+            delete else_expr;
+            return 0;
+      }
+      PSvaExpr* node = PSvaExpr::make_if(cond, then_expr, else_expr);
+      FILE_NAME(node, loc);
+      return node;
+}
+
+/* Substitute parameters within an SVA expression tree. */
+static PSvaExpr* substitute_property_params(PSvaExpr* expr)
+{
+      if (expr == 0)
+            return 0;
+
+      PSvaExpr* left = substitute_property_params(expr->left());
+      PSvaExpr* right = substitute_property_params(expr->right());
+
+      switch (expr->kind()) {
+          case PSvaExpr::ATOM:
+            return PSvaExpr::make_atom(substitute_property_params_expr(expr->atom_expr()));
+          case PSvaExpr::IF:
+            return PSvaExpr::make_if(substitute_property_params_expr(expr->cond_expr()),
+                                     left, right);
+          case PSvaExpr::NOT:
+            return PSvaExpr::make_not(left);
+          case PSvaExpr::AND:
+            return PSvaExpr::make_and(left, right);
+          case PSvaExpr::OR:
+            return PSvaExpr::make_or(left, right);
+          case PSvaExpr::IMPLIES:
+            return PSvaExpr::make_implies(left, right, false);
+          case PSvaExpr::IMPLIES_NONOVERLAP:
+            return PSvaExpr::make_implies(left, right, true);
+          case PSvaExpr::CONCAT: {
+            PExpr* min_expr = substitute_property_params_expr(expr->min_delay_expr());
+            PExpr* max_expr = substitute_property_params_expr(expr->max_delay_expr());
+            if (min_expr || max_expr || expr->max_delay() == -1) {
+                  return PSvaExpr::make_concat_expr(left, min_expr, max_expr,
+                                                    expr->max_delay() == -1, right);
+            }
+            return PSvaExpr::make_concat(left, expr->min_delay(), expr->max_delay(), right);
+          }
+          case PSvaExpr::DELAY: {
+            PExpr* min_expr = substitute_property_params_expr(expr->min_delay_expr());
+            PExpr* max_expr = substitute_property_params_expr(expr->max_delay_expr());
+            if (min_expr || max_expr || expr->max_delay() == -1) {
+                  return PSvaExpr::make_delay_expr(min_expr, max_expr,
+                                                   expr->max_delay() == -1, left);
+            }
+            return PSvaExpr::make_delay(expr->min_delay(), expr->max_delay(), left);
+          }
+          case PSvaExpr::REPEAT:
+            return PSvaExpr::make_repeat(left, expr->min_rep(), expr->max_rep(), expr->rep_kind());
+          case PSvaExpr::THROUGHOUT:
+            return PSvaExpr::make_throughout(left, right);
+          case PSvaExpr::UNTIL:
+            return PSvaExpr::make_until(left, right, false, false);
+          case PSvaExpr::UNTIL_WITH:
+            return PSvaExpr::make_until(left, right, false, true);
+          case PSvaExpr::S_UNTIL:
+            return PSvaExpr::make_until(left, right, true, false);
+          case PSvaExpr::S_UNTIL_WITH:
+            return PSvaExpr::make_until(left, right, true, true);
+          case PSvaExpr::FIRST_MATCH:
+            return PSvaExpr::make_first_match(left);
+      }
+
+      return expr;
+}
+
+/* Resolve sequence references within an SVA expression tree. */
+static PSvaExpr* resolve_sequence_references(PSvaExpr* expr, bool* changed)
+{
+      if (expr == 0)
+            return 0;
+
+      if (expr->kind() == PSvaExpr::ATOM) {
+            PExpr* atom = expr->atom_expr();
+            /* Simple identifier - might be a sequence name */
+            if (PEIdent* ident = dynamic_cast<PEIdent*>(atom)) {
+                  const pform_scoped_name_t& path = ident->path();
+                  if (path.size() == 1 && path.package == 0) {
+                        perm_string name = peek_head_name(path);
+                        if (name != 0) {
+                              stored_sequence_t* seq = lookup_named_sequence(name);
+                              if (seq && seq->port_names.empty()) {
+                                    if (changed) *changed = true;
+                                    return resolve_sequence_references(seq->expr->clone(), changed);
+                              }
+                        }
+                  }
+            }
+
+            /* Parameterized sequence call */
+            if (PECallFunction* call = dynamic_cast<PECallFunction*>(atom)) {
+                  const pform_scoped_name_t& call_path = call->path();
+                  if (call_path.size() == 1 && call_path.package == 0) {
+                        perm_string name = peek_head_name(call_path);
+                        if (name != 0) {
+                              stored_sequence_t* seq = lookup_named_sequence(name);
+                              if (seq && !seq->port_names.empty()) {
+                                    const std::vector<named_pexpr_t>& args = call->parms();
+                                    if (args.size() == seq->port_names.size()) {
+                                          std::map<perm_string, PExpr*> saved_subst = property_param_subst;
+                                          property_param_subst.clear();
+                                          for (size_t i = 0; i < args.size(); i++) {
+                                                property_param_subst[seq->port_names[i]] = args[i].parm;
+                                          }
+                                          PSvaExpr* substituted = substitute_property_params(seq->expr);
+                                          property_param_subst = saved_subst;
+                                          if (changed) *changed = true;
+                                          return resolve_sequence_references(substituted, changed);
+                                    }
+                              }
+                        }
+                  }
+            }
+
+            return expr;
+      }
+
+      PSvaExpr* left = resolve_sequence_references(expr->left(), changed);
+      PSvaExpr* right = resolve_sequence_references(expr->right(), changed);
+
+      if (left == expr->left() && right == expr->right())
+            return expr;
+
+      switch (expr->kind()) {
+          case PSvaExpr::IF:
+            return PSvaExpr::make_if(expr->cond_expr(), left, right);
+          case PSvaExpr::NOT:
+            return PSvaExpr::make_not(left);
+          case PSvaExpr::AND:
+            return PSvaExpr::make_and(left, right);
+          case PSvaExpr::OR:
+            return PSvaExpr::make_or(left, right);
+          case PSvaExpr::IMPLIES:
+            return PSvaExpr::make_implies(left, right, false);
+          case PSvaExpr::IMPLIES_NONOVERLAP:
+            return PSvaExpr::make_implies(left, right, true);
+          case PSvaExpr::CONCAT: {
+            PExpr* min_expr = expr->min_delay_expr();
+            PExpr* max_expr = expr->max_delay_expr();
+            if (min_expr || max_expr || expr->max_delay() == -1) {
+                  return PSvaExpr::make_concat_expr(left, min_expr, max_expr,
+                                                    expr->max_delay() == -1, right);
+            }
+            return PSvaExpr::make_concat(left, expr->min_delay(), expr->max_delay(), right);
+          }
+          case PSvaExpr::DELAY: {
+            PExpr* min_expr = expr->min_delay_expr();
+            PExpr* max_expr = expr->max_delay_expr();
+            if (min_expr || max_expr || expr->max_delay() == -1) {
+                  return PSvaExpr::make_delay_expr(min_expr, max_expr,
+                                                   expr->max_delay() == -1, left);
+            }
+            return PSvaExpr::make_delay(expr->min_delay(), expr->max_delay(), left);
+          }
+          case PSvaExpr::REPEAT:
+            return PSvaExpr::make_repeat(left, expr->min_rep(), expr->max_rep(), expr->rep_kind());
+          case PSvaExpr::THROUGHOUT:
+            return PSvaExpr::make_throughout(left, right);
+          case PSvaExpr::UNTIL:
+            return PSvaExpr::make_until(left, right, false, false);
+          case PSvaExpr::UNTIL_WITH:
+            return PSvaExpr::make_until(left, right, false, true);
+          case PSvaExpr::S_UNTIL:
+            return PSvaExpr::make_until(left, right, true, false);
+          case PSvaExpr::S_UNTIL_WITH:
+            return PSvaExpr::make_until(left, right, true, true);
+          case PSvaExpr::FIRST_MATCH:
+            return PSvaExpr::make_first_match(left);
+          case PSvaExpr::ATOM:
+            return expr;
+      }
+
+      return expr;
+}
+
+static PSvaExpr* resolve_sequence_references(PSvaExpr* expr)
+{
+      bool changed = false;
+      return resolve_sequence_references(expr, &changed);
+}
+
 /* Check if an expression is a simple identifier that refers to a named property or sequence.
    If so, resolve it and update the property_spec. Returns true if resolved.
    Also handles parameterized property/sequence calls like foo(a, b). */
-static bool resolve_named_property(PExpr*& expr, PEventStatement*& clk)
+static bool resolve_named_property(PSvaExpr*& expr, PEventStatement*& clk, PExpr*& disable)
 {
-      /* First try simple identifier (non-parameterized property or sequence) */
-      PEIdent* ident = dynamic_cast<PEIdent*>(expr);
-      if (ident) {
-            /* Only match simple identifiers (single component, no indices) */
-            const pform_scoped_name_t& path = ident->path();
-            if (path.size() == 1 && path.package == 0) {
-                  perm_string name = peek_head_name(path);
-                  if (name != 0) {
-                        /* Try property first */
-                        stored_property_t* prop = lookup_named_property(name);
-                        if (prop && prop->port_names.empty()) {
-                              /* Found a non-parameterized property */
-                              /* Resolve any sequence references within the property expression */
-                              expr = resolve_sequence_references(prop->expr);
-                              if (prop->clocking_event && clk == 0)
-                                    clk = prop->clocking_event;
-                              return true;
+      if (expr == 0)
+            return false;
+
+      if (expr->kind() == PSvaExpr::ATOM) {
+            PExpr* atom = expr->atom_expr();
+            /* Simple identifier (non-parameterized) */
+            if (PEIdent* ident = dynamic_cast<PEIdent*>(atom)) {
+                  const pform_scoped_name_t& path = ident->path();
+                  if (path.size() == 1 && path.package == 0) {
+                        perm_string name = peek_head_name(path);
+                        if (name != 0) {
+                              stored_property_t* prop = lookup_named_property(name);
+                              if (prop && prop->port_names.empty()) {
+                                    PSvaExpr* resolved = resolve_sequence_references(prop->expr->clone());
+                                    expr = resolved;
+                                    if (prop->clocking_event && clk == 0)
+                                          clk = prop->clocking_event;
+                                    if (prop->disable) {
+                                          if (disable) {
+                                                PEBLogic*or_dis = new PEBLogic('o', prop->disable, disable);
+                                                or_dis->set_line(*prop->disable);
+                                                disable = or_dis;
+                                          } else {
+                                                disable = prop->disable;
+                                          }
+                                    }
+                                    return true;
+                              }
+                              stored_sequence_t* seq = lookup_named_sequence(name);
+                              if (seq && seq->port_names.empty()) {
+                                    expr = resolve_sequence_references(seq->expr->clone());
+                                    if (seq->clocking_event && clk == 0)
+                                          clk = seq->clocking_event;
+                                    return true;
+                              }
                         }
-                        /* Try sequence as fallback */
-                        stored_sequence_t* seq = lookup_named_sequence(name);
-                        if (seq && seq->port_names.empty()) {
-                              /* Found a non-parameterized sequence */
-                              expr = seq->expr;
-                              if (seq->clocking_event && clk == 0)
-                                    clk = seq->clocking_event;
-                              return true;
+                  }
+            }
+
+            /* Function call (parameterized property/sequence) */
+            if (PECallFunction* call = dynamic_cast<PECallFunction*>(atom)) {
+                  const pform_scoped_name_t& call_path = call->path();
+                  if (call_path.size() != 1 || call_path.package != 0)
+                        return false;
+                  perm_string name = peek_head_name(call_path);
+                  if (name == 0)
+                        return false;
+
+                  stored_property_t* prop = lookup_named_property(name);
+                  if (prop) {
+                        const std::vector<named_pexpr_t>& args = call->parms();
+                        if (args.size() != prop->port_names.size())
+                              return false;
+
+                        std::map<perm_string, PExpr*> saved_subst = property_param_subst;
+                        property_param_subst.clear();
+                        for (size_t i = 0; i < args.size(); i++) {
+                              property_param_subst[prop->port_names[i]] = args[i].parm;
                         }
+
+                        PSvaExpr* substituted = substitute_property_params(prop->expr);
+                        substituted = resolve_sequence_references(substituted);
+                        expr = substituted;
+                        if (prop->clocking_event && clk == 0)
+                              clk = prop->clocking_event;
+                        if (prop->disable) {
+                              PExpr* prop_disable = substitute_property_params_expr(prop->disable);
+                              if (disable) {
+                                    PEBLogic*or_dis = new PEBLogic('o', prop_disable, disable);
+                                    or_dis->set_line(*prop->disable);
+                                    disable = or_dis;
+                              } else {
+                                    disable = prop_disable;
+                              }
+                        }
+                        property_param_subst = saved_subst;
+                        return true;
+                  }
+
+                  stored_sequence_t* seq = lookup_named_sequence(name);
+                  if (seq) {
+                        const std::vector<named_pexpr_t>& args = call->parms();
+                        if (args.size() != seq->port_names.size())
+                              return false;
+
+                        std::map<perm_string, PExpr*> saved_subst = property_param_subst;
+                        property_param_subst.clear();
+                        for (size_t i = 0; i < args.size(); i++) {
+                              property_param_subst[seq->port_names[i]] = args[i].parm;
+                        }
+
+                        PSvaExpr* substituted = substitute_property_params(seq->expr);
+                        expr = resolve_sequence_references(substituted);
+                        if (seq->clocking_event && clk == 0)
+                              clk = seq->clocking_event;
+                        property_param_subst = saved_subst;
+                        return true;
                   }
             }
       }
 
-      /* Try function call (parameterized property or sequence) */
-      PECallFunction* call = dynamic_cast<PECallFunction*>(expr);
-      if (call == 0) {
-            /* Not an identifier or function call - might be an inline property
-               expression like "valid |-> seq_name(arg)". Try to resolve any
-               sequence references within the expression tree. */
-            PExpr* resolved = resolve_sequence_references(expr);
-            if (resolved != expr) {
-                  expr = resolved;
-                  return true;
-            }
-            return false;
-      }
-
-      /* Get the function name */
-      const pform_scoped_name_t& call_path = call->path();
-      if (call_path.size() != 1 || call_path.package != 0)
-            return false;
-
-      perm_string name = peek_head_name(call_path);
-      if (name == 0)
-            return false;
-
-      /* Try property first */
-      stored_property_t* prop = lookup_named_property(name);
-      if (prop) {
-            /* Found a parameterized property */
-            const std::vector<named_pexpr_t>& args = call->parms();
-            if (args.size() != prop->port_names.size()) {
-                  /* Argument count mismatch - can't substitute */
-                  return false;
-            }
-
-            /* Build substitution map: formal_name -> actual_expr */
-            property_param_subst.clear();
-            for (size_t i = 0; i < args.size(); i++) {
-                  property_param_subst[prop->port_names[i]] = args[i].parm;
-            }
-
-            /* Substitute formal parameters with actual arguments in property expression */
-            PExpr* substituted = substitute_property_params(prop->expr);
-
-            /* Resolve any sequence references within the property expression */
-            substituted = resolve_sequence_references(substituted);
-
-            /* Use the substituted expression and property clocking */
-            expr = substituted;
-            if (prop->clocking_event && clk == 0)
-                  clk = prop->clocking_event;
-
-            /* Clear the substitution map */
-            property_param_subst.clear();
-            return true;
-      }
-
-      /* Try sequence as fallback */
-      stored_sequence_t* seq = lookup_named_sequence(name);
-      if (seq) {
-            /* Found a parameterized sequence */
-            const std::vector<named_pexpr_t>& args = call->parms();
-            if (args.size() != seq->port_names.size()) {
-                  /* Argument count mismatch - can't substitute */
-                  return false;
-            }
-
-            /* Build substitution map: formal_name -> actual_expr */
-            property_param_subst.clear();
-            for (size_t i = 0; i < args.size(); i++) {
-                  property_param_subst[seq->port_names[i]] = args[i].parm;
-            }
-
-            /* Substitute formal parameters with actual arguments in sequence expression */
-            PExpr* substituted = substitute_property_params(seq->expr);
-
-            /* Use the substituted expression and sequence clocking */
-            expr = substituted;
-            if (seq->clocking_event && clk == 0)
-                  clk = seq->clocking_event;
-
-            /* Clear the substitution map */
-            property_param_subst.clear();
+      /* Try to resolve any sequence references within the expression tree. */
+      bool changed = false;
+      PSvaExpr* resolved = resolve_sequence_references(expr, &changed);
+      if (changed) {
+            expr = resolved;
             return true;
       }
 
@@ -532,10 +759,17 @@ static bool resolve_named_property(PExpr*& expr, PEventStatement*& clk)
 /* Check if an expression looks like a potential property reference that wasn't found.
    This helps detect when an assertion references a property that was skipped due
    to unsupported sequence constructs. */
-static bool is_unresolved_property_reference(PExpr* expr)
+static bool is_unresolved_property_reference(PSvaExpr* expr)
 {
+      if (expr == 0)
+            return false;
+
+      if (expr->kind() != PSvaExpr::ATOM)
+            return false;
+
+      PExpr* atom = expr->atom_expr();
       /* Check for simple identifier */
-      PEIdent* ident = dynamic_cast<PEIdent*>(expr);
+      PEIdent* ident = dynamic_cast<PEIdent*>(atom);
       if (ident) {
             const pform_scoped_name_t& path = ident->path();
             if (path.size() == 1 && path.package == 0) {
@@ -545,7 +779,7 @@ static bool is_unresolved_property_reference(PExpr* expr)
       }
 
       /* Check for function call (parameterized property) */
-      PECallFunction* call = dynamic_cast<PECallFunction*>(expr);
+      PECallFunction* call = dynamic_cast<PECallFunction*>(atom);
       if (call) {
             const pform_scoped_name_t& call_path = call->path();
             if (call_path.size() == 1 && call_path.package == 0) {
@@ -793,8 +1027,33 @@ static void check_for_loop(const struct vlltype&loc, const PExpr*init,
                          "SystemVerilog 2012 or later.");
 }
 
+static void append_pending_block_item_statement(Statement*stmt)
+{
+      if (!pending_block_item_statements)
+	    pending_block_item_statements = new std::vector<Statement*>();
+      pending_block_item_statements->push_back(stmt);
+}
+
+static std::vector<Statement*>* merge_pending_block_item_statements(std::vector<Statement*>*stmts)
+{
+      if (!pending_block_item_statements || pending_block_item_statements->empty())
+	    return stmts;
+
+      if (!stmts)
+	    stmts = new std::vector<Statement*>(0);
+
+      stmts->insert(stmts->begin(),
+		    pending_block_item_statements->begin(),
+		    pending_block_item_statements->end());
+
+      delete pending_block_item_statements;
+      pending_block_item_statements = nullptr;
+      return stmts;
+}
+
 static void current_task_set_statement(const YYLTYPE&loc, std::vector<Statement*>*s)
 {
+      s = merge_pending_block_item_statements(s);
       if (s == 0) {
 	      /* if the statement list is null, then the parser
 		 detected the case that there are no statements in the
@@ -830,6 +1089,7 @@ static void current_task_set_statement(const YYLTYPE&loc, std::vector<Statement*
 
 static void current_function_set_statement(const YYLTYPE&loc, std::vector<Statement*>*s)
 {
+      s = merge_pending_block_item_statements(s);
       if (s == 0) {
 	      /* if the statement list is null, then the parser
 		 detected the case that there are no statements in the
@@ -1004,6 +1264,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 
       PExpr*expr;
       std::list<PExpr*>*exprs;
+      PSvaExpr*sva_expr;
 
       class_spec_param_t*class_spec_param;
       std::list<class_spec_param_t*>*class_spec_params;
@@ -1035,6 +1296,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
       struct_type_t*struct_type;
 
       data_type_t*data_type;
+      std::vector<data_type_t*>*data_types;  // For interface class multiple extends
       class_type_t*class_type;
       class_param_t*class_param;
       std::vector<class_param_t*>*class_params;
@@ -1069,7 +1331,8 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 
       struct {
 	    PEventStatement* clocking_event;
-	    PExpr* expr;
+	    PSvaExpr* expr;
+	    PExpr* disable;
       } property_spec;
 
       PSpecPath* specpath;
@@ -1323,6 +1586,8 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <packed_signing> packed_signing
 
 %type <class_declaration_extends> class_declaration_extends_opt
+%type <data_types> interface_class_extends_list interface_class_extends_list_opt
+%type <data_types> implements_list implements_list_opt
 
 %type <property_qualifier> class_item_qualifier property_qualifier
 %type <property_qualifier> class_item_qualifier_list property_qualifier_list
@@ -1343,7 +1608,9 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <event_expr> event_expression
 %type <event_statement> event_control clocking_event_opt
 %type <property_spec> property_spec
-%type <expr> property_expr
+%type <expr> property_spec_disable_iff_opt
+%type <sva_expr> property_expr
+%type <sva_expr> sequence_expr_in_parens
 %type <statement> statement statement_item statement_or_null
 %type <statement> compressed_statement
 %type <statement> loop_statement for_step for_step_opt jump_statement
@@ -1403,8 +1670,9 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %nonassoc K_XOR_EQ K_LS_EQ K_RS_EQ K_RSS_EQ K_NB_TRIGGER
 %right K_TRIGGER K_LEQUIV
 %right '?' ':' K_inside
-%left K_LOR
-%left K_LAND
+%right K_IMPLIES_OV K_IMPLIES_NOV
+%left K_LOR K_or
+%left K_LAND K_and
 %left '|'
 %left '^' K_NXOR K_NOR
 %left '&' K_NAND
@@ -1692,6 +1960,124 @@ class_declaration /* IEEE1800-2005: A.1.2 */
 	check_end_label(@12, "class", $4, $12);
 	delete[] $4;
       }
+
+  /* Class with implements clause (no parameters) */
+  | K_virtual_opt K_class lifetime_opt identifier_name class_declaration_extends_opt implements_list_opt ';'
+      { if ($3 != LexicalScope::INHERITED) {
+	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
+			    "and has no effect." << endl;
+	      warn_count += 1;
+	}
+	perm_string name = lex_strings.make($4);
+	class_type_t *class_type= new class_type_t(name);
+	FILE_NAME(class_type, @4);
+	pform_set_typedef(@4, name, class_type, nullptr);
+	/* Store implemented interfaces */
+	if ($6) {
+	      class_type->implemented_interfaces = *$6;
+	      delete $6;
+	}
+	pform_start_class_declaration(@2, class_type, $5.type, $5.args, $5.spec_params, $1);
+      }
+    class_items_opt K_endclass
+      { pform_end_class_declaration(@10);
+      }
+    class_declaration_endlabel_opt
+      { check_end_label(@12, "class", $4, $12);
+	delete[] $4;
+      }
+
+  /* Parameterized class with implements clause */
+  | K_virtual_opt K_class lifetime_opt identifier_name class_parameter_port_list_opt class_declaration_extends_opt implements_list_opt ';'
+      { if ($3 != LexicalScope::INHERITED) {
+	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
+			    "and has no effect." << endl;
+	      warn_count += 1;
+	}
+	perm_string name = lex_strings.make($4);
+	class_type_t *class_type= new class_type_t(name);
+	FILE_NAME(class_type, @4);
+	pform_set_typedef(@4, name, class_type, nullptr);
+	/* Store class parameters */
+	if ($5) {
+	      class_type->parameters = *$5;
+	      delete $5;
+	}
+	/* Store implemented interfaces */
+	if ($7) {
+	      class_type->implemented_interfaces = *$7;
+	      delete $7;
+	}
+	pform_start_class_declaration(@2, class_type, $6.type, $6.args, $6.spec_params, $1);
+      }
+    class_items_opt K_endclass
+      { pform_end_class_declaration(@11);
+      }
+    class_declaration_endlabel_opt
+      { check_end_label(@13, "class", $4, $13);
+	delete[] $4;
+      }
+
+  /* Interface class declaration (no parameters) */
+  | K_interface K_class lifetime_opt identifier_name interface_class_extends_list_opt ';'
+      { if ($3 != LexicalScope::INHERITED) {
+	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
+			    "and has no effect." << endl;
+	      warn_count += 1;
+	}
+	perm_string name = lex_strings.make($4);
+	class_type_t *class_type= new class_type_t(name);
+	FILE_NAME(class_type, @4);
+	class_type->is_interface_class = true;
+	class_type->virtual_class = true;  // Interface classes are implicitly abstract
+	pform_set_typedef(@4, name, class_type, nullptr);
+	/* Store extended interface classes (multiple inheritance allowed) */
+	if ($5) {
+	      class_type->implemented_interfaces = *$5;
+	      delete $5;
+	}
+	pform_start_class_declaration(@2, class_type, nullptr, nullptr, nullptr, false);
+      }
+    class_items_opt K_endclass
+      { pform_end_class_declaration(@9);
+      }
+    class_declaration_endlabel_opt
+      { check_end_label(@11, "class", $4, $11);
+	delete[] $4;
+      }
+
+  /* Parameterized interface class declaration */
+  | K_interface K_class lifetime_opt identifier_name class_parameter_port_list_opt interface_class_extends_list_opt ';'
+      { if ($3 != LexicalScope::INHERITED) {
+	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
+			    "and has no effect." << endl;
+	      warn_count += 1;
+	}
+	perm_string name = lex_strings.make($4);
+	class_type_t *class_type= new class_type_t(name);
+	FILE_NAME(class_type, @4);
+	class_type->is_interface_class = true;
+	class_type->virtual_class = true;  // Interface classes are implicitly abstract
+	pform_set_typedef(@4, name, class_type, nullptr);
+	/* Store class parameters */
+	if ($5) {
+	      class_type->parameters = *$5;
+	      delete $5;
+	}
+	/* Store extended interface classes (multiple inheritance allowed) */
+	if ($6) {
+	      class_type->implemented_interfaces = *$6;
+	      delete $6;
+	}
+	pform_start_class_declaration(@2, class_type, nullptr, nullptr, nullptr, false);
+      }
+    class_items_opt K_endclass
+      { pform_end_class_declaration(@10);
+      }
+    class_declaration_endlabel_opt
+      { check_end_label(@12, "class", $4, $12);
+	delete[] $4;
+      }
   ;
 
 class_constraint /* IEEE1800-2005: A.1.8 */
@@ -1704,6 +2090,8 @@ class_constraint /* IEEE1800-2005: A.1.8 */
 identifier_name
   : IDENTIFIER { $$ = $1; }
   | TYPE_IDENTIFIER { $$ = $1.text; }
+    /* Allow 'bool' keyword to be used as an identifier for typedefs like: typedef logic bool; */
+  | K_bool { $$ = strdup("bool"); }
   ;
 
   /* The endlabel after a class declaration is a little tricky because
@@ -1740,10 +2128,44 @@ class_declaration_extends_opt /* IEEE1800-2005: A.1.2 */
 	$$.args = $7;
 	$$.spec_params = $5;  // Also store separately for backwards compat
       }
+  | K_extends IDENTIFIER argument_list_parens_opt
+      { pform_set_type_referenced(@2, $2);
+	typedef_t*type = pform_test_type_identifier(@2, $2);
+	if (!type) {
+	      perm_string name = lex_strings.make($2);
+	      pform_forward_typedef(@2, name, typedef_t::CLASS);
+	      type = pform_test_type_identifier(@2, $2);
+	}
+	typeref_t*tmp = new typeref_t(type);
+	FILE_NAME(tmp, @2);
+	$$.type = tmp;
+	$$.args = $3;
+	$$.spec_params = nullptr;
+	delete[] $2;
+      }
+    /* Parameterized base class with unknown identifier */
+  | K_extends IDENTIFIER '#' '(' class_specialization_params_opt ')' argument_list_parens_opt
+      { pform_set_type_referenced(@2, $2);
+	typedef_t*type = pform_test_type_identifier(@2, $2);
+	if (!type) {
+	      perm_string name = lex_strings.make($2);
+	      pform_forward_typedef(@2, name, typedef_t::CLASS);
+	      type = pform_test_type_identifier(@2, $2);
+	}
+	typeref_t*tmp = new typeref_t(type);
+	FILE_NAME(tmp, @2);
+	if ($5) {
+	      tmp->set_spec_params($5);
+	}
+	$$.type = tmp;
+	$$.args = $7;
+	$$.spec_params = $5;
+	delete[] $2;
+      }
   |
       { $$ = {nullptr, nullptr, nullptr};
       }
-  ;
+;
 
   /* Parameters for class specialization (e.g., #(my_item) or #(int, 8)) */
 class_specialization_params_opt
@@ -1796,6 +2218,86 @@ class_specialization_param
       }
   ;
 
+  /* Interface class multiple extends support.
+     Interface classes can extend multiple other interface classes. */
+interface_class_extends_list_opt
+  : K_extends interface_class_extends_list
+      { $$ = $2; }
+  |
+      { $$ = 0; }
+  ;
+
+interface_class_extends_list
+  : ps_type_identifier
+      { std::vector<data_type_t*>*tmp = new std::vector<data_type_t*>;
+        tmp->push_back($1);
+        $$ = tmp;
+      }
+  | ps_type_identifier '#' '(' class_specialization_params_opt ')'
+      { std::vector<data_type_t*>*tmp = new std::vector<data_type_t*>;
+        typeref_t *tref = dynamic_cast<typeref_t*>($1);
+        if (tref && $4) {
+              tref->set_spec_params($4);
+        }
+        tmp->push_back($1);
+        $$ = tmp;
+      }
+  | interface_class_extends_list ',' ps_type_identifier
+      { std::vector<data_type_t*>*tmp = $1;
+        tmp->push_back($3);
+        $$ = tmp;
+      }
+  | interface_class_extends_list ',' ps_type_identifier '#' '(' class_specialization_params_opt ')'
+      { std::vector<data_type_t*>*tmp = $1;
+        typeref_t *tref = dynamic_cast<typeref_t*>($3);
+        if (tref && $6) {
+              tref->set_spec_params($6);
+        }
+        tmp->push_back($3);
+        $$ = tmp;
+      }
+  ;
+
+  /* Implements clause for regular classes.
+     A class can implement multiple interface classes. */
+implements_list_opt
+  : K_implements implements_list
+      { $$ = $2; }
+  |
+      { $$ = 0; }
+  ;
+
+implements_list
+  : ps_type_identifier
+      { std::vector<data_type_t*>*tmp = new std::vector<data_type_t*>;
+        tmp->push_back($1);
+        $$ = tmp;
+      }
+  | ps_type_identifier '#' '(' class_specialization_params_opt ')'
+      { std::vector<data_type_t*>*tmp = new std::vector<data_type_t*>;
+        typeref_t *tref = dynamic_cast<typeref_t*>($1);
+        if (tref && $4) {
+              tref->set_spec_params($4);
+        }
+        tmp->push_back($1);
+        $$ = tmp;
+      }
+  | implements_list ',' ps_type_identifier
+      { std::vector<data_type_t*>*tmp = $1;
+        tmp->push_back($3);
+        $$ = tmp;
+      }
+  | implements_list ',' ps_type_identifier '#' '(' class_specialization_params_opt ')'
+      { std::vector<data_type_t*>*tmp = $1;
+        typeref_t *tref = dynamic_cast<typeref_t*>($3);
+        if (tref && $6) {
+              tref->set_spec_params($6);
+        }
+        tmp->push_back($3);
+        $$ = tmp;
+      }
+  ;
+
   /* The class_items_opt and class_items rules together implement the
      rule snippet { class_item } (zero or more class_item) of the
      class_declaration. */
@@ -1835,6 +2337,34 @@ class_item /* IEEE1800-2005: A.1.8 */
 
   | K_const class_item_qualifier_opt data_type list_of_variable_decl_assignments ';'
       { pform_class_property(@1, $2 | property_qualifier_t::make_const(), $3, $4); }
+
+  | property_qualifier_opt IDENTIFIER list_of_variable_decl_assignments ';'
+      { pform_set_type_referenced(@2, $2);
+	typedef_t*type = pform_test_type_identifier(@2, $2);
+	if (!type) {
+	      perm_string name = lex_strings.make($2);
+	      pform_forward_typedef(@2, name, typedef_t::CLASS);
+	      type = pform_test_type_identifier(@2, $2);
+	}
+	typeref_t*tmp = new typeref_t(type);
+	FILE_NAME(tmp, @2);
+	pform_class_property(@2, $1, tmp, $3);
+	delete[] $2;
+      }
+
+  | K_const class_item_qualifier_opt IDENTIFIER list_of_variable_decl_assignments ';'
+      { pform_set_type_referenced(@3, $3);
+	typedef_t*type = pform_test_type_identifier(@3, $3);
+	if (!type) {
+	      perm_string name = lex_strings.make($3);
+	      pform_forward_typedef(@3, name, typedef_t::CLASS);
+	      type = pform_test_type_identifier(@3, $3);
+	}
+	typeref_t*tmp = new typeref_t(type);
+	FILE_NAME(tmp, @3);
+	pform_class_property(@1, $2 | property_qualifier_t::make_const(), tmp, $4);
+	delete[] $3;
+      }
 
     /* Virtual interface property: virtual interface_type var_name;
        IEEE1800-2012: A virtual interface is a variable that represents an interface instance.
@@ -1998,6 +2528,36 @@ class_item /* IEEE1800-2005: A.1.8 */
 
   | covergroup_declaration
 
+    /* Nested class declaration - IEEE 1800-2012 8.4 */
+  | class_declaration
+
+    /* Nested interface class declaration */
+  | K_interface K_class lifetime_opt identifier_name interface_class_extends_list_opt ';'
+      { if ($3 != LexicalScope::INHERITED) {
+	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
+			    "and has no effect." << endl;
+	      warn_count += 1;
+	}
+	perm_string name = lex_strings.make($4);
+	class_type_t *class_type= new class_type_t(name);
+	FILE_NAME(class_type, @4);
+	class_type->is_interface_class = true;
+	class_type->virtual_class = true;
+	pform_set_typedef(@4, name, class_type, nullptr);
+	if ($5) {
+	      class_type->implemented_interfaces = *$5;
+	      delete $5;
+	}
+	pform_start_class_declaration(@2, class_type, nullptr, nullptr, nullptr, false);
+      }
+    class_items_opt K_endclass
+      { pform_end_class_declaration(@9);
+      }
+    class_declaration_endlabel_opt
+      { check_end_label(@11, "class", $4, $11);
+	delete[] $4;
+      }
+
     /* Here are some error matching rules to help recover from various
        syntax errors within a class declaration. */
 
@@ -2086,12 +2646,11 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   : assert_or_assume K_property '(' property_spec ')' statement_or_null %prec less_than_K_else
       { /* Simple concurrent assertion: assert property (@clk expr) pass_action; */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
-	      /* Try to resolve named property reference */
-	      PExpr* prop_expr = $4.expr;
+	      PSvaExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      bool resolved = resolve_named_property(prop_expr, prop_clk);
+	      PExpr* prop_disable = $4.disable;
+	      bool resolved = resolve_named_property(prop_expr, prop_clk, prop_disable);
 
-	      /* Check if this looks like an unresolved property reference */
 	      if (!resolved && is_unresolved_property_reference($4.expr)) {
 		    yywarn(@1, "assertion references undefined property"
 			   " (possibly skipped due to unsupported sequence constructs)."
@@ -2099,20 +2658,23 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 		    delete $6;
 		    $$ = 0;
 	      } else {
-		    /* For simple property expressions, transform into:
-		       @(clk) if (!expr) $error("assertion failed"); else pass_action; */
-		    std::list<named_pexpr_t> arg_list;
-		    PCallTask*err_call = new PCallTask(lex_strings.make("$error"), arg_list);
-		    FILE_NAME(err_call, @1);
-		    /* Create conditional: if (expr) pass_action else $error */
-		    PCondit*cond = new PCondit(prop_expr, $6, err_call);
-		    FILE_NAME(cond, @1);
-		    /* If there's a clocking event, wrap with event wait */
+		    Statement*pass_action = $6;
+		    Statement*fail_action = 0;
+		    if ($1 == 1 || $1 == 4) {
+			  std::list<named_pexpr_t> arg_list;
+			  PCallTask*err_call = new PCallTask(lex_strings.make("$error"), arg_list);
+			  FILE_NAME(err_call, @1);
+			  fail_action = err_call;
+		    }
+		    PAssertion::Kind kind = ($1 == 1) ? PAssertion::ASSERT : PAssertion::ASSUME;
+		    PAssertion*assert_stmt = new PAssertion(kind, prop_expr, prop_disable,
+							    pass_action, fail_action);
+		    FILE_NAME(assert_stmt, @1);
 		    if (prop_clk) {
-			  prop_clk->set_statement(cond);
+			  prop_clk->set_statement(assert_stmt);
 			  $$ = prop_clk;
 		    } else {
-			  $$ = cond;
+			  $$ = assert_stmt;
 		    }
 	      }
 	} else {
@@ -2128,12 +2690,11 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   | assert_or_assume K_property '(' property_spec ')' K_else statement_or_null
       { /* Concurrent assertion with only fail action */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
-	      /* Try to resolve named property reference */
-	      PExpr* prop_expr = $4.expr;
+	      PSvaExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      bool resolved = resolve_named_property(prop_expr, prop_clk);
+	      PExpr* prop_disable = $4.disable;
+	      bool resolved = resolve_named_property(prop_expr, prop_clk, prop_disable);
 
-	      /* Check if this looks like an unresolved property reference */
 	      if (!resolved && is_unresolved_property_reference($4.expr)) {
 		    yywarn(@1, "assertion references undefined property"
 			   " (possibly skipped due to unsupported sequence constructs)."
@@ -2141,14 +2702,15 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 		    delete $7;
 		    $$ = 0;
 	      } else {
-		    /* Transform: if (!expr) fail_action */
-		    PCondit*cond = new PCondit(prop_expr, 0, $7);
-		    FILE_NAME(cond, @1);
+		    PAssertion::Kind kind = ($1 == 1) ? PAssertion::ASSERT : PAssertion::ASSUME;
+		    PAssertion*assert_stmt = new PAssertion(kind, prop_expr, prop_disable,
+							    0, $7);
+		    FILE_NAME(assert_stmt, @1);
 		    if (prop_clk) {
-			  prop_clk->set_statement(cond);
+			  prop_clk->set_statement(assert_stmt);
 			  $$ = prop_clk;
 		    } else {
-			  $$ = cond;
+			  $$ = assert_stmt;
 		    }
 	      }
 	} else {
@@ -2164,12 +2726,11 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   | assert_or_assume K_property '(' property_spec ')' statement_or_null K_else statement_or_null
       { /* Concurrent assertion with both pass and fail actions */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
-	      /* Try to resolve named property reference */
-	      PExpr* prop_expr = $4.expr;
+	      PSvaExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      bool resolved = resolve_named_property(prop_expr, prop_clk);
+	      PExpr* prop_disable = $4.disable;
+	      bool resolved = resolve_named_property(prop_expr, prop_clk, prop_disable);
 
-	      /* Check if this looks like an unresolved property reference */
 	      if (!resolved && is_unresolved_property_reference($4.expr)) {
 		    yywarn(@1, "assertion references undefined property"
 			   " (possibly skipped due to unsupported sequence constructs)."
@@ -2178,14 +2739,15 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 		    delete $8;
 		    $$ = 0;
 	      } else {
-		    /* Transform: if (expr) pass_action else fail_action */
-		    PCondit*cond = new PCondit(prop_expr, $6, $8);
-		    FILE_NAME(cond, @1);
+		    PAssertion::Kind kind = ($1 == 1) ? PAssertion::ASSERT : PAssertion::ASSUME;
+		    PAssertion*assert_stmt = new PAssertion(kind, prop_expr, prop_disable,
+							    $6, $8);
+		    FILE_NAME(assert_stmt, @1);
 		    if (prop_clk) {
-			  prop_clk->set_statement(cond);
+			  prop_clk->set_statement(assert_stmt);
 			  $$ = prop_clk;
 		    } else {
-			  $$ = cond;
+			  $$ = assert_stmt;
 		    }
 	      }
 	} else {
@@ -2202,12 +2764,11 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   | K_cover K_property '(' property_spec ')' statement_or_null
       { /* cover property: execute pass action when property is true */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
-	      /* Try to resolve named property reference */
-	      PExpr* prop_expr = $4.expr;
+	      PSvaExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      bool resolved = resolve_named_property(prop_expr, prop_clk);
+	      PExpr* prop_disable = $4.disable;
+	      bool resolved = resolve_named_property(prop_expr, prop_clk, prop_disable);
 
-	      /* Check if this looks like an unresolved property reference */
 	      if (!resolved && is_unresolved_property_reference($4.expr)) {
 		    yywarn(@1, "cover references undefined property"
 			   " (possibly skipped due to unsupported sequence constructs)."
@@ -2215,16 +2776,14 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 		    delete $6;
 		    $$ = 0;
 	      } else {
-		    /* Transform: if (expr) pass_action;
-		       Note: This is a simplified model - real coverage would track
-		       how many times the property was covered. */
-		    PCondit*cond = new PCondit(prop_expr, $6, 0);
-		    FILE_NAME(cond, @1);
+		    PAssertion*cover_stmt = new PAssertion(PAssertion::COVER, prop_expr,
+							   prop_disable, $6, 0);
+		    FILE_NAME(cover_stmt, @1);
 		    if (prop_clk) {
-			  prop_clk->set_statement(cond);
+			  prop_clk->set_statement(cover_stmt);
 			  $$ = prop_clk;
 		    } else {
-			  $$ = cond;
+			  $$ = cover_stmt;
 		    }
 	      }
 	} else {
@@ -2242,12 +2801,11 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
   | K_cover K_sequence '(' property_spec ')' statement_or_null
       { /* cover sequence: execute pass action when sequence matches */
 	if (gn_supported_assertions_flag && $4.expr != 0) {
-	      /* Try to resolve named property reference */
-	      PExpr* prop_expr = $4.expr;
+	      PSvaExpr* prop_expr = $4.expr;
 	      PEventStatement* prop_clk = $4.clocking_event;
-	      bool resolved = resolve_named_property(prop_expr, prop_clk);
+	      PExpr* prop_disable = $4.disable;
+	      bool resolved = resolve_named_property(prop_expr, prop_clk, prop_disable);
 
-	      /* Check if this looks like an unresolved property reference */
 	      if (!resolved && is_unresolved_property_reference($4.expr)) {
 		    yywarn(@1, "cover references undefined sequence"
 			   " (possibly skipped due to unsupported constructs)."
@@ -2255,16 +2813,14 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 		    delete $6;
 		    $$ = 0;
 	      } else {
-		    /* Transform: if (expr) pass_action;
-		       Note: This is a simplified model - real coverage would track
-		       how many times the sequence matched. */
-		    PCondit*cond = new PCondit(prop_expr, $6, 0);
-		    FILE_NAME(cond, @1);
+		    PAssertion*cover_stmt = new PAssertion(PAssertion::COVER, prop_expr,
+							   prop_disable, $6, 0);
+		    FILE_NAME(cover_stmt, @1);
 		    if (prop_clk) {
-			  prop_clk->set_statement(cond);
+			  prop_clk->set_statement(cover_stmt);
 			  $$ = prop_clk;
 		    } else {
-			  $$ = cond;
+			  $$ = cover_stmt;
 		    }
 	      }
 	} else {
@@ -3047,6 +3603,12 @@ data_type /* IEEE1800-2005: A.2.2.1 */
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
       }
+    /* chandle type: opaque handle for DPI - treat as 64-bit pointer */
+  | K_chandle
+      { atom_type_t*tmp = new atom_type_t(atom_type_t::LONGINT, true);
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
   ;
 
 /* Data type or nothing, but not implicit */
@@ -3202,6 +3764,7 @@ description /* IEEE1800-2005: A.1.2 */
   | config_declaration
   | nature_declaration
   | package_declaration
+  | package_import_declaration
   | discipline_declaration
   | package_item
   | KK_attribute '(' IDENTIFIER ',' STRING ',' STRING ')'
@@ -4352,6 +4915,202 @@ external_method_definition
       { check_end_label(@15, "task", $5, $15);
 	delete[]$5;
       }
+
+    /* ======================================================================
+     * Parameterized class external method definitions
+     *
+     * For parameterized classes, the external method definition must include
+     * the class parameters. For example:
+     *   class Container #(type T = int);
+     *     extern function void set(T val);
+     *   endclass
+     *   function void Container#(T)::set(T val);  // <-- parameterized extern
+     *     ...
+     *   endfunction
+     *
+     * We need to set up the type parameters as typedefs BEFORE parsing
+     * the port list so the lexer recognizes T as a TYPE_IDENTIFIER.
+     * ====================================================================== */
+
+    /* Parameterized class function with explicit return type - ANSI port list */
+  | K_function lifetime_opt data_type_or_implicit_or_void
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES
+      { /* Set up type parameters before parsing method name and ports */
+	pclass_for_extern_ = pform_setup_external_class_type_params(@4, $4.text);
+      }
+    IDENTIFIER
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $4.text, $11, $2);
+	delete[] $4.text;
+      }
+    '(' tf_port_list_opt ')' ';'
+    block_item_decls_opt
+    statement_or_null_list_opt
+    K_endfunction
+      { current_function->set_ports($14);
+	current_function->set_return($3);
+	current_function_set_statement($18? @18 : @11, $18);
+	pform_set_this_class(@11, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	pform_cleanup_external_class_type_params(pclass_for_extern_);
+	pclass_for_extern_ = 0;
+	current_function = 0;
+      }
+    label_opt
+      { check_end_label(@21, "function", $11, $21);
+	delete[]$11;
+      }
+
+    /* Parameterized class function with explicit return type - old-style port list */
+  | K_function lifetime_opt data_type_or_implicit_or_void
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES
+      { pclass_for_extern_ = pform_setup_external_class_type_params(@4, $4.text); }
+    IDENTIFIER ';'
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $4.text, $11, $2);
+	delete[] $4.text;
+      }
+    tf_item_list_opt
+    statement_or_null_list_opt
+    K_endfunction
+      { current_function->set_ports($14);
+	current_function->set_return($3);
+	current_function_set_statement($15? @15 : @11, $15);
+	pform_set_this_class(@11, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	pform_cleanup_external_class_type_params(pclass_for_extern_);
+	pclass_for_extern_ = 0;
+	current_function = 0;
+      }
+    label_opt
+      { check_end_label(@18, "function", $11, $18);
+	delete[]$11;
+      }
+
+    /* Parameterized class task - ANSI port list */
+  | K_task lifetime_opt
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES
+      { pclass_for_extern_ = pform_setup_external_class_type_params(@3, $3.text); }
+    IDENTIFIER
+      { assert(current_task == 0);
+	current_task = pform_start_external_task(@1, $3.text, $10, $2);
+	delete[] $3.text;
+      }
+    '(' tf_port_list_opt ')' ';'
+    block_item_decls_opt
+    statement_or_null_list_opt
+    K_endtask
+      { current_task->set_ports($13);
+	current_task_set_statement(@17, $17);
+	pform_set_this_class(@10, current_task);
+	pform_pop_scope();
+	pform_end_external_method();
+	pform_cleanup_external_class_type_params(pclass_for_extern_);
+	pclass_for_extern_ = 0;
+	current_task = 0;
+      }
+    label_opt
+      { check_end_label(@20, "task", $10, $20);
+	delete[]$10;
+      }
+
+    /* Parameterized class task - old-style port list */
+  | K_task lifetime_opt
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES
+      { pclass_for_extern_ = pform_setup_external_class_type_params(@3, $3.text); }
+    IDENTIFIER ';'
+      { assert(current_task == 0);
+	current_task = pform_start_external_task(@1, $3.text, $10, $2);
+	delete[] $3.text;
+      }
+    tf_item_list_opt
+    statement_or_null_list_opt
+    K_endtask
+      { current_task->set_ports($13);
+	current_task_set_statement(@14, $14);
+	pform_set_this_class(@10, current_task);
+	pform_pop_scope();
+	pform_end_external_method();
+	pform_cleanup_external_class_type_params(pclass_for_extern_);
+	pclass_for_extern_ = 0;
+	current_task = 0;
+      }
+    label_opt
+      { check_end_label(@17, "task", $10, $17);
+	delete[]$10;
+      }
+
+    /* ======================================================================
+     * Parameterized class extern methods with type parameter as return type
+     *
+     * For cases like: function T Container#(T)::get();
+     * The return type T is an IDENTIFIER (not TYPE_IDENTIFIER) because
+     * the lexer sees it before knowing about the class type parameters.
+     * ====================================================================== */
+
+    /* Parameterized class function with type param return type - ANSI port list */
+  | K_function lifetime_opt IDENTIFIER
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES
+      { /* Set up type parameters, then resolve return type from type param */
+	pclass_for_extern_ = pform_setup_external_class_type_params(@4, $4.text);
+      }
+    IDENTIFIER
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $4.text, $11, $2);
+	delete[] $4.text;
+      }
+    '(' tf_port_list_opt ')' ';'
+    block_item_decls_opt
+    statement_or_null_list_opt
+    K_endfunction
+      { current_function->set_ports($14);
+	/* Resolve return type from class type parameter */
+	data_type_t*ret_type = pform_resolve_type_param_as_type(@3, $3, pclass_for_extern_);
+	current_function->set_return(ret_type);
+	delete[]$3;
+	current_function_set_statement($18? @18 : @11, $18);
+	pform_set_this_class(@11, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	pform_cleanup_external_class_type_params(pclass_for_extern_);
+	pclass_for_extern_ = 0;
+	current_function = 0;
+      }
+    label_opt
+      { check_end_label(@21, "function", $11, $21);
+	delete[]$11;
+      }
+
+    /* Parameterized class function with type param return type - old-style port list */
+  | K_function lifetime_opt IDENTIFIER
+      TYPE_IDENTIFIER '#' '(' class_specialization_params_opt ')' K_SCOPE_RES
+      { pclass_for_extern_ = pform_setup_external_class_type_params(@4, $4.text); }
+    IDENTIFIER ';'
+      { assert(current_function == 0);
+	current_function = pform_start_external_function(@1, $4.text, $11, $2);
+	delete[] $4.text;
+      }
+    tf_item_list_opt
+    statement_or_null_list_opt
+    K_endfunction
+      { current_function->set_ports($14);
+	data_type_t*ret_type = pform_resolve_type_param_as_type(@3, $3, pclass_for_extern_);
+	current_function->set_return(ret_type);
+	delete[]$3;
+	current_function_set_statement($15? @15 : @11, $15);
+	pform_set_this_class(@11, current_function);
+	pform_pop_scope();
+	pform_end_external_method();
+	pform_cleanup_external_class_type_params(pclass_for_extern_);
+	pclass_for_extern_ = 0;
+	current_function = 0;
+      }
+    label_opt
+      { check_end_label(@18, "function", $11, $18);
+	delete[]$11;
+      }
   ;
 
 package_item_list
@@ -4390,12 +5149,10 @@ property_declaration
         if (gn_supported_assertions_flag) {
               if ($4.expr != 0) {
                     /* Resolve any sequence references in the property body */
-                    PExpr* resolved = resolve_sequence_references($4.expr);
-                    store_named_property($2, $4.clocking_event, resolved);
+                    PSvaExpr* resolved = resolve_sequence_references($4.expr);
+                    store_named_property($2, $4.clocking_event, resolved, $4.disable);
               } else {
-                    /* Property contains unsupported sequence constructs */
-                    yywarn(@1, "sorry: property contains unsupported sequence constructs"
-                           " (##N delays, repetition). Property ignored.");
+                    yywarn(@1, "sorry: property contains unsupported constructs and will be ignored.");
               }
         } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: property declarations are parsed but not yet elaborated."
@@ -4416,13 +5173,11 @@ property_declaration
         if (gn_supported_assertions_flag) {
               if ($9.expr != 0) {
                     /* Resolve any sequence references in the property body */
-                    PExpr* resolved = resolve_sequence_references($9.expr);
+                    PSvaExpr* resolved = resolve_sequence_references($9.expr);
                     /* Store property with port names for parameter substitution */
-                    store_named_property($2, $9.clocking_event, resolved, $5);
+                    store_named_property($2, $9.clocking_event, resolved, $9.disable, $5);
               } else {
-                    /* Property contains unsupported sequence constructs */
-                    yywarn(@1, "sorry: property contains unsupported sequence constructs"
-                           " (##N delays, repetition). Property ignored.");
+                    yywarn(@1, "sorry: property contains unsupported constructs and will be ignored.");
               }
         } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: property declarations are parsed but not yet elaborated."
@@ -4454,8 +5209,7 @@ sequence_declaration
               if ($4.expr != 0) {
                     store_named_sequence($2, $4.clocking_event, $4.expr);
               } else {
-                    yywarn(@1, "sorry: sequence contains unsupported constructs"
-                           " and will be ignored.");
+                    yywarn(@1, "sorry: sequence contains unsupported constructs and will be ignored.");
               }
         } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: sequence declarations are parsed but not yet elaborated."
@@ -4477,8 +5231,7 @@ sequence_declaration
               if ($9.expr != 0) {
                     store_named_sequence($2, $9.clocking_event, $9.expr, $5);
               } else {
-                    yywarn(@1, "sorry: sequence contains unsupported constructs"
-                           " and will be ignored.");
+                    yywarn(@1, "sorry: sequence contains unsupported constructs and will be ignored.");
               }
         } else if (gn_unsupported_assertions_flag) {
               yyerror(@1, "sorry: sequence declarations are parsed but not yet elaborated."
@@ -4507,1065 +5260,103 @@ procedural_assertion_statement /* IEEE1800-2012 A.6.10 */
 
 property_expr /* IEEE1800-2012 A.2.10 */
   : expression
-      { $$ = $1; }
-  | expression K_IMPLIES_OV property_expr
-      { /* |-> overlapping implication: a |-> b means "if a then b" = !a || b
-           Transform to logical implication at parse time */
-	if ($3) {
-	      /* Create !$1 (negation of antecedent) */
-	      PEUnary*not_ante = new PEUnary('!', $1);
-	      FILE_NAME(not_ante, @1);
-	      /* Create !$1 || $3 (logical implication) */
-	      PEBLogic*impl = new PEBLogic('o', not_ante, $3);
-	      FILE_NAME(impl, @1);
-	      $$ = impl;
-	} else {
-	      /* If consequent couldn't be elaborated, whole implication fails */
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | expression K_IMPLIES_OV '(' expression ')'
-      { /* Parenthesized consequent: a |-> (b) = !a || b
-           This rule explicitly handles parenthesized consequent to avoid
-           LALR(1) conflict with '(' expression K_IMPLIES_OV property_expr ')' */
-	PEUnary*not_ante = new PEUnary('!', $1);
-	FILE_NAME(not_ante, @1);
-	PEBLogic*impl = new PEBLogic('o', not_ante, $4);
-	FILE_NAME(impl, @1);
-	$$ = impl;
-      }
-  | expression K_IMPLIES_NOV '(' expression ')'
-      { /* Parenthesized consequent: a |=> (b) = !$past(a) || b */
-	std::vector<named_pexpr_t> past_parms(1);
-	past_parms[0].parm = $1;
-	PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	FILE_NAME(past_call, @1);
-	PEUnary*not_past = new PEUnary('!', past_call);
-	FILE_NAME(not_past, @1);
-	PEBLogic*impl = new PEBLogic('o', not_past, $4);
-	FILE_NAME(impl, @1);
-	$$ = impl;
-      }
-  | expression K_IMPLIES_NOV property_expr
-      { /* |=> non-overlapping implication: a |=> b means "if a was true on previous
-           clock cycle, then b must be true now" = !$past(a) || b
-           Transform to logical implication using $past at parse time */
-	if ($3) {
-	      /* Create $past($1) */
-	      std::vector<named_pexpr_t> past_parms(1);
-	      past_parms[0].parm = $1;
-	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	      FILE_NAME(past_call, @1);
-	      /* Create !$past($1) */
-	      PEUnary*not_past = new PEUnary('!', past_call);
-	      FILE_NAME(not_past, @1);
-	      /* Create !$past($1) || $3 */
-	      PEBLogic*impl = new PEBLogic('o', not_past, $3);
-	      FILE_NAME(impl, @1);
-	      $$ = impl;
-	} else {
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | '(' expression ')' K_IMPLIES_OV property_expr
-      { /* Parenthesized antecedent: (a) |-> b = !a || b
-           Allows patterns like (cond || flag) |-> consequence */
-	if ($5) {
-	      PEUnary*not_ante = new PEUnary('!', $2);
-	      FILE_NAME(not_ante, @2);
-	      PEBLogic*impl = new PEBLogic('o', not_ante, $5);
-	      FILE_NAME(impl, @2);
-	      $$ = impl;
-	} else {
-	      delete $2;
-	      $$ = 0;
-	}
-      }
-  | '(' expression ')' K_IMPLIES_NOV property_expr
-      { /* Parenthesized antecedent: (a) |=> b = !$past(a) || b */
-	if ($5) {
-	      std::vector<named_pexpr_t> past_parms(1);
-	      past_parms[0].parm = $2;
-	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	      FILE_NAME(past_call, @2);
-	      PEUnary*not_past = new PEUnary('!', past_call);
-	      FILE_NAME(not_past, @2);
-	      PEBLogic*impl = new PEBLogic('o', not_past, $5);
-	      FILE_NAME(impl, @2);
-	      $$ = impl;
-	} else {
-	      delete $2;
-	      $$ = 0;
-	}
-      }
-  | '(' expression ')' K_IMPLIES_OV '(' expression ')'
-      { /* Separately parenthesized antecedent AND consequent: (a) |-> (b) = !a || b
-           This is different from (a |-> (b)) which has outer parentheses.
-           This pattern appears in AXI4 assertions like:
-           (awvalid==1 && awready==0) |=> ($stable(awid) && $stable(awaddr)) */
-	PEUnary*not_ante = new PEUnary('!', $2);
-	FILE_NAME(not_ante, @2);
-	PEBLogic*impl = new PEBLogic('o', not_ante, $6);
-	FILE_NAME(impl, @2);
-	$$ = impl;
-      }
-  | '(' expression ')' K_IMPLIES_NOV '(' expression ')'
-      { /* Separately parenthesized antecedent AND consequent: (a) |=> (b) = !$past(a) || b */
-	std::vector<named_pexpr_t> past_parms(1);
-	past_parms[0].parm = $2;
-	PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	FILE_NAME(past_call, @2);
-	PEUnary*not_past = new PEUnary('!', past_call);
-	FILE_NAME(not_past, @2);
-	PEBLogic*impl = new PEBLogic('o', not_past, $6);
-	FILE_NAME(impl, @2);
-	$$ = impl;
-      }
-  | '(' expression K_IMPLIES_OV '(' expression ')' ')'
-      { /* Parenthesized implication with paren consequent: (a |-> (b)) = !a || b */
-	PEUnary*not_ante = new PEUnary('!', $2);
-	FILE_NAME(not_ante, @2);
-	PEBLogic*impl = new PEBLogic('o', not_ante, $5);
-	FILE_NAME(impl, @2);
-	$$ = impl;
-      }
-  | '(' expression K_IMPLIES_NOV '(' expression ')' ')'
-      { /* Parenthesized implication with paren consequent: (a |=> (b)) = !$past(a) || b */
-	std::vector<named_pexpr_t> past_parms(1);
-	past_parms[0].parm = $2;
-	PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	FILE_NAME(past_call, @2);
-	PEUnary*not_past = new PEUnary('!', past_call);
-	FILE_NAME(not_past, @2);
-	PEBLogic*impl = new PEBLogic('o', not_past, $5);
-	FILE_NAME(impl, @2);
-	$$ = impl;
-      }
-  | '(' expression K_IMPLIES_OV property_expr ')'
-      { /* Parenthesized |-> implication: (a |-> b) = !a || b */
-	if ($4) {
-	      PEUnary*not_ante = new PEUnary('!', $2);
-	      FILE_NAME(not_ante, @2);
-	      PEBLogic*impl = new PEBLogic('o', not_ante, $4);
-	      FILE_NAME(impl, @2);
-	      $$ = impl;
-	} else {
-	      delete $2;
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_IMPLIES_NOV property_expr ')'
-      { /* Parenthesized |=> implication: (a |=> b) = !$past(a) || b */
-	if ($4) {
-	      /* Create $past($2) */
-	      std::vector<named_pexpr_t> past_parms(1);
-	      past_parms[0].parm = $2;
-	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	      FILE_NAME(past_call, @2);
-	      /* Create !$past($2) */
-	      PEUnary*not_past = new PEUnary('!', past_call);
-	      FILE_NAME(not_past, @2);
-	      /* Create !$past($2) || $4 */
-	      PEBLogic*impl = new PEBLogic('o', not_past, $4);
-	      FILE_NAME(impl, @2);
-	      $$ = impl;
-	} else {
-	      delete $2;
-	      $$ = 0;
-	}
-      }
-  | expression K_IMPLIES_OV K_SEQ_DELAY DEC_NUMBER property_expr
-      { /* |-> ##n sequence - parsed but not elaborated */ $$ = 0; }
-  | expression K_IMPLIES_NOV K_SEQ_DELAY DEC_NUMBER property_expr
-      { /* |=> ##n sequence - parsed but not elaborated */ $$ = 0; }
-  | expression K_IMPLIES_OV K_SEQ_DELAY '[' expression ':' expression ']' property_expr
-      { /* a |-> ##[m:n] b - if a was true m..n cycles ago, b must be true now */
-	PENumber*m_num = dynamic_cast<PENumber*>($5);
-	PENumber*n_num = dynamic_cast<PENumber*>($7);
-	if ($9 && m_num && n_num) {
-	      long m = m_num->value().as_long();
-	      long n = n_num->value().as_long();
-	      if (m >= 0 && n >= m && (n - m) <= 32) {
-		    /* Build $past(a, n) - use original expression for largest delay */
-		    std::vector<named_pexpr_t> past_parms;
-		    named_pexpr_t parm1;
-		    parm1.parm = $1;
-		    past_parms.push_back(parm1);
-		    if (n > 1) {
-			  named_pexpr_t parm2;
-			  parm2.parm = new PENumber(new verinum(n));
-			  past_parms.push_back(parm2);
-		    } else if (n == 1) {
-			  /* $past(a) for n=1 */
-		    }
-		    PExpr*past_expr;
-		    if (n == 0) {
-			  /* No $past needed for ##[0:0] */
-			  past_expr = $1;
-		    } else {
-			  past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
-			  FILE_NAME(past_expr, @1);
-		    }
-		    /* For simplicity, approximate ##[m:n] as ##n (check largest delay) */
-		    /* Create !(past_expr) || consequent */
-		    PEUnary*not_past = new PEUnary('!', past_expr);
-		    FILE_NAME(not_past, @1);
-		    PEBLogic*impl = new PEBLogic('o', not_past, $9);
-		    FILE_NAME(impl, @1);
-		    $$ = impl;
-	      } else {
-		    delete $1;
-		    $$ = 0;
-	      }
-	} else {
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' expression ']' property_expr
-      { /* a |=> ##[m:n] b - non-overlapping: approximate as ##(n+1) check */
-	PENumber*m_num = dynamic_cast<PENumber*>($5);
-	PENumber*n_num = dynamic_cast<PENumber*>($7);
-	if ($9 && m_num && n_num) {
-	      long m = m_num->value().as_long();
-	      long n = n_num->value().as_long();
-	      if (m >= 0 && n >= m && (n - m) <= 32) {
-		    /* Build $past(a, n+1) for largest delay + non-overlap offset */
-		    std::vector<named_pexpr_t> past_parms;
-		    named_pexpr_t parm1;
-		    parm1.parm = $1;
-		    past_parms.push_back(parm1);
-		    named_pexpr_t parm2;
-		    parm2.parm = new PENumber(new verinum(n + 1));
-		    past_parms.push_back(parm2);
-		    PExpr*past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
-		    FILE_NAME(past_expr, @1);
-		    /* Create !(past_expr) || consequent */
-		    PEUnary*not_past = new PEUnary('!', past_expr);
-		    FILE_NAME(not_past, @1);
-		    PEBLogic*impl = new PEBLogic('o', not_past, $9);
-		    FILE_NAME(impl, @1);
-		    $$ = impl;
-	      } else {
-		    delete $1;
-		    $$ = 0;
-	      }
-	} else {
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | expression K_IMPLIES_OV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
-      { /* a |-> ##[m:$] b - unbounded: approximate as ##[m:MAX] where MAX=32 */
-	if (gn_supported_assertions_flag) {
-	      const long MAX_UNBOUNDED_DELAY = 32;
-	      PENumber*m_num = dynamic_cast<PENumber*>($5);
-	      if ($9 && m_num) {
-		    long m = m_num->value().as_long();
-		    if (m >= 0 && m <= MAX_UNBOUNDED_DELAY) {
-			  /* Build $past(a, MAX) for bounded approximation */
-			  std::vector<named_pexpr_t> past_parms;
-			  named_pexpr_t parm1;
-			  parm1.parm = $1;
-			  past_parms.push_back(parm1);
-			  if (MAX_UNBOUNDED_DELAY > 1) {
-				named_pexpr_t parm2;
-				parm2.parm = new PENumber(new verinum(MAX_UNBOUNDED_DELAY));
-				past_parms.push_back(parm2);
-			  }
-			  PExpr*past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
-			  FILE_NAME(past_expr, @1);
-			  /* Create !(past_expr) || consequent */
-			  PEUnary*not_past = new PEUnary('!', past_expr);
-			  FILE_NAME(not_past, @1);
-			  PEBLogic*impl = new PEBLogic('o', not_past, $9);
-			  FILE_NAME(impl, @1);
-			  yywarn(@1, "Unbounded delay ##[m:$] approximated as ##[m:32].");
-			  $$ = impl;
-		    } else {
-			  yywarn(@1, "Unbounded delay lower bound too large, assertion ignored.");
-			  delete $1;
-			  $$ = 0;
-		    }
-	      } else {
-		    delete $1;
-		    $$ = 0;
-	      }
-	} else {
-	      /* Assertions disabled - silently ignore */
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | expression K_IMPLIES_NOV K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
-      { /* a |=> ##[m:$] b - unbounded non-overlapping: approximate as ##[m:MAX+1] */
-	if (gn_supported_assertions_flag) {
-	      const long MAX_UNBOUNDED_DELAY = 32;
-	      PENumber*m_num = dynamic_cast<PENumber*>($5);
-	      if ($9 && m_num) {
-		    long m = m_num->value().as_long();
-		    if (m >= 0 && m <= MAX_UNBOUNDED_DELAY) {
-			  /* Build $past(a, MAX+1) for non-overlapping bounded approximation */
-			  std::vector<named_pexpr_t> past_parms;
-			  named_pexpr_t parm1;
-			  parm1.parm = $1;
-			  past_parms.push_back(parm1);
-			  named_pexpr_t parm2;
-			  parm2.parm = new PENumber(new verinum(MAX_UNBOUNDED_DELAY + 1));
-			  past_parms.push_back(parm2);
-			  PExpr*past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
-			  FILE_NAME(past_expr, @1);
-			  /* Create !(past_expr) || consequent */
-			  PEUnary*not_past = new PEUnary('!', past_expr);
-			  FILE_NAME(not_past, @1);
-			  PEBLogic*impl = new PEBLogic('o', not_past, $9);
-			  FILE_NAME(impl, @1);
-			  yywarn(@1, "Unbounded delay ##[m:$] approximated as ##[m:33].");
-			  $$ = impl;
-		    } else {
-			  yywarn(@1, "Unbounded delay lower bound too large, assertion ignored.");
-			  delete $1;
-			  $$ = 0;
-		    }
-	      } else {
-		    delete $1;
-		    $$ = 0;
-	      }
-	} else {
-	      /* Assertions disabled - silently ignore */
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | expression K_IMPLIES_OV K_first_match '(' sequence_expr_in_parens ')'
-      { /* |-> first_match: a |-> first_match(seq)
-           For single-cycle approximation: treat as simple implication !a || true
-           The first_match just accepts the first successful sequence match. */
-	if (gn_supported_assertions_flag && $1) {
-	      yywarn(@3, "first_match approximated as single-cycle check.");
-	      /* Create !$1 || true = just always pass when antecedent triggers */
-	      PEUnary*not_ante = new PEUnary('!', $1);
-	      FILE_NAME(not_ante, @1);
-	      /* Create constant 1 for the consequent (first_match always potentially matches) */
-	      PENumber*one = new PENumber(new verinum(1));
-	      FILE_NAME(one, @3);
-	      PEBLogic*impl = new PEBLogic('o', not_ante, one);
-	      FILE_NAME(impl, @1);
-	      $$ = impl;
-	} else {
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | expression K_IMPLIES_NOV K_first_match '(' sequence_expr_in_parens ')'
-      { /* |=> first_match: a |=> first_match(seq)
-           For single-cycle approximation: treat as !$past(a) || true */
-	if (gn_supported_assertions_flag && $1) {
-	      yywarn(@3, "first_match approximated as single-cycle check.");
-	      /* Create $past($1) */
-	      std::vector<named_pexpr_t> past_parms(1);
-	      past_parms[0].parm = $1;
-	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	      FILE_NAME(past_call, @1);
-	      /* Create !$past($1) */
-	      PEUnary*not_past = new PEUnary('!', past_call);
-	      FILE_NAME(not_past, @1);
-	      /* Create constant 1 for the consequent */
-	      PENumber*one = new PENumber(new verinum(1));
-	      FILE_NAME(one, @3);
-	      PEBLogic*impl = new PEBLogic('o', not_past, one);
-	      FILE_NAME(impl, @1);
-	      $$ = impl;
-	} else {
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | '(' expression ')' K_IMPLIES_OV K_first_match '(' sequence_expr_in_parens ')'
-      { /* (a) |-> first_match: parenthesized antecedent with first_match */
-	if (gn_supported_assertions_flag && $2) {
-	      yywarn(@5, "first_match approximated as single-cycle check.");
-	      PEUnary*not_ante = new PEUnary('!', $2);
-	      FILE_NAME(not_ante, @2);
-	      PENumber*one = new PENumber(new verinum(1));
-	      FILE_NAME(one, @5);
-	      PEBLogic*impl = new PEBLogic('o', not_ante, one);
-	      FILE_NAME(impl, @2);
-	      $$ = impl;
-	} else {
-	      delete $2;
-	      $$ = 0;
-	}
-      }
-  | '(' expression ')' K_IMPLIES_NOV K_first_match '(' sequence_expr_in_parens ')'
-      { /* (a) |=> first_match: parenthesized antecedent with first_match */
-	if (gn_supported_assertions_flag && $2) {
-	      yywarn(@5, "first_match approximated as single-cycle check.");
-	      std::vector<named_pexpr_t> past_parms(1);
-	      past_parms[0].parm = $2;
-	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	      FILE_NAME(past_call, @2);
-	      PEUnary*not_past = new PEUnary('!', past_call);
-	      FILE_NAME(not_past, @2);
-	      PENumber*one = new PENumber(new verinum(1));
-	      FILE_NAME(one, @5);
-	      PEBLogic*impl = new PEBLogic('o', not_past, one);
-	      FILE_NAME(impl, @2);
-	      $$ = impl;
-	} else {
-	      delete $2;
-	      $$ = 0;
-	}
-      }
-  | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_OV property_expr
-      { /* seq ##N seq |-> prop: transform to $past(seq1, N) && seq2 |-> prop */
-	long N = $3->as_long();
-	if ($6 && N >= 1) {
-	      /* Create $past($1, N) */
-	      std::vector<named_pexpr_t> past_parms;
-	      named_pexpr_t parm1;
-	      parm1.parm = $1;
-	      past_parms.push_back(parm1);
-	      if (N > 1) {
-		    /* Add N as second argument for $past(expr, N) */
-		    named_pexpr_t parm2;
-		    parm2.parm = new PENumber($3);
-		    past_parms.push_back(parm2);
-	      }
-	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	      FILE_NAME(past_call, @1);
-	      /* Create $past($1, N) && $4 */
-	      PEBLogic*and_expr = new PEBLogic('a', past_call, $4);
-	      FILE_NAME(and_expr, @1);
-	      /* Create !($past($1, N) && $4) || $6 for overlapping implication */
-	      PEUnary*not_and = new PEUnary('!', and_expr);
-	      FILE_NAME(not_and, @1);
-	      PEBLogic*impl = new PEBLogic('o', not_and, $6);
-	      FILE_NAME(impl, @1);
-	      $$ = impl;
-	} else {
-	      /* N < 1 or consequent failed */
-	      $$ = 0;
-	}
-      }
-  | expression K_SEQ_DELAY DEC_NUMBER expression K_IMPLIES_NOV property_expr
-      { /* seq ##N seq |=> prop: non-overlapping means sequence matches previous cycle
-           Transform to $past(seq1, N+1) && $past(seq2) |-> prop */
-	long N = $3->as_long();
-	if ($6 && N >= 1) {
-	      /* Create $past($1, N+1) for first element delayed by N+1 cycles (N for ##N, +1 for |=>) */
-	      std::vector<named_pexpr_t> past_parms1;
-	      named_pexpr_t parm1;
-	      parm1.parm = $1;
-	      past_parms1.push_back(parm1);
-	      /* Always need second argument for N+1 */
-	      named_pexpr_t parm_n;
-	      parm_n.parm = new PENumber(new verinum(N + 1));
-	      past_parms1.push_back(parm_n);
-	      PECallFunction*past1 = new PECallFunction(perm_string::literal("$past"), past_parms1);
-	      FILE_NAME(past1, @1);
-	      /* Create $past($4) for second element (from previous cycle for |=>) */
-	      std::vector<named_pexpr_t> past_parms2;
-	      named_pexpr_t parm2;
-	      parm2.parm = $4;
-	      past_parms2.push_back(parm2);
-	      PECallFunction*past2 = new PECallFunction(perm_string::literal("$past"), past_parms2);
-	      FILE_NAME(past2, @4);
-	      /* Create $past($1, N+1) && $past($4) (sequence matched N+1 and 1 cycles ago) */
-	      PEBLogic*and_expr = new PEBLogic('a', past1, past2);
-	      FILE_NAME(and_expr, @1);
-	      /* Create !($past($1, N+1) && $past($4)) || $6 */
-	      PEUnary*not_and = new PEUnary('!', and_expr);
-	      FILE_NAME(not_and, @1);
-	      PEBLogic*impl = new PEBLogic('o', not_and, $6);
-	      FILE_NAME(impl, @1);
-	      $$ = impl;
-	} else {
-	      /* N < 1 or consequent failed */
-	      $$ = 0;
-	}
-      }
-  | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_OV property_expr
-      { /* seq ##[m:n] seq |-> prop - approximate as ##n (largest delay) */
-	PENumber*m_num = dynamic_cast<PENumber*>($4);
-	PENumber*n_num = dynamic_cast<PENumber*>($6);
-	if ($10 && m_num && n_num) {
-	      long m = m_num->value().as_long();
-	      long n = n_num->value().as_long();
-	      /* Limit range to avoid explosion - max 32 cycles */
-	      if (m >= 0 && n >= m && (n - m) <= 32) {
-		    /* Create $past($1, n) - use largest delay */
-		    PExpr*past_expr;
-		    if (n == 0) {
-			  past_expr = $1;
-		    } else {
-			  std::vector<named_pexpr_t> past_parms;
-			  named_pexpr_t parm1;
-			  parm1.parm = $1;
-			  past_parms.push_back(parm1);
-			  if (n > 1) {
-				named_pexpr_t parm2;
-				parm2.parm = new PENumber(new verinum(n));
-				past_parms.push_back(parm2);
-			  }
-			  past_expr = new PECallFunction(perm_string::literal("$past"), past_parms);
-			  FILE_NAME(past_expr, @1);
-		    }
-		    /* Create $past(seq1, n) && seq2 */
-		    PEBLogic*and_expr = new PEBLogic('a', past_expr, $8);
-		    FILE_NAME(and_expr, @1);
-		    /* Create !(and_expr) || consequent for overlapping implication */
-		    PEUnary*not_and = new PEUnary('!', and_expr);
-		    FILE_NAME(not_and, @1);
-		    PEBLogic*impl = new PEBLogic('o', not_and, $10);
-		    FILE_NAME(impl, @1);
-		    $$ = impl;
-	      } else {
-		    /* Range too large or invalid */
-		    delete $1;
-		    delete $8;
-		    $$ = 0;
-	      }
-	} else {
-	      /* Non-constant range bounds */
-	      delete $1;
-	      if ($8) delete $8;
-	      $$ = 0;
-	}
-      }
-  | expression K_SEQ_DELAY '[' expression ':' expression ']' expression K_IMPLIES_NOV property_expr
-      { /* seq ##[m:n] seq |=> prop - approximate as ##(n+1) for non-overlapping */
-	PENumber*m_num = dynamic_cast<PENumber*>($4);
-	PENumber*n_num = dynamic_cast<PENumber*>($6);
-	if ($10 && m_num && n_num) {
-	      long m = m_num->value().as_long();
-	      long n = n_num->value().as_long();
-	      /* Limit range to avoid explosion - max 32 cycles */
-	      if (m >= 0 && n >= m && (n - m) <= 32) {
-		    /* Create $past($1, n+1) - use largest delay + 1 for non-overlap */
-		    std::vector<named_pexpr_t> past_parms1;
-		    named_pexpr_t parm1;
-		    parm1.parm = $1;
-		    past_parms1.push_back(parm1);
-		    named_pexpr_t parm_n;
-		    parm_n.parm = new PENumber(new verinum(n + 1));
-		    past_parms1.push_back(parm_n);
-		    PExpr*past1 = new PECallFunction(perm_string::literal("$past"), past_parms1);
-		    FILE_NAME(past1, @1);
-		    /* Create $past($8) - seq2 from previous cycle for |=> */
-		    std::vector<named_pexpr_t> past_parms2;
-		    named_pexpr_t parm2;
-		    parm2.parm = $8;
-		    past_parms2.push_back(parm2);
-		    PExpr*past2 = new PECallFunction(perm_string::literal("$past"), past_parms2);
-		    FILE_NAME(past2, @8);
-		    /* Create $past(seq1, n+1) && $past(seq2) */
-		    PEBLogic*and_expr = new PEBLogic('a', past1, past2);
-		    FILE_NAME(and_expr, @1);
-		    /* Create !(and_expr) || consequent */
-		    PEUnary*not_and = new PEUnary('!', and_expr);
-		    FILE_NAME(not_and, @1);
-		    PEBLogic*impl = new PEBLogic('o', not_and, $10);
-		    FILE_NAME(impl, @1);
-		    $$ = impl;
-	      } else {
-		    /* Range too large or invalid */
-		    delete $1;
-		    delete $8;
-		    $$ = 0;
-	      }
-	} else {
-	      /* Non-constant range bounds */
-	      delete $1;
-	      if ($8) delete $8;
-	      $$ = 0;
-	}
-      }
-  | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression K_IMPLIES_OV property_expr
-      { /* seq ##[m:$] seq |-> prop - unbounded delay in antecedent */ $$ = 0; }
-  | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression K_IMPLIES_NOV property_expr
-      { /* seq ##[m:$] seq |=> prop - unbounded delay in antecedent */ $$ = 0; }
-  | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')' K_IMPLIES_OV property_expr
-      { /* (seq ##N seq) |-> prop: transform to $past(seq1) && seq2 |-> prop for N=1 */
-	if ($8 && $4->as_long() == 1) {
-	      /* Create $past($2) */
-	      std::vector<named_pexpr_t> past_parms(1);
-	      past_parms[0].parm = $2;
-	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	      FILE_NAME(past_call, @2);
-	      /* Create $past($2) && $5 */
-	      PEBLogic*and_expr = new PEBLogic('a', past_call, $5);
-	      FILE_NAME(and_expr, @2);
-	      /* Create !($past($2) && $5) || $8 */
-	      PEUnary*not_and = new PEUnary('!', and_expr);
-	      FILE_NAME(not_and, @2);
-	      PEBLogic*impl = new PEBLogic('o', not_and, $8);
-	      FILE_NAME(impl, @2);
-	      $$ = impl;
-	} else {
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')' K_IMPLIES_NOV property_expr
-      { /* (seq ##N seq) |=> prop: transform for N=1 */
-	if ($8 && $4->as_long() == 1) {
-	      std::vector<named_pexpr_t> past_parms1(1);
-	      past_parms1[0].parm = $2;
-	      PECallFunction*past1 = new PECallFunction(perm_string::literal("$past"), past_parms1);
-	      FILE_NAME(past1, @2);
-	      std::vector<named_pexpr_t> past_parms2(1);
-	      past_parms2[0].parm = $5;
-	      PECallFunction*past2 = new PECallFunction(perm_string::literal("$past"), past_parms2);
-	      FILE_NAME(past2, @5);
-	      PEBLogic*and_expr = new PEBLogic('a', past1, past2);
-	      FILE_NAME(and_expr, @2);
-	      PEUnary*not_and = new PEUnary('!', and_expr);
-	      FILE_NAME(not_and, @2);
-	      PEBLogic*impl = new PEBLogic('o', not_and, $8);
-	      FILE_NAME(impl, @2);
-	      $$ = impl;
-	} else {
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')' K_IMPLIES_OV property_expr
-      { /* (seq ##[m:n] seq) |-> prop - parenthesized antecedent with range */ $$ = 0; }
-  | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')' K_IMPLIES_NOV property_expr
-      { /* (seq ##[m:n] seq) |=> prop - parenthesized antecedent with range */ $$ = 0; }
-  | '(' expression K_SEQ_DELAY '[' expression ':' '$' ']' expression ')' K_IMPLIES_OV property_expr
-      { /* (seq ##[m:$] seq) |-> prop - parenthesized antecedent unbounded */ $$ = 0; }
-  | '(' expression K_SEQ_DELAY '[' expression ':' '$' ']' expression ')' K_IMPLIES_NOV property_expr
-      { /* (seq ##[m:$] seq) |=> prop - parenthesized antecedent unbounded */ $$ = 0; }
+      { $$ = make_sva_atom($1, @1); }
+  | property_expr K_IMPLIES_OV property_expr
+      { $$ = make_sva_implies($1, $3, false, @2); }
+  | property_expr K_IMPLIES_NOV property_expr
+      { $$ = make_sva_implies($1, $3, true, @2); }
+  | '(' property_expr K_IMPLIES_OV property_expr ')'
+      { $$ = make_sva_implies($2, $4, false, @3); }
+  | '(' property_expr K_IMPLIES_NOV property_expr ')'
+      { $$ = make_sva_implies($2, $4, true, @3); }
+  | property_expr K_LAND property_expr
+      { $$ = make_sva_and($1, $3, @2); }
+  | property_expr K_LOR property_expr
+      { $$ = make_sva_or($1, $3, @2); }
+  | property_expr K_and property_expr
+      { $$ = make_sva_and($1, $3, @2); }
+  | property_expr K_or property_expr
+      { $$ = make_sva_or($1, $3, @2); }
+  | K_first_match '(' sequence_expr_in_parens ')'
+      { $$ = make_sva_first_match($3, @1); }
+  | property_expr K_SEQ_DELAY DEC_NUMBER property_expr
+      { $$ = make_sva_concat($1, $3->as_long(), $3->as_long(), $4, @2); }
+  | property_expr K_SEQ_DELAY '[' expression ':' expression ']' property_expr
+      { $$ = make_sva_concat_expr($1, $4, $6, false, $8, @2); }
+  | property_expr K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
+      { $$ = make_sva_concat_expr($1, $4, nullptr, true, $8, @2); }
   | K_SEQ_DELAY DEC_NUMBER property_expr
-      { /* ##N property: after N cycles, property holds.
-           For single-cycle approximation, just check the property now. */
-	if (gn_supported_assertions_flag && $3) {
-	      yywarn(@1, "##N delay approximated as single-cycle check.");
-	      $$ = $3;
-	} else {
-	      $$ = 0;
-	}
-      }
+      { $$ = make_sva_delay($3, $2->as_long(), $2->as_long(), @1); }
   | K_SEQ_DELAY '[' expression ':' expression ']' property_expr
-      { /* ##[m:n] property: after m to n cycles, property holds.
-           For single-cycle approximation, just check the property now. */
-	if (gn_supported_assertions_flag && $7) {
-	      yywarn(@1, "##[m:n] delay approximated as single-cycle check.");
-	      $$ = $7;
-	} else {
-	      $$ = 0;
-	}
-      }
+      { $$ = make_sva_delay_expr($7, $3, $5, false, @1); }
   | K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
-      { /* ##[m:$] property: eventually, property holds.
-           For single-cycle approximation, just check the property now. */
-	if (gn_supported_assertions_flag && $7) {
-	      yywarn(@1, "##[m:$] unbounded delay approximated as single-cycle check.");
-	      $$ = $7;
-	} else {
-	      $$ = 0;
-	}
+      { $$ = make_sva_delay_expr($7, $3, nullptr, true, @1); }
+  | '(' K_SEQ_DELAY DEC_NUMBER property_expr ')'
+      { $$ = make_sva_delay($4, $3->as_long(), $3->as_long(), @2); }
+  | '(' K_SEQ_DELAY '[' expression ':' expression ']' property_expr ')'
+      { $$ = make_sva_delay_expr($8, $4, $6, false, @2); }
+  | '(' K_SEQ_DELAY '[' expression ':' '$' ']' property_expr ')'
+      { $$ = make_sva_delay_expr($8, $4, nullptr, true, @2); }
+  | expression K_SEQ_DELAY DEC_NUMBER expression
+      { $$ = make_sva_concat(make_sva_atom($1, @1), $3->as_long(), $3->as_long(),
+                             make_sva_atom($4, @4), @2);
+      }
+  | expression K_SEQ_DELAY '[' expression ':' expression ']' expression
+      { $$ = make_sva_concat_expr(make_sva_atom($1, @1), $4, $6, false,
+                                  make_sva_atom($8, @8), @2);
+      }
+  | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression
+      { $$ = make_sva_concat_expr(make_sva_atom($1, @1), $4, nullptr, true,
+                                  make_sva_atom($8, @8), @2);
+      }
+  | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')'
+      { $$ = make_sva_concat(make_sva_atom($2, @2), $4->as_long(), $4->as_long(),
+                             make_sva_atom($5, @5), @3);
+      }
+  | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')'
+      { $$ = make_sva_concat_expr(make_sva_atom($2, @2), $5, $7, false,
+                                  make_sva_atom($9, @9), @3);
+      }
+  | '(' expression K_SEQ_DELAY '[' expression ':' '$' ']' expression ')'
+      { $$ = make_sva_concat_expr(make_sva_atom($2, @2), $5, nullptr, true,
+                                  make_sva_atom($9, @9), @3);
       }
   | K_if '(' expression ')' property_expr %prec less_than_K_else
-      { /* if-then property: if(cond) prop = !cond || prop */
-	if ($5) {
-	      PEUnary*not_cond = new PEUnary('!', $3);
-	      FILE_NAME(not_cond, @3);
-	      PEBLogic*impl = new PEBLogic('o', not_cond, $5);
-	      FILE_NAME(impl, @1);
-	      $$ = impl;
-	} else {
-	      delete $3;
-	      $$ = 0;
-	}
-      }
+      { $$ = make_sva_if($3, $5, nullptr, @1); }
   | K_if '(' expression ')' property_expr K_else property_expr
-      { /* if-then-else property: if(cond) prop1 else prop2 = cond ? prop1 : prop2
-           Transform to ternary expression at parse time */
-	if ($5 && $7) {
-	      PETernary*result = new PETernary($3, $5, $7);
-	      FILE_NAME(result, @1);
-	      $$ = result;
-	} else {
-	      delete $3;
-	      if ($5) delete $5;
-	      if ($7) delete $7;
-	      $$ = 0;
-	}
-      }
+      { $$ = make_sva_if($3, $5, $7, @1); }
   | expression K_s_until_with expression
-      { /* s_until_with (strong until with): a s_until_with b means a holds until b
-           (inclusive, b must eventually happen).
-           For single-cycle approximation: b || a (either we've reached b, or a still holds) */
-	if ($1 && $3) {
-	      PEBLogic*either = new PEBLogic('o', $3, $1);
-	      FILE_NAME(either, @1);
-	      $$ = either;
-	} else {
-	      delete $1;
-	      delete $3;
-	      $$ = 0;
-	}
-      }
+      { $$ = make_sva_until(make_sva_atom($1, @1), make_sva_atom($3, @3), true, true, @2); }
   | expression K_until_with expression
-      { /* until_with: a until_with b means a holds until b (inclusive).
-           For single-cycle approximation: b || a (either we've reached b, or a still holds) */
-	if ($1 && $3) {
-	      PEBLogic*either = new PEBLogic('o', $3, $1);
-	      FILE_NAME(either, @1);
-	      $$ = either;
-	} else {
-	      delete $1;
-	      delete $3;
-	      $$ = 0;
-	}
-      }
+      { $$ = make_sva_until(make_sva_atom($1, @1), make_sva_atom($3, @3), false, true, @2); }
   | expression K_s_until expression
-      { /* s_until (strong until): a s_until b means a holds until b.
-           For single-cycle: just check that 'a' holds. */
-	if ($1) {
-	      delete $3;
-	      $$ = $1;
-	} else {
-	      delete $3;
-	      $$ = 0;
-	}
-      }
+      { $$ = make_sva_until(make_sva_atom($1, @1), make_sva_atom($3, @3), true, false, @2); }
   | expression K_until expression
-      { /* until - multi-cycle temporal operator: a until b
-           For single-cycle evaluation, check that 'a' holds (the invariant).
-           True multi-cycle tracking would need state, but this allows
-           assertions to at least check the invariant condition. */
-	if ($1) {
-	      /* For single-cycle: just check that the invariant 'a' holds.
-	         Delete the 'until' condition since we can't track it across cycles. */
-	      delete $3;
-	      $$ = $1;
-	} else {
-	      delete $3;
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_until expression ')'
-      { /* Parenthesized until: (a until b) - same as a until b */
-	if ($2) {
-	      delete $4;
-	      $$ = $2;
-	} else {
-	      delete $4;
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_s_until expression ')'
-      { /* Parenthesized s_until */
-	if ($2) {
-	      delete $4;
-	      $$ = $2;
-	} else {
-	      delete $4;
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_until_with expression ')'
-      { /* Parenthesized until_with */
-	if ($2 && $4) {
-	      PEBLogic*both = new PEBLogic('a', $2, $4);
-	      FILE_NAME(both, @2);
-	      $$ = both;
-	} else {
-	      delete $2;
-	      delete $4;
-	      $$ = 0;
-	}
-      }
+      { $$ = make_sva_until(make_sva_atom($1, @1), make_sva_atom($3, @3), false, false, @2); }
   | '(' expression K_s_until_with expression ')'
-      { /* Parenthesized s_until_with: single-cycle approximation b || a */
-	if ($2 && $4) {
-	      PEBLogic*either = new PEBLogic('o', $4, $2);
-	      FILE_NAME(either, @2);
-	      $$ = either;
-	} else {
-	      delete $2;
-	      delete $4;
-	      $$ = 0;
-	}
-      }
-  | expression K_throughout expression
-      { /* throughout: a throughout seq means 'a' holds during entire sequence.
-           For single-cycle approximation: just check that 'a' holds.
-           The sequence is ignored since we can't track multi-cycle.
-           Wrap in !!expr to avoid being treated as unresolved property reference. */
-	if (gn_supported_assertions_flag && $1) {
-	      yywarn(@2, "throughout operator approximated as single-cycle check.");
-	      delete $3;
-	      /* Wrap in double negation to avoid bare identifier check */
-	      PEUnary*not1 = new PEUnary('!', $1);
-	      FILE_NAME(not1, @1);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @1);
-	      $$ = not2;
-	} else {
-	      delete $1;
-	      delete $3;
-	      $$ = 0;
-	}
-      }
-  | expression K_throughout '(' expression ')'
-      { /* throughout with parenthesized sequence: a throughout (seq)
-           For single-cycle approximation: just check that 'a' holds.
-           Wrap in !!expr to avoid being treated as unresolved property reference. */
-	if (gn_supported_assertions_flag && $1) {
-	      yywarn(@2, "throughout operator approximated as single-cycle check.");
-	      delete $4;
-	      /* Wrap in double negation to avoid bare identifier check */
-	      PEUnary*not1 = new PEUnary('!', $1);
-	      FILE_NAME(not1, @1);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @1);
-	      $$ = not2;
-	} else {
-	      delete $1;
-	      delete $4;
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_throughout expression ')'
-      { /* Parenthesized throughout: (a throughout seq)
-           Wrap in !!expr to avoid being treated as unresolved property reference. */
-	if (gn_supported_assertions_flag && $2) {
-	      yywarn(@3, "throughout operator approximated as single-cycle check.");
-	      delete $4;
-	      /* Wrap in double negation to avoid bare identifier check */
-	      PEUnary*not1 = new PEUnary('!', $2);
-	      FILE_NAME(not1, @2);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @2);
-	      $$ = not2;
-	} else {
-	      delete $2;
-	      delete $4;
-	      $$ = 0;
-	}
-      }
-  | expression K_throughout '(' K_SEQ_DELAY '[' expression ':' expression ']' expression ')'
-      { /* throughout with ##[m:n] sequence: a throughout (##[m:n] b)
-           For single-cycle approximation: just check that 'a' holds. */
-	if (gn_supported_assertions_flag && $1) {
-	      yywarn(@2, "throughout operator approximated as single-cycle check.");
-	      delete $6;
-	      delete $8;
-	      delete $10;
-	      /* Wrap in double negation to avoid bare identifier check */
-	      PEUnary*not1 = new PEUnary('!', $1);
-	      FILE_NAME(not1, @1);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @1);
-	      $$ = not2;
-	} else {
-	      delete $1;
-	      delete $6;
-	      delete $8;
-	      delete $10;
-	      $$ = 0;
-	}
-      }
-  | expression K_throughout '(' K_SEQ_DELAY DEC_NUMBER expression ')'
-      { /* throughout with ##N sequence: a throughout (##N b)
-           For single-cycle approximation: just check that 'a' holds. */
-	if (gn_supported_assertions_flag && $1) {
-	      yywarn(@2, "throughout operator approximated as single-cycle check.");
-	      delete $6;
-	      /* Wrap in double negation to avoid bare identifier check */
-	      PEUnary*not1 = new PEUnary('!', $1);
-	      FILE_NAME(not1, @1);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @1);
-	      $$ = not2;
-	} else {
-	      delete $1;
-	      delete $6;
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_throughout '(' K_SEQ_DELAY '[' expression ':' expression ']' expression ')' ')'
-      { /* Parenthesized throughout with ##[m:n] sequence: (a throughout (##[m:n] b)) */
-	if (gn_supported_assertions_flag && $2) {
-	      yywarn(@3, "throughout operator approximated as single-cycle check.");
-	      delete $7;
-	      delete $9;
-	      delete $11;
-	      /* Wrap in double negation to avoid bare identifier check */
-	      PEUnary*not1 = new PEUnary('!', $2);
-	      FILE_NAME(not1, @2);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @2);
-	      $$ = not2;
-	} else {
-	      delete $2;
-	      delete $7;
-	      delete $9;
-	      delete $11;
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_throughout '(' K_SEQ_DELAY DEC_NUMBER expression ')' ')'
-      { /* Parenthesized throughout with ##N sequence: (a throughout (##N b)) */
-	if (gn_supported_assertions_flag && $2) {
-	      yywarn(@3, "throughout operator approximated as single-cycle check.");
-	      delete $7;
-	      /* Wrap in double negation to avoid bare identifier check */
-	      PEUnary*not1 = new PEUnary('!', $2);
-	      FILE_NAME(not1, @2);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @2);
-	      $$ = not2;
-	} else {
-	      delete $2;
-	      delete $7;
-	      $$ = 0;
-	}
-      }
-  | expression K_throughout expression K_GOTO_REP DEC_NUMBER ']'
-      { /* throughout with goto repetition: a throughout signal[->N]
-           For single-cycle approximation: just check that 'a' holds.
-           The goto repetition [->N] means "wait for signal to go high N times". */
-	if (gn_supported_assertions_flag && $1) {
-	      yywarn(@2, "throughout with goto repetition approximated as single-cycle check.");
-	      delete $3;
-	      /* Wrap in double negation to avoid bare identifier check */
-	      PEUnary*not1 = new PEUnary('!', $1);
-	      FILE_NAME(not1, @1);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @1);
-	      $$ = not2;
-	} else {
-	      delete $1;
-	      delete $3;
-	      $$ = 0;
-	}
-      }
-  | '(' expression K_throughout expression K_GOTO_REP DEC_NUMBER ']' ')'
-      { /* Parenthesized throughout with goto: (a throughout signal[->N]) */
-	if (gn_supported_assertions_flag && $2) {
-	      yywarn(@3, "throughout with goto repetition approximated as single-cycle check.");
-	      delete $4;
-	      /* Wrap in double negation to avoid bare identifier check */
-	      PEUnary*not1 = new PEUnary('!', $2);
-	      FILE_NAME(not1, @2);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @2);
-	      $$ = not2;
-	} else {
-	      delete $2;
-	      delete $4;
-	      $$ = 0;
-	}
-      }
+      { $$ = make_sva_until(make_sva_atom($2, @2), make_sva_atom($4, @4), true, true, @3); }
+  | '(' expression K_until_with expression ')'
+      { $$ = make_sva_until(make_sva_atom($2, @2), make_sva_atom($4, @4), false, true, @3); }
+  | '(' expression K_s_until expression ')'
+      { $$ = make_sva_until(make_sva_atom($2, @2), make_sva_atom($4, @4), true, false, @3); }
+  | '(' expression K_until expression ')'
+      { $$ = make_sva_until(make_sva_atom($2, @2), make_sva_atom($4, @4), false, false, @3); }
+  | expression K_throughout property_expr
+      { $$ = make_sva_throughout(make_sva_atom($1, @1), $3, @2); }
+  | '(' expression K_throughout property_expr ')'
+      { $$ = make_sva_throughout(make_sva_atom($2, @2), $4, @3); }
   | expression K_GOTO_REP DEC_NUMBER ']'
-      { /* Standalone goto repetition: signal[->N]
-           For single-cycle approximation: just return the expression.
-           This matches "until signal goes high N times". */
-	if (gn_supported_assertions_flag && $1) {
-	      yywarn(@2, "Goto repetition [->N] approximated as single-cycle check.");
-	      /* Just return the expression wrapped to avoid property reference check */
-	      PEUnary*not1 = new PEUnary('!', $1);
-	      FILE_NAME(not1, @1);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @1);
-	      $$ = not2;
-	} else {
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | '(' expression ')' K_GOTO_REP DEC_NUMBER ']'
-      { /* Parenthesized expression with goto: (expr)[->N] */
-	if (gn_supported_assertions_flag && $2) {
-	      yywarn(@4, "Goto repetition [->N] approximated as single-cycle check.");
-	      /* Just return the expression wrapped to avoid property reference check */
-	      PEUnary*not1 = new PEUnary('!', $2);
-	      FILE_NAME(not1, @2);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @2);
-	      $$ = not2;
-	} else {
-	      delete $2;
-	      $$ = 0;
-	}
+      { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                             $3->as_long(), PSvaExpr::REP_GOTO, @2);
       }
   | expression K_REP_STAR DEC_NUMBER ']'
-      { /* Consecutive repetition: expr[*N] means expr holds for N cycles.
-           For single-cycle approximation: just check expr holds. */
-	if (gn_supported_assertions_flag && $1) {
-	      yywarn(@2, "Consecutive repetition [*N] approximated as single-cycle check.");
-	      /* Just return the expression wrapped to avoid property reference check */
-	      PEUnary*not1 = new PEUnary('!', $1);
-	      FILE_NAME(not1, @1);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @1);
-	      $$ = not2;
-	} else {
-	      delete $1;
-	      $$ = 0;
-	}
-      }
-  | '(' expression ')' K_REP_STAR DEC_NUMBER ']'
-      { /* Parenthesized consecutive repetition: (expr)[*N] */
-	if (gn_supported_assertions_flag && $2) {
-	      yywarn(@4, "Consecutive repetition [*N] approximated as single-cycle check.");
-	      /* Just return the expression wrapped to avoid property reference check */
-	      PEUnary*not1 = new PEUnary('!', $2);
-	      FILE_NAME(not1, @2);
-	      PEUnary*not2 = new PEUnary('!', not1);
-	      FILE_NAME(not2, @2);
-	      $$ = not2;
-	} else {
-	      delete $2;
-	      $$ = 0;
-	}
+      { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                             $3->as_long(), PSvaExpr::REP_CONSEC, @2);
       }
   | expression K_REP_STAR DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
-      { /* Repetition followed by delay: expr[*N] ##M prop
-           For single-cycle approximation: transform to $past and check */
-	if (gn_supported_assertions_flag && $1 && $7) {
-	      yywarn(@2, "Consecutive repetition [*N] ##M approximated as single-cycle check.");
-	      /* Create: !$past(expr) || prop (approximation) */
-	      std::vector<named_pexpr_t> past_parms(1);
-	      past_parms[0].parm = $1;
-	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	      FILE_NAME(past_call, @1);
-	      PEUnary*not_past = new PEUnary('!', past_call);
-	      FILE_NAME(not_past, @1);
-	      PEBLogic*impl = new PEBLogic('o', not_past, $7);
-	      FILE_NAME(impl, @1);
-	      $$ = impl;
-	} else {
-	      delete $1;
-	      if ($7) delete $7;
-	      $$ = 0;
-	}
-      }
-  | '(' expression ')' K_REP_STAR DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
-      { /* Parenthesized repetition followed by delay: (expr)[*N] ##M prop */
-	if (gn_supported_assertions_flag && $2 && $9) {
-	      yywarn(@4, "Consecutive repetition [*N] ##M approximated as single-cycle check.");
-	      /* Create: !$past(expr) || prop (approximation) */
-	      std::vector<named_pexpr_t> past_parms(1);
-	      past_parms[0].parm = $2;
-	      PECallFunction*past_call = new PECallFunction(perm_string::literal("$past"), past_parms);
-	      FILE_NAME(past_call, @2);
-	      PEUnary*not_past = new PEUnary('!', past_call);
-	      FILE_NAME(not_past, @2);
-	      PEBLogic*impl = new PEBLogic('o', not_past, $9);
-	      FILE_NAME(impl, @2);
-	      $$ = impl;
-	} else {
-	      delete $2;
-	      if ($9) delete $9;
-	      $$ = 0;
-	}
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                                        $3->as_long(), PSvaExpr::REP_CONSEC, @2);
+        $$ = make_sva_concat(rep, $6->as_long(), $6->as_long(), $7, @5);
       }
   ;
 
@@ -5573,16 +5364,43 @@ property_expr /* IEEE1800-2012 A.2.10 */
      This is a limited form that handles ## delays. */
 sequence_expr_in_parens
   : expression
+      { $$ = make_sva_atom($1, @1); }
   | '(' K_SEQ_DELAY '[' expression ':' expression ']' expression ')'
-      { /* (##[m:n] expr) - parenthesized sequence delay range */ }
+      { $$ = make_sva_delay_expr(make_sva_atom($8, @8), $4, $6, false, @2); }
+  | '(' K_SEQ_DELAY '[' expression ':' '$' ']' expression ')'
+      { $$ = make_sva_delay_expr(make_sva_atom($8, @8), $4, nullptr, true, @2); }
   | '(' K_SEQ_DELAY DEC_NUMBER expression ')'
-      { /* (##n expr) - parenthesized sequence delay */ }
+      { $$ = make_sva_delay(make_sva_atom($4, @4), $3->as_long(), $3->as_long(), @2); }
   | '(' expression K_SEQ_DELAY '[' expression ':' expression ']' expression ')'
-      { /* (expr ##[m:n] expr) - sequence with delay range */ }
+      { $$ = make_sva_concat_expr(make_sva_atom($2, @2), $5, $7, false,
+                                  make_sva_atom($9, @9), @3);
+      }
+  | '(' expression K_SEQ_DELAY '[' expression ':' '$' ']' expression ')'
+      { $$ = make_sva_concat_expr(make_sva_atom($2, @2), $5, nullptr, true,
+                                  make_sva_atom($9, @9), @3);
+      }
+  | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')'
+      { $$ = make_sva_concat(make_sva_atom($2, @2), $4->as_long(), $4->as_long(),
+                             make_sva_atom($5, @5), @3);
+      }
+  | expression K_SEQ_DELAY '[' expression ':' expression ']' expression
+      { $$ = make_sva_concat_expr(make_sva_atom($1, @1), $4, $6, false,
+                                  make_sva_atom($8, @8), @2);
+      }
+  | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression
+      { $$ = make_sva_concat_expr(make_sva_atom($1, @1), $4, nullptr, true,
+                                  make_sva_atom($8, @8), @2);
+      }
+  | expression K_SEQ_DELAY DEC_NUMBER expression
+      { $$ = make_sva_concat(make_sva_atom($1, @1), $3->as_long(), $3->as_long(),
+                             make_sva_atom($4, @4), @2);
+      }
   | K_SEQ_DELAY '[' expression ':' expression ']' expression
-      { /* ##[m:n] expr - sequence delay range (for first_match, etc.) */ }
+      { $$ = make_sva_delay_expr(make_sva_atom($7, @7), $3, $5, false, @1); }
+  | K_SEQ_DELAY '[' expression ':' '$' ']' expression
+      { $$ = make_sva_delay_expr(make_sva_atom($7, @7), $3, nullptr, true, @1); }
   | K_SEQ_DELAY DEC_NUMBER expression
-      { /* ##n expr - sequence with fixed delay */ }
+      { $$ = make_sva_delay(make_sva_atom($3, @3), $2->as_long(), $2->as_long(), @1); }
   ;
 
   /* The property_qualifier rule is as literally described in the LRM,
@@ -5613,12 +5431,14 @@ property_spec /* IEEE1800-2012 A.2.10 */
   : clocking_event_opt property_spec_disable_iff_opt property_expr
       { $$.clocking_event = $1;
 	$$.expr = $3;
+	$$.disable = $2;
       }
   ;
 
 property_spec_disable_iff_opt /* */
   : K_disable K_iff '(' expression ')'
-  |
+      { $$ = $4; }
+  | { $$ = 0; }
   ;
 
 random_qualifier /* IEEE1800-2005 A.1.8 */
@@ -6335,15 +6155,20 @@ block_item_decl
 		    : lex_strings.make("$ivl_config_db_get");
 		PCallTask*tmp = new PCallTask(fn, *new_args);
 		FILE_NAME(tmp, @1);
-
-		/* Add to current block's statement list.
-		   Since we're in block_item_decl, we're inside a begin/end block
-		   and the block is on current_block_stack. */
-		if (!current_block_stack.empty()) {
-		    current_block_stack.top()->push_statement_back(tmp);
-		} else {
-		    yywarn(@1, "uvm_config_db call outside block context - call ignored.");
+		if (method_name == "get") {
+		    tmp->void_cast();
 		}
+
+			/* Add to current block's statement list or defer to the
+			   current task/function body when there is no explicit block. */
+			if (!current_block_stack.empty()) {
+			    current_block_stack.top()->push_statement_back(tmp);
+			} else if (current_function || current_task) {
+			    append_pending_block_item_statement(tmp);
+			} else {
+			    yywarn(@1, "uvm_config_db call outside block context - call ignored.");
+			    delete tmp;
+			}
 		delete new_args;
 	    } else {
 		yywarn(@1, "uvm_config_db method not supported.");
@@ -6369,12 +6194,15 @@ block_item_decl
         PCallTask*tmp = new PCallTask(*tmp_name, *$4);
         FILE_NAME(tmp, @3);
 
-        /* Add to current block's statement list if available */
+        /* Add to current block's statement list or defer to the
+           current task/function body when there is no explicit block. */
         if (!current_block_stack.empty()) {
             current_block_stack.top()->push_statement_back(tmp);
+        } else if (current_function || current_task) {
+            append_pending_block_item_statement(tmp);
         } else {
             /* Outside explicit block - statement may not be reachable but
-               compilation should continue. Emit debug info if needed. */
+               compilation should continue. */
             delete tmp;
         }
 
@@ -7033,23 +6861,23 @@ event_expression_list
   ;
 
 event_expression
-  : K_posedge expression
+  : K_posedge expr_primary
       { PEEvent*tmp = new PEEvent(PEEvent::POSEDGE, $2);
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
       }
-  | K_negedge expression
+  | K_negedge expr_primary
       { PEEvent*tmp = new PEEvent(PEEvent::NEGEDGE, $2);
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
       }
-  | K_edge expression
+  | K_edge expr_primary
       { PEEvent*tmp = new PEEvent(PEEvent::EDGE, $2);
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
 	pform_requires_sv(@1, "Edge event");
       }
-  | expression
+  | expr_primary
       { PEEvent*tmp = new PEEvent(PEEvent::ANYEDGE, $1);
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
@@ -7302,7 +7130,17 @@ expression
 	FILE_NAME(tmp, @2);
 	$$ = tmp;
       }
+  | expression K_or attribute_list_opt expression
+      { PEBinary*tmp = new PEBLogic('o', $1, $4);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
   | expression K_LAND attribute_list_opt expression
+      { PEBinary*tmp = new PEBLogic('a', $1, $4);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  | expression K_and attribute_list_opt expression
       { PEBinary*tmp = new PEBLogic('a', $1, $4);
 	FILE_NAME(tmp, @2);
 	$$ = tmp;
@@ -8954,6 +8792,9 @@ module_item
 
   /* Modules can contain further sub-module definitions. */
   : module
+
+  | attribute_list_opt package_import_declaration
+      { if ($1) delete $1; }
 
   | attribute_list_opt net_type data_type_or_implicit delay3_opt net_variable_list ';'
 
