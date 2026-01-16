@@ -9411,6 +9411,8 @@ module_item
 
   | function_declaration
 
+  | external_method_definition
+
   /* A generate region can contain further module items. Actually, it
      is supposed to be limited to certain kinds of module items, but
      the semantic tests will check that for us. Do check that the
