@@ -289,6 +289,42 @@ class PEConcat : public PExpr {
 };
 
 /*
+ * Streaming concatenation: {>> {a, b, c}} or {<< {a, b, c}}
+ * Right-stream (>>) packs bits MSB first, left-stream (<<) packs LSB first.
+ * Can also include slice_size: {>> 8 {a, b}} for byte-reordering.
+ */
+class PEStreamingConcat : public PExpr {
+
+    public:
+      enum Direction { LEFT_STREAM, RIGHT_STREAM };  // << or >>
+
+      PEStreamingConcat(Direction dir, std::vector<PExpr*>*exprs, PExpr*slice_size = 0);
+      ~PEStreamingConcat() override;
+
+      virtual void dump(std::ostream&) const override;
+
+      virtual unsigned test_width(Design*des, NetScope*scope,
+                                  width_mode_t&mode) override;
+
+      virtual NetExpr* elaborate_expr(Design*des, NetScope*scope,
+                                      ivl_type_t type, unsigned flags) const override;
+
+      virtual NetExpr* elaborate_expr(Design*des, NetScope*scope,
+                                      unsigned expr_wid,
+                                      unsigned flags) const override;
+
+      virtual NetAssign_* elaborate_lval(Design*des, NetScope*scope,
+                                         bool is_cassign,
+                                         bool is_force,
+                                         bool is_init = false) const override;
+
+    private:
+      Direction direction_;
+      std::vector<PExpr*>*exprs_;
+      PExpr*slice_size_;
+};
+
+/*
  * Event expressions are expressions that can be combined with the
  * event "or" operator. These include "posedge foo" and similar, and
  * also include named events. "edge" events are associated with an

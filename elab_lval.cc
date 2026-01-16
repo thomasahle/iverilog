@@ -278,6 +278,73 @@ NetAssign_* PEConcat::elaborate_lval(Design*des,
       return res;
 }
 
+/*
+ * Streaming concatenation l-value: {>> {a, b, c}} or {<< {a, b, c}}
+ * For {>> {a, b, c}}: MSB of RHS goes to a, then b, then c (right-stream)
+ * For {<< {a, b, c}}: LSB of RHS goes to a, then b, then c (left-stream)
+ */
+NetAssign_* PEStreamingConcat::elaborate_lval(Design*des, NetScope*scope,
+					      bool is_cassign, bool is_force,
+					      bool is_init) const
+{
+      if (!exprs_ || exprs_->size() == 0) {
+	    cerr << get_fileline() << ": error: Empty streaming concatenation "
+		 << "in l-value context." << endl;
+	    des->errors += 1;
+	    return 0;
+      }
+
+      NetAssign_*res = 0;
+
+      // Build order depends on stream direction
+      // For left-stream (<<), data goes right-to-left (reversed)
+      // For right-stream (>>), data goes left-to-right (natural order)
+      std::vector<PExpr*> ordered_exprs;
+      if (direction_ == LEFT_STREAM) {
+	    // Reverse order for left-stream
+	    for (int idx = exprs_->size() - 1; idx >= 0; idx--) {
+		  ordered_exprs.push_back((*exprs_)[idx]);
+	    }
+      } else {
+	    // Normal order for right-stream
+	    for (size_t idx = 0; idx < exprs_->size(); idx++) {
+		  ordered_exprs.push_back((*exprs_)[idx]);
+	    }
+      }
+
+      for (size_t idx = 0; idx < ordered_exprs.size(); idx++) {
+	    PExpr*pexpr = ordered_exprs[idx];
+	    if (pexpr == 0) {
+		  cerr << get_fileline() << ": error: Empty expression "
+		       << "in streaming concatenation l-value." << endl;
+		  des->errors += 1;
+		  continue;
+	    }
+
+	    NetAssign_*tmp = pexpr->elaborate_lval(des, scope, is_cassign, is_force, is_init);
+	    if (tmp == 0) continue;
+
+	    if (tmp->expr_type() == IVL_VT_REAL) {
+		  cerr << pexpr->get_fileline() << ": error: "
+		       << "streaming concatenation operand can not be real: "
+		       << *pexpr << endl;
+		  des->errors += 1;
+		  continue;
+	    }
+
+	    tmp->set_signed(false);
+
+	    // Link new l-value to previous
+	    NetAssign_*last = tmp;
+	    while (last->more)
+		  last = last->more;
+
+	    last->more = res;
+	    res = tmp;
+      }
+
+      return res;
+}
 
 /*
  * Handle the ident as an l-value. This includes bit and part selects

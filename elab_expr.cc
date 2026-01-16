@@ -10179,6 +10179,103 @@ NetExpr* PEConcat::elaborate_expr(Design*des, NetScope*scope,
 }
 
 /*
+ * Streaming concatenation test_width: sum up the widths of all expressions.
+ */
+unsigned PEStreamingConcat::test_width(Design*des, NetScope*scope, width_mode_t&mode)
+{
+      expr_width_ = 0;
+      if (exprs_) {
+	    for (size_t idx = 0; idx < exprs_->size(); idx += 1) {
+		  width_mode_t sub_mode = SIZED;
+		  expr_width_ += (*exprs_)[idx]->test_width(des, scope, sub_mode);
+	    }
+      }
+      expr_type_ = IVL_VT_LOGIC;
+      signed_flag_ = false;
+      min_width_ = expr_width_;
+      return expr_width_;
+}
+
+/*
+ * Elaborate streaming concatenation as an r-value expression.
+ * For {>> {a, b, c}}: pack bits from a, b, c with a in MSB position (right-to-left)
+ * For {<< {a, b, c}}: pack bits from a, b, c with a in LSB position (left-to-right)
+ */
+NetExpr* PEStreamingConcat::elaborate_expr(Design*des, NetScope*scope,
+					   ivl_type_t ntype, unsigned flags) const
+{
+	// For now, defer to the other elaborate_expr with pre-computed width
+      return elaborate_expr(des, scope, expr_width_, flags);
+}
+
+NetExpr* PEStreamingConcat::elaborate_expr(Design*des, NetScope*scope,
+					   unsigned expr_wid, unsigned flags) const
+{
+      flags &= ~SYS_TASK_ARG;
+
+      if (debug_elaborate) {
+	    cerr << get_fileline() << ": debug: Elaborate streaming_concat";
+	    dump(cerr);
+	    cerr << ", expr_wid=" << expr_wid << endl;
+      }
+
+      if (!exprs_ || exprs_->size() == 0) {
+	    cerr << get_fileline() << ": error: Empty streaming concatenation." << endl;
+	    des->errors += 1;
+	    return 0;
+      }
+
+      unsigned wid_sum = 0;
+      std::vector<NetExpr*> parms(exprs_->size());
+
+      // Elaborate all expressions
+      for (size_t idx = 0; idx < exprs_->size(); idx++) {
+	    PExpr*pexpr = (*exprs_)[idx];
+	    if (pexpr == 0) {
+		  cerr << get_fileline() << ": error: Missing expression "
+		       << (idx+1) << " in streaming concatenation." << endl;
+		  des->errors += 1;
+		  continue;
+	    }
+
+	    unsigned wid = pexpr->expr_width();
+	    NetExpr*ex = pexpr->elaborate_expr(des, scope, wid, flags);
+	    if (ex == 0) continue;
+
+	    ex->set_line(*pexpr);
+	    eval_expr(ex, -1);
+
+	    if (ex->expr_type() == IVL_VT_REAL) {
+		  cerr << ex->get_fileline() << ": error: "
+		       << "Streaming concatenation operand can not be real: "
+		       << *pexpr << endl;
+		  des->errors += 1;
+		  continue;
+	    }
+
+	    parms[idx] = ex;
+	    wid_sum += ex->expr_width();
+      }
+
+      // For left stream (<<), data goes right-to-left (reversed order)
+      // For right stream (>>), data goes left-to-right (natural concatenation order)
+      if (direction_ == LEFT_STREAM) {
+	    std::reverse(parms.begin(), parms.end());
+      }
+
+      // Build a NetEConcat with the parts
+      NetEConcat*result = new NetEConcat(parms.size(), 1, IVL_VT_LOGIC);
+      result->set_line(*this);
+
+      for (size_t idx = 0; idx < parms.size(); idx++) {
+	    if (parms[idx])
+		  result->set(idx, parms[idx]);
+      }
+
+      return pad_to_width(result, expr_wid, false, *this);
+}
+
+/*
  * Floating point literals are not vectorable. It's not particularly
  * clear what to do about an actual width to return, but whatever the
  * width, it is unsigned.

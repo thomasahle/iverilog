@@ -1562,6 +1562,9 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <expr>  var_decl_initializer_opt initializer_opt
 %type <expr>  inc_or_dec_expression inside_expression lpvalue
 %type <expr>  branch_probe_expression streaming_concatenation
+%type <expr>  stream_expression
+%type <exprs> stream_expression_list
+%type <int_val> stream_operator
 %type <expr>  delay_value delay_value_simple
 %type <exprs> delay1 delay3 delay3_opt delay_value_list
 %type <exprs> expression_list_with_nuls expression_list_proper
@@ -5491,24 +5494,56 @@ statement_or_null /* IEEE1800-2005: A.6.4 */
 
 stream_expression
   : expression
+      { $$ = $1; }
   ;
 
 stream_expression_list
   : stream_expression_list ',' stream_expression
+      { std::list<PExpr*>*tmp = $1;
+	tmp->push_back($3);
+	$$ = tmp;
+      }
   | stream_expression
+      { std::list<PExpr*>*tmp = new std::list<PExpr*>;
+	tmp->push_back($1);
+	$$ = tmp;
+      }
   ;
 
 stream_operator
   : K_LS
+      { $$ = 0; }  /* Left stream << = 0 */
   | K_RS
+      { $$ = 1; }  /* Right stream >> = 1 */
   ;
 
 streaming_concatenation /* IEEE1800-2005: A.8.1 */
   : '{' stream_operator '{' stream_expression_list '}' '}'
       { /* streaming concatenation is a SystemVerilog thing. */
 	if (pform_requires_sv(@2, "Streaming concatenation")) {
-	      yyerror(@2, "sorry: Streaming concatenation not supported.");
+	      PEStreamingConcat::Direction dir = ($2 == 0)
+		    ? PEStreamingConcat::LEFT_STREAM
+		    : PEStreamingConcat::RIGHT_STREAM;
+	      std::vector<PExpr*>*exprs = new std::vector<PExpr*>($4->begin(), $4->end());
+	      delete $4;
+	      PEStreamingConcat*tmp = new PEStreamingConcat(dir, exprs, 0);
+	      FILE_NAME(tmp, @1);
+	      $$ = tmp;
+	} else {
 	      $$ = 0;
+	}
+      }
+  | '{' stream_operator expression '{' stream_expression_list '}' '}'
+      { /* streaming concatenation with slice_size */
+	if (pform_requires_sv(@2, "Streaming concatenation")) {
+	      PEStreamingConcat::Direction dir = ($2 == 0)
+		    ? PEStreamingConcat::LEFT_STREAM
+		    : PEStreamingConcat::RIGHT_STREAM;
+	      std::vector<PExpr*>*exprs = new std::vector<PExpr*>($5->begin(), $5->end());
+	      delete $5;
+	      PEStreamingConcat*tmp = new PEStreamingConcat(dir, exprs, $3);
+	      FILE_NAME(tmp, @1);
+	      $$ = tmp;
 	} else {
 	      $$ = 0;
 	}
@@ -8507,9 +8542,7 @@ lpvalue
       }
 
   | streaming_concatenation
-      { yyerror(@1, "sorry: Streaming concatenation not supported in l-values.");
-	$$ = 0;
-      }
+      { $$ = $1; }
   ;
 
 

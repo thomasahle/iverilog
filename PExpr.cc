@@ -325,6 +325,43 @@ bool PEConcat::has_aa_term(Design*des, NetScope*scope) const
       return flag;
 }
 
+PEStreamingConcat::PEStreamingConcat(Direction dir, std::vector<PExpr*>*exprs,
+                                     PExpr*slice_size)
+: direction_(dir), exprs_(exprs), slice_size_(slice_size)
+{
+}
+
+PEStreamingConcat::~PEStreamingConcat()
+{
+      if (exprs_) {
+	    for (size_t idx = 0; idx < exprs_->size(); idx += 1)
+		  delete (*exprs_)[idx];
+	    delete exprs_;
+      }
+      delete slice_size_;
+}
+
+void PEStreamingConcat::dump(std::ostream&out) const
+{
+      out << "{";
+      if (direction_ == LEFT_STREAM)
+	    out << "<<";
+      else
+	    out << ">>";
+      if (slice_size_) {
+	    out << " ";
+	    slice_size_->dump(out);
+      }
+      out << " {";
+      if (exprs_) {
+	    for (size_t idx = 0; idx < exprs_->size(); idx += 1) {
+		  if (idx > 0) out << ", ";
+		  (*exprs_)[idx]->dump(out);
+	    }
+      }
+      out << "}}";
+}
+
 PEEvent::PEEvent(PEEvent::edge_t t, PExpr*e)
 : type_(t), expr_(e)
 {
