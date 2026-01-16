@@ -1032,6 +1032,22 @@ void PCondit::dump(ostream&out, unsigned ind) const
       }
 }
 
+void PAssertion::dump(ostream&out, unsigned ind) const
+{
+      const char*kind = "assert";
+      if (kind_ == ASSUME) kind = "assume";
+      if (kind_ == COVER) kind = "cover";
+      out << setw(ind) << "" << kind << " property (...)" << endl;
+      if (pass_) {
+	    out << setw(ind) << "" << "pass" << endl;
+	    pass_->dump(out, ind+3);
+      }
+      if (fail_) {
+	    out << setw(ind) << "" << "fail" << endl;
+	    fail_->dump(out, ind+3);
+      }
+}
+
 void PContinue::dump(ostream&out, unsigned ind) const
 {
       out << setw(ind) << "" << "continue;" << endl;

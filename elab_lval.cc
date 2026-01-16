@@ -88,6 +88,78 @@ static PWire* find_interface_wire_from_module(perm_string iface_name, perm_strin
       return nullptr;
 }
 
+static bool uwire_has_continuous_driver(const NetNet*sig)
+{
+      if (!sig)
+	    return false;
+
+      for (unsigned idx = 0; idx < sig->pin_count(); ++idx) {
+	    const Nexus*nx = sig->pin(idx).nexus();
+	    if (!nx)
+		  continue;
+	    for (const Link*cur = nx->first_nlink(); cur; cur = cur->next_nlink()) {
+		  if (cur->get_dir() == Link::OUTPUT)
+			return true;
+	    }
+      }
+
+      return false;
+}
+
+static bool allow_uwire_procedural(const NetNet*sig)
+{
+      return sig && sig->scope() && sig->scope()->is_interface();
+}
+
+static bool interface_member_from_path(const LineInfo*li, Design*des, NetScope*scope,
+				       const pform_name_t&path_head,
+				       unsigned lexical_pos)
+{
+      if (path_head.size() < 2)
+	    return false;
+
+      pform_name_t prefix = path_head;
+      prefix.pop_back();
+
+      symbol_search_results prefix_sr;
+      if (symbol_search(li, des, scope, prefix, lexical_pos, &prefix_sr)) {
+	    if (prefix_sr.is_scope() && prefix_sr.scope && prefix_sr.scope->is_interface())
+		  return true;
+      }
+
+      // Fallback: handle name collisions with nets by checking for
+      // an interface instance scope using the first path component.
+      const name_component_t&base = prefix.front();
+      if (!base.index.empty()) {
+	    // Avoid speculative scope lookups on indexed names; scope indices
+	    // must be constant and this can fire during class member access.
+	    return false;
+      }
+      for (NetScope*search = scope; search; search = search->parent()) {
+	    bool error_flag = false;
+	    hname_t hpath = eval_path_component(des, search, base, error_flag);
+	    if (error_flag)
+		  continue;
+	    const NetScope*child = search->child(hpath);
+	    if (child && child->is_interface())
+		  return true;
+      }
+
+      return false;
+}
+
+static void restore_interface_var_if_safe(NetNet*sig, bool is_interface_member)
+{
+      if (!sig || !is_interface_member)
+	    return;
+      if (sig->type() != NetNet::UNRESOLVED_WIRE || !sig->coerced_to_uwire())
+	    return;
+      if (uwire_has_continuous_driver(sig))
+	    return;
+
+      sig->type(NetNet::REG);
+}
+
 /*
  * These methods generate a NetAssign_ object for the l-value of the
  * assignment. This is common code for the = and <= statements.
@@ -282,6 +354,15 @@ NetAssign_* PEIdent::elaborate_lval(Design*des,
 	    des->errors++;
 	    return nullptr;
       }
+
+      bool is_interface_member = reg->scope() && reg->scope()->is_interface();
+      if (!is_interface_member) {
+	    is_interface_member = interface_member_from_path(this, des, scope,
+							     path_.name,
+							     lexical_pos_);
+      }
+
+      restore_interface_var_if_safe(reg, is_interface_member);
 
 	// Handle interface port member l-value: intf.signal = value
 	// Interface ports are compile-time bindings - we find the bound interface
@@ -580,9 +661,11 @@ NetAssign_*PEIdent::elaborate_lval_var_(Design *des, NetScope *scope,
 
       if (reg->type()==NetNet::UNRESOLVED_WIRE && !is_force) {
 	    ivl_assert(*this, reg->coerced_to_uwire());
-	    report_mixed_assignment_conflict_("variable");
-	    des->errors += 1;
-	    return 0;
+	    if (!allow_uwire_procedural(reg)) {
+		  report_mixed_assignment_conflict_("variable");
+		  des->errors += 1;
+		  return 0;
+	    }
       }
 
 	/* No select expressions. */
@@ -608,9 +691,11 @@ NetAssign_*PEIdent::elaborate_lval_array_(Design *des, NetScope *,
       if (name_tail.index.empty()) {
 	    if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 		  ivl_assert(*this, reg->coerced_to_uwire());
-		  report_mixed_assignment_conflict_("array");
-		  des->errors += 1;
-		  return 0;
+		  if (!allow_uwire_procedural(reg)) {
+			report_mixed_assignment_conflict_("array");
+			des->errors += 1;
+			return 0;
+		  }
 	    }
 	    NetAssign_*lv = new NetAssign_(reg);
 	    return lv;
@@ -711,13 +796,15 @@ NetAssign_* PEIdent::elaborate_lval_net_word_(Design*des,
 
       if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 	    ivl_assert(*this, reg->coerced_to_uwire());
-	    const NetEConst*canon_const = dynamic_cast<NetEConst*>(canon_index);
-	    if (!canon_const || reg->test_part_driven(reg->vector_width() - 1, 0,
-						      canon_const->value().as_long())) {
-		  report_mixed_assignment_conflict_("array word");
-		  des->errors += 1;
-		  return 0;
-	     }
+	    if (!allow_uwire_procedural(reg)) {
+		  const NetEConst*canon_const = dynamic_cast<NetEConst*>(canon_index);
+		  if (!canon_const || reg->test_part_driven(reg->vector_width() - 1, 0,
+							    canon_const->value().as_long())) {
+			report_mixed_assignment_conflict_("array word");
+			des->errors += 1;
+			return 0;
+		  }
+	    }
       }
 
       NetAssign_*lv = new NetAssign_(reg);
@@ -860,7 +947,8 @@ bool PEIdent::elaborate_lval_net_bit_(Design*des,
 
 		  if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 			ivl_assert(*this, reg->coerced_to_uwire());
-			if (reg->test_part_driven(loff+lwid-1, loff)) {
+			if (!allow_uwire_procedural(reg)
+			    && reg->test_part_driven(loff+lwid-1, loff)) {
 			      report_mixed_assignment_conflict_("slice");
 			      des->errors += 1;
 			      return false;
@@ -876,9 +964,11 @@ bool PEIdent::elaborate_lval_net_bit_(Design*des,
 
 		  if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 			ivl_assert(*this, reg->coerced_to_uwire());
-			report_mixed_assignment_conflict_("slice");
-			des->errors += 1;
-			return false;
+			if (!allow_uwire_procedural(reg)) {
+			      report_mixed_assignment_conflict_("slice");
+			      des->errors += 1;
+			      return false;
+			}
 		  }
 
 		  lv->set_part(mux, lwid);
@@ -946,9 +1036,11 @@ bool PEIdent::elaborate_lval_net_bit_(Design*des,
 
 	    if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 		  ivl_assert(*this, reg->coerced_to_uwire());
-		  report_mixed_assignment_conflict_("bit select");
-		  des->errors += 1;
-		  return false;
+		  if (!allow_uwire_procedural(reg)) {
+			report_mixed_assignment_conflict_("bit select");
+			des->errors += 1;
+			return false;
+		  }
 	    }
 
 	    lv->set_part(mux, 1);
@@ -959,9 +1051,11 @@ bool PEIdent::elaborate_lval_net_bit_(Design*des,
 	      // If there's a continuous assignment, it must be a conflict.
 	    if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 		  ivl_assert(*this, reg->coerced_to_uwire());
-		  report_mixed_assignment_conflict_("bit select");
-		  des->errors += 1;
-		  return false;
+		  if (!allow_uwire_procedural(reg)) {
+			report_mixed_assignment_conflict_("bit select");
+			des->errors += 1;
+			return false;
+		  }
 	    }
 
       } else {
@@ -976,7 +1070,8 @@ bool PEIdent::elaborate_lval_net_bit_(Design*des,
 
 	    if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 		  ivl_assert(*this, reg->coerced_to_uwire());
-		  if (reg->test_part_driven(loff, loff)) {
+		  if (!allow_uwire_procedural(reg)
+		      && reg->test_part_driven(loff, loff)) {
 			report_mixed_assignment_conflict_("bit select");
 			des->errors += 1;
 			return false;
@@ -999,9 +1094,11 @@ bool PEIdent::elaborate_lval_darray_bit_(Design*des,
 
       if ((lv->sig()->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 	    ivl_assert(*this, lv->sig()->coerced_to_uwire());
-	    report_mixed_assignment_conflict_("darray word");
-	    des->errors += 1;
-	    return false;
+	    if (!allow_uwire_procedural(lv->sig())) {
+		  report_mixed_assignment_conflict_("darray word");
+		  des->errors += 1;
+		  return false;
+	    }
       }
 
       // Handle multi-dimensional access for nested arrays (e.g., arr[i][j])
@@ -1186,7 +1283,8 @@ bool PEIdent::elaborate_lval_net_part_(Design*des,
 
       if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 	    ivl_assert(*this, reg->coerced_to_uwire());
-	    if (reg->test_part_driven(msb, lsb)) {
+	    if (!allow_uwire_procedural(reg)
+		&& reg->test_part_driven(msb, lsb)) {
 		  report_mixed_assignment_conflict_("part select");
 		  des->errors += 1;
 		  return false;
@@ -1380,7 +1478,8 @@ bool PEIdent::elaborate_lval_net_idx_(Design*des,
 		  delete base;
 		  if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 			ivl_assert(*this, reg->coerced_to_uwire());
-			if (reg->test_part_driven(rel_base+wid-1, rel_base)) {
+			if (!allow_uwire_procedural(reg)
+			    && reg->test_part_driven(rel_base+wid-1, rel_base)) {
 			      report_mixed_assignment_conflict_("part select");
 			      des->errors += 1;
 			      return false;
@@ -1429,9 +1528,11 @@ bool PEIdent::elaborate_lval_net_idx_(Design*des,
 	    }
 	    if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 		  ivl_assert(*this, reg->coerced_to_uwire());
-		  report_mixed_assignment_conflict_("part select");
-		  des->errors += 1;
-		  return false;
+		  if (!allow_uwire_procedural(reg)) {
+			report_mixed_assignment_conflict_("part select");
+			des->errors += 1;
+			return false;
+		  }
 	    }
 	    ivl_assert(*this, prefix_indices.size()+1 == reg->packed_dims().size());
 	      /* Correct the mux for the range of the vector. */
@@ -1584,7 +1685,7 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 			canon_index = make_canonical_index(des, scope, this,
 							   member_cur.index, stype, false);
 
-		  } else if (const netvector_t *vtype = dynamic_cast<const netvector_t*>(ptype)) {
+		  } else if (dynamic_cast<const netvector_t*>(ptype)) {
 			// For packed vectors, bit-select is treated as 1-bit part-select
 			if (member_cur.index.size() == 1) {
 			      const index_component_t&idx = member_cur.index.front();
@@ -1629,7 +1730,7 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 				    }
 			      }
 			}
-		  } else if (const netassoc_t *atype = dynamic_cast<const netassoc_t*>(ptype)) {
+		  } else if (dynamic_cast<const netassoc_t*>(ptype)) {
 			// Associative array indexing - elaborate the key expression
 			if (member_cur.index.size() != 1) {
 			      cerr << get_fileline() << ": error: "
@@ -1645,7 +1746,7 @@ NetAssign_* PEIdent::elaborate_lval_net_class_member_(Design*des, NetScope*scope
 				    des->errors++;
 			      }
 			}
-		  } else if (const netdarray_t *dtype = dynamic_cast<const netdarray_t*>(ptype)) {
+		  } else if (dynamic_cast<const netdarray_t*>(ptype)) {
 			// Dynamic array indexing
 			if (member_cur.index.size() == 1) {
 			      const index_component_t&idx = member_cur.index.front();
@@ -2427,9 +2528,11 @@ bool PEIdent::elaborate_lval_net_packed_member_(Design*des, NetScope*scope,
 
       if ((reg->type()==NetNet::UNRESOLVED_WIRE) && !is_force) {
 	    ivl_assert(*this, reg->coerced_to_uwire());
-	    report_mixed_assignment_conflict_("variable");
-	    des->errors += 1;
-	    return false;
+	    if (!allow_uwire_procedural(reg)) {
+		  report_mixed_assignment_conflict_("variable");
+		  des->errors += 1;
+		  return false;
+	    }
       }
 
       if (packed_base == 0) {

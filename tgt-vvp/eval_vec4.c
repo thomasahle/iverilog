@@ -39,6 +39,28 @@ void resize_vec4_wid(ivl_expr_t expr, unsigned wid)
 	    fprintf(vvp_out, "    %%pad/u %u;\n", wid);
 }
 
+static bool expr_is_same_object(ivl_expr_t lhs, ivl_expr_t rhs)
+{
+      if (lhs == rhs)
+	    return true;
+      if (!lhs || !rhs)
+	    return false;
+      if (ivl_expr_type(lhs) != ivl_expr_type(rhs))
+	    return false;
+
+      switch (ivl_expr_type(lhs)) {
+	case IVL_EX_SIGNAL:
+	      return ivl_expr_signal(lhs) == ivl_expr_signal(rhs);
+	case IVL_EX_PROPERTY:
+	      if (ivl_expr_property_idx(lhs) != ivl_expr_property_idx(rhs))
+		    return false;
+	      return expr_is_same_object(ivl_expr_property_base(lhs),
+	                                 ivl_expr_property_base(rhs));
+	default:
+	      return false;
+      }
+}
+
 /*
  * Test if the draw_immediate_vec4 instruction can be used.
  */
@@ -1720,6 +1742,12 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 	         stack, then call %randomize which will randomize its properties
 	         and push the result (1=success) to the vec4 stack. */
 	    ivl_expr_t arg = ivl_expr_parm(expr, 0);
+	    bool arg_is_this = false;
+	    if (arg && ivl_expr_type(arg) == IVL_EX_SIGNAL) {
+		  ivl_signal_t sig = ivl_expr_signal(arg);
+		  if (sig && strcmp(ivl_signal_basename(sig), "@") == 0)
+			arg_is_this = true;
+	    }
 	    unsigned nparms = ivl_expr_parms(expr);
 
 	      /* Emit inline constraint bounds before %randomize
@@ -1855,6 +1883,26 @@ static void draw_sfunc_vec4(ivl_expr_t expr)
 			 * Evaluate it as an object and use special opcode */
 			draw_eval_object(val_expr);
 			fprintf(vvp_out, "    %%push_rand_array_copy %u;\n", prop_idx);
+		  } else if (ivl_expr_type(val_expr) == IVL_EX_PROPERTY) {
+			/* Property reference constraint: keep as property bound. */
+			ivl_expr_t base = ivl_expr_property_base(val_expr);
+			ivl_expr_t arr_idx = ivl_expr_property_array_idx(val_expr);
+			bool same_object = false;
+			if (!base) {
+			      same_object = arg_is_this;
+			} else if (expr_is_same_object(base, arg)) {
+			      same_object = true;
+			}
+			if (!arr_idx && same_object) {
+			      unsigned bound_prop_idx = ivl_expr_property_idx(val_expr);
+			      fprintf(vvp_out, "    %%push_rand_bound/prop %u, %u, %u;\n",
+				      prop_idx, encoded_op, bound_prop_idx);
+			} else {
+			      /* Runtime property value from another object - treat as constant. */
+			      draw_eval_vec4(val_expr);
+			      fprintf(vvp_out, "    %%push_rand_bound/stack %u, %u;\n",
+				      prop_idx, encoded_op);
+			}
 		  } else {
 			/* Runtime expression - evaluate and use stack opcode */
 			draw_eval_vec4(val_expr);

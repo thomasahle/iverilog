@@ -18,6 +18,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include "vpi_user.h"
 #include "sys_priv.h"
 
@@ -666,6 +667,400 @@ static PLI_INT32 sampled_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
       return 0;
 }
 
+typedef struct sva_step_s {
+      int min_delay;
+      int max_delay;
+      int atom_count;
+      int *atoms;
+} sva_step_t;
+
+typedef struct sva_seq_s {
+      int step_count;
+      sva_step_t *steps;
+      int invariant_count;
+      int *invariants;
+} sva_seq_t;
+
+typedef struct sva_thread_s {
+      int step_idx;
+      int delay;
+      struct sva_thread_s *next;
+} sva_thread_t;
+
+typedef struct sva_prop_s {
+      int id;
+      int immediate;
+      int implies_kind;
+      int atom_count;
+      sva_seq_t antecedent;
+      sva_seq_t consequent;
+      sva_thread_t *ant_threads;
+      sva_thread_t *cons_threads;
+      uint64_t last_time;
+      int last_result;
+} sva_prop_t;
+
+static sva_prop_t **sva_props = 0;
+static unsigned sva_prop_count = 0;
+
+static int sva_get_int(vpiHandle arg)
+{
+      s_vpi_value val;
+      val.format = vpiIntVal;
+      vpi_get_value(arg, &val);
+      return val.value.integer;
+}
+
+static sva_prop_t *sva_find_prop(int id)
+{
+      for (unsigned i = 0; i < sva_prop_count; ++i) {
+	    if (sva_props[i] && sva_props[i]->id == id)
+		  return sva_props[i];
+      }
+      return 0;
+}
+
+static void sva_add_prop(sva_prop_t *prop)
+{
+      sva_props = (sva_prop_t **)realloc(sva_props, sizeof(*sva_props) * (sva_prop_count + 1));
+      sva_props[sva_prop_count++] = prop;
+}
+
+static void sva_free_threads(sva_thread_t *thr)
+{
+      while (thr) {
+	    sva_thread_t *next = thr->next;
+	    free(thr);
+	    thr = next;
+      }
+}
+
+static int sva_step_match(const sva_step_t *step, const int *vals)
+{
+      for (int i = 0; i < step->atom_count; ++i) {
+	    if (!vals[step->atoms[i]])
+		  return 0;
+      }
+      return 1;
+}
+
+static int sva_invariants_hold(const sva_seq_t *seq, const int *vals)
+{
+      for (int i = 0; i < seq->invariant_count; ++i) {
+	    if (!vals[seq->invariants[i]])
+		  return 0;
+      }
+      return 1;
+}
+
+static void sva_spawn_thread(sva_thread_t **list)
+{
+      sva_thread_t *thr = (sva_thread_t *)calloc(1, sizeof(*thr));
+      thr->next = *list;
+      *list = thr;
+}
+
+static void sva_update_threads(const sva_seq_t *seq, sva_thread_t **list,
+                               const int *vals, int *matched, int *failed)
+{
+      sva_thread_t *cur = *list;
+      sva_thread_t *prev = 0;
+
+      while (cur) {
+	    int drop = 0;
+
+	    if (seq->invariant_count && !sva_invariants_hold(seq, vals)) {
+		  drop = 1;
+		  if (failed) (*failed)++;
+	    } else if (cur->step_idx >= seq->step_count) {
+		  drop = 1;
+	    } else {
+		  const sva_step_t *step = &seq->steps[cur->step_idx];
+		  if (step->max_delay != -1 && cur->delay > step->max_delay) {
+			drop = 1;
+			if (failed) (*failed)++;
+		  } else if (cur->delay >= step->min_delay && sva_step_match(step, vals)) {
+			cur->step_idx++;
+			cur->delay = 0;
+			while (cur->step_idx < seq->step_count) {
+			      const sva_step_t *next = &seq->steps[cur->step_idx];
+			      if (next->min_delay > 0)
+				    break;
+			      if (next->max_delay != -1 && 0 > next->max_delay) {
+				    drop = 1;
+				    if (failed) (*failed)++;
+				    break;
+			      }
+			      if (!sva_step_match(next, vals))
+				    break;
+			      cur->step_idx++;
+			}
+			if (!drop && cur->step_idx >= seq->step_count) {
+			      if (matched) (*matched)++;
+			      drop = 1;
+			}
+		  } else {
+			cur->delay++;
+		  }
+	    }
+
+	    if (drop) {
+		  sva_thread_t *next = cur->next;
+		  if (prev)
+			prev->next = next;
+		  else
+			*list = next;
+		  free(cur);
+		  cur = next;
+	    } else {
+		  prev = cur;
+		  cur = cur->next;
+	    }
+      }
+}
+
+static PLI_INT32 sva_register_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv = vpi_iterate(vpiArgument, callh);
+      vpiHandle arg;
+      int idx;
+
+      (void)name;
+      if (!argv)
+	    return 0;
+
+      sva_prop_t *prop = (sva_prop_t *)calloc(1, sizeof(*prop));
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      prop->id = sva_get_int(arg);
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      prop->immediate = sva_get_int(arg);
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      prop->implies_kind = sva_get_int(arg);
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      prop->antecedent.step_count = 0;
+      prop->consequent.step_count = 0;
+      prop->antecedent.invariant_count = 0;
+      prop->consequent.invariant_count = 0;
+      prop->atom_count = 0;
+      (void)sva_get_int(arg); /* antecedent first_match */
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      (void)sva_get_int(arg); /* consequent first_match */
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      prop->atom_count = sva_get_int(arg);
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      prop->antecedent.step_count = sva_get_int(arg);
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      prop->antecedent.invariant_count = sva_get_int(arg);
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      prop->consequent.step_count = sva_get_int(arg);
+
+      arg = vpi_scan(argv);
+      if (!arg) goto done;
+      prop->consequent.invariant_count = sva_get_int(arg);
+
+      if (prop->antecedent.step_count) {
+	    prop->antecedent.steps = (sva_step_t *)calloc(prop->antecedent.step_count,
+	                                                   sizeof(sva_step_t));
+	    for (idx = 0; idx < prop->antecedent.step_count; ++idx) {
+		  sva_step_t *step = &prop->antecedent.steps[idx];
+		  arg = vpi_scan(argv);
+		  if (!arg) goto done;
+		  step->min_delay = sva_get_int(arg);
+		  arg = vpi_scan(argv);
+		  if (!arg) goto done;
+		  step->max_delay = sva_get_int(arg);
+		  arg = vpi_scan(argv);
+		  if (!arg) goto done;
+		  step->atom_count = sva_get_int(arg);
+		  if (step->atom_count > 0) {
+			step->atoms = (int *)calloc(step->atom_count, sizeof(int));
+			for (int j = 0; j < step->atom_count; ++j) {
+			      arg = vpi_scan(argv);
+			      if (!arg) goto done;
+			      step->atoms[j] = sva_get_int(arg);
+			}
+		  }
+	    }
+      }
+
+      if (prop->antecedent.invariant_count) {
+	    prop->antecedent.invariants = (int *)calloc(prop->antecedent.invariant_count,
+	                                                sizeof(int));
+	    for (idx = 0; idx < prop->antecedent.invariant_count; ++idx) {
+		  arg = vpi_scan(argv);
+		  if (!arg) goto done;
+		  prop->antecedent.invariants[idx] = sva_get_int(arg);
+	    }
+      }
+
+      if (prop->consequent.step_count) {
+	    prop->consequent.steps = (sva_step_t *)calloc(prop->consequent.step_count,
+	                                                  sizeof(sva_step_t));
+	    for (idx = 0; idx < prop->consequent.step_count; ++idx) {
+		  sva_step_t *step = &prop->consequent.steps[idx];
+		  arg = vpi_scan(argv);
+		  if (!arg) goto done;
+		  step->min_delay = sva_get_int(arg);
+		  arg = vpi_scan(argv);
+		  if (!arg) goto done;
+		  step->max_delay = sva_get_int(arg);
+		  arg = vpi_scan(argv);
+		  if (!arg) goto done;
+		  step->atom_count = sva_get_int(arg);
+		  if (step->atom_count > 0) {
+			step->atoms = (int *)calloc(step->atom_count, sizeof(int));
+			for (int j = 0; j < step->atom_count; ++j) {
+			      arg = vpi_scan(argv);
+			      if (!arg) goto done;
+			      step->atoms[j] = sva_get_int(arg);
+			}
+		  }
+	    }
+      }
+
+      if (prop->consequent.invariant_count) {
+	    prop->consequent.invariants = (int *)calloc(prop->consequent.invariant_count,
+	                                                sizeof(int));
+	    for (idx = 0; idx < prop->consequent.invariant_count; ++idx) {
+		  arg = vpi_scan(argv);
+		  if (!arg) goto done;
+		  prop->consequent.invariants[idx] = sva_get_int(arg);
+	    }
+      }
+
+      prop->last_time = UINT64_MAX;
+      prop->last_result = 0;
+      sva_add_prop(prop);
+
+done:
+      vpi_free_object(argv);
+      return 0;
+}
+
+static PLI_INT32 sva_check_calltf(ICARUS_VPI_CONST PLI_BYTE8 *name)
+{
+      vpiHandle callh = vpi_handle(vpiSysTfCall, 0);
+      vpiHandle argv = vpi_iterate(vpiArgument, callh);
+      vpiHandle arg;
+      s_vpi_time now;
+      s_vpi_value rval;
+      int result = 0;
+
+      (void)name;
+      if (!argv)
+	    return 0;
+
+      arg = vpi_scan(argv);
+      if (!arg) {
+	    vpi_free_object(argv);
+	    return 0;
+      }
+      int id = sva_get_int(arg);
+      arg = vpi_scan(argv);
+      if (!arg) {
+	    vpi_free_object(argv);
+	    return 0;
+      }
+      int disable = sva_get_int(arg);
+
+      sva_prop_t *prop = sva_find_prop(id);
+      if (!prop) {
+	    vpi_free_object(argv);
+	    rval.format = vpiIntVal;
+	    rval.value.integer = 0;
+	    vpi_put_value(callh, &rval, 0, vpiNoDelay);
+	    return 0;
+      }
+
+      now.type = vpiSimTime;
+      vpi_get_time(0, &now);
+      uint64_t sim_time = ((uint64_t)now.high << 32) | now.low;
+      if (sim_time == prop->last_time) {
+	    rval.format = vpiIntVal;
+	    rval.value.integer = prop->last_result;
+	    vpi_put_value(callh, &rval, 0, vpiNoDelay);
+	    vpi_free_object(argv);
+	    return 0;
+      }
+
+      int *vals = 0;
+      if (prop->atom_count > 0) {
+	    vals = (int *)calloc(prop->atom_count, sizeof(int));
+	    for (int i = 0; i < prop->atom_count; ++i) {
+		  arg = vpi_scan(argv);
+		  if (!arg) break;
+		  vals[i] = sva_get_int(arg) ? 1 : 0;
+	    }
+      }
+
+      if (disable) {
+	    sva_free_threads(prop->ant_threads);
+	    sva_free_threads(prop->cons_threads);
+	    prop->ant_threads = 0;
+	    prop->cons_threads = 0;
+	    result = 0;
+      } else if (prop->immediate) {
+	    int val = (prop->atom_count > 0) ? vals[0] : 1;
+	    result = val ? 1 : 2;
+      } else if (prop->implies_kind == 0) {
+	    if (prop->consequent.step_count)
+		  sva_spawn_thread(&prop->cons_threads);
+	    int matched = 0;
+	    int failed = 0;
+	    sva_update_threads(&prop->consequent, &prop->cons_threads, vals,
+	                       &matched, &failed);
+	    if (failed)
+		  result = 2;
+	    else if (matched)
+		  result = 1;
+      } else {
+	    if (prop->antecedent.step_count)
+		  sva_spawn_thread(&prop->ant_threads);
+	    int ant_matched = 0;
+	    sva_update_threads(&prop->antecedent, &prop->ant_threads, vals,
+	                       &ant_matched, 0);
+	    for (int i = 0; i < ant_matched; ++i)
+		  sva_spawn_thread(&prop->cons_threads);
+	    int matched = 0;
+	    int failed = 0;
+	    sva_update_threads(&prop->consequent, &prop->cons_threads, vals,
+	                       &matched, &failed);
+	    if (failed)
+		  result = 2;
+	    else if (matched)
+		  result = 1;
+      }
+
+      prop->last_time = sim_time;
+      prop->last_result = result;
+      rval.format = vpiIntVal;
+      rval.value.integer = result;
+      vpi_put_value(callh, &rval, 0, vpiNoDelay);
+
+      free(vals);
+      vpi_free_object(argv);
+      return 0;
+}
+
 static PLI_INT32 bit_vec_sizetf(ICARUS_VPI_CONST PLI_BYTE8 *name)
 {
       (void)name;  /* Parameter is not used. */
@@ -789,6 +1184,26 @@ void v2009_bitvec_register(void)
       tf_data.sizetf      = 0;
       tf_data.tfname      = "$sampled";
       tf_data.user_data   = "$sampled";
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type        = vpiSysTask;
+      tf_data.sysfunctype = 0;
+      tf_data.calltf      = sva_register_calltf;
+      tf_data.compiletf   = 0;
+      tf_data.sizetf      = 0;
+      tf_data.tfname      = "$ivl_sva_register";
+      tf_data.user_data   = 0;
+      res = vpi_register_systf(&tf_data);
+      vpip_make_systf_system_defined(res);
+
+      tf_data.type        = vpiSysFunc;
+      tf_data.sysfunctype = vpiIntFunc;
+      tf_data.calltf      = sva_check_calltf;
+      tf_data.compiletf   = 0;
+      tf_data.sizetf      = 0;
+      tf_data.tfname      = "$ivl_sva_check";
+      tf_data.user_data   = 0;
       res = vpi_register_systf(&tf_data);
       vpip_make_systf_system_defined(res);
 }

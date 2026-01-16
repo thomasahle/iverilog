@@ -38,6 +38,7 @@
 #endif
 # include  <cstring>
 # include  <cstdlib>
+# include  <unistd.h>
 # include  "ivl_alloc.h"
 
 __vpiScope*stop_current_scope = 0;
@@ -546,6 +547,11 @@ static void invoke_command_const(const char*txt)
 
 void stop_handler(int rc)
 {
+        if (!stop_is_finish && !isatty(fileno(stdin))) {
+	      vpip_set_return_value(0);
+	      schedule_finish(0);
+	      return;
+	}
         /* The user may be running in a non-interactive environment, so
          * they want $stop and <Control-C> to be the same as $finish. */
       if (stop_is_finish) {

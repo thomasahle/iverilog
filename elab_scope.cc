@@ -1819,6 +1819,14 @@ void PCondit::elaborate_scope(Design*des, NetScope*scope) const
 	    else_ -> elaborate_scope(des, scope);
 }
 
+void PAssertion::elaborate_scope(Design*des, NetScope*scope) const
+{
+      if (pass_)
+	    pass_ -> elaborate_scope(des, scope);
+      if (fail_)
+	    fail_ -> elaborate_scope(des, scope);
+}
+
 /*
  * Statements that contain a further statement but do not
  * intrinsically add a scope need to elaborate_scope the contained

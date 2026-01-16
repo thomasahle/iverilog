@@ -417,6 +417,8 @@ void PEIdent::declare_implicit_nets(LexicalScope*scope, NetNet::Type type)
             perm_string name = path_.name.front().name;
             LexicalScope*ss = scope;
             while (ss) {
+                  if (ss->local_symbols.find(name) != ss->local_symbols.end())
+                        return;
                   if (ss->wires.find(name) != ss->wires.end())
                         return;
                   if (ss->parameters.find(name) != ss->parameters.end())

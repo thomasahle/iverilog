@@ -21,6 +21,7 @@
 
 # include  "Statement.h"
 # include  "PExpr.h"
+# include  "sva_expr.h"
 # include  "ivl_assert.h"
 
 using namespace std;
@@ -248,6 +249,19 @@ PCondit::~PCondit()
       delete expr_;
       delete if_;
       delete else_;
+}
+
+PAssertion::PAssertion(Kind kind, PSvaExpr*expr, PExpr*disable,
+                       Statement*pass, Statement*fail)
+: kind_(kind), expr_(expr), disable_(disable), pass_(pass), fail_(fail)
+{
+}
+
+PAssertion::~PAssertion()
+{
+      delete expr_;
+      delete pass_;
+      delete fail_;
 }
 
 PDeassign::PDeassign(PExpr*l)

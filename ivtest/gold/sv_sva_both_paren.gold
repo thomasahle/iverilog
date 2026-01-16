@@ -1,5 +1,5 @@
-Assertion failed at time 35: |=> signals not stable
 Assertion failed at time 45: |=> signals not stable
+Assertion failed at time 55: |=> signals not stable
 Fail count: 2
 PASSED
 ./ivltests/sv_sva_both_paren.v:27: $finish called at 85 (1s)

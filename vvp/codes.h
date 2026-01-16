@@ -274,6 +274,7 @@ extern bool of_RAND_MODE_SET(vthread_t thr, vvp_code_t code);
 extern bool of_CONSTRAINT_MODE_GET(vthread_t thr, vvp_code_t code);
 extern bool of_CONSTRAINT_MODE_SET(vthread_t thr, vvp_code_t code);
 extern bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t code);
+extern bool of_PUSH_RAND_BOUND_PROP(vthread_t thr, vvp_code_t code);
 extern bool of_PUSH_RAND_BOUND_STACK(vthread_t thr, vvp_code_t code);
 extern bool of_PUSH_RAND_ARRAY_COPY(vthread_t thr, vvp_code_t code);
 extern bool of_CLEAR_RAND_BOUNDS(vthread_t thr, vvp_code_t code);

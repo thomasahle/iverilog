@@ -738,6 +738,23 @@ vvp_fun_signal_object_sa::vvp_fun_signal_object_sa(unsigned size)
 {
 }
 
+static bool vec4_all_zero_no_xz(const vvp_vector4_t&vec)
+{
+      for (unsigned idx = 0; idx < vec.size(); ++idx) {
+	    if (vec.value(idx) != BIT4_0) return false;
+      }
+      return true;
+}
+
+static void warn_object_vec4_assign(const vvp_vector4_t&vec)
+{
+      static bool warned = false;
+      if (warned) return;
+      warned = true;
+      cerr << "WARNING: assigning vec4 value " << vec
+	   << " to object handle; ignoring non-zero value." << endl;
+}
+
 #ifdef CHECK_WITH_VALGRIND
 void vvp_fun_signal_object_aa::free_instance(vvp_context_t context)
 {
@@ -763,6 +780,40 @@ void vvp_fun_signal_object_sa::recv_object(vvp_net_ptr_t ptr, vvp_object_t bit,
 vvp_object_t vvp_fun_signal_object_sa::get_object() const
 {
       return value_;
+}
+
+void vvp_fun_signal_object_sa::recv_vec4(vvp_net_ptr_t ptr, const vvp_vector4_t&bit,
+					 vvp_context_t)
+{
+      assert(ptr.port() == 0);
+
+      if (bit.has_xz()) {
+	    warn_object_vec4_assign(bit);
+	    return;
+      }
+
+      if (vec4_all_zero_no_xz(bit)) {
+	    vvp_object_t null_obj;
+	    if (value_ != null_obj) {
+		  value_ = null_obj;
+		  ptr.ptr()->send_object(null_obj, 0);
+	    }
+	    return;
+      }
+
+      warn_object_vec4_assign(bit);
+}
+
+void vvp_fun_signal_object_sa::recv_vec4_pv(vvp_net_ptr_t ptr, const vvp_vector4_t&bit,
+					    unsigned base, unsigned vwid, vvp_context_t)
+{
+      assert(ptr.port() == 0);
+
+      if (base != 0 || vwid != 1 || bit.size() != vwid) {
+	    warn_object_vec4_assign(bit);
+	    return;
+      }
+      recv_vec4(ptr, bit, 0);
 }
 
 vvp_fun_signal_object_aa::vvp_fun_signal_object_aa(unsigned size)
@@ -801,8 +852,15 @@ void vvp_fun_signal_object_aa::copy_instance(vvp_context_t dst, vvp_context_t sr
 
 vvp_object_t vvp_fun_signal_object_aa::get_object() const
 {
+      vvp_context_t ctx = vthread_get_rd_context();
+      if (!ctx) {
+	    return vvp_object_t();
+      }
       const vvp_object_t*bits = static_cast<vvp_object_t*>
-	    (vthread_get_rd_context_item(context_idx_));
+	    (vvp_get_context_item(ctx, context_idx_));
+      if (!bits) {
+	    return vvp_object_t();
+      }
       return *bits;
 }
 
@@ -835,6 +893,50 @@ void vvp_fun_signal_object_aa::recv_object(vvp_net_ptr_t ptr, vvp_object_t bit,
 	    *bits = bit;
 	    ptr.ptr()->send_object(bit, context);
       }
+}
+
+void vvp_fun_signal_object_aa::recv_vec4(vvp_net_ptr_t ptr, const vvp_vector4_t&bit,
+					 vvp_context_t context)
+{
+      assert(ptr.port() == 0);
+      if (!context) {
+	    warn_object_vec4_assign(bit);
+	    return;
+      }
+
+      if (bit.has_xz()) {
+	    warn_object_vec4_assign(bit);
+	    return;
+      }
+
+      if (!vec4_all_zero_no_xz(bit)) {
+	    warn_object_vec4_assign(bit);
+	    return;
+      }
+
+      vvp_object_t*bits = static_cast<vvp_object_t*>
+	    (vvp_get_context_item(context, context_idx_));
+      vvp_object_t null_obj;
+      if (*bits != null_obj) {
+	    *bits = null_obj;
+	    ptr.ptr()->send_object(null_obj, context);
+      }
+}
+
+void vvp_fun_signal_object_aa::recv_vec4_pv(vvp_net_ptr_t ptr, const vvp_vector4_t&bit,
+					    unsigned base, unsigned vwid, vvp_context_t context)
+{
+      assert(ptr.port() == 0);
+      if (!context) {
+	    warn_object_vec4_assign(bit);
+	    return;
+      }
+
+      if (base != 0 || vwid != 1 || bit.size() != vwid) {
+	    warn_object_vec4_assign(bit);
+	    return;
+      }
+      recv_vec4(ptr, bit, context);
 }
 
 unsigned vvp_fun_signal_object_aa::value_size() const

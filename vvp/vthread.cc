@@ -300,6 +300,9 @@ struct vthread_s {
       struct vthread_s*wait_next;
 	/* These are used to access automatically allocated items. */
       vvp_context_t wt_context, rd_context;
+	/* Detached fork contexts that need cleanup when the thread ends. */
+      vvp_context_t detached_context;
+      __vpiScope* detached_context_scope;
 	/* These are used to store '@' (implicit this) for forked tasks.
 	 * When a forked task calls functions, context swaps change rd_context
 	 * away from the fork context where '@' was stored. These members
@@ -800,6 +803,8 @@ vthread_t vthread_new(vvp_code_t pc, __vpiScope*scope)
       thr->wait_next = 0;
       thr->wt_context = 0;
       thr->rd_context = 0;
+      thr->detached_context = 0;
+      thr->detached_context_scope = 0;
       thr->fork_this_net_ = 0;  // fork_this_obj_ is default-constructed as nil
 
       thr->i_am_joining  = 0;
@@ -923,6 +928,11 @@ static void vthread_reap(vthread_t thr)
 
 void vthread_delete(vthread_t thr)
 {
+      if (thr->detached_context && thr->detached_context_scope) {
+	    vthread_free_context(thr->detached_context, thr->detached_context_scope);
+	    thr->detached_context = 0;
+	    thr->detached_context_scope = 0;
+      }
       thr->cleanup();
       delete thr;
 }
@@ -4834,68 +4844,9 @@ bool of_FORK_VIRT(vthread_t thr, vvp_code_t cp)
 
 		  // Copy all matching parameters from base scope context to target scope context
 		  // Parameters are identified by having the same name in both scopes
-		  vvp_context_t base_ctx = wt_ctx; // Current write context has base scope's values
-		  bool found_at_fork = false;
-		  for (unsigned base_idx = 0; base_idx < base_scope->intern.size(); ++base_idx) {
-			vpiHandle base_item = base_scope->intern[base_idx];
-			if (!base_item) continue;
-			int base_type = base_item->get_type_code();
-			const char* base_name_tmp = base_item->vpi_get_str(vpiName);
-			if (!base_name_tmp) continue;
-			// Copy to string to avoid buffer reuse by subsequent vpi_get_str calls
-			std::string base_name_str(base_name_tmp);
-			const char* base_name = base_name_str.c_str();
+		  vvp_context_t base_ctx = thr->wt_context;
+		  copy_scope_parameters(base_scope, target_scope, base_ctx, new_context);
 
-			// Handle class object variables
-			if (base_type == vpiClassVar) {
-			      __vpiBaseVar*base_var = dynamic_cast<__vpiBaseVar*>(base_item);
-			      if (!base_var) continue;
-			      vvp_net_t*base_net = base_var->get_net();
-			      if (!base_net || !base_net->fun) continue;
-			      vvp_fun_signal_object_aa*base_fun =
-				    dynamic_cast<vvp_fun_signal_object_aa*>(base_net->fun);
-			      if (!base_fun) continue;
-
-			      // Get value from base context
-			      vvp_object_t val = base_fun->get_object_from_context(base_ctx);
-
-			      // Debug: trace ALL class variables being copied
-			      // fprintf(stderr, "DEBUG FORK_VIRT param: base=%s target=%s name=%s val.nil=%d idx=%u ctx=%p\n",
-			// (debug removed)
-
-			      // Track if we found @
-			      if (strcmp(base_name, "@") == 0) {
-				    found_at_fork = true;
-			      }
-
-			      if (val.test_nil()) continue;
-
-			      // Find matching variable in target scope
-			      for (unsigned tgt_idx = 0; tgt_idx < target_scope->intern.size(); ++tgt_idx) {
-				    vpiHandle tgt_item = target_scope->intern[tgt_idx];
-				    if (!tgt_item) continue;
-				    if (tgt_item->get_type_code() != vpiClassVar) continue;
-				    const char* tgt_name = tgt_item->vpi_get_str(vpiName);
-				    if (!tgt_name || strcmp(base_name, tgt_name) != 0) continue;
-
-				    __vpiBaseVar*tgt_var = dynamic_cast<__vpiBaseVar*>(tgt_item);
-				    if (!tgt_var) continue;
-				    vvp_net_t*tgt_net = tgt_var->get_net();
-				    if (!tgt_net || !tgt_net->fun) continue;
-				    vvp_fun_signal_object_aa*tgt_fun =
-					  dynamic_cast<vvp_fun_signal_object_aa*>(tgt_net->fun);
-				    if (!tgt_fun) continue;
-
-				    // Copy value to target context
-				    tgt_fun->set_object_in_context(new_context, val);
-				    break;
-			      }
-			}
-		  }
-		  if (!found_at_fork) {
-			// fprintf(stderr, "DEBUG FORK_VIRT: WARNING @ not found in base=%s\n",
-			// (debug removed)
-		  }
 
 		  // Store '@' (implicit this) in child thread for context-independent access.
 		  // Find the '@' variable in the TARGET scope and store its net pointer.
@@ -5350,10 +5301,22 @@ bool of_JOIN_DETACH(vthread_t thr, vvp_code_t cp)
 	    if (child->wt_context != 0 && thr->wt_context == child->wt_context) {
 		  __vpiScope*child_scope = child->parent_scope;
 		  if (child_scope && child_scope->is_automatic()) {
+			__vpiScope*context_scope = child_scope;
+			if (child_scope->nitem == 0 && child_scope->scope &&
+			    child_scope->scope->is_automatic()) {
+			      context_scope = child_scope->scope;
+			}
+
 			// Allocate and copy context for the detached child
-			vvp_context_t new_context = vthread_copy_context(child_scope, child->wt_context);
+			vvp_context_t new_context = vthread_copy_context(context_scope, child->wt_context);
 			child->wt_context = new_context;
 			child->rd_context = new_context;
+
+			// If the context scope doesn't match the child scope, clean it up at thread end.
+			if (context_scope != child_scope) {
+			      child->detached_context = new_context;
+			      child->detached_context_scope = context_scope;
+			}
 		  }
 	    }
 	    if (child->i_have_ended) {
@@ -6730,9 +6693,11 @@ bool of_PROP_DAR_SIZE(vthread_t thr, vvp_code_t cp)
       vvp_cobject*cobj = obj.peek<vvp_cobject>();
 
       if (cobj == 0) {
-	    cerr << thr->get_fileline()
-	         << "Error: %prop/dar/size on null object." << endl;
-	    thr->push_vec4(vvp_vector4_t(32, BIT4_X));
+	    vvp_vector4_t result(32);
+	    for (unsigned i = 0; i < 32; i++) {
+		  result.set_bit(i, BIT4_0);
+	    }
+	    thr->push_vec4(result);
 	    return true;
       }
 
@@ -8870,6 +8835,28 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
       const class_type* defn = cobj->get_class_type();
       size_t nprop = defn->property_count();
+      auto normalize_const_for_width = [&](unsigned width, bool is_signed, int64_t raw) -> int64_t {
+	    return class_type::normalize_constraint_const(raw, width, is_signed);
+      };
+      auto normalize_const_for_prop = [&](size_t prop_idx, int64_t raw) -> int64_t {
+	    unsigned width = defn->property_bit_width(prop_idx);
+	    bool is_signed = defn->property_is_signed(prop_idx);
+	    return normalize_const_for_width(width, is_signed, raw);
+      };
+      auto vec4_to_int64 = [&](const vvp_vector4_t& val, bool is_signed) -> int64_t {
+	    int64_t out = 0;
+	    unsigned width = val.size();
+	    unsigned limit = width < 64 ? width : 64;
+	    for (unsigned i = 0; i < limit; i++) {
+		  if (val.value(i) == BIT4_1)
+			out |= (int64_t(1) << i);
+	    }
+	    if (is_signed && width > 0 && width < 64 && val.value(width - 1) == BIT4_1) {
+		  for (unsigned i = width; i < 64; i++)
+			out |= (int64_t(1) << i);
+	    }
+	    return out;
+      };
       // Check for constraints including inherited constraints from parent classes
       bool has_class_constraints = defn->has_any_constraints();
       const std::vector<class_type::simple_bound_t>& inline_constraints = thr->get_inline_constraints();
@@ -8917,7 +8904,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 		  // Look for equality constraint on the condition property
 		  if (inline_bound.property_idx == bound.cond_prop_idx &&
 		      inline_bound.op == '=' && inline_bound.has_const_bound) {
-			cond_val = inline_bound.const_bound;
+			cond_val = normalize_const_for_prop(bound.cond_prop_idx,
+			                                    inline_bound.const_bound);
 			found_inline_value = true;
 			break;
 		  }
@@ -8927,25 +8915,19 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 	    if (!found_inline_value) {
 		  vvp_vector4_t cond_prop_val;
 		  cobj->get_vec4(bound.cond_prop_idx, cond_prop_val);
-
-		  if (cond_prop_val.size() <= 64) {
-			for (unsigned i = 0; i < cond_prop_val.size(); i++) {
-			      if (cond_prop_val.value(i) == BIT4_1)
-				    cond_val |= (int64_t(1) << i);
-			}
-		  }
+		  cond_val = vec4_to_int64(cond_prop_val,
+		                           defn->property_is_signed(bound.cond_prop_idx));
 	    }
 
 	    int64_t cond_bound_val = bound.cond_has_const ? bound.cond_const : 0;
 	    if (!bound.cond_has_const && bound.cond_prop2_idx < nprop) {
 		  vvp_vector4_t cond_prop2_val;
 		  cobj->get_vec4(bound.cond_prop2_idx, cond_prop2_val);
-		  if (cond_prop2_val.size() <= 64) {
-			for (unsigned i = 0; i < cond_prop2_val.size(); i++) {
-			      if (cond_prop2_val.value(i) == BIT4_1)
-				    cond_bound_val |= (int64_t(1) << i);
-			}
-		  }
+		  cond_bound_val = vec4_to_int64(cond_prop2_val,
+		                                 defn->property_is_signed(bound.cond_prop2_idx));
+	    }
+	    if (bound.cond_has_const) {
+		  cond_bound_val = normalize_const_for_prop(bound.cond_prop_idx, bound.cond_const);
 	    }
 
 	    // Evaluate the condition
@@ -9109,8 +9091,8 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
 		  // Default constraints for all elements (global constraints without element index)
 		  int64_t default_elem_min = 0;
-		  int64_t default_elem_max = (1LL << elem_width) - 1;
-		  if (elem_width >= 64) default_elem_max = INT64_MAX;
+		  int64_t default_elem_max = (elem_width >= 63) ? INT64_MAX :
+			((int64_t(1) << elem_width) - 1);
 
 		  // Collect global (non-indexed) excluded and discrete values
 		  std::vector<int64_t> default_excluded_vals;
@@ -9139,39 +9121,41 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			// Skip element-indexed constraints here - handle them per-element
 			if (bound.has_element_idx) return;
 
+			int64_t bound_val = normalize_const_for_width(elem_width, false, bound.const_bound);
+
 			// For weighted dist: collect bounds with weights for later pairing
 			if (bound.weight > 1 || (bound.op == 'G' || bound.op == 'L')) {
 			      if (bound.op == 'G') {
-				    ge_bounds_elem.push_back({bound.const_bound, bound.weight, bound.weight_per_value});
+				    ge_bounds_elem.push_back({bound_val, bound.weight, bound.weight_per_value});
 				    return;
 			      } else if (bound.op == 'L') {
-				    le_bounds_elem.push_back({bound.const_bound, bound.weight, bound.weight_per_value});
+				    le_bounds_elem.push_back({bound_val, bound.weight, bound.weight_per_value});
 				    return;
 			      }
 			}
 
 			switch (bound.op) {
 			      case '>':  // value > const
-				    if (bound.const_bound + 1 > default_elem_min)
-					  default_elem_min = bound.const_bound + 1;
+				    if (bound_val + 1 > default_elem_min)
+					  default_elem_min = bound_val + 1;
 				    break;
 			      case 'G':  // value >= const (handled above for weighted)
-				    if (bound.const_bound > default_elem_min)
-					  default_elem_min = bound.const_bound;
+				    if (bound_val > default_elem_min)
+					  default_elem_min = bound_val;
 				    break;
 			      case '<':  // value < const
-				    if (bound.const_bound - 1 < default_elem_max)
-					  default_elem_max = bound.const_bound - 1;
+				    if (bound_val - 1 < default_elem_max)
+					  default_elem_max = bound_val - 1;
 				    break;
 			      case 'L':  // value <= const (handled above for weighted)
-				    if (bound.const_bound < default_elem_max)
-					  default_elem_max = bound.const_bound;
+				    if (bound_val < default_elem_max)
+					  default_elem_max = bound_val;
 				    break;
 			      case '!':  // value != const (exclusion)
-				    default_excluded_vals.push_back(bound.const_bound);
+				    default_excluded_vals.push_back(bound_val);
 				    break;
 			      case '=':  // value == const (discrete value)
-				    default_discrete_vals.push_back(bound.const_bound);
+				    default_discrete_vals.push_back(bound_val);
 				    break;
 			      default:
 				    break;
@@ -9243,29 +9227,31 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      // Check if this constraint is for this specific element
 			      if ((size_t)bound.element_idx != idx) return;
 
+			      int64_t bound_val = normalize_const_for_width(elem_width, false, bound.const_bound);
+
 			      has_specific_constraint = true;
 			      switch (bound.op) {
 				    case '>':
-					  if (bound.const_bound + 1 > elem_min)
-						elem_min = bound.const_bound + 1;
+					  if (bound_val + 1 > elem_min)
+						elem_min = bound_val + 1;
 					  break;
 				    case 'G':
-					  if (bound.const_bound > elem_min)
-						elem_min = bound.const_bound;
+					  if (bound_val > elem_min)
+						elem_min = bound_val;
 					  break;
 				    case '<':
-					  if (bound.const_bound - 1 < elem_max)
-						elem_max = bound.const_bound - 1;
+					  if (bound_val - 1 < elem_max)
+						elem_max = bound_val - 1;
 					  break;
 				    case 'L':
-					  if (bound.const_bound < elem_max)
-						elem_max = bound.const_bound;
+					  if (bound_val < elem_max)
+						elem_max = bound_val;
 					  break;
 				    case '!':
-					  excluded_vals.push_back(bound.const_bound);
+					  excluded_vals.push_back(bound_val);
 					  break;
 				    case '=':
-					  discrete_vals.push_back(bound.const_bound);
+					  discrete_vals.push_back(bound_val);
 					  break;
 				    default:
 					  break;
@@ -9434,6 +9420,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
 		  // Check if this is a randc property (cyclic randomization)
 		  bool is_randc = cobj->is_randc(i);
+		  bool is_signed = defn->property_is_signed(i);
 
 		  // Get array size for this property (1 for scalars)
 		  uint64_t array_size = defn->property_array_size(i);
@@ -9463,8 +9450,18 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
 			// Calculate bounds from inline constraints for this property
 			int64_t min_val = 0;
-			int64_t max_val = (1LL << wid) - 1;
-			if (wid >= 64) max_val = INT64_MAX;
+			int64_t max_val = (wid >= 63) ? INT64_MAX : ((int64_t(1) << wid) - 1);
+			if (is_signed) {
+			      if (wid < 64) {
+				    min_val = -(1LL << (wid - 1));
+				    max_val = (1LL << (wid - 1)) - 1;
+			      } else {
+				    min_val = INT64_MIN;
+				    max_val = INT64_MAX;
+			      }
+			} else if (wid >= 64) {
+			      max_val = INT64_MAX;
+			}
 
 			// Apply both inline AND class-level constraint bounds
 			// Track excluded values for != constraints
@@ -9519,28 +9516,37 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    if (bound.sysfunc_type != class_type::SYSFUNC_NONE) continue;
 				    // Skip property+offset bounds - handled by generate_constrained_random()
 				    if (bound.has_prop_offset) continue;
+				    int64_t bound_val = normalize_const_for_width(wid, is_signed, bound.const_bound);
 				    switch (bound.op) {
 					  case '>':
-						if (bound.const_bound + 1 > min_val)
-						      min_val = bound.const_bound + 1;
+						if (bound_val + 1 > min_val)
+						      min_val = bound_val + 1;
 						has_simple_bounds = true;
 						break;
 					  case 'G':
-						ge_bounds.push_back(bound);
+						{
+						      class_type::simple_bound_t adj = bound;
+						      adj.const_bound = bound_val;
+						      ge_bounds.push_back(adj);
+						}
 						break;
 					  case '<':
-						if (bound.const_bound - 1 < max_val)
-						      max_val = bound.const_bound - 1;
+						if (bound_val - 1 < max_val)
+						      max_val = bound_val - 1;
 						has_simple_bounds = true;
 						break;
 					  case 'L':
-						le_bounds.push_back(bound);
+						{
+						      class_type::simple_bound_t adj = bound;
+						      adj.const_bound = bound_val;
+						      le_bounds.push_back(adj);
+						}
 						break;
 					  case '=':
-						discrete_values.push_back({bound.const_bound, bound.weight});
+						discrete_values.push_back({bound_val, bound.weight});
 						break;
 					  case '!':
-						excluded_values.push_back(bound.const_bound);
+						excluded_values.push_back(bound_val);
 						break;
 					  default:
 						break;
@@ -9559,7 +9565,9 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      // Handle excluded ranges specially (they don't use has_const_bound)
 			      if (bound.is_excluded_range) {
 				    if (!bound.is_soft) {
-					  excluded_ranges.push_back({bound.excluded_range_low, bound.excluded_range_high});
+					  int64_t low = normalize_const_for_width(wid, is_signed, bound.excluded_range_low);
+					  int64_t high = normalize_const_for_width(wid, is_signed, bound.excluded_range_high);
+					  excluded_ranges.push_back({low, high});
 				    }
 				    continue;
 			      }
@@ -9567,28 +9575,37 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      // For value generation, only use hard constraints (non-soft)
 			      // Soft constraints are checked afterwards but don't fail randomize()
 			      if (bound.is_soft) continue;
+			      int64_t bound_val = normalize_const_for_width(wid, is_signed, bound.const_bound);
 			      switch (bound.op) {
 				    case '>':  // value > const  =>  min = const+1
-					  if (bound.const_bound + 1 > min_val)
-						min_val = bound.const_bound + 1;
+					  if (bound_val + 1 > min_val)
+						min_val = bound_val + 1;
 					  has_simple_bounds = true;
 					  break;
 				    case 'G':  // value >= const
-					  ge_bounds.push_back(bound);
+					  {
+						class_type::simple_bound_t adj = bound;
+						adj.const_bound = bound_val;
+						ge_bounds.push_back(adj);
+					  }
 					  break;
 				    case '<':  // value < const  =>  max = const-1
-					  if (bound.const_bound - 1 < max_val)
-						max_val = bound.const_bound - 1;
+					  if (bound_val - 1 < max_val)
+						max_val = bound_val - 1;
 					  has_simple_bounds = true;
 					  break;
 				    case 'L':  // value <= const
-					  le_bounds.push_back(bound);
+					  {
+						class_type::simple_bound_t adj = bound;
+						adj.const_bound = bound_val;
+						le_bounds.push_back(adj);
+					  }
 					  break;
 				    case '=':  // value == const  =>  discrete allowed value
-					  discrete_values.push_back({bound.const_bound, bound.weight});
+					  discrete_values.push_back({bound_val, bound.weight});
 					  break;
 				    case '!':  // value != const  =>  exclude value
-					  excluded_values.push_back(bound.const_bound);
+					  excluded_values.push_back(bound_val);
 					  break;
 				    default:
 					  break;
@@ -9984,11 +10001,11 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			bool has_hard;  // true if any '=' constraint is hard (non-soft)
 		  };
 		  std::map<size_t, eq_info> eq_constraints;
+		  std::vector<class_type::simple_bound_t> prop_constraints;
 		  std::vector<class_type::simple_bound_t> other_constraints;
 
 		  for (const auto& bound : inline_constraints) {
 			if (bound.property_idx >= nprop) continue;
-			if (!bound.has_const_bound) continue;
 
 			// Skip size constraints - they're handled separately
 			// and don't need constraint checking
@@ -9999,17 +10016,51 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			// (e.g., object types like dynamic arrays)
 			if (!defn->property_supports_vec4(bound.property_idx)) continue;
 
+			// Skip inside-array and excluded-range constraints here
+			if (bound.is_inside_array || bound.is_excluded_range) continue;
+
+			// Property-to-property constraints (no constant bound)
+			if (!bound.has_const_bound) {
+			      if (bound.bound_prop_idx < nprop &&
+				  defn->property_supports_vec4(bound.bound_prop_idx)) {
+				    prop_constraints.push_back(bound);
+			      }
+			      continue;
+			}
+
+			int64_t bound_val = normalize_const_for_prop(bound.property_idx, bound.const_bound);
 			if (bound.op == '=') {
 			      auto& info = eq_constraints[bound.property_idx];
-			      info.values.push_back(bound.const_bound);
+			      info.values.push_back(bound_val);
 			      if (!bound.is_soft) info.has_hard = true;
 			} else {
-			      other_constraints.push_back(bound);
+			      class_type::simple_bound_t adj = bound;
+			      adj.const_bound = bound_val;
+			      other_constraints.push_back(adj);
 			}
 		  }
 
-		  // Check '=' constraints with OR logic (value matches ANY allowed value)
-		  // Only fail if there are hard '=' constraints that don't match
+		  // Group bounds by property for range detection, tracking if any are hard
+		  struct range_info {
+			std::vector<class_type::simple_bound_t> bounds;
+			bool has_hard;  // true if any range bound is hard
+		  };
+		  std::map<size_t, range_info> prop_bounds;
+		  std::vector<class_type::simple_bound_t> simple_constraints;
+
+		  for (const auto& bound : other_constraints) {
+			// >= and <= are range bounds, pair them
+			if (bound.op == 'G' || bound.op == 'L') {
+			      auto& info = prop_bounds[bound.property_idx];
+			      info.bounds.push_back(bound);
+			      if (!bound.is_soft) info.has_hard = true;
+			} else {
+			      simple_constraints.push_back(bound);
+			}
+		  }
+
+		  // Check '=' constraints with OR logic, allowing ranges for the same property
+		  // Only fail if there are hard '=' constraints that don't match any discrete value or range
 		  for (const auto& kv : eq_constraints) {
 			size_t prop_idx = kv.first;
 			const eq_info& info = kv.second;
@@ -10019,11 +10070,7 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 
 			vvp_vector4_t val;
 			cobj->get_vec4(prop_idx, val);
-			int64_t prop_val = 0;
-			for (unsigned b = 0; b < val.size() && b < 64; b++) {
-			      if (val.value(b) == BIT4_1)
-				    prop_val |= (1LL << b);
-			}
+			int64_t prop_val = vec4_to_int64(val, defn->property_is_signed(prop_idx));
 
 			bool any_match = false;
 			for (int64_t allowed_val : info.values) {
@@ -10034,35 +10081,50 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			}
 
 			if (!any_match) {
+			      auto it = prop_bounds.find(prop_idx);
+			      if (it != prop_bounds.end() && it->second.has_hard) {
+				    // Pair up >= and <= bounds into ranges
+				    std::vector<std::pair<int64_t, int64_t>> ranges;
+				    int64_t pending_low = INT64_MIN;
+				    bool have_low = false;
+
+				    for (const auto& b : it->second.bounds) {
+					  if (b.op == 'G') {  // >=
+						if (have_low) {
+						      ranges.push_back({pending_low, INT64_MAX});
+						}
+						pending_low = b.const_bound;
+						have_low = true;
+					  } else if (b.op == 'L') {  // <=
+						if (have_low) {
+						      ranges.push_back({pending_low, b.const_bound});
+						      have_low = false;
+						} else {
+						      ranges.push_back({INT64_MIN, b.const_bound});
+						}
+					  }
+				    }
+				    if (have_low) {
+					  ranges.push_back({pending_low, INT64_MAX});
+				    }
+
+				    for (const auto& range : ranges) {
+					  if (prop_val >= range.first && prop_val <= range.second) {
+						any_match = true;
+						break;
+					  }
+				    }
+			      }
+			}
+
+			if (!any_match) {
 			      success = false;
 			      break;
 			}
 		  }
 
-		  // Check other constraints - handle range pairs with OR logic
-		  // Multiple ranges from dist like {[0:10], [200:$]} need OR between ranges
+		  // Check range bounds for properties without hard '=' constraints
 		  if (success) {
-			// Group bounds by property for range detection, tracking if any are hard
-			struct range_info {
-			      std::vector<class_type::simple_bound_t> bounds;
-			      bool has_hard;  // true if any range bound is hard
-			};
-			std::map<size_t, range_info> prop_bounds;
-			std::vector<class_type::simple_bound_t> simple_constraints;
-
-			for (const auto& bound : other_constraints) {
-			      // >= and <= are range bounds, pair them
-			      if (bound.op == 'G' || bound.op == 'L') {
-				    auto& info = prop_bounds[bound.property_idx];
-				    info.bounds.push_back(bound);
-				    if (!bound.is_soft) info.has_hard = true;
-			      } else {
-				    simple_constraints.push_back(bound);
-			      }
-			}
-
-			// Check range bounds - group into pairs and OR between pairs
-			// Only fail if there are hard range constraints
 			for (const auto& kv : prop_bounds) {
 			      size_t prop_idx = kv.first;
 			      const range_info& info = kv.second;
@@ -10070,13 +10132,13 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      // If all range constraints for this property are soft, skip checking
 			      if (!info.has_hard) continue;
 
+			      auto eq_it = eq_constraints.find(prop_idx);
+			      if (eq_it != eq_constraints.end() && eq_it->second.has_hard)
+				    continue;
+
 			      vvp_vector4_t val;
 			      cobj->get_vec4(prop_idx, val);
-			      int64_t prop_val = 0;
-			      for (unsigned b = 0; b < val.size() && b < 64; b++) {
-				    if (val.value(b) == BIT4_1)
-					  prop_val |= (1LL << b);
-			      }
+			      int64_t prop_val = vec4_to_int64(val, defn->property_is_signed(prop_idx));
 
 			      // Pair up >= and <= bounds into ranges
 			      std::vector<std::pair<int64_t, int64_t>> ranges;
@@ -10086,7 +10148,6 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 			      for (const auto& b : info.bounds) {
 				    if (b.op == 'G') {  // >=
 					  if (have_low) {
-						// Two lows in a row - start new range
 						ranges.push_back({pending_low, INT64_MAX});
 					  }
 					  pending_low = b.const_bound;
@@ -10096,7 +10157,6 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 						ranges.push_back({pending_low, b.const_bound});
 						have_low = false;
 					  } else {
-						// <= without >= is [INT64_MIN, high]
 						ranges.push_back({INT64_MIN, b.const_bound});
 					  }
 				    }
@@ -10105,7 +10165,6 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    ranges.push_back({pending_low, INT64_MAX});
 			      }
 
-			      // Check if value is in ANY range (OR logic)
 			      bool in_any_range = false;
 			      for (const auto& range : ranges) {
 				    if (prop_val >= range.first && prop_val <= range.second) {
@@ -10119,29 +10178,61 @@ bool of_RANDOMIZE(vthread_t thr, vvp_code_t)
 				    break;
 			      }
 			}
+		  }
 
-			// Check simple constraints (>, <, !=) with AND logic
-			if (success) {
-			      for (const auto& bound : simple_constraints) {
-				    vvp_vector4_t val;
-				    cobj->get_vec4(bound.property_idx, val);
-				    int64_t prop_val = 0;
-				    for (unsigned b = 0; b < val.size() && b < 64; b++) {
-					  if (val.value(b) == BIT4_1)
-						prop_val |= (1LL << b);
-				    }
+		  // Check simple constraints (>, <, !=) with AND logic
+		  if (success) {
+			for (const auto& bound : simple_constraints) {
+			      vvp_vector4_t val;
+			      cobj->get_vec4(bound.property_idx, val);
+			      int64_t prop_val = vec4_to_int64(val, defn->property_is_signed(bound.property_idx));
 
-				    bool constraint_ok = true;
-				    switch (bound.op) {
-					  case '>': constraint_ok = (prop_val > bound.const_bound); break;
-					  case '<': constraint_ok = (prop_val < bound.const_bound); break;
-					  case '!': constraint_ok = (prop_val != bound.const_bound); break;
-					  default: break;
-				    }
-				    if (!constraint_ok && !bound.is_soft) {
-					  success = false;
-					  break;
-				    }
+			      bool constraint_ok = true;
+			      switch (bound.op) {
+				    case '>': constraint_ok = (prop_val > bound.const_bound); break;
+				    case '<': constraint_ok = (prop_val < bound.const_bound); break;
+				    case '!': constraint_ok = (prop_val != bound.const_bound); break;
+				    default: break;
+			      }
+			      if (!constraint_ok && !bound.is_soft) {
+				    success = false;
+				    break;
+			      }
+			}
+		  }
+
+		  // Check property-to-property constraints (e.g., a < b)
+		  if (success) {
+			for (const auto& bound : prop_constraints) {
+			      if (bound.property_idx >= nprop || bound.bound_prop_idx >= nprop)
+				    continue;
+			      if (!defn->property_supports_vec4(bound.bound_prop_idx))
+				    continue;
+
+			      vvp_vector4_t val;
+			      vvp_vector4_t rhs_val;
+			      cobj->get_vec4(bound.property_idx, val);
+			      cobj->get_vec4(bound.bound_prop_idx, rhs_val);
+
+			      int64_t lhs = vec4_to_int64(val, defn->property_is_signed(bound.property_idx));
+			      int64_t rhs = vec4_to_int64(rhs_val, defn->property_is_signed(bound.bound_prop_idx));
+			      if (bound.has_prop_offset) {
+				    rhs += normalize_const_for_prop(bound.bound_prop_idx, bound.const_bound);
+			      }
+
+			      bool constraint_ok = true;
+			      switch (bound.op) {
+				    case '>': constraint_ok = (lhs > rhs); break;
+				    case '<': constraint_ok = (lhs < rhs); break;
+				    case 'G': constraint_ok = (lhs >= rhs); break;
+				    case 'L': constraint_ok = (lhs <= rhs); break;
+				    case '=': constraint_ok = (lhs == rhs); break;
+				    case '!': constraint_ok = (lhs != rhs); break;
+				    default: break;
+			      }
+			      if (!constraint_ok && !bound.is_soft) {
+				    success = false;
+				    break;
 			      }
 			}
 		  }
@@ -10962,7 +11053,7 @@ bool of_MAILBOX_NUM(vthread_t thr, vvp_code_t)
  */
 bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 {
-      class_type::simple_bound_t bound;
+      class_type::simple_bound_t bound = {};
       bound.property_idx = cp->number;
       unsigned encoded_op = cp->bit_idx[0];
 
@@ -11064,6 +11155,61 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
 }
 
 /*
+ * %push_rand_bound/prop <prop_idx>, <encoded_op>, <bound_prop_idx>
+ *
+ * Push an inline constraint bound where the RHS is another property.
+ * This preserves property-to-property constraints (e.g., a < b).
+ */
+bool of_PUSH_RAND_BOUND_PROP(vthread_t thr, vvp_code_t cp)
+{
+      class_type::simple_bound_t bound = {};
+      bound.property_idx = cp->number;
+      unsigned encoded_op = cp->bit_idx[0];
+
+      // Decode from encoded_op bits:
+      //   bits 0-3: op_code (4-bit operator, 0-15)
+      //   bit 4: soft flag
+      //   bits 5-14: weight (up to 1023)
+      //   bit 15: has_element_idx flag
+      //   bits 16-30: element_idx (up to 32767)
+      //   bit 31: weight_per_value flag
+      bound.weight = (encoded_op >> 5) & 0x3FF;  // 10 bits
+      bound.weight_per_value = (encoded_op & (1u << 31)) != 0;
+      if (bound.weight == 0) bound.weight = 1;
+
+      // Decode element index information (unused for property bounds)
+      bound.has_element_idx = (encoded_op & (1u << 15)) != 0;
+      bound.element_idx = (encoded_op >> 16) & 0x7FFF;  // 15 bits
+
+      int op_code = encoded_op & 0xF;
+      bool is_soft = (encoded_op & 0x10) != 0;
+      switch (op_code) {
+	    case 0: bound.op = '>'; break;
+	    case 1: bound.op = '<'; break;
+	    case 2: bound.op = 'G'; break;  // >=
+	    case 3: bound.op = 'L'; break;  // <=
+	    case 4: bound.op = '='; break;
+	    case 5: bound.op = '!'; break;
+	    default: bound.op = '='; break;
+      }
+      bound.is_soft = is_soft;
+
+      bound.has_const_bound = false;
+      bound.has_prop_offset = false;
+      bound.bound_prop_idx = cp->bit_idx[1];
+      bound.const_bound = 0;
+      bound.is_inside_array = false;
+      bound.inside_array_prop_idx = 0;
+      bound.is_excluded_range = false;
+      bound.excluded_range_low = 0;
+      bound.excluded_range_high = 0;
+      bound.is_foreach = false;
+
+      thr->push_inline_constraint(bound);
+      return true;
+}
+
+/*
  * %push_rand_bound/stack <prop_idx>, <encoded_op>
  *
  * Push an inline constraint bound where the value is on the stack.
@@ -11072,7 +11218,7 @@ bool of_PUSH_RAND_BOUND(vthread_t thr, vvp_code_t cp)
  */
 bool of_PUSH_RAND_BOUND_STACK(vthread_t thr, vvp_code_t cp)
 {
-      class_type::simple_bound_t bound;
+      class_type::simple_bound_t bound = {};
       bound.property_idx = cp->number;
       unsigned encoded_op = cp->bit_idx[0];
 
@@ -12398,8 +12544,11 @@ static void pop_prop_val(vthread_t thr, string&val, unsigned)
 static void pop_prop_val(vthread_t thr, vvp_vector4_t&val, unsigned wid)
 {
       val = thr->pop_vec4();
-      assert(val.size() >= wid);
-      val.resize(wid);
+      if (val.size() < wid) {
+	    val.resize(wid, BIT4_0);
+      } else {
+	    val.resize(wid);
+      }
 }
 
 static void set_val(vvp_cobject*cobj, size_t pid, const double&val)
@@ -13459,11 +13608,8 @@ bool of_STORE_VEC4(vthread_t thr, vvp_code_t cp)
       unsigned val_size = val.size();
 
       if (val_size < wid) {
-	    cerr << thr->get_fileline()
-	         << "XXXX Internal error: val.size()=" << val_size
-		 << ", expecting >= " << wid << endl;
-	    // Pad with X values to prevent crash
-	    vvp_vector4_t padded(wid, BIT4_X);
+	    // Zero-extend to the destination width to match Verilog sizing rules.
+	    vvp_vector4_t padded(wid, BIT4_0);
 	    for (unsigned i = 0; i < val_size; i++)
 		  padded.set_bit(i, val.value(i));
 	    val = padded;

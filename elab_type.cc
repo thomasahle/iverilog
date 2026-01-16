@@ -39,6 +39,43 @@
 
 using namespace std;
 
+static typedef_t* resolve_typedef_by_name(Design*des, NetScope*scope, perm_string name)
+{
+      if (!scope)
+	    return 0;
+
+      NetScope*cur_scope = scope;
+      std::set<const NetScope*> visited;
+
+      while (cur_scope) {
+	    if (visited.count(cur_scope))
+		  break;
+	    visited.insert(cur_scope);
+
+	    if (typedef_t*td = cur_scope->find_typedef(name)) {
+		  if (td->get_data_type())
+			return td;
+	    }
+
+	    NetScope*import_scope = cur_scope->find_import(des, name);
+	    if (import_scope && !visited.count(import_scope)) {
+		  cur_scope = import_scope;
+		  continue;
+	    }
+
+	    NetScope*parent = cur_scope->parent();
+	    if (parent) {
+		  cur_scope = parent;
+	    } else if (cur_scope != cur_scope->unit()) {
+		  cur_scope = cur_scope->unit();
+	    } else {
+		  break;
+	    }
+      }
+
+      return 0;
+}
+
 /*
  * Elaborations of types may vary depending on the scope that it is
  * done in, so keep a per-scope cache of the results.
@@ -863,6 +900,9 @@ NetScope *typeref_t::find_scope(Design *des, NetScope *s) const
 ivl_type_t typedef_t::elaborate_type(Design *des, NetScope *scope)
 {
       if (!data_type.get()) {
+	    if (typedef_t*resolved = resolve_typedef_by_name(des, scope, name)) {
+		  return resolved->elaborate_type(des, scope);
+	    }
 	    cerr << get_fileline() << ": error: Undefined type `" << name << "`."
 		 << endl;
 	    des->errors++;

@@ -766,6 +766,37 @@ bool class_type::property_supports_vec4(size_t pid) const
       return properties_[pid].type->supports_vec4();
 }
 
+bool class_type::property_is_signed(size_t pid) const
+{
+      if (pid >= properties_.size())
+	    return false;
+      return properties_[pid].type->is_signed();
+}
+
+unsigned class_type::property_bit_width(size_t pid) const
+{
+      if (pid >= properties_.size())
+	    return 0;
+      return properties_[pid].type->bit_width();
+}
+
+int64_t class_type::normalize_constraint_const(int64_t raw, unsigned width, bool is_signed)
+{
+      if (width == 0)
+	    return raw;
+
+      uint64_t mask = (width >= 64) ? ~uint64_t(0) : ((uint64_t(1) << width) - 1);
+      uint64_t uval = static_cast<uint64_t>(raw) & mask;
+      if (!is_signed || width >= 64)
+	    return static_cast<int64_t>(uval);
+
+      uint64_t sign_bit = uint64_t(1) << (width - 1);
+      if (uval & sign_bit)
+	    uval |= ~mask;
+
+      return static_cast<int64_t>(uval);
+}
+
 uint64_t class_type::property_array_size(size_t pid) const
 {
       if (pid >= properties_.size())
@@ -822,6 +853,26 @@ int class_type::constraint_idx_from_name(const std::string& name) const
  */
 int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, unsigned wid, const vvp_cobject* cobj, const std::vector<simple_bound_t>& inline_constraints) const
 {
+      auto normalize_for_prop = [&](size_t pid, int64_t raw) -> int64_t {
+	    unsigned width = property_bit_width(pid);
+	    bool is_signed = property_is_signed(pid);
+	    return normalize_constraint_const(raw, width, is_signed);
+      };
+      auto vec4_to_int64 = [&](const vvp_vector4_t& val, bool is_signed) -> int64_t {
+	    int64_t out = 0;
+	    unsigned width = val.size();
+	    unsigned limit = width < 64 ? width : 64;
+	    for (unsigned i = 0; i < limit; i++) {
+		  if (val.value(i) == BIT4_1)
+			out |= (int64_t(1) << i);
+	    }
+	    if (is_signed && width > 0 && width < 64 && val.value(width - 1) == BIT4_1) {
+		  for (unsigned i = width; i < 64; i++)
+			out |= (int64_t(1) << i);
+	    }
+	    return out;
+      };
+
       // Check if this property has enum bounds - if so, pick from valid enum values
       const std::vector<int64_t>* enum_vals = get_enum_values(prop_idx);
       if (enum_vals != nullptr && !enum_vals->empty()) {
@@ -922,7 +973,8 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 			// Look for equality constraint on the condition property
 			if (inline_bound.property_idx == bound.cond_prop_idx &&
 			    inline_bound.op == '=' && inline_bound.has_const_bound) {
-			      cond_val = inline_bound.const_bound;
+			      cond_val = normalize_for_prop(bound.cond_prop_idx,
+			                                    inline_bound.const_bound);
 			      found_inline_value = true;
 			      break;
 			}
@@ -933,28 +985,20 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 			vvp_vector4_t cond_prop_val;
 			get_vec4(inst, bound.cond_prop_idx, cond_prop_val);
 
-			if (cond_prop_val.size() <= 64) {
-			      for (unsigned i = 0; i < cond_prop_val.size(); i++) {
-				    if (cond_prop_val.value(i) == BIT4_1)
-					  cond_val |= (int64_t(1) << i);
-			      }
-			}
+			cond_val = vec4_to_int64(cond_prop_val,
+			                         property_is_signed(bound.cond_prop_idx));
 		  }
 
 		  // Get the condition bound value
 		  int64_t cond_bound_val = 0;
 		  if (bound.cond_has_const) {
-			cond_bound_val = bound.cond_const;
+			cond_bound_val = normalize_for_prop(bound.cond_prop_idx, bound.cond_const);
 		  } else if (bound.cond_prop2_idx < properties_.size() &&
 		             properties_[bound.cond_prop2_idx].type->supports_vec4()) {
 			vvp_vector4_t cond_prop2_val;
 			get_vec4(inst, bound.cond_prop2_idx, cond_prop2_val);
-			if (cond_prop2_val.size() <= 64) {
-			      for (unsigned i = 0; i < cond_prop2_val.size(); i++) {
-				    if (cond_prop2_val.value(i) == BIT4_1)
-					  cond_bound_val |= (int64_t(1) << i);
-			      }
-			}
+			cond_bound_val = vec4_to_int64(cond_prop2_val,
+			                              property_is_signed(bound.cond_prop2_idx));
 		  }
 
 		  // Evaluate the condition
@@ -1031,15 +1075,17 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 	    if (bound.op == '=') {
 		  // Discrete value
 		  weighted_value_t wv;
-		  wv.value = bound.const_bound;
+		  wv.value = normalize_for_prop(prop_idx, bound.const_bound);
 		  wv.weight = bound.weight;
 		  weighted_values.push_back(wv);
 	    } else if (bound.op == 'G') {
 		  // >= bound (lower bound of range)
-		  lower_bounds[bound.weight] = std::make_pair(bound.const_bound, bound.weight_per_value);
+		  lower_bounds[bound.weight] = std::make_pair(normalize_for_prop(prop_idx, bound.const_bound),
+		                                              bound.weight_per_value);
 	    } else if (bound.op == 'L') {
 		  // <= bound (upper bound of range)
-		  upper_bounds[bound.weight] = std::make_pair(bound.const_bound, bound.weight_per_value);
+		  upper_bounds[bound.weight] = std::make_pair(normalize_for_prop(prop_idx, bound.const_bound),
+		                                              bound.weight_per_value);
 	    }
       }
 
@@ -1208,9 +1254,9 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 			}
 		  }
 		  // Add the constant offset
-		  bval += bound.const_bound;
+		  bval += normalize_for_prop(bound.bound_prop_idx, bound.const_bound);
 	    } else if (bound.has_const_bound) {
-		  bval = bound.const_bound;
+		  bval = normalize_for_prop(prop_idx, bound.const_bound);
 	    } else if (bound.bound_prop_idx < properties_.size()) {
 		  // Get value from another property (no offset)
 		  if (!properties_[bound.bound_prop_idx].type->supports_vec4())
@@ -1268,8 +1314,8 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 		  continue;
 	    if (bound.is_soft)
 		  continue;
-	    excluded_ranges.push_back(std::make_pair(bound.excluded_range_low,
-						     bound.excluded_range_high));
+	    excluded_ranges.push_back(std::make_pair(normalize_for_prop(prop_idx, bound.excluded_range_low),
+						     normalize_for_prop(prop_idx, bound.excluded_range_high)));
       }
 
       // Also check inline constraints for excluded ranges
@@ -1280,8 +1326,8 @@ int64_t class_type::generate_constrained_random(inst_t inst, size_t prop_idx, un
 		  continue;
 	    if (bound.is_soft)
 		  continue;
-	    excluded_ranges.push_back(std::make_pair(bound.excluded_range_low,
-						     bound.excluded_range_high));
+	    excluded_ranges.push_back(std::make_pair(normalize_for_prop(prop_idx, bound.excluded_range_low),
+						     normalize_for_prop(prop_idx, bound.excluded_range_high)));
       }
 
       // Helper lambda to check if a value is in any excluded range
@@ -1425,6 +1471,26 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
       if (all_bounds.empty())
 	    return true;
 
+      auto normalize_for_prop = [&](size_t pid, int64_t raw) -> int64_t {
+	    unsigned width = property_bit_width(pid);
+	    bool is_signed = property_is_signed(pid);
+	    return normalize_constraint_const(raw, width, is_signed);
+      };
+      auto vec4_to_int64 = [&](const vvp_vector4_t& val, bool is_signed) -> int64_t {
+	    int64_t out = 0;
+	    unsigned width = val.size();
+	    unsigned limit = width < 64 ? width : 64;
+	    for (unsigned i = 0; i < limit; i++) {
+		  if (val.value(i) == BIT4_1)
+			out |= (int64_t(1) << i);
+	    }
+	    if (is_signed && width > 0 && width < 64 && val.value(width - 1) == BIT4_1) {
+		  for (unsigned i = width; i < 64; i++)
+			out |= (int64_t(1) << i);
+	    }
+	    return out;
+      };
+
       // First, handle weighted constraints (from dist)
       // Group discrete values and ranges by property index, check with OR logic
 
@@ -1443,11 +1509,14 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 		  continue;
 
 	    if (bound.op == '=') {
-		  weighted_eq_values[bound.property_idx].push_back(bound.const_bound);
+		  weighted_eq_values[bound.property_idx].push_back(
+			normalize_for_prop(bound.property_idx, bound.const_bound));
 	    } else if (bound.op == 'G') {
-		  lower_bounds_by_prop[bound.property_idx][bound.weight] = bound.const_bound;
+		  lower_bounds_by_prop[bound.property_idx][bound.weight] =
+			normalize_for_prop(bound.property_idx, bound.const_bound);
 	    } else if (bound.op == 'L') {
-		  upper_bounds_by_prop[bound.property_idx][bound.weight] = bound.const_bound;
+		  upper_bounds_by_prop[bound.property_idx][bound.weight] =
+			normalize_for_prop(bound.property_idx, bound.const_bound);
 	    }
       }
 
@@ -1488,13 +1557,7 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 	    vvp_vector4_t prop_val;
 	    get_vec4(inst, prop_idx, prop_val);
 
-	    int64_t val = 0;
-	    if (prop_val.size() <= 64) {
-		  for (unsigned i = 0; i < prop_val.size(); i++) {
-			if (prop_val.value(i) == BIT4_1)
-			      val |= (int64_t(1) << i);
-		  }
-	    }
+	    int64_t val = vec4_to_int64(prop_val, property_is_signed(prop_idx));
 
 	    // Check if value matches ANY discrete value or is in ANY range
 	    bool matches_any = false;
@@ -1534,13 +1597,7 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 	    vvp_vector4_t prop_val;
 	    get_vec4(inst, prop_idx, prop_val);
 
-	    int64_t val = 0;
-	    if (prop_val.size() <= 64) {
-		  for (unsigned i = 0; i < prop_val.size(); i++) {
-			if (prop_val.value(i) == BIT4_1)
-			      val |= (int64_t(1) << i);
-		  }
-	    }
+	    int64_t val = vec4_to_int64(prop_val, property_is_signed(prop_idx));
 
 	    bool matches_any = false;
 	    for (const auto& r : entry.second) {
@@ -1596,27 +1653,19 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 		  get_vec4(inst, bound.cond_prop_idx, cond_prop_val);
 
 		  int64_t cond_val = 0;
-		  if (cond_prop_val.size() <= 64) {
-			for (unsigned i = 0; i < cond_prop_val.size(); i++) {
-			      if (cond_prop_val.value(i) == BIT4_1)
-				    cond_val |= (int64_t(1) << i);
-			}
-		  }
+		  cond_val = vec4_to_int64(cond_prop_val,
+		                           property_is_signed(bound.cond_prop_idx));
 
 		  // Get the condition bound value
 		  int64_t cond_bound_val = 0;
 		  if (bound.cond_has_const) {
-			cond_bound_val = bound.cond_const;
+			cond_bound_val = normalize_for_prop(bound.cond_prop_idx, bound.cond_const);
 		  } else if (bound.cond_prop2_idx < properties_.size() &&
 		             properties_[bound.cond_prop2_idx].type->supports_vec4()) {
 			vvp_vector4_t cond_prop2_val;
 			get_vec4(inst, bound.cond_prop2_idx, cond_prop2_val);
-			if (cond_prop2_val.size() <= 64) {
-			      for (unsigned i = 0; i < cond_prop2_val.size(); i++) {
-				    if (cond_prop2_val.value(i) == BIT4_1)
-					  cond_bound_val |= (int64_t(1) << i);
-			      }
-			}
+			cond_bound_val = vec4_to_int64(cond_prop2_val,
+			                               property_is_signed(bound.cond_prop2_idx));
 		  }
 
 		  // Evaluate the condition
@@ -1680,9 +1729,9 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 			}
 		  }
 		  // Add the constant offset
-		  bound_val += bound.const_bound;
+		  bound_val += normalize_for_prop(bound.bound_prop_idx, bound.const_bound);
 	    } else if (bound.has_const_bound) {
-		  bound_val = bound.const_bound;
+		  bound_val = normalize_for_prop(bound.property_idx, bound.const_bound);
 	    } else if (bound.bound_prop_idx < properties_.size()) {
 		  // Property reference only (no offset)
 		  if (!properties_[bound.bound_prop_idx].type->supports_vec4())
@@ -1777,7 +1826,9 @@ bool class_type::check_constraints(inst_t inst, const vvp_cobject* cobj) const
 	    // Check excluded ranges (from !(x inside {[lo:hi]}))
 	    if (bound.is_excluded_range && !bound.is_soft) {
 		  // Value must NOT be in the excluded range
-		  if (val >= bound.excluded_range_low && val <= bound.excluded_range_high) {
+		  int64_t low = normalize_for_prop(bound.property_idx, bound.excluded_range_low);
+		  int64_t high = normalize_for_prop(bound.property_idx, bound.excluded_range_high);
+		  if (val >= low && val <= high) {
 			return false;
 		  }
 	    }

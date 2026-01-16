@@ -344,6 +344,10 @@ class vvp_fun_signal_object_sa : public vvp_fun_signal_object {
 
       void recv_object(vvp_net_ptr_t port, vvp_object_t bit,
 		    vvp_context_t context) override;
+      void recv_vec4(vvp_net_ptr_t port, const vvp_vector4_t&bit,
+		     vvp_context_t context) override;
+      void recv_vec4_pv(vvp_net_ptr_t port, const vvp_vector4_t&bit,
+			unsigned base, unsigned vwid, vvp_context_t context) override;
 
       vvp_object_t get_object() const override;
 
@@ -369,6 +373,10 @@ class vvp_fun_signal_object_aa : public vvp_fun_signal_object, public automatic_
 
       void recv_object(vvp_net_ptr_t port, vvp_object_t bit,
 		    vvp_context_t context) override;
+      void recv_vec4(vvp_net_ptr_t port, const vvp_vector4_t&bit,
+		     vvp_context_t context) override;
+      void recv_vec4_pv(vvp_net_ptr_t port, const vvp_vector4_t&bit,
+			unsigned base, unsigned vwid, vvp_context_t context) override;
 
 	// Get information about the vector value.
       unsigned   value_size() const override;

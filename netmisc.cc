@@ -26,6 +26,7 @@
 # include  "netdarray.h"
 # include  "netvector.h"
 # include  "netmisc.h"
+# include  "compiler.h"
 # include  "PExpr.h"
 # include  "pform_types.h"
 # include  "compiler.h"
@@ -1901,6 +1902,9 @@ void check_for_inconsistent_delays(const NetScope*scope)
       static bool used_implicit_timescale = false;
       static bool used_explicit_timescale = false;
       static bool display_ts_dly_warning = true;
+
+      if (!warn_timescale)
+	    return;
 
       if (scope->time_from_timescale())
 	    used_explicit_timescale = true;

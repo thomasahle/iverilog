@@ -36,8 +36,10 @@
 # include  <sstream>
 # include  <list>
 # include  <set>
+# include  <map>
 # include  "pform.h"
 # include  "pform_types.h"
+# include  "sva_expr.h"
 # include  "PClass.h"
 # include  "PExpr.h"
 # include  "PEvent.h"
@@ -3679,6 +3681,547 @@ NetProc* PCondit::elaborate(Design*des, NetScope*scope) const
       NetCondit*res = new NetCondit(expr, i, e);
       res->set_line(*this);
       return res;
+}
+
+namespace {
+
+struct SvaStepSpec {
+      long min_delay = 0;
+      long max_delay = 0;
+      std::vector<int> atoms;
+};
+
+struct SvaSeqSpec {
+      std::vector<SvaStepSpec> steps;
+      std::vector<int> invariants;
+      bool first_match = false;
+};
+
+struct SvaPropSpec {
+      int implies_kind = 0; /* 0=none, 1=overlap, 2=nonoverlap */
+      bool immediate = false;
+      SvaSeqSpec antecedent;
+      SvaSeqSpec consequent;
+      std::vector<PExpr*> atoms;
+};
+
+struct SvaBranchSpec {
+      PExpr* cond = nullptr;
+      const PSvaExpr* expr = nullptr;
+};
+
+static PExpr* make_not_expr_(PExpr*expr, const LineInfo&loc)
+{
+      if (!expr)
+	    return nullptr;
+      PEUnary*res = new PEUnary('!', expr);
+      res->set_line(loc);
+      return res;
+}
+
+static PExpr* make_and_expr_(PExpr*left, PExpr*right, const LineInfo&loc)
+{
+      if (!left)
+	    return right;
+      if (!right)
+	    return left;
+      PEBLogic*res = new PEBLogic('a', left, right);
+      res->set_line(loc);
+      return res;
+}
+
+static PExpr* make_or_expr_(PExpr*left, PExpr*right, const LineInfo&loc)
+{
+      if (!left)
+	    return right;
+      if (!right)
+	    return left;
+      PEBLogic*res = new PEBLogic('o', left, right);
+      res->set_line(loc);
+      return res;
+}
+
+static void collect_sva_branches_(const PSvaExpr*expr, PExpr*cond,
+                                  std::vector<SvaBranchSpec>&out)
+{
+      if (!expr)
+	    return;
+      if (expr->kind() != PSvaExpr::IF) {
+	    SvaBranchSpec spec;
+	    spec.cond = cond;
+	    spec.expr = expr;
+	    out.push_back(spec);
+	    return;
+      }
+      PExpr*if_cond = expr->cond_expr();
+      if (!if_cond) {
+	    SvaBranchSpec spec;
+	    spec.cond = cond;
+	    spec.expr = expr->left();
+	    out.push_back(spec);
+	    return;
+      }
+      PExpr*then_cond = make_and_expr_(cond, if_cond, *expr);
+      PExpr*else_cond = make_and_expr_(cond, make_not_expr_(if_cond, *expr), *expr);
+      collect_sva_branches_(expr->left(), then_cond, out);
+      if (expr->right())
+	    collect_sva_branches_(expr->right(), else_cond, out);
+}
+
+class SvaBuilder {
+    public:
+      SvaBuilder(Design*des, NetScope*scope)
+      : des_(des), scope_(scope) { }
+
+      bool build_property(const PSvaExpr*expr, SvaPropSpec&out)
+      {
+	    if (!expr)
+		  return false;
+
+	    if (expr->kind() == PSvaExpr::IMPLIES) {
+		  if (PExpr*imm = build_immediate_expr_(expr)) {
+			SvaSeqSpec seq;
+			if (!add_immediate_step_(imm, seq))
+			      return false;
+			out.implies_kind = 0;
+			out.consequent = seq;
+			out.atoms = atoms_;
+			out.immediate = true;
+			return true;
+		  }
+	    }
+
+	    if (expr->kind() == PSvaExpr::IMPLIES ||
+	        expr->kind() == PSvaExpr::IMPLIES_NONOVERLAP) {
+		  if (!build_sequence_(expr->left(), out.antecedent))
+			return false;
+		  if (!build_sequence_(expr->right(), out.consequent))
+			return false;
+		  if (expr->kind() == PSvaExpr::IMPLIES_NONOVERLAP) {
+			if (!apply_delay_(out.consequent, 1, 1))
+			      return false;
+		  }
+		  out.implies_kind = (expr->kind() == PSvaExpr::IMPLIES_NONOVERLAP) ? 2 : 1;
+	    } else {
+		  if (!build_sequence_(expr, out.consequent))
+			return false;
+		  out.implies_kind = 0;
+	    }
+
+	    out.atoms = atoms_;
+	    if (out.implies_kind == 0 &&
+	        out.consequent.steps.size() == 1 &&
+	        out.consequent.steps[0].min_delay == 0 &&
+	        out.consequent.steps[0].max_delay == 0 &&
+	        out.consequent.invariants.empty()) {
+		  out.immediate = true;
+	    }
+
+	    return true;
+      }
+
+    private:
+      int add_atom_(PExpr*expr)
+      {
+	    if (!expr)
+		  return -1;
+	    auto it = atom_map_.find(expr);
+	    if (it != atom_map_.end())
+		  return it->second;
+	    int idx = atoms_.size();
+	    atoms_.push_back(expr);
+	    atom_map_[expr] = idx;
+	    return idx;
+      }
+
+      bool add_immediate_step_(PExpr*expr, SvaSeqSpec&out)
+      {
+	    int idx = add_atom_(expr);
+	    if (idx < 0)
+		  return false;
+	    SvaStepSpec step;
+	    step.min_delay = 0;
+	    step.max_delay = 0;
+	    step.atoms.push_back(idx);
+	    out.steps.push_back(step);
+	    return true;
+      }
+
+      PExpr* build_immediate_expr_(const PSvaExpr*expr)
+      {
+	    if (!expr)
+		  return nullptr;
+	    switch (expr->kind()) {
+		case PSvaExpr::ATOM:
+		  return expr->atom_expr();
+		case PSvaExpr::NOT: {
+		  PExpr*inner = build_immediate_expr_(expr->left());
+		  if (!inner) return nullptr;
+		  PEUnary*res = new PEUnary('!', inner);
+		  res->set_line(*expr);
+		  return res;
+		}
+		case PSvaExpr::AND:
+		case PSvaExpr::OR: {
+		  PExpr*l = build_immediate_expr_(expr->left());
+		  PExpr*r = build_immediate_expr_(expr->right());
+		  if (!l || !r) return nullptr;
+		  char op = (expr->kind() == PSvaExpr::AND) ? 'a' : 'o';
+		  PEBLogic*res = new PEBLogic(op, l, r);
+		  res->set_line(*expr);
+		  return res;
+		}
+		case PSvaExpr::IMPLIES: {
+		  PExpr*l = build_immediate_expr_(expr->left());
+		  PExpr*r = build_immediate_expr_(expr->right());
+		  if (!l || !r) return nullptr;
+		  PEUnary*not_l = new PEUnary('!', l);
+		  not_l->set_line(*expr);
+		  PEBLogic*res = new PEBLogic('o', not_l, r);
+		  res->set_line(*expr);
+		  return res;
+		}
+		default:
+		  return nullptr;
+	    }
+      }
+
+      bool eval_delay_expr_(PExpr*expr, long*value)
+      {
+	    if (!expr || !value)
+		  return false;
+	    NetExpr*net = elab_and_eval(des_, scope_, expr, -1, true);
+	    if (!net)
+		  return false;
+	    NetEConst*ce = dynamic_cast<NetEConst*>(net);
+	    if (!ce) {
+		  delete net;
+		  return false;
+	    }
+	    *value = ce->value().as_long();
+	    delete net;
+	    return true;
+      }
+
+      bool get_delay_(const PSvaExpr*expr, long*min, long*max)
+      {
+	    if (!expr || !min || !max)
+		  return false;
+	    if (expr->min_delay_expr()) {
+		  if (!eval_delay_expr_(expr->min_delay_expr(), min))
+			return false;
+	    } else {
+		  *min = expr->min_delay();
+	    }
+	    if (expr->max_delay() == -1 && expr->max_delay_expr() == nullptr) {
+		  *max = -1;
+	    } else if (expr->max_delay_expr()) {
+		  if (!eval_delay_expr_(expr->max_delay_expr(), max))
+			return false;
+	    } else {
+		  *max = expr->max_delay();
+	    }
+	    if (*max != -1 && *min > *max)
+		  return false;
+	    return true;
+      }
+
+      bool apply_delay_(SvaSeqSpec&seq, long min_delay, long max_delay)
+      {
+	    if (seq.steps.empty())
+		  return false;
+	    SvaStepSpec&first = seq.steps[0];
+	    first.min_delay += min_delay;
+	    if (first.max_delay != -1 && max_delay != -1)
+		  first.max_delay += max_delay;
+	    else
+		  first.max_delay = -1;
+	    return true;
+      }
+
+      bool append_sequence_(SvaSeqSpec&base, const SvaSeqSpec&tail,
+                            long min_delay, long max_delay)
+      {
+	    if (tail.steps.empty())
+		  return true;
+	    if (base.steps.empty()) {
+		  base = tail;
+		  return apply_delay_(base, min_delay, max_delay);
+	    }
+	    base.invariants.insert(base.invariants.end(),
+	                          tail.invariants.begin(), tail.invariants.end());
+	    base.first_match = base.first_match || tail.first_match;
+
+	    SvaStepSpec first = tail.steps.front();
+	    first.min_delay += min_delay;
+	    if (first.max_delay != -1 && max_delay != -1)
+		  first.max_delay += max_delay;
+	    else
+		  first.max_delay = -1;
+	    base.steps.push_back(first);
+	    base.steps.insert(base.steps.end(), tail.steps.begin() + 1, tail.steps.end());
+	    return true;
+      }
+
+      bool repeat_sequence_(const SvaSeqSpec&seq, long count,
+                            long gap_min, long gap_max, SvaSeqSpec&out)
+      {
+	    if (count <= 0)
+		  return false;
+	    out = seq;
+	    for (long i = 1; i < count; ++i) {
+		  if (!append_sequence_(out, seq, gap_min, gap_max))
+			return false;
+	    }
+	    return true;
+      }
+
+      bool build_sequence_(const PSvaExpr*expr, SvaSeqSpec&out)
+      {
+	    if (!expr)
+		  return false;
+
+	    if (PExpr*imm = build_immediate_expr_(expr)) {
+		  return add_immediate_step_(imm, out);
+	    }
+
+	    switch (expr->kind()) {
+		case PSvaExpr::ATOM:
+		  return add_immediate_step_(expr->atom_expr(), out);
+		case PSvaExpr::CONCAT: {
+		  SvaSeqSpec left;
+		  SvaSeqSpec right;
+		  if (!build_sequence_(expr->left(), left))
+			return false;
+		  if (!build_sequence_(expr->right(), right))
+			return false;
+		  long min_delay = 0;
+		  long max_delay = 0;
+		  if (!get_delay_(expr, &min_delay, &max_delay))
+			return false;
+		  out = left;
+		  return append_sequence_(out, right, min_delay, max_delay);
+		}
+		case PSvaExpr::DELAY: {
+		  if (!build_sequence_(expr->left(), out))
+			return false;
+		  long min_delay = 0;
+		  long max_delay = 0;
+		  if (!get_delay_(expr, &min_delay, &max_delay))
+			return false;
+		  return apply_delay_(out, min_delay, max_delay);
+		}
+		case PSvaExpr::REPEAT: {
+		  SvaSeqSpec inner;
+		  if (!build_sequence_(expr->left(), inner))
+			return false;
+		  long count = expr->min_rep();
+		  if (expr->max_rep() != expr->min_rep())
+			count = expr->max_rep();
+		  if (expr->rep_kind() == PSvaExpr::REP_CONSEC)
+			return repeat_sequence_(inner, count, 1, 1, out);
+		  return repeat_sequence_(inner, count, 1, -1, out);
+		}
+		case PSvaExpr::THROUGHOUT: {
+		  if (!build_sequence_(expr->right(), out))
+			return false;
+		  PExpr*imm = build_immediate_expr_(expr->left());
+		  if (!imm)
+			return false;
+		  int idx = add_atom_(imm);
+		  if (idx < 0)
+			return false;
+		  out.invariants.push_back(idx);
+		  return true;
+		}
+		case PSvaExpr::UNTIL:
+		case PSvaExpr::UNTIL_WITH:
+		case PSvaExpr::S_UNTIL:
+		case PSvaExpr::S_UNTIL_WITH: {
+		  if (!build_sequence_(expr->right(), out))
+			return false;
+		  PExpr*imm = build_immediate_expr_(expr->left());
+		  if (!imm)
+			return false;
+		  int idx = add_atom_(imm);
+		  if (idx < 0)
+			return false;
+		  out.invariants.push_back(idx);
+		  return true;
+		}
+		case PSvaExpr::FIRST_MATCH: {
+		  if (!build_sequence_(expr->left(), out))
+			return false;
+		  out.first_match = true;
+		  return true;
+		}
+		default:
+		  return false;
+	    }
+      }
+
+      Design*des_;
+      NetScope*scope_;
+      std::map<PExpr*, int> atom_map_;
+      std::vector<PExpr*> atoms_;
+};
+
+static NetEConst* make_const_int_(long value)
+{
+      return new NetEConst(verinum((int64_t)value));
+}
+
+static void append_step_args_(std::vector<NetExpr*>&args, const SvaStepSpec&step)
+{
+      args.push_back(make_const_int_(step.min_delay));
+      args.push_back(make_const_int_(step.max_delay));
+      args.push_back(make_const_int_(step.atoms.size()));
+      for (size_t i = 0; i < step.atoms.size(); ++i)
+	    args.push_back(make_const_int_(step.atoms[i]));
+}
+
+} // namespace
+
+NetProc* PAssertion::elaborate(Design*des, NetScope*scope) const
+{
+      ivl_assert(*this, scope);
+
+      if (!expr_)
+	    return new NetBlock(NetBlock::SEQU, 0);
+
+      static unsigned long sva_id_next = 1;
+      std::vector<SvaBranchSpec> branches;
+      collect_sva_branches_(expr_, nullptr, branches);
+      if (branches.empty())
+	    return new NetBlock(NetBlock::SEQU, 0);
+
+      NetBlock*result_block = nullptr;
+      NetProc*single_result = nullptr;
+
+      for (size_t bidx = 0; bidx < branches.size(); ++bidx) {
+	    const SvaBranchSpec&branch = branches[bidx];
+	    SvaBuilder builder(des, scope);
+	    SvaPropSpec prop;
+	    if (!builder.build_property(branch.expr, prop)) {
+		  cerr << get_fileline() << ": error: Unable to elaborate assertion property." << endl;
+		  des->errors += 1;
+		  return new NetBlock(NetBlock::SEQU, 0);
+	    }
+
+	    unsigned long sva_id = sva_id_next++;
+
+	    /* Register the property with the runtime. */
+	    std::vector<NetExpr*> reg_args;
+	    reg_args.push_back(make_const_int_(sva_id));
+	    reg_args.push_back(make_const_int_(prop.immediate ? 1 : 0));
+	    reg_args.push_back(make_const_int_(prop.implies_kind));
+	    reg_args.push_back(make_const_int_(prop.antecedent.first_match ? 1 : 0));
+	    reg_args.push_back(make_const_int_(prop.consequent.first_match ? 1 : 0));
+	    reg_args.push_back(make_const_int_(prop.atoms.size()));
+	    reg_args.push_back(make_const_int_(prop.antecedent.steps.size()));
+	    reg_args.push_back(make_const_int_(prop.antecedent.invariants.size()));
+	    reg_args.push_back(make_const_int_(prop.consequent.steps.size()));
+	    reg_args.push_back(make_const_int_(prop.consequent.invariants.size()));
+
+	    for (size_t i = 0; i < prop.antecedent.steps.size(); ++i)
+		  append_step_args_(reg_args, prop.antecedent.steps[i]);
+	    for (size_t i = 0; i < prop.antecedent.invariants.size(); ++i)
+		  reg_args.push_back(make_const_int_(prop.antecedent.invariants[i]));
+	    for (size_t i = 0; i < prop.consequent.steps.size(); ++i)
+		  append_step_args_(reg_args, prop.consequent.steps[i]);
+	    for (size_t i = 0; i < prop.consequent.invariants.size(); ++i)
+		  reg_args.push_back(make_const_int_(prop.consequent.invariants[i]));
+
+	    NetSTask*reg_task = new NetSTask("$ivl_sva_register",
+					     IVL_SFUNC_AS_TASK_IGNORE, reg_args);
+	    reg_task->set_line(*this);
+	    NetProcTop*reg_top = new NetProcTop(scope, IVL_PR_INITIAL, reg_task);
+	    reg_top->set_line(*this);
+	    des->add_process(reg_top);
+
+	    /* Build $ivl_sva_check call arguments. */
+	    std::vector<NetExpr*> check_args;
+	    check_args.push_back(make_const_int_(sva_id));
+
+	    PExpr*branch_disable = nullptr;
+	    if (branch.cond) {
+		  PExpr*not_cond = make_not_expr_(branch.cond, *this);
+		  branch_disable = make_or_expr_(disable_, not_cond, *this);
+	    } else {
+		  branch_disable = disable_;
+	    }
+
+	    if (branch_disable) {
+		  NetExpr* dis = elab_and_eval(des, scope, branch_disable, -1);
+		  check_args.push_back(dis ? dis : make_const_int_(0));
+	    } else {
+		  check_args.push_back(make_const_int_(0));
+	    }
+	    for (size_t idx = 0; idx < prop.atoms.size(); ++idx) {
+		  NetExpr* arg = elab_and_eval(des, scope, prop.atoms[idx], -1);
+		  if (!arg) {
+			cerr << get_fileline() << ": error: Unable to elaborate assertion atom." << endl;
+			des->errors += 1;
+			arg = make_const_int_(0);
+		  }
+		  check_args.push_back(arg);
+	    }
+
+	    NetESFunc*check = new NetESFunc("$ivl_sva_check", &netvector_t::atom2s32,
+					    check_args.size());
+	    check->set_line(*this);
+	    for (size_t idx = 0; idx < check_args.size(); ++idx)
+		  check->parm(idx, check_args[idx]);
+
+	    NetProc*pass_proc = pass_ ? pass_->elaborate(des, scope) : 0;
+	    NetProc*fail_proc = fail_ ? fail_->elaborate(des, scope) : 0;
+
+	    NetProc*result = 0;
+	    if (kind_ == COVER) {
+		  if (pass_proc) {
+			NetExpr*pass_cmp = new NetEBComp('e', check, make_const_int_(1));
+			result = new NetCondit(pass_cmp, pass_proc, 0);
+		  }
+	    } else {
+		  if (pass_proc && fail_proc) {
+			NetExpr*pass_cmp = new NetEBComp('e', check, make_const_int_(1));
+			NetExpr*fail_cmp = new NetEBComp('e', check->dup_expr(),
+							 make_const_int_(2));
+			NetCondit*fail_cond = new NetCondit(fail_cmp, fail_proc, 0);
+			result = new NetCondit(pass_cmp, pass_proc, fail_cond);
+		  } else if (fail_proc) {
+			NetExpr*fail_cmp = new NetEBComp('e', check, make_const_int_(2));
+			result = new NetCondit(fail_cmp, fail_proc, 0);
+		  } else if (pass_proc) {
+			NetExpr*pass_cmp = new NetEBComp('e', check, make_const_int_(1));
+			result = new NetCondit(pass_cmp, pass_proc, 0);
+		  }
+	    }
+
+	    if (!result) {
+		  NetBlock*tmp = new NetBlock(NetBlock::SEQU, 0);
+		  tmp->set_line(*this);
+		  result = tmp;
+	    }
+
+	    result->set_line(*this);
+
+	    if (branches.size() == 1) {
+		  single_result = result;
+	    } else {
+		  if (!result_block) {
+			result_block = new NetBlock(NetBlock::SEQU, 0);
+			result_block->set_line(*this);
+		  }
+		  result_block->append(result);
+	    }
+      }
+
+      if (result_block)
+	    return result_block;
+      if (single_result)
+	    return single_result;
+      return new NetBlock(NetBlock::SEQU, 0);
 }
 
 NetProc* PContinue::elaborate(Design*des, NetScope*) const
@@ -7717,6 +8260,114 @@ static void find_property_in_class(const LineInfo&loc, const NetScope*scope, per
       }
 }
 
+struct foreach_class_chain_t {
+      NetNet* base_net;
+      const netclass_t* owner_class;
+      int prop_idx;
+      ivl_type_t prop_type;
+      std::vector<int> chain;
+
+      foreach_class_chain_t()
+      : base_net(0), owner_class(0), prop_idx(-1), prop_type(0) { }
+};
+
+static NetNet* find_this_signal(NetScope*scope)
+{
+      while (scope) {
+	    NetNet*net = scope->find_signal(perm_string::literal(THIS_TOKEN));
+	    if (net) return net;
+	    scope = scope->parent();
+      }
+      return 0;
+}
+
+static NetExpr* build_foreach_base_expr(const LineInfo&loc, NetNet*base_net,
+					const std::vector<int>&chain)
+{
+      if (!base_net) return 0;
+      NetExpr*expr = new NetESignal(base_net);
+      expr->set_line(loc);
+      for (size_t idx = 0; idx < chain.size(); ++idx) {
+	    NetEProperty*prop_expr = new NetEProperty(expr, chain[idx]);
+	    prop_expr->set_line(loc);
+	    expr = prop_expr;
+      }
+      return expr;
+}
+
+static bool resolve_foreach_class_chain(const LineInfo&loc, Design*des,
+					NetScope*scope, const pform_name_t&path,
+					foreach_class_chain_t&out)
+{
+      if (path.empty()) return false;
+
+      pform_name_t::const_iterator it = path.begin();
+
+      NetNet*base_net = 0;
+      const netclass_t*current_class = 0;
+
+      if (it->name == perm_string::literal(THIS_TOKEN) ||
+	  it->name == perm_string::literal(SUPER_TOKEN)) {
+	    base_net = find_this_signal(scope);
+	    if (!base_net) return false;
+	    const netclass_t*this_class = find_class_containing_scope(loc, scope);
+	    if (!this_class) return false;
+	    if (it->name == perm_string::literal(SUPER_TOKEN))
+		  current_class = this_class->get_super();
+	    else
+		  current_class = this_class;
+	    if (!current_class) return false;
+	    ++it;
+      } else {
+	    pform_name_t base_name;
+	    base_name.push_back(name_component_t(it->name));
+	    base_net = des->find_signal(scope, base_name);
+	    if (base_net && base_net->net_type()) {
+		  current_class = dynamic_cast<const netclass_t*>(base_net->net_type());
+		  if (current_class) {
+			++it;
+		  } else {
+			base_net = 0;
+		  }
+	    }
+
+	    if (!base_net || !current_class) {
+		  const netclass_t*this_class = find_class_containing_scope(loc, scope);
+		  if (!this_class) return false;
+		  int pidx = this_class->property_idx_from_name(it->name);
+		  if (pidx < 0) return false;
+		  base_net = find_this_signal(scope);
+		  if (!base_net) return false;
+		  current_class = this_class;
+		  /* First path component is a property of this. */
+	    }
+      }
+
+      if (!current_class) return false;
+      if (it == path.end()) return false;
+
+      for (; it != path.end(); ++it) {
+	    int pidx = current_class->property_idx_from_name(it->name);
+	    if (pidx < 0) return false;
+
+	    if (std::next(it) == path.end()) {
+		  out.base_net = base_net;
+		  out.owner_class = current_class;
+		  out.prop_idx = pidx;
+		  out.prop_type = current_class->get_prop_type(pidx);
+		  return true;
+	    }
+
+	    ivl_type_t ptype = current_class->get_prop_type(pidx);
+	    const netclass_t*next_class = dynamic_cast<const netclass_t*>(ptype);
+	    if (!next_class) return false;
+	    out.chain.push_back(pidx);
+	    current_class = next_class;
+      }
+
+      return false;
+}
+
 /*
  * The foreach statement can be written as a for statement like so:
  *
@@ -7736,10 +8387,15 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 	// referenced. For simple names on 'this', check the last component.
       const netclass_t*class_scope = 0;
       int class_property = -1;
-      if (array_sig == 0 && array_var_.size() == 1) {
-	    // Simple name - might be a property of 'this'
-	    perm_string simple_name = array_var_.front().name;
-	    find_property_in_class(*this, scope, simple_name, class_scope, class_property);
+      foreach_class_chain_t class_chain;
+      bool have_class_chain = false;
+      if (array_sig == 0) {
+	    have_class_chain = resolve_foreach_class_chain(*this, des, scope,
+							  array_var_, class_chain);
+	    if (have_class_chain) {
+		  class_scope = class_chain.owner_class;
+		  class_property = class_chain.prop_idx;
+	    }
       }
 
 	// Handle explicit this.property or obj.property syntax (array_var_.size() == 2)
@@ -7944,44 +8600,67 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 			return 0;
 		  }
 
-		  // Find the object signal that owns this property
-		  // Could be 'this' (implicit or explicit) or an object variable
-		  NetNet*obj_net = 0;
-		  if (array_var_.size() == 1) {
-			// Simple name: property of 'this'
-			NetScope*this_scope = scope;
-			while (this_scope && obj_net == 0) {
-			      obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
-			      if (obj_net == 0)
-				    this_scope = this_scope->parent();
+		  // Find the object expression that owns this property
+		  NetExpr*base_expr = 0;
+		  if (have_class_chain) {
+			base_expr = build_foreach_base_expr(*this, class_chain.base_net,
+							    class_chain.chain);
+			if (!base_expr) {
+			      cerr << get_fileline() << ": internal error: "
+				   << "Unable to build base expression for foreach on property "
+				   << array_var_ << endl;
+			      des->errors += 1;
+			      return 0;
 			}
-		  } else if (array_var_.size() >= 2) {
-			perm_string first_name = array_var_.front().name;
-			if (first_name == perm_string::literal(THIS_TOKEN)) {
-			      // Explicit this.property
+		  } else {
+			// Could be 'this' (implicit or explicit) or an object variable
+			NetNet*obj_net = 0;
+			if (array_var_.size() == 1) {
+			      // Simple name: property of 'this'
 			      NetScope*this_scope = scope;
 			      while (this_scope && obj_net == 0) {
 				    obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
 				    if (obj_net == 0)
 					  this_scope = this_scope->parent();
 			      }
-			} else {
-			      // obj.property - try as local variable first
-			      pform_name_t obj_name;
-			      obj_name.push_back(name_component_t(first_name));
-			      obj_net = des->find_signal(scope, obj_name);
-			      // If not found, use intermediate_obj_net for nested property case
-			      if (obj_net == 0 && intermediate_obj_net != 0) {
-				    obj_net = intermediate_obj_net;
+			} else if (array_var_.size() >= 2) {
+			      perm_string first_name = array_var_.front().name;
+			      if (first_name == perm_string::literal(THIS_TOKEN)) {
+				    // Explicit this.property
+				    NetScope*this_scope = scope;
+				    while (this_scope && obj_net == 0) {
+					  obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+					  if (obj_net == 0)
+						this_scope = this_scope->parent();
+				    }
+			      } else {
+				    // obj.property - try as local variable first
+				    pform_name_t obj_name;
+				    obj_name.push_back(name_component_t(first_name));
+				    obj_net = des->find_signal(scope, obj_name);
+				    // If not found, use intermediate_obj_net for nested property case
+				    if (obj_net == 0 && intermediate_obj_net != 0) {
+					  obj_net = intermediate_obj_net;
+				    }
 			      }
 			}
-		  }
-		  if (obj_net == 0) {
-			cerr << get_fileline() << ": internal error: "
-			     << "Unable to find object signal for foreach on property "
-			     << array_var_ << endl;
-			des->errors += 1;
-			return 0;
+			if (obj_net == 0) {
+			      cerr << get_fileline() << ": internal error: "
+				   << "Unable to find object signal for foreach on property "
+				   << array_var_ << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			// For nested property access (e.g., this.prop1.prop2), use intermediate expression
+			if (intermediate_property >= 0 && intermediate_obj_net != 0) {
+			      NetEProperty*intermediate_expr = new NetEProperty(obj_net, intermediate_property);
+			      intermediate_expr->set_line(*this);
+			      base_expr = intermediate_expr;
+			} else {
+			      base_expr = new NetESignal(obj_net);
+			      base_expr->set_line(*this);
+			}
 		  }
 
 		  // Get the signal for the index variable.
@@ -7991,18 +8670,7 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 		  ivl_assert(*this, idx_sig);
 
 		  // Create property expression for the dynamic array
-		  // For nested property access (e.g., this.prop1.prop2), use intermediate expression
-		  NetEProperty*prop_expr;
-		  if (intermediate_property >= 0 && intermediate_obj_net != 0) {
-			// Nested property: create expression for intermediate object first
-			NetEProperty*intermediate_expr = new NetEProperty(obj_net, intermediate_property);
-			intermediate_expr->set_line(*this);
-			// Then create nested expression for the array property
-			prop_expr = new NetEProperty(intermediate_expr, class_property);
-		  } else {
-			// Direct property access
-			prop_expr = new NetEProperty(obj_net, class_property);
-		  }
+		  NetEProperty*prop_expr = new NetEProperty(base_expr, class_property);
 		  prop_expr->set_line(*this);
 
 		  // Create index variable expression for the condition
@@ -8059,43 +8727,65 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 			return 0;
 		  }
 
-		  // Find the object signal that owns this property
-		  NetNet*obj_net = 0;
-		  if (array_var_.size() == 1) {
-			// Simple name: property of 'this'
-			NetScope*this_scope = scope;
-			while (this_scope && obj_net == 0) {
-			      obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
-			      if (obj_net == 0)
-				    this_scope = this_scope->parent();
+		  // Find the object expression that owns this property
+		  NetExpr*base_expr = 0;
+		  if (have_class_chain) {
+			base_expr = build_foreach_base_expr(*this, class_chain.base_net,
+							    class_chain.chain);
+			if (!base_expr) {
+			      cerr << get_fileline() << ": internal error: "
+				   << "Unable to build base expression for foreach on associative array property "
+				   << array_var_ << endl;
+			      des->errors += 1;
+			      return 0;
 			}
-		  } else if (array_var_.size() >= 2) {
-			perm_string first_name = array_var_.front().name;
-			if (first_name == perm_string::literal(THIS_TOKEN)) {
-			      // Explicit this.property
+		  } else {
+			NetNet*obj_net = 0;
+			if (array_var_.size() == 1) {
+			      // Simple name: property of 'this'
 			      NetScope*this_scope = scope;
 			      while (this_scope && obj_net == 0) {
 				    obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
 				    if (obj_net == 0)
 					  this_scope = this_scope->parent();
 			      }
-			} else {
-			      // obj.property - try as local variable first
-			      pform_name_t obj_name;
-			      obj_name.push_back(name_component_t(first_name));
-			      obj_net = des->find_signal(scope, obj_name);
-			      // If not found, use intermediate_obj_net for nested property case
-			      if (obj_net == 0 && intermediate_obj_net != 0) {
-				    obj_net = intermediate_obj_net;
+			} else if (array_var_.size() >= 2) {
+			      perm_string first_name = array_var_.front().name;
+			      if (first_name == perm_string::literal(THIS_TOKEN)) {
+				    // Explicit this.property
+				    NetScope*this_scope = scope;
+				    while (this_scope && obj_net == 0) {
+					  obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+					  if (obj_net == 0)
+						this_scope = this_scope->parent();
+				    }
+			      } else {
+				    // obj.property - try as local variable first
+				    pform_name_t obj_name;
+				    obj_name.push_back(name_component_t(first_name));
+				    obj_net = des->find_signal(scope, obj_name);
+				    // If not found, use intermediate_obj_net for nested property case
+				    if (obj_net == 0 && intermediate_obj_net != 0) {
+					  obj_net = intermediate_obj_net;
+				    }
 			      }
 			}
-		  }
-		  if (obj_net == 0) {
-			cerr << get_fileline() << ": internal error: "
-			     << "Unable to find object signal for foreach on associative array property "
-			     << array_var_ << endl;
-			des->errors += 1;
-			return 0;
+			if (obj_net == 0) {
+			      cerr << get_fileline() << ": internal error: "
+				   << "Unable to find object signal for foreach on associative array property "
+				   << array_var_ << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			if (intermediate_property >= 0 && intermediate_obj_net != 0) {
+			      NetEProperty*intermediate_expr = new NetEProperty(obj_net, intermediate_property);
+			      intermediate_expr->set_line(*this);
+			      base_expr = intermediate_expr;
+			} else {
+			      base_expr = new NetESignal(obj_net);
+			      base_expr->set_line(*this);
+			}
 		  }
 
 		  // Get the signal for the key variable.
@@ -8109,14 +8799,14 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 		  key_expr->set_line(*this);
 
 		  // Create first() method expression
-		  NetEAssocMethod*first_expr = new NetEAssocMethod(obj_net, class_property,
+		  NetEAssocMethod*first_expr = new NetEAssocMethod(base_expr, class_property,
 						    NetEAssocMethod::ASSOC_FIRST, key_expr);
 		  first_expr->set_line(*this);
 
 		  // Create next() method expression
 		  NetESignal*key_expr2 = new NetESignal(key_sig);
 		  key_expr2->set_line(*this);
-		  NetEAssocMethod*next_expr = new NetEAssocMethod(obj_net, class_property,
+		  NetEAssocMethod*next_expr = new NetEAssocMethod(base_expr, class_property,
 						    NetEAssocMethod::ASSOC_NEXT, key_expr2);
 		  next_expr->set_line(*this);
 
@@ -8165,43 +8855,65 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 			return 0;
 		  }
 
-		  // Find the object signal that owns this property
-		  NetNet*obj_net = 0;
-		  if (array_var_.size() == 1) {
-			// Simple name: property of 'this'
-			NetScope*this_scope = scope;
-			while (this_scope && obj_net == 0) {
-			      obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
-			      if (obj_net == 0)
-				    this_scope = this_scope->parent();
+		  // Find the object expression that owns this property
+		  NetExpr*base_expr = 0;
+		  if (have_class_chain) {
+			base_expr = build_foreach_base_expr(*this, class_chain.base_net,
+							    class_chain.chain);
+			if (!base_expr) {
+			      cerr << get_fileline() << ": internal error: "
+				   << "Unable to build base expression for foreach on queue property "
+				   << array_var_ << endl;
+			      des->errors += 1;
+			      return 0;
 			}
-		  } else if (array_var_.size() >= 2) {
-			perm_string first_name = array_var_.front().name;
-			if (first_name == perm_string::literal(THIS_TOKEN)) {
-			      // Explicit this.property
+		  } else {
+			NetNet*obj_net = 0;
+			if (array_var_.size() == 1) {
+			      // Simple name: property of 'this'
 			      NetScope*this_scope = scope;
 			      while (this_scope && obj_net == 0) {
 				    obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
 				    if (obj_net == 0)
 					  this_scope = this_scope->parent();
 			      }
-			} else {
-			      // obj.property - try as local variable first
-			      pform_name_t obj_name;
-			      obj_name.push_back(name_component_t(first_name));
-			      obj_net = des->find_signal(scope, obj_name);
-			      // If not found, use intermediate_obj_net for nested property case
-			      if (obj_net == 0 && intermediate_obj_net != 0) {
-				    obj_net = intermediate_obj_net;
+			} else if (array_var_.size() >= 2) {
+			      perm_string first_name = array_var_.front().name;
+			      if (first_name == perm_string::literal(THIS_TOKEN)) {
+				    // Explicit this.property
+				    NetScope*this_scope = scope;
+				    while (this_scope && obj_net == 0) {
+					  obj_net = this_scope->find_signal(perm_string::literal(THIS_TOKEN));
+					  if (obj_net == 0)
+						this_scope = this_scope->parent();
+				    }
+			      } else {
+				    // obj.property - try as local variable first
+				    pform_name_t obj_name;
+				    obj_name.push_back(name_component_t(first_name));
+				    obj_net = des->find_signal(scope, obj_name);
+				    // If not found, use intermediate_obj_net for nested property case
+				    if (obj_net == 0 && intermediate_obj_net != 0) {
+					  obj_net = intermediate_obj_net;
+				    }
 			      }
 			}
-		  }
-		  if (obj_net == 0) {
-			cerr << get_fileline() << ": internal error: "
-			     << "Unable to find object signal for foreach on queue property "
-			     << array_var_ << endl;
-			des->errors += 1;
-			return 0;
+			if (obj_net == 0) {
+			      cerr << get_fileline() << ": internal error: "
+				   << "Unable to find object signal for foreach on queue property "
+				   << array_var_ << endl;
+			      des->errors += 1;
+			      return 0;
+			}
+
+			if (intermediate_property >= 0 && intermediate_obj_net != 0) {
+			      NetEProperty*intermediate_expr = new NetEProperty(obj_net, intermediate_property);
+			      intermediate_expr->set_line(*this);
+			      base_expr = intermediate_expr;
+			} else {
+			      base_expr = new NetESignal(obj_net);
+			      base_expr->set_line(*this);
+			}
 		  }
 
 		  // Get the signal for the index variable.
@@ -8211,14 +8923,7 @@ NetProc* PForeach::elaborate(Design*des, NetScope*scope) const
 		  ivl_assert(*this, idx_sig);
 
 		  // Create property expression for the queue
-		  NetEProperty*prop_expr;
-		  if (intermediate_property >= 0 && intermediate_obj_net != 0) {
-			NetEProperty*intermediate_expr = new NetEProperty(obj_net, intermediate_property);
-			intermediate_expr->set_line(*this);
-			prop_expr = new NetEProperty(intermediate_expr, class_property);
-		  } else {
-			prop_expr = new NetEProperty(obj_net, class_property);
-		  }
+		  NetEProperty*prop_expr = new NetEProperty(base_expr, class_property);
 		  prop_expr->set_line(*this);
 
 		  // Create index variable expression for the condition

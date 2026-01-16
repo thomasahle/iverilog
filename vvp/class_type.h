@@ -89,6 +89,9 @@ class class_type : public __vpiHandle {
 
 	// Check if property supports vec4 operations (for randomize())
       bool property_supports_vec4(size_t pid) const;
+      bool property_is_signed(size_t pid) const;
+      unsigned property_bit_width(size_t pid) const;
+      static int64_t normalize_constraint_const(int64_t raw, unsigned width, bool is_signed);
 	// Get array size for a property (1 for scalars)
       uint64_t property_array_size(size_t pid) const;
 

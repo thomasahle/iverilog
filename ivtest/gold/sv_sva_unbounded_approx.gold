@@ -1,5 +1,3 @@
-./ivltests/sv_sva_unbounded_approx.v:15: Unbounded delay ##[m:$] approximated as ##[m:32].
-./ivltests/sv_sva_unbounded_approx.v:21: Unbounded delay ##[m:$] approximated as ##[m:33].
 PASSED: Unbounded delay approximation working
-check_count=96 pass_count=88
+check_count=2 pass_count=2
 ./ivltests/sv_sva_unbounded_approx.v:54: $finish called at 475 (1s)

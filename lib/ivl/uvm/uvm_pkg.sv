@@ -25,7 +25,8 @@
 // ============================================================================
 
 `define uvm_info(ID, MSG, VERBOSITY) \
-  $display("UVM_INFO @ %0t: %m [%s] %s", $time, ID, MSG);
+  if (!uvm_pkg::uvm_disable_info && uvm_pkg::uvm_report_enabled(VERBOSITY)) \
+    $display("UVM_INFO @ %0t: %m [%s] %s", $time, ID, MSG);
 
 `define uvm_warning(ID, MSG) \
   $display("UVM_WARNING @ %0t: %m [%s] %s", $time, ID, MSG);
@@ -77,6 +78,24 @@ package uvm_pkg;
     UVM_FULL   = 400,
     UVM_DEBUG  = 500
   } uvm_verbosity;
+
+  // Global verbosity level (can be overridden via +UVM_VERBOSITY)
+  int unsigned uvm_global_verbosity = UVM_MEDIUM;
+  bit uvm_disable_info = 0;
+
+  function int unsigned uvm_verbosity_from_string(string s);
+    if (s == "UVM_NONE") return UVM_NONE;
+    if (s == "UVM_LOW") return UVM_LOW;
+    if (s == "UVM_MEDIUM") return UVM_MEDIUM;
+    if (s == "UVM_HIGH") return UVM_HIGH;
+    if (s == "UVM_FULL") return UVM_FULL;
+    if (s == "UVM_DEBUG") return UVM_DEBUG;
+    return s.atoi();
+  endfunction
+
+  function bit uvm_report_enabled(int unsigned verbosity);
+    return (verbosity <= uvm_global_verbosity);
+  endfunction
 
   // ============================================================================
   // UVM Active/Passive Enum
@@ -1259,6 +1278,7 @@ package uvm_pkg;
     // run_test must be a task because it calls tasks and waits
     task run_test(string test_name = "");
       uvm_phase phase;
+      time drain_time;
 
       phase = new("build");
 
@@ -1306,8 +1326,10 @@ package uvm_pkg;
       if (m_test != null) begin
         $display("UVM_INFO: Running run_phase...");
         // Fork all component run_phases (they use fork/join_none internally)
-        // This returns quickly after forking all tasks
-        m_test.do_run_phase(phase);
+        // This returns quickly after forking all tasks.
+        fork : uvm_run_phase_fork
+          m_test.do_run_phase(phase);
+        join_none
         // Yield to let forked processes start and raise objections
         #0;
         // Wait for all objections to be dropped
@@ -1316,6 +1338,14 @@ package uvm_pkg;
           #1;
         end
         $display("UVM_INFO: All objections dropped, ending run_phase...");
+        drain_time = uvm_test_done.get_drain_time();
+        if (drain_time > 0) begin
+          $display("UVM_INFO: Waiting drain_time=%0t", drain_time);
+          #drain_time;
+        end
+        // Wait briefly for analysis FIFOs to drain before ending run_phase.
+        // Allow final analysis writes to be consumed before ending run_phase.
+        #1;
       end
       run_ph.set_state(UVM_PHASE_DONE);
 
@@ -1658,9 +1688,10 @@ package uvm_pkg;
     // output type T doesn't properly pass the value back to the caller.
     task get(output T t);
       while (m_items.size() == 0) begin
-        #1; // Wait for item to be written
+        #1;
       end
-      t = m_items.pop_front();
+      t = m_items[0];
+      m_items.delete(0);
     endtask
 
     // Try_get - non-blocking get
@@ -1668,7 +1699,8 @@ package uvm_pkg;
     // output type T doesn't properly pass the value back to the caller.
     function bit try_get(output T t);
       if (m_items.size() > 0) begin
-        t = m_items.pop_front();
+        t = m_items[0];
+        m_items.delete(0);
         return 1;
       end
       return 0;
@@ -1703,7 +1735,7 @@ package uvm_pkg;
     // NOTE: NOT virtual due to Icarus bug (same as try_get)
     task peek(output T t);
       while (m_items.size() == 0) begin
-        #1; // Wait for item to be written
+        #1;
       end
       t = m_items[0];
     endtask
@@ -2565,6 +2597,7 @@ package uvm_pkg;
     uvm_root root;
     uvm_object test_obj;
     string plusarg_testname;
+    string plusarg_verbosity;
 
     root = uvm_root::get();
 
@@ -2573,6 +2606,14 @@ package uvm_pkg;
       $display("UVM_INFO: +UVM_TESTNAME='%s' specified on command line", plusarg_testname);
       // Command line always overrides run_test() argument
       test_name = plusarg_testname;
+    end
+    if ($value$plusargs("UVM_VERBOSITY=%s", plusarg_verbosity)) begin
+      uvm_global_verbosity = uvm_verbosity_from_string(plusarg_verbosity);
+      $display("UVM_INFO: +UVM_VERBOSITY='%s' specified on command line", plusarg_verbosity);
+    end
+    if ($test$plusargs("UVM_DISABLE_INFO") || $test$plusargs("UVM_NO_INFO")) begin
+      uvm_disable_info = 1;
+      $display("UVM_INFO: +UVM_DISABLE_INFO specified on command line");
     end
 
     $display("UVM_INFO: run_test called with test_name='%s'", test_name);

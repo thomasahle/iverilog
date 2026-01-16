@@ -13,7 +13,8 @@
 // Note: Use %m format specifier for hierarchical path - works in both classes and interfaces/modules
 `define uvm_info(ID, MSG, VERBOSITY) \
   begin \
-    $display("UVM_INFO @ %0t: %m [%s] %s", $time, ID, MSG); \
+    if (!uvm_pkg::uvm_disable_info && uvm_pkg::uvm_report_enabled(VERBOSITY)) \
+      $display("UVM_INFO @ %0t: %m [%s] %s", $time, ID, MSG); \
   end
 
 `define uvm_warning(ID, MSG) \
@@ -146,25 +147,23 @@
     finish_item(SEQ_OR_ITEM); \
   end
 
-// Start item on specified sequencer
+// Start sequence on specified sequencer
 `define uvm_do_on(SEQ_OR_ITEM, SEQR) \
   begin \
     SEQ_OR_ITEM = new(`"SEQ_OR_ITEM`"); \
-    start_item(SEQ_OR_ITEM); \
     if (!SEQ_OR_ITEM.randomize()) begin \
       `uvm_warning("RNDFLD", "Randomization failed in uvm_do_on") \
     end \
-    finish_item(SEQ_OR_ITEM); \
+    SEQ_OR_ITEM.start(SEQR); \
   end
 
 `define uvm_do_on_with(SEQ_OR_ITEM, SEQR, CONSTRAINTS) \
   begin \
     SEQ_OR_ITEM = new(`"SEQ_OR_ITEM`"); \
-    start_item(SEQ_OR_ITEM); \
     if (!SEQ_OR_ITEM.randomize() with CONSTRAINTS) begin \
       `uvm_warning("RNDFLD", "Randomization failed in uvm_do_on_with") \
     end \
-    finish_item(SEQ_OR_ITEM); \
+    SEQ_OR_ITEM.start(SEQR); \
   end
 
 // ============================================================================

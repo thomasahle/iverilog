@@ -1426,27 +1426,37 @@ bool vvp_vector4_t::set_vec(unsigned adr, const vvp_vector4_t&that)
  */
 void vvp_vector4_t::add(const vvp_vector4_t&that)
 {
-      assert(size_ == that.size_);
+      const vvp_vector4_t*thatp = &that;
+      vvp_vector4_t that_tmp;
+      if (size_ != that.size_) {
+	    if (size_ < that.size_)
+		  resize(that.size_, BIT4_0);
+	    that_tmp = that;
+	    if (that_tmp.size() < size_)
+		  that_tmp.resize(size_, BIT4_0);
+	    thatp = &that_tmp;
+      }
+      const vvp_vector4_t&that_vec = *thatp;
 
       if (size_ < BITS_PER_WORD) {
 	    unsigned long mask = ~(-1UL << size_);
-	    if ((bbits_val_|that.bbits_val_) & mask) {
+	    if ((bbits_val_|that_vec.bbits_val_) & mask) {
 		  abits_val_ |= mask;
 		  bbits_val_ |= mask;
 		  return;
 	    }
 
-	    abits_val_ += that.abits_val_;
+	    abits_val_ += that_vec.abits_val_;
 	    abits_val_ &= mask;
 	    return;
       }
 
       if (size_ == BITS_PER_WORD) {
-	    if (bbits_val_ | that.bbits_val_) {
+	    if (bbits_val_ | that_vec.bbits_val_) {
 		  abits_val_ = WORD_X_ABITS;
 		  bbits_val_ = WORD_X_BBITS;
 	    } else {
-		  abits_val_ += that.abits_val_;
+		  abits_val_ += that_vec.abits_val_;
 	    }
 	    return;
       }
@@ -1454,18 +1464,18 @@ void vvp_vector4_t::add(const vvp_vector4_t&that)
       int cnt = size_ / BITS_PER_WORD;
       unsigned long carry = 0;
       for (int idx = 0 ; idx < cnt ; idx += 1) {
-	    if (bbits_ptr_[idx] | that.bbits_ptr_[idx])
+	    if (bbits_ptr_[idx] | that_vec.bbits_ptr_[idx])
 		  goto x_out;
 
-	    abits_ptr_[idx] = add_with_carry(abits_ptr_[idx], that.abits_ptr_[idx], carry);
+	    abits_ptr_[idx] = add_with_carry(abits_ptr_[idx], that_vec.abits_ptr_[idx], carry);
       }
 
       if (unsigned tail = size_ % BITS_PER_WORD) {
 	    unsigned long mask = ~( -1UL << tail );
-	    if ((bbits_ptr_[cnt] | that.bbits_ptr_[cnt])&mask)
+	    if ((bbits_ptr_[cnt] | that_vec.bbits_ptr_[cnt])&mask)
 		  goto x_out;
 
-	    abits_ptr_[cnt] = add_with_carry(abits_ptr_[cnt], that.abits_ptr_[cnt], carry);
+	    abits_ptr_[cnt] = add_with_carry(abits_ptr_[cnt], that_vec.abits_ptr_[cnt], carry);
 	    abits_ptr_[cnt] &= mask;
       }
 
@@ -1485,27 +1495,37 @@ void vvp_vector4_t::add(const vvp_vector4_t&that)
 
 void vvp_vector4_t::sub(const vvp_vector4_t&that)
 {
-      assert(size_ == that.size_);
+      const vvp_vector4_t*thatp = &that;
+      vvp_vector4_t that_tmp;
+      if (size_ != that.size_) {
+	    if (size_ < that.size_)
+		  resize(that.size_, BIT4_0);
+	    that_tmp = that;
+	    if (that_tmp.size() < size_)
+		  that_tmp.resize(size_, BIT4_0);
+	    thatp = &that_tmp;
+      }
+      const vvp_vector4_t&that_vec = *thatp;
 
       if (size_ < BITS_PER_WORD) {
 	    unsigned long mask = ~(-1UL << size_);
-	    if ((bbits_val_|that.bbits_val_) & mask) {
+	    if ((bbits_val_|that_vec.bbits_val_) & mask) {
 		  abits_val_ |= mask;
 		  bbits_val_ |= mask;
 		  return;
 	    }
 
-	    abits_val_ -= that.abits_val_;
+	    abits_val_ -= that_vec.abits_val_;
 	    abits_val_ &= mask;
 	    return;
       }
 
       if (size_ == BITS_PER_WORD) {
-	    if (bbits_val_ | that.bbits_val_) {
+	    if (bbits_val_ | that_vec.bbits_val_) {
 		  abits_val_ = WORD_X_ABITS;
 		  bbits_val_ = WORD_X_BBITS;
 	    } else {
-		  abits_val_ -= that.abits_val_;
+		  abits_val_ -= that_vec.abits_val_;
 	    }
 	    return;
       }
@@ -1513,18 +1533,18 @@ void vvp_vector4_t::sub(const vvp_vector4_t&that)
       int cnt = size_ / BITS_PER_WORD;
       unsigned long carry = 1;
       for (int idx = 0 ; idx < cnt ; idx += 1) {
-	    if (bbits_ptr_[idx] | that.bbits_ptr_[idx])
+	    if (bbits_ptr_[idx] | that_vec.bbits_ptr_[idx])
 		  goto x_out;
 
-	    abits_ptr_[idx] = add_with_carry(abits_ptr_[idx], ~that.abits_ptr_[idx], carry);
+	    abits_ptr_[idx] = add_with_carry(abits_ptr_[idx], ~that_vec.abits_ptr_[idx], carry);
       }
 
       if (unsigned tail = size_ % BITS_PER_WORD) {
 	    unsigned long mask = ~( -1UL << tail );
-	    if ((bbits_ptr_[cnt] | that.bbits_ptr_[cnt])&mask)
+	    if ((bbits_ptr_[cnt] | that_vec.bbits_ptr_[cnt])&mask)
 		  goto x_out;
 
-	    abits_ptr_[cnt] = add_with_carry(abits_ptr_[cnt], ~that.abits_ptr_[cnt], carry);
+	    abits_ptr_[cnt] = add_with_carry(abits_ptr_[cnt], ~that_vec.abits_ptr_[cnt], carry);
 	    abits_ptr_[cnt] &= mask;
       }
 

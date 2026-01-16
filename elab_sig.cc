@@ -102,20 +102,10 @@ static void sig_check_data_type(Design*des, const NetScope*scope,
       // Check for interface port (virtual interface type used as port)
       // Interface ports are partially supported - allow them through
       // elaboration. Full support requires runtime binding at instantiation.
-      if (const netvirtual_interface_t*vif_type =
-	        dynamic_cast<const netvirtual_interface_t*>(type)) {
+      if (dynamic_cast<const netvirtual_interface_t*>(type)) {
 	    if (scope->type() == NetScope::MODULE &&
 	        sig->port_type() != NetNet::NOT_A_PORT) {
-		  // Store interface name for later port connection
-		  // The interface port will be elaborated as a virtual interface
-		  // that gets bound to the actual interface at instantiation time
-		  cerr << wire->get_fileline() << ": warning: Interface port `"
-		       << wire->basename() << "` of type `"
-		       << vif_type->interface_name()
-		       << "` has limited support. Some features may not work."
-		       << endl;
-		  // Return here - interface ports are a special case that doesn't
-		  // need the standard type checking below
+		  // Interface ports are a special case; skip standard type checks.
 		  return;
 	    }
       }
@@ -901,6 +891,14 @@ void PCondit::elaborate_sig(Design*des, NetScope*scope) const
 	    if_->elaborate_sig(des, scope);
       if (else_)
 	    else_->elaborate_sig(des, scope);
+}
+
+void PAssertion::elaborate_sig(Design*des, NetScope*scope) const
+{
+      if (pass_)
+	    pass_->elaborate_sig(des, scope);
+      if (fail_)
+	    fail_->elaborate_sig(des, scope);
 }
 
 void PDelayStatement::elaborate_sig(Design*des, NetScope*scope) const

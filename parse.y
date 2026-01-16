@@ -1424,7 +1424,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %token K_extends K_extern K_final K_first_match K_foreach K_forkjoin
 %token K_iff K_ignore_bins K_illegal_bins K_import K_inside K_int
  /* Icarus already has defined "logic" above! */
-%token K_interface K_intersect K_join_any K_join_none K_local
+%token K_interface K_interface_class K_intersect K_join_any K_join_none K_local
 %token K_longint K_mailbox K_matches K_modport K_new K_null K_package K_packed
 %token K_priority K_program K_property K_protected K_pure K_rand K_randc
 %token K_randcase K_randsequence K_ref K_return K_semaphore K_sequence K_shortint
@@ -1905,7 +1905,7 @@ class_parameter_port
   ;
 
 class_declaration /* IEEE1800-2005: A.1.2 */
-  : K_virtual_opt K_class lifetime_opt identifier_name class_declaration_extends_opt ';'
+  : K_virtual_opt K_class lifetime_opt identifier_name class_declaration_extends_opt implements_list_opt ';'
       { /* Up to 1800-2017 the grammar in the LRM allowed an optional lifetime
 	 * qualifier for class declarations. But the LRM never specified what
 	 * this qualifier should do. Starting with 1800-2023 the qualifier has
@@ -1913,57 +1913,6 @@ class_declaration /* IEEE1800-2005: A.1.2 */
 	 * but print a warning.
 	 */
 	if ($3 != LexicalScope::INHERITED) {
-	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
-			    "and has no effect." << endl;
-	      warn_count += 1;
-	}
-	perm_string name = lex_strings.make($4);
-	class_type_t *class_type= new class_type_t(name);
-	FILE_NAME(class_type, @4);
-	pform_set_typedef(@4, name, class_type, nullptr);
-	pform_start_class_declaration(@2, class_type, $5.type, $5.args, $5.spec_params, $1);
-      }
-    class_items_opt K_endclass
-      { // Process a class.
-	pform_end_class_declaration(@9);
-      }
-    class_declaration_endlabel_opt
-      { // Wrap up the class.
-	check_end_label(@11, "class", $4, $11);
-	delete[] $4;
-      }
-
-  /* Parameterized class declaration: class foo #(type T, int N = 8); */
-  | K_virtual_opt K_class lifetime_opt identifier_name class_parameter_port_list_opt class_declaration_extends_opt ';'
-      { if ($3 != LexicalScope::INHERITED) {
-	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
-			    "and has no effect." << endl;
-	      warn_count += 1;
-	}
-	perm_string name = lex_strings.make($4);
-	class_type_t *class_type= new class_type_t(name);
-	FILE_NAME(class_type, @4);
-	pform_set_typedef(@4, name, class_type, nullptr);
-	/* Store class parameters */
-	if ($5) {
-	      class_type->parameters = *$5;
-	      delete $5;
-	}
-	pform_start_class_declaration(@2, class_type, $6.type, $6.args, $6.spec_params, $1);
-      }
-    class_items_opt K_endclass
-      { // Process a parameterized class.
-	pform_end_class_declaration(@10);
-      }
-    class_declaration_endlabel_opt
-      { // Wrap up the class.
-	check_end_label(@12, "class", $4, $12);
-	delete[] $4;
-      }
-
-  /* Class with implements clause (no parameters) */
-  | K_virtual_opt K_class lifetime_opt identifier_name class_declaration_extends_opt implements_list_opt ';'
-      { if ($3 != LexicalScope::INHERITED) {
 	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
 			    "and has no effect." << endl;
 	      warn_count += 1;
@@ -1980,14 +1929,16 @@ class_declaration /* IEEE1800-2005: A.1.2 */
 	pform_start_class_declaration(@2, class_type, $5.type, $5.args, $5.spec_params, $1);
       }
     class_items_opt K_endclass
-      { pform_end_class_declaration(@10);
+      { // Process a class.
+	pform_end_class_declaration(@10);
       }
     class_declaration_endlabel_opt
-      { check_end_label(@12, "class", $4, $12);
+      { // Wrap up the class.
+	check_end_label(@12, "class", $4, $12);
 	delete[] $4;
       }
 
-  /* Parameterized class with implements clause */
+  /* Parameterized class declaration: class foo #(type T, int N = 8); */
   | K_virtual_opt K_class lifetime_opt identifier_name class_parameter_port_list_opt class_declaration_extends_opt implements_list_opt ';'
       { if ($3 != LexicalScope::INHERITED) {
 	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
@@ -2011,72 +1962,74 @@ class_declaration /* IEEE1800-2005: A.1.2 */
 	pform_start_class_declaration(@2, class_type, $6.type, $6.args, $6.spec_params, $1);
       }
     class_items_opt K_endclass
-      { pform_end_class_declaration(@11);
+      { // Process a parameterized class.
+	pform_end_class_declaration(@11);
       }
     class_declaration_endlabel_opt
-      { check_end_label(@13, "class", $4, $13);
+      { // Wrap up the class.
+	check_end_label(@13, "class", $4, $13);
 	delete[] $4;
       }
 
   /* Interface class declaration (no parameters) */
-  | K_interface K_class lifetime_opt identifier_name interface_class_extends_list_opt ';'
-      { if ($3 != LexicalScope::INHERITED) {
+  | K_interface_class lifetime_opt identifier_name interface_class_extends_list_opt ';'
+      { if ($2 != LexicalScope::INHERITED) {
 	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
 			    "and has no effect." << endl;
 	      warn_count += 1;
 	}
-	perm_string name = lex_strings.make($4);
+	perm_string name = lex_strings.make($3);
 	class_type_t *class_type= new class_type_t(name);
-	FILE_NAME(class_type, @4);
+	FILE_NAME(class_type, @3);
 	class_type->is_interface_class = true;
 	class_type->virtual_class = true;  // Interface classes are implicitly abstract
-	pform_set_typedef(@4, name, class_type, nullptr);
+	pform_set_typedef(@3, name, class_type, nullptr);
+	/* Store extended interface classes (multiple inheritance allowed) */
+	if ($4) {
+	      class_type->implemented_interfaces = *$4;
+	      delete $4;
+	}
+	pform_start_class_declaration(@1, class_type, nullptr, nullptr, nullptr, false);
+      }
+    class_items_opt K_endclass
+      { pform_end_class_declaration(@8);
+      }
+    class_declaration_endlabel_opt
+      { check_end_label(@10, "class", $3, $10);
+	delete[] $3;
+      }
+
+  /* Parameterized interface class declaration */
+  | K_interface_class lifetime_opt identifier_name class_parameter_port_list_opt interface_class_extends_list_opt ';'
+      { if ($2 != LexicalScope::INHERITED) {
+	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
+			    "and has no effect." << endl;
+	      warn_count += 1;
+	}
+	perm_string name = lex_strings.make($3);
+	class_type_t *class_type= new class_type_t(name);
+	FILE_NAME(class_type, @3);
+	class_type->is_interface_class = true;
+	class_type->virtual_class = true;  // Interface classes are implicitly abstract
+	pform_set_typedef(@3, name, class_type, nullptr);
+	/* Store class parameters */
+	if ($4) {
+	      class_type->parameters = *$4;
+	      delete $4;
+	}
 	/* Store extended interface classes (multiple inheritance allowed) */
 	if ($5) {
 	      class_type->implemented_interfaces = *$5;
 	      delete $5;
 	}
-	pform_start_class_declaration(@2, class_type, nullptr, nullptr, nullptr, false);
+	pform_start_class_declaration(@1, class_type, nullptr, nullptr, nullptr, false);
       }
     class_items_opt K_endclass
       { pform_end_class_declaration(@9);
       }
     class_declaration_endlabel_opt
-      { check_end_label(@11, "class", $4, $11);
-	delete[] $4;
-      }
-
-  /* Parameterized interface class declaration */
-  | K_interface K_class lifetime_opt identifier_name class_parameter_port_list_opt interface_class_extends_list_opt ';'
-      { if ($3 != LexicalScope::INHERITED) {
-	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
-			    "and has no effect." << endl;
-	      warn_count += 1;
-	}
-	perm_string name = lex_strings.make($4);
-	class_type_t *class_type= new class_type_t(name);
-	FILE_NAME(class_type, @4);
-	class_type->is_interface_class = true;
-	class_type->virtual_class = true;  // Interface classes are implicitly abstract
-	pform_set_typedef(@4, name, class_type, nullptr);
-	/* Store class parameters */
-	if ($5) {
-	      class_type->parameters = *$5;
-	      delete $5;
-	}
-	/* Store extended interface classes (multiple inheritance allowed) */
-	if ($6) {
-	      class_type->implemented_interfaces = *$6;
-	      delete $6;
-	}
-	pform_start_class_declaration(@2, class_type, nullptr, nullptr, nullptr, false);
-      }
-    class_items_opt K_endclass
-      { pform_end_class_declaration(@10);
-      }
-    class_declaration_endlabel_opt
-      { check_end_label(@12, "class", $4, $12);
-	delete[] $4;
+      { check_end_label(@11, "class", $3, $11);
+	delete[] $3;
       }
   ;
 
@@ -2530,33 +2483,6 @@ class_item /* IEEE1800-2005: A.1.8 */
 
     /* Nested class declaration - IEEE 1800-2012 8.4 */
   | class_declaration
-
-    /* Nested interface class declaration */
-  | K_interface K_class lifetime_opt identifier_name interface_class_extends_list_opt ';'
-      { if ($3 != LexicalScope::INHERITED) {
-	      cerr << @1 << ": warning: Class lifetime qualifier is deprecated "
-			    "and has no effect." << endl;
-	      warn_count += 1;
-	}
-	perm_string name = lex_strings.make($4);
-	class_type_t *class_type= new class_type_t(name);
-	FILE_NAME(class_type, @4);
-	class_type->is_interface_class = true;
-	class_type->virtual_class = true;
-	pform_set_typedef(@4, name, class_type, nullptr);
-	if ($5) {
-	      class_type->implemented_interfaces = *$5;
-	      delete $5;
-	}
-	pform_start_class_declaration(@2, class_type, nullptr, nullptr, nullptr, false);
-      }
-    class_items_opt K_endclass
-      { pform_end_class_declaration(@9);
-      }
-    class_declaration_endlabel_opt
-      { check_end_label(@11, "class", $4, $11);
-	delete[] $4;
-      }
 
     /* Here are some error matching rules to help recover from various
        syntax errors within a class declaration. */

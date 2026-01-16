@@ -107,6 +107,18 @@ extern typedef_t* pform_test_type_identifier(PPackage*pkg, const char*txt);
 extern PPackage* pform_test_package_identifier(const char*txt);
 
 /*
+ * For parameterized class external method definitions, set up type parameters
+ * as typedefs in the current scope so the lexer recognizes them.
+ */
+class PClass;  // forward declaration
+class data_type_t;  // forward declaration
+extern PClass* pform_setup_external_class_type_params(const YYLTYPE&loc, const char*txt);
+extern void pform_cleanup_external_class_type_params(PClass* class_scope);
+extern data_type_t* pform_resolve_type_param_as_type(const YYLTYPE&loc,
+						     const char* name,
+						     PClass* class_scope);
+
+/*
  * Export these functions because we have to generate PENumber class
  * in pform.cc for user defparam definition from command file.
  */

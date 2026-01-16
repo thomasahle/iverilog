@@ -41,6 +41,7 @@ class NetDeassign;
 class NetForce;
 class NetScope;
 class netclass_t;
+class PSvaExpr;
 
 /*
  * The PProcess is the root of a behavioral process. Each process gets
@@ -399,6 +400,27 @@ class PCondit  : public Statement {
     private: // not implemented
       PCondit(const PCondit&);
       PCondit& operator= (const PCondit&);
+};
+
+class PAssertion : public Statement {
+    public:
+      enum Kind { ASSERT, ASSUME, COVER };
+
+      PAssertion(Kind kind, PSvaExpr*expr, PExpr*disable,
+                 Statement*pass, Statement*fail);
+      ~PAssertion() override;
+
+      virtual NetProc* elaborate(Design*des, NetScope*scope) const override;
+      virtual void elaborate_scope(Design*des, NetScope*scope) const override;
+      virtual void elaborate_sig(Design*des, NetScope*scope) const override;
+      virtual void dump(std::ostream&out, unsigned ind) const override;
+
+    private:
+      Kind kind_;
+      PSvaExpr*expr_;
+      PExpr*disable_;
+      Statement*pass_;
+      Statement*fail_;
 };
 
 class PContinue : public Statement {

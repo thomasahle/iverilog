@@ -314,6 +314,7 @@ static const struct opcode_table_s opcode_table[] = {
       { "%prop/va", of_PROP_VA, 1,  {OA_NUMBER,   OA_NONE,     OA_NONE} },
       { "%push_rand_array_copy",of_PUSH_RAND_ARRAY_COPY,1,{OA_NUMBER, OA_NONE, OA_NONE} },
       { "%push_rand_bound",of_PUSH_RAND_BOUND,3,{OA_NUMBER, OA_BIT1, OA_BIT2} },
+      { "%push_rand_bound/prop",of_PUSH_RAND_BOUND_PROP,3,{OA_NUMBER, OA_BIT1, OA_BIT2} },
       { "%push_rand_bound/stack",of_PUSH_RAND_BOUND_STACK,2,{OA_NUMBER, OA_BIT1, OA_NONE} },
       { "%pushi/real",of_PUSHI_REAL,2,{OA_BIT1,   OA_BIT2,   OA_NONE} },
       { "%pushi/str", of_PUSHI_STR, 1,{OA_STRING, OA_NONE,   OA_NONE} },

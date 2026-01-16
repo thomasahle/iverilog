@@ -210,7 +210,9 @@ static bool analyze_constraint_expr(const PExpr*expr,
                                     perm_string* source_prop_name = nullptr,
                                     NetExpr** value_expr = nullptr,
                                     bool* has_element_idx = nullptr,
-                                    int64_t* element_idx = nullptr)
+                                    int64_t* element_idx = nullptr,
+                                    const netclass_t* class_type = nullptr,
+                                    NetExpr* base_expr = nullptr)
 {
       // Initialize element index output parameters if provided
       if (has_element_idx) *has_element_idx = false;
@@ -414,10 +416,26 @@ static bool analyze_constraint_expr(const PExpr*expr,
             }
       }
 
-      // Third try: named constant (enum value, parameter, etc.)
+      // Third try: RHS is another property of the randomized object.
+      const PEIdent* rhs_ident = dynamic_cast<const PEIdent*>(rhs);
+      if (class_type && base_expr && rhs_ident && value_expr) {
+            const pform_scoped_name_t& rhs_path = rhs_ident->path();
+            if (rhs_path.size() == 1) {
+                  perm_string rhs_name = rhs_path.name.front().name;
+                  int rhs_pidx = class_type->property_idx_from_name(rhs_name);
+                  if (rhs_pidx >= 0) {
+                        NetEProperty* rhs_prop = new NetEProperty(base_expr, rhs_pidx);
+                        rhs_prop->set_line(*expr);
+                        *value_expr = rhs_prop;
+                        const_value = 0;
+                        return true;
+                  }
+            }
+      }
+
+      // Fourth try: named constant (enum value, parameter, etc.)
       // If we have scope information, try to elaborate the RHS as a constant
       // First check if it's an identifier (could be a named constant)
-      const PEIdent* rhs_ident = dynamic_cast<const PEIdent*>(rhs);
       if (rhs_ident && des && scope) {
             // Try to elaborate as a non-constant expression first
             // then check if the result is actually a constant
@@ -436,7 +454,7 @@ static bool analyze_constraint_expr(const PExpr*expr,
             }
       }
 
-      // Fourth try: Any expression that elaborates to a runtime value
+      // Fifth try: Any expression that elaborates to a runtime value
       // This handles external scope variables like local_min, local_max
       if (des && scope && value_expr) {
             PExpr* rhs_nc = const_cast<PExpr*>(rhs);
@@ -479,13 +497,15 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
                                               std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string, NetExpr*, bool, int64_t>>& bounds,
                                               Design*des = nullptr,
                                               NetScope*scope = nullptr,
-                                              bool is_soft = false)
+                                              bool is_soft = false,
+                                              const netclass_t* class_type = nullptr,
+                                              NetExpr* base_expr = nullptr)
 {
       // Check for soft constraint wrapper
       const PESoftConstraint*soft = dynamic_cast<const PESoftConstraint*>(expr);
       if (soft) {
             // Unwrap and mark as soft
-            analyze_constraint_expr_recursive(soft->get_expr(), bounds, des, scope, true);
+            analyze_constraint_expr_recursive(soft->get_expr(), bounds, des, scope, true, class_type, base_expr);
             return;
       }
 
@@ -646,13 +666,13 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
             const std::list<PExpr*>& if_cons = cond->get_if_constraints();
             for (const PExpr* c : if_cons) {
                   // Mark conditional constraints as soft since they may not apply
-                  analyze_constraint_expr_recursive(c, bounds, des, scope, true);
+                  analyze_constraint_expr_recursive(c, bounds, des, scope, true, class_type, base_expr);
             }
             // For if-else, also process the else branch as soft
             if (cond->has_else()) {
                   const std::list<PExpr*>& else_cons = cond->get_else_constraints();
                   for (const PExpr* c : else_cons) {
-                        analyze_constraint_expr_recursive(c, bounds, des, scope, true);
+                        analyze_constraint_expr_recursive(c, bounds, des, scope, true, class_type, base_expr);
                   }
             }
             return;
@@ -757,15 +777,15 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
       const PEBinary*bin = dynamic_cast<const PEBinary*>(expr);
       if (bin && bin->get_op() == 'a') {
             // Recursively extract bounds from both sides of AND
-            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope, is_soft);
-            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope, is_soft);
+            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope, is_soft, class_type, base_expr);
+            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope, is_soft, class_type, base_expr);
             return;
       }
 
       // For logical OR, process each side (though OR bounds are harder to enforce)
       if (bin && bin->get_op() == 'o') {
-            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope, is_soft);
-            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope, is_soft);
+            analyze_constraint_expr_recursive(bin->get_left(), bounds, des, scope, is_soft, class_type, base_expr);
+            analyze_constraint_expr_recursive(bin->get_right(), bounds, des, scope, is_soft, class_type, base_expr);
             return;
       }
 
@@ -777,7 +797,9 @@ static void analyze_constraint_expr_recursive(const PExpr*expr,
       NetExpr* value_expr = nullptr;
       bool has_elem_idx = false;
       int64_t elem_idx = 0;
-      if (analyze_constraint_expr(expr, prop_name, op_code, const_value, des, scope, &source_prop_name, &value_expr, &has_elem_idx, &elem_idx)) {
+      if (analyze_constraint_expr(expr, prop_name, op_code, const_value, des, scope,
+                                  &source_prop_name, &value_expr, &has_elem_idx, &elem_idx,
+                                  class_type, base_expr)) {
             // Default weight is 1 with weight_per_value=true
             // The 7th element is source_prop_name for property-based size constraints (op_code 7)
             // The 8th element is value_expr for runtime variable references (non-null)
@@ -6333,6 +6355,150 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  return 0;
 	    }
 
+	    // Handle deep class property chains like obj.a.b[i].c.method()
+	    if (search_results.path_tail.size() > 2 && search_results.net &&
+		(search_results.path_head.empty() ||
+		 search_results.path_head.back().index.empty())) {
+		  NetExpr* base_expr = new NetESignal(search_results.net);
+		  base_expr->set_line(*this);
+		  const netclass_t* current_class = this_class;
+		  pform_name_t::const_iterator chain_it = search_results.path_tail.begin();
+		  pform_name_t::const_iterator chain_end = search_results.path_tail.end();
+		  --chain_end; // Last element is the method name
+		  bool chain_ok = true;
+
+		  for (; chain_it != chain_end; ++chain_it) {
+			int pidx = current_class->property_idx_from_name(chain_it->name);
+			if (pidx < 0) {
+			      chain_ok = false;
+			      break;
+			}
+
+			ivl_type_t ptype = current_class->get_prop_type(pidx);
+			const netdarray_t* darray_type = dynamic_cast<const netdarray_t*>(ptype);
+			const netqueue_t* queue_type = dynamic_cast<const netqueue_t*>(ptype);
+			const netassoc_t* assoc_type = dynamic_cast<const netassoc_t*>(ptype);
+
+			NetExpr* prop_index = nullptr;
+			if (!chain_it->index.empty()) {
+			      if (chain_it->index.size() != 1) {
+				    chain_ok = false;
+				    break;
+			      }
+			      const index_component_t& idx = chain_it->index.front();
+			      if (idx.sel == index_component_t::SEL_BIT_LAST) {
+				    NetEProperty* size_prop = new NetEProperty(base_expr, pidx);
+				    size_prop->set_line(*this);
+				    NetESFunc* size_expr = new NetESFunc("$size", &netvector_t::atom2s32, 1);
+				    size_expr->set_line(*this);
+				    size_expr->parm(0, size_prop);
+				    NetEConst* one = new NetEConst(verinum((uint64_t)1, 32));
+				    one->set_line(*this);
+				    NetEBinary* last_idx = new NetEBinary('-', size_expr, one, 32, true);
+				    last_idx->set_line(*this);
+
+				    if (idx.msb) {
+					  NetExpr* offset = elab_and_eval(des, scope, idx.msb, -1, false);
+					  if (!offset) {
+						chain_ok = false;
+						break;
+					  }
+					  prop_index = new NetEBinary('-', last_idx, offset, 32, true);
+					  prop_index->set_line(*this);
+				    } else {
+					  prop_index = last_idx;
+				    }
+			      } else if (idx.msb && !idx.lsb) {
+				    prop_index = elab_and_eval(des, scope, idx.msb, -1, false);
+			      } else {
+				    chain_ok = false;
+				    break;
+			      }
+			      if (!prop_index) {
+				    chain_ok = false;
+				    break;
+			      }
+			}
+
+			NetEProperty* prop_expr = new NetEProperty(base_expr, pidx, prop_index);
+			prop_expr->set_line(*this);
+			base_expr = prop_expr;
+
+			const netclass_t* next_class = 0;
+			if (prop_index) {
+			      if (darray_type) {
+				    next_class = dynamic_cast<const netclass_t*>(darray_type->element_type());
+			      } else if (queue_type) {
+				    next_class = dynamic_cast<const netclass_t*>(queue_type->element_type());
+			      } else if (assoc_type) {
+				    next_class = dynamic_cast<const netclass_t*>(assoc_type->element_type());
+			      } else {
+				    chain_ok = false;
+				    break;
+			      }
+			} else {
+			      next_class = dynamic_cast<const netclass_t*>(ptype);
+			}
+
+			if (!next_class) {
+			      chain_ok = false;
+			      break;
+			}
+			current_class = next_class;
+		  }
+
+		  if (chain_ok) {
+			perm_string method_name = search_results.path_tail.back().name;
+
+			// Built-in randomize() on the chained object
+			if (method_name == "randomize") {
+			      NetESFunc*sys_expr = new NetESFunc("$ivl_randomize",
+							 &netvector_t::atom2s32, 1);
+			      sys_expr->set_line(*this);
+			      sys_expr->parm(0, base_expr);
+			      return sys_expr;
+			}
+
+			NetScope* method = current_class->get_method_for_call(des, method_name);
+			if (method && method->type() == NetScope::FUNC) {
+			      const NetFuncDef* def = method->func_def();
+			      if (!def) {
+				    cerr << get_fileline() << ": error: "
+					 << "No function definition for method " << method_name << "." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+
+			      NetNet* res = method->find_signal(method->basename());
+			      if (!res) {
+				    cerr << get_fileline() << ": error: "
+					 << "Cannot find return signal for method " << method_name << "." << endl;
+				    des->errors += 1;
+				    return 0;
+			      }
+
+			      std::vector<NetExpr*> parms(def->port_count());
+			      unsigned args_offset = 0;
+			      if (def->port_count() > 0) {
+				    NetNet* first_port = def->port(0);
+				    if (first_port &&
+					first_port->name() == perm_string::literal(THIS_TOKEN)) {
+					  parms[0] = base_expr;
+					  args_offset = 1;
+				    }
+			      }
+
+			      elaborate_arguments_(des, scope, def, false, parms, args_offset);
+
+			      bool is_virtual_call = method->is_virtual();
+			      NetESignal*eres = new NetESignal(res);
+			      NetEUFunc*call = new NetEUFunc(scope, method, eres, parms, false, is_virtual_call);
+			      call->set_line(*this);
+			      return call;
+			}
+		  }
+	    }
+
 	    // Find the property in this class
 	    int prop_idx = this_class->property_idx_from_name(prop_name);
 	    if (prop_idx < 0) {
@@ -6596,12 +6762,14 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 
 	    // Check if property is a dynamic array - handle array methods
 	    if (const netdarray_t*darray_type = dynamic_cast<const netdarray_t*>(prop_type)) {
+		  const name_component_t&prop_comp = search_results.path_tail.front();
+		  const bool prop_has_index = !prop_comp.index.empty();
 		  // Get the method name (second element)
 		  pform_name_t::const_iterator it = search_results.path_tail.begin();
 		  ++it;  // Skip property name
 		  perm_string method_name = it->name;
 
-		  if (method_name == "size") {
+		  if (method_name == "size" && !prop_has_index) {
 			// Create expression to load the property from 'this'
 			NetNet*this_net = search_results.net;
 			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
@@ -6614,7 +6782,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  }
 
 		  // Handle pop_front and pop_back for queue properties
-		  if (method_name == "pop_front" || method_name == "pop_back") {
+		  if ((method_name == "pop_front" || method_name == "pop_back") && !prop_has_index) {
 			// Create expression to load the property from 'this'
 			NetNet*this_net = search_results.net;
 			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
@@ -6631,7 +6799,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  }
 
 		  // Handle push_back and push_front for queue properties
-		  if (method_name == "push_back" || method_name == "push_front") {
+		  if ((method_name == "push_back" || method_name == "push_front") && !prop_has_index) {
 			// Create expression to load the property from 'this'
 			NetNet*this_net = search_results.net;
 			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
@@ -6654,8 +6822,8 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  }
 
 		  // Handle array locator methods that return queue of int (indices)
-		  if (method_name == "find_last_index" || method_name == "find_first_index"
-		      || method_name == "find_index") {
+		  if ((method_name == "find_last_index" || method_name == "find_first_index"
+		      || method_name == "find_index") && !prop_has_index) {
 			// These methods require a 'with' clause
 			if (with_expr_ == nullptr) {
 			      cerr << get_fileline() << ": error: Array locator method '"
@@ -6800,7 +6968,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  }
 
 		  // Handle unique_index() method on queue/darray properties
-		  if (method_name == "unique_index") {
+		  if (method_name == "unique_index" && !prop_has_index) {
 			// Create expression to load the property from 'this'
 			NetNet*this_net = search_results.net;
 			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
@@ -6816,7 +6984,7 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 		  }
 
 		  // Handle min_index() and max_index() methods on queue/darray properties
-		  if (method_name == "min_index" || method_name == "max_index") {
+		  if ((method_name == "min_index" || method_name == "max_index") && !prop_has_index) {
 			// Create expression to load the property from 'this'
 			NetNet*this_net = search_results.net;
 			NetEProperty*prop_expr = new NetEProperty(this_net, prop_idx);
@@ -7568,7 +7736,8 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			// Use recursive extraction to handle AND expressions from 'inside'
 			// Tuple: (prop_name, op_code, const_val, is_soft, weight, weight_per_value, source_prop_name, value_expr, has_element_idx, element_idx)
 			std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string, NetExpr*, bool, int64_t>> extracted;
-			analyze_constraint_expr_recursive(cons, extracted, des, scope);
+			analyze_constraint_expr_recursive(cons, extracted, des, scope, false,
+			                                  prop_class, prop_expr);
 
 			// Convert extracted bounds to property indices
 			for (const auto& ex : extracted) {
@@ -9117,7 +9286,8 @@ NetExpr* PECallFunction::elaborate_expr_method_(Design*des, NetScope*scope,
 			// Use recursive extraction to handle AND expressions from 'inside'
 			// Tuple: (prop_name, op_code, const_val, is_soft, weight, weight_per_value, source_prop_name, value_expr, has_element_idx, element_idx)
 			std::vector<std::tuple<perm_string, int, int64_t, bool, int64_t, bool, perm_string, NetExpr*, bool, int64_t>> extracted;
-			analyze_constraint_expr_recursive(cons, extracted, des, scope);
+			analyze_constraint_expr_recursive(cons, extracted, des, scope, false,
+			                                  class_type, sub_expr);
 
 			// Convert extracted bounds to property indices
 			for (const auto& ex : extracted) {

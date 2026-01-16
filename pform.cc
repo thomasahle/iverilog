@@ -855,6 +855,150 @@ PTask* pform_start_external_task(const struct vlltype&loc,
       return task;
 }
 
+/*
+ * Add typedefs for a parameterized class's type parameters to both the current
+ * lexical scope (for lexer recognition) and the class scope (for elaboration).
+ * This makes type parameter names visible to the lexer so they can be used
+ * in external method port declarations like: function void Container#(T)::set(T val);
+ *
+ * Returns the PClass* if found, NULL otherwise.
+ */
+PClass* pform_setup_external_class_type_params(const struct vlltype&loc,
+					       const char* class_name)
+{
+      perm_string cname = lex_strings.make(class_name);
+
+      // Find the class in the current or enclosing scope
+      PScopeExtra*scopex = find_nearest_scopex(lexical_scope);
+
+      if (!scopex) {
+	    return NULL;
+      }
+
+      // Look up the class
+      std::map<perm_string,PClass*>::iterator class_it = scopex->classes.find(cname);
+      if (class_it == scopex->classes.end()) {
+	    return NULL;
+      }
+
+      PClass*class_scope = class_it->second;
+      if (!class_scope->type) {
+	    return class_scope;
+      }
+
+      // Add a typedef for each type parameter to BOTH the current lexical scope
+      // (so the lexer recognizes T as TYPE_IDENTIFIER) AND to the class scope
+      // (so elaboration can find the type definition).
+      for (class_param_t* param : class_scope->type->parameters) {
+	    if (param->is_type) {
+		  // Create a typedef for this type parameter.
+		  // Use the default type if available, otherwise use a placeholder.
+		  typedef_t*td = new typedef_t(param->name);
+		  FILE_NAME(td, loc);
+
+		  if (param->default_type) {
+			td->set_data_type(param->default_type);
+		  } else {
+			// Use a simple int type as placeholder
+			vector_type_t*vt = new vector_type_t(IVL_VT_LOGIC, true, NULL);
+			vt->implicit_flag = true;
+			td->set_data_type(vt);
+		  }
+
+		  // Add to the current (file/module) scope for lexer recognition
+		  lexical_scope->typedefs[param->name] = td;
+
+		  // Also add to the class scope for elaboration.
+		  // Skip if already present (e.g., from a previous extern method).
+		  if (class_scope->typedefs.find(param->name) == class_scope->typedefs.end()) {
+			class_scope->typedefs[param->name] = td;
+		  }
+	    }
+      }
+
+      return class_scope;
+}
+
+/*
+ * Resolve an IDENTIFIER to a data_type_t by looking it up in a class's type parameters.
+ * This is used when the return type of a parameterized class extern method is a type
+ * parameter like T in: function T Container#(T)::get();
+ *
+ * Returns the default type of the type parameter if found, or a simple int type if not.
+ */
+data_type_t* pform_resolve_type_param_as_type(const struct vlltype&loc,
+					      const char* name,
+					      PClass* class_scope)
+{
+      if (!class_scope || !class_scope->type) {
+	    // Return a default int type if class not found
+	    vector_type_t*vt = new vector_type_t(IVL_VT_LOGIC, true, NULL);
+	    vt->implicit_flag = true;
+	    FILE_NAME(vt, loc);
+	    return vt;
+      }
+
+      perm_string pname = lex_strings.make(name);
+
+      // Look for the name in the class's type parameters
+      for (class_param_t* param : class_scope->type->parameters) {
+	    if (param->is_type && param->name == pname) {
+		  // Found the type parameter - return its default type directly.
+		  // This avoids the issue of temporary typedefs not being in scope
+		  // during elaboration.
+		  if (param->default_type) {
+			// Return the default type directly (e.g., 'int' for #(type T = int))
+			return param->default_type;
+		  }
+		  // No default type - return a simple int type
+		  vector_type_t*vt = new vector_type_t(IVL_VT_LOGIC, true, NULL);
+		  vt->implicit_flag = true;
+		  FILE_NAME(vt, loc);
+		  return vt;
+	    }
+      }
+
+      // Not a type parameter - return a default int type
+      cerr << loc << ": warning: '" << name
+           << "' is not a type parameter of class '"
+           << class_scope->type->name << "'." << endl;
+      vector_type_t*vt = new vector_type_t(IVL_VT_LOGIC, true, NULL);
+      vt->implicit_flag = true;
+      FILE_NAME(vt, loc);
+      return vt;
+}
+
+/*
+ * Clean up type parameter typedefs that were added for external method parsing.
+ * This removes the temporary typedefs after the external method definition is complete.
+ */
+void pform_cleanup_external_class_type_params(PClass* class_scope)
+{
+      if (!class_scope || !class_scope->type) {
+	    return;
+      }
+
+      // Remove the typedefs from the current lexical scope (file/module level).
+      // We keep them in the class scope for elaboration.
+      // Note: lexical_scope may have changed (e.g., to the function scope),
+      // so we look up through parent scopes to find the one with our typedef.
+      LexicalScope*scope = lexical_scope;
+      while (scope) {
+	    bool found_any = false;
+	    for (class_param_t* param : class_scope->type->parameters) {
+		  if (param->is_type) {
+			auto it = scope->typedefs.find(param->name);
+			if (it != scope->typedefs.end()) {
+			      scope->typedefs.erase(it);
+			      found_any = true;
+			}
+		  }
+	    }
+	    if (found_any) break;  // Found and cleaned up at this level
+	    scope = scope->parent_scope();
+      }
+}
+
 PBlock* pform_push_block_scope(const struct vlltype&loc, const char*name,
 			       PBlock::BL_TYPE bt)
 {
@@ -2623,11 +2767,7 @@ void pform_make_modgates(const struct vlltype&loc,
 		 << "program blocks." << endl;
 	    error_count += 1;
       }
-      if (pform_cur_module.front()->is_interface) {
-	    cerr << loc << ": error: Module instantiations are not allowed in "
-		 << "interfaces." << endl;
-	    error_count += 1;
-      }
+      /* SystemVerilog allows module/interface instantiations inside interfaces. */
 
       for (unsigned idx = 0 ;  idx < gates->size() ;  idx += 1) {
 	    lgate cur = (*gates)[idx];

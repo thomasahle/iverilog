@@ -219,8 +219,8 @@ unsigned integer_width = 32;
  */
 unsigned width_cap = 65536;
 
-int def_ts_units = 0;
-int def_ts_prec = 0;
+int def_ts_units = -9;   // 1ns default time unit for SV-heavy testbenches
+int def_ts_prec = -12;   // 1ps default time precision for SV-heavy testbenches
 
 /*
  * Keep a heap of identifier strings that I encounter. This is a more

@@ -1,6 +1,2 @@
-./ivltests/sv_sva_first_match.v:15: first_match approximated as single-cycle check.
-./ivltests/sv_sva_first_match.v:20: first_match approximated as single-cycle check.
-./ivltests/sv_sva_first_match.v:25: first_match approximated as single-cycle check.
-./ivltests/sv_sva_first_match.v:30: first_match approximated as single-cycle check.
 PASSED: first_match operator working correctly
 ./ivltests/sv_sva_first_match.v:48: $finish called at 35 (1s)

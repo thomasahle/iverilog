@@ -1,6 +1,2 @@
-./ivltests/sv_sva_goto_rep.v:15: throughout with goto repetition approximated as single-cycle check.
-./ivltests/sv_sva_goto_rep.v:21: Goto repetition [->N] approximated as single-cycle check.
-./ivltests/sv_sva_goto_rep.v:26: Goto repetition [->N] approximated as single-cycle check.
-./ivltests/sv_sva_goto_rep.v:31: throughout with goto repetition approximated as single-cycle check.
 PASSED: goto repetition operator working correctly
 ./ivltests/sv_sva_goto_rep.v:58: $finish called at 75 (1s)

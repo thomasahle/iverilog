@@ -1,6 +1,5 @@
 %option prefix="VL"
 %option never-interactive
-%option nounput
 
 %{
 /*
@@ -44,7 +43,7 @@ using namespace std;
 # define YY_USER_INIT do { reset_lexor(); yylloc.lexical_pos = 0; } while (0);
 # define yylval VLlval
 
-# define YY_NO_INPUT
+/* YY_NO_INPUT removed to enable yyinput() for interface class lookahead */
 
 /*
  * Lexical location information is passed in the yylloc variable to th
@@ -195,8 +194,8 @@ TU [munpf]
 
 "/*" { comment_enter = YY_START; BEGIN(CCOMMENT); }
 <CCOMMENT>.    { ; }
-  /* Check for a possible nested comment. */
-<CCOMMENT>"/*" { VLerror(yylloc, "error: Possible nested comment."); }
+  /* Ignore nested comment starts inside a comment. */
+<CCOMMENT>"/*" { ; }
 <CCOMMENT>\n   { yylloc.first_line += 1; }
 <CCOMMENT>"*/" { BEGIN(comment_enter); }
 
@@ -380,6 +379,48 @@ TU [munpf]
 
 	  case K_table:
 	    BEGIN(UDPTABLE);
+	    break;
+
+	  case K_interface:
+	    /* Check if "class" follows to form "interface class" keyword.
+	       Look ahead past whitespace to see if next identifier is "class". */
+	    {
+	      int c;
+	      int newlines = 0;
+	      /* Skip whitespace */
+	      while ((c = yyinput()) == ' ' || c == '\t' || c == '\n') {
+		    if (c == '\n') newlines++;
+	      }
+	      /* Check for "class" keyword */
+	      if (c == 'c') {
+		    char buf[6];
+		    buf[0] = c;
+		    for (int i = 1; i < 5; i++) {
+			  buf[i] = yyinput();
+		    }
+		    buf[5] = '\0';
+		    if (strcmp(buf, "class") == 0) {
+			  /* Check that class is not followed by identifier char */
+			  int next = yyinput();
+			  if (next != EOF && !isalnum(next) && next != '_' && next != '$') {
+				unput(next);
+				yylloc.first_line += newlines;
+				rc = K_interface_class;
+				break;
+			  }
+			  unput(next);
+		    }
+		    /* Put back "class" characters */
+		    for (int i = 4; i >= 0; i--) {
+			  unput(buf[i]);
+		    }
+	      } else if (c != EOF) {
+		    unput(c);
+	      }
+	      /* Put back whitespace/newlines by adjusting position */
+	      /* Note: We can't easily put back newlines, but we already ate whitespace */
+	      yylval.text = 0;
+	    }
 	    break;
 
 	  default:

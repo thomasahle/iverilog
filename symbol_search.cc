@@ -66,6 +66,32 @@ bool symbol_search(const LineInfo*li, Design*des, NetScope*scope,
       if (start_scope==0)
 	    start_scope = scope;
 
+      const NetScope*context_class_scope = start_scope->get_class_scope();
+      const netclass_t*context_class = context_class_scope
+	    ? context_class_scope->class_def()
+	    : nullptr;
+      if (!context_class && start_scope) {
+	    for (const NetScope*cur = start_scope; cur && !context_class; cur = cur->parent()) {
+		  if (netclass_t*cls = const_cast<NetScope*>(cur)->find_class(des, cur->basename()))
+			context_class = cls;
+	    }
+      }
+
+      NetScope*method_scope = find_method_containing_scope(*li, start_scope);
+      NetNet*this_net = nullptr;
+      const netclass_t*this_class = nullptr;
+      if (method_scope) {
+	    this_net = method_scope->find_signal(perm_string::literal(THIS_TOKEN));
+	    if (!this_net) {
+		  if (PWire*wire = method_scope->find_signal_placeholder(
+			    perm_string::literal(THIS_TOKEN))) {
+			this_net = wire->elaborate_sig(des, method_scope);
+		  }
+	    }
+	    if (this_net)
+		  this_class = dynamic_cast<const netclass_t*>(this_net->net_type());
+      }
+
       // If there are components ahead of the tail, symbol_search
       // recursively. Ideally, the result is a scope that we search
       // for the tail key, but there are other special cases as well.
@@ -179,8 +205,17 @@ bool symbol_search(const LineInfo*li, Design*des, NetScope*scope,
 		    // Check class properties BEFORE events because event properties
 		    // are also created as standalone events, and we want class
 		    // property access to take precedence when inside a class method.
+		  const netclass_t *clsnet = nullptr;
 		  if (scope->type() == NetScope::CLASS) {
-			const netclass_t *clsnet = scope->class_def();
+			clsnet = scope->class_def();
+		  } else if (this_class) {
+			clsnet = this_class;
+		  } else if (context_class) {
+			clsnet = context_class;
+		  } else {
+			clsnet = find_class_containing_scope(*li, scope);
+		  }
+		  if (clsnet) {
 			if (debug_scopes) {
 			      cerr << li->get_fileline() << ": symbol_search: "
 			           << "Checking class " << clsnet->get_name()
@@ -195,10 +230,25 @@ bool symbol_search(const LineInfo*li, Design*des, NetScope*scope,
 			      // This is a class property being accessed in a
 			      // class method. Return `this` for the net and the
 			      // property name for the path tail.
-			      NetScope *scope_method = find_method_containing_scope(*li, start_scope);
-			      ivl_assert(*li, scope_method);
-			      res->net = scope_method->find_signal(perm_string::literal(THIS_TOKEN));
-			      ivl_assert(*li, res->net);
+			      if (!this_net && method_scope && clsnet) {
+				    this_net = method_scope->find_signal(perm_string::literal(THIS_TOKEN));
+				    if (!this_net) {
+					  if (PWire*wire = method_scope->find_signal_placeholder(
+						    perm_string::literal(THIS_TOKEN))) {
+						this_net = wire->elaborate_sig(des, method_scope);
+					  }
+				    }
+				    if (!this_net) {
+					  this_net = new NetNet(method_scope,
+					                        perm_string::literal(THIS_TOKEN),
+					                        NetNet::REG,
+					                        const_cast<netclass_t*>(clsnet));
+					  this_net->set_line(*li);
+				    }
+			      }
+			      if (!this_net)
+				    goto no_class_property;
+			      res->net = this_net;
 			      res->scope = scope;
 			      ivl_assert(*li, path.empty());
 			      res->path_head.push_back(name_component_t(perm_string::literal(THIS_TOKEN)));
@@ -207,6 +257,7 @@ bool symbol_search(const LineInfo*li, Design*des, NetScope*scope,
 			      return true;
 			}
 		  }
+no_class_property: ;
 
 		  if (NetEvent*eve = scope->find_event(path_tail.name)) {
 			if (prefix_scope || (eve->lexical_pos() <= lexical_pos)) {
