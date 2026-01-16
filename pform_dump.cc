@@ -568,6 +568,18 @@ void PEUnary::dump(ostream&out) const
       out << "(" << *expr_ << ")";
 }
 
+void PEAssignExpr::dump(ostream&out) const
+{
+      out << "(";
+      if (lval_) out << *lval_;
+      if (op_ == '=')
+	    out << " = ";
+      else
+	    out << " " << op_ << "= ";
+      if (rval_) out << *rval_;
+      out << ")";
+}
+
 void PEBinary::dump(ostream&out) const
 {
 	/* Handle some special cases, where the operators are written

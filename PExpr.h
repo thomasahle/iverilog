@@ -793,6 +793,42 @@ class PEUnary : public PExpr {
 };
 
 /*
+ * PEAssignExpr represents an assignment used as an expression (SV 11.3.6).
+ * Examples: b = (a -= 1);  x = (y = z);
+ * The value of the expression is the value being assigned to the lvalue.
+ */
+class PEAssignExpr : public PExpr {
+
+    public:
+      // op is '=' for simple assign, '+'/'-'/'*'/etc for compound assign
+      explicit PEAssignExpr(char op, PExpr*lval, PExpr*rval);
+      ~PEAssignExpr() override;
+
+      virtual void dump(std::ostream&out) const override;
+
+      virtual void declare_implicit_nets(LexicalScope*scope, NetNet::Type type) override;
+
+      virtual bool has_aa_term(Design*des, NetScope*scope) const override;
+
+      virtual unsigned test_width(Design*des, NetScope*scope,
+				  width_mode_t&mode) override;
+
+      virtual NetExpr*elaborate_expr(Design*des, NetScope*,
+				     unsigned expr_wid,
+                                     unsigned flags) const override;
+
+    public:
+      inline char get_op() const { return op_; }
+      inline PExpr*get_lval() const { return lval_; }
+      inline PExpr*get_rval() const { return rval_; }
+
+    private:
+      char op_;
+      PExpr*lval_;
+      PExpr*rval_;
+};
+
+/*
  * PESoftConstraint is a marker wrapper that indicates an inline constraint
  * expression is soft. Soft constraints are preferred but don't cause
  * randomize() to fail if they cannot be satisfied.

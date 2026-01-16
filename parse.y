@@ -6866,6 +6866,23 @@ expression
       { $$ = $1; }
   | inc_or_dec_expression
       { $$ = $1; }
+
+    /* Assignment expressions (SV 11.3.6): The value of an assignment
+       expression is the value assigned to the l-value. Only valid when
+       parenthesized: b = (a -= 1); */
+  | '(' lpvalue '=' expression ')'
+      { pform_requires_sv(@2, "Assignment as expression");
+        PEAssignExpr*tmp = new PEAssignExpr('=', $2, $4);
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+  | '(' lpvalue compressed_operator expression ')'
+      { pform_requires_sv(@2, "Compound assignment as expression");
+        PEAssignExpr*tmp = new PEAssignExpr($3, $2, $4);
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+
   | expr_primary K_INCR %prec K_INCR
       { /* Post-increment: expr++ returns expr then increments */
         PEUnary*tmp = new PEUnary('i', $1);

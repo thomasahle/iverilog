@@ -619,6 +619,29 @@ bool PEUnary::has_aa_term(Design*des, NetScope*scope) const
       return expr_->has_aa_term(des, scope);
 }
 
+PEAssignExpr::PEAssignExpr(char op, PExpr*lval, PExpr*rval)
+: op_(op), lval_(lval), rval_(rval)
+{
+}
+
+PEAssignExpr::~PEAssignExpr()
+{
+}
+
+void PEAssignExpr::declare_implicit_nets(LexicalScope*scope, NetNet::Type type)
+{
+      if (lval_) lval_->declare_implicit_nets(scope, type);
+      if (rval_) rval_->declare_implicit_nets(scope, type);
+}
+
+bool PEAssignExpr::has_aa_term(Design*des, NetScope*scope) const
+{
+      bool rc = false;
+      if (lval_) rc = rc || lval_->has_aa_term(des, scope);
+      if (rval_) rc = rc || rval_->has_aa_term(des, scope);
+      return rc;
+}
+
 PESoftConstraint::PESoftConstraint(PExpr*ex)
 : expr_(ex)
 {

@@ -14731,6 +14731,52 @@ NetExpr* PEVoid::elaborate_expr(Design*, NetScope*, unsigned, unsigned) const
       return 0;
 }
 
+/*
+ * PEAssignExpr - Assignment used as an expression (SV 11.3.6)
+ * Example: b = (a -= 1);  // Result is (a - 1), also assigned to a
+ */
+unsigned PEAssignExpr::test_width(Design*des, NetScope*scope, width_mode_t&mode)
+{
+      // The width of an assignment expression is determined by the lvalue.
+      // First evaluate the rvalue to get type information.
+      width_mode_t sub_mode = SIZED;
+      if (rval_)
+	    rval_->test_width(des, scope, sub_mode);
+
+      // The result is the width of the lvalue
+      if (lval_) {
+	    expr_width_ = lval_->test_width(des, scope, mode);
+	    expr_type_ = lval_->expr_type();
+	    min_width_ = lval_->min_width();
+	    signed_flag_ = lval_->has_sign();
+      } else {
+	    expr_width_ = 1;
+	    expr_type_ = IVL_VT_LOGIC;
+	    min_width_ = 1;
+	    signed_flag_ = false;
+      }
+
+      return expr_width_;
+}
+
+NetExpr* PEAssignExpr::elaborate_expr(Design*des, NetScope*scope,
+				      unsigned expr_wid, unsigned flags) const
+{
+      // For now, emit a "sorry" message - full implementation requires
+      // a new NetExpr type that can perform the assignment side effect.
+      cerr << get_fileline() << ": sorry: Assignment as expression "
+	   << "(e.g., 'b = (a -= 1)') is not yet fully supported." << endl;
+      cerr << get_fileline() << ":      : Workaround: split into separate "
+	   << "assignment and expression statements." << endl;
+      des->errors += 1;
+
+      // Return an elaborated rvalue expression as a placeholder
+      if (rval_)
+	    return rval_->elaborate_expr(des, scope, expr_wid, flags);
+
+      return 0;
+}
+
 NetNet* Design::find_discipline_reference(ivl_discipline_t dis, NetScope*scope)
 {
       NetNet*gnd = discipline_references_[dis->name()];
