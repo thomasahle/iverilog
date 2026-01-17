@@ -5105,15 +5105,20 @@ port_direction_opt
   |                { $$ = NetNet::PIMPLICIT; }
   ;
 
-  /* Property declaration - IEEE1800-2012 A.2.10 */
+  /* Property declaration - IEEE1800-2012 A.2.10
+     property_declaration ::=
+       property property_identifier [ ( [ property_port_list ] ) ] ;
+         { assertion_variable_declaration }
+         property_spec [ ; ]
+       endproperty [ : property_identifier ] */
 property_declaration
-  : K_property IDENTIFIER ';' property_spec semicolon_opt K_endproperty label_opt
+  : K_property IDENTIFIER ';' assertion_variable_declarations_opt property_spec semicolon_opt K_endproperty label_opt
       { /* Store property declaration for later use in assertions */
         if (gn_supported_assertions_flag) {
-              if ($4.expr != 0) {
+              if ($5.expr != 0) {
                     /* Resolve any sequence references in the property body */
-                    PSvaExpr* resolved = resolve_sequence_references($4.expr);
-                    store_named_property($2, $4.clocking_event, resolved, $4.disable);
+                    PSvaExpr* resolved = resolve_sequence_references($5.expr);
+                    store_named_property($2, $5.clocking_event, resolved, $5.disable);
               } else {
                     yywarn(@1, "sorry: property contains unsupported constructs and will be ignored.");
               }
@@ -5123,7 +5128,7 @@ property_declaration
                       " to turn this message off.");
         }
         delete[]$2;
-        delete[]$7;
+        delete[]$8;
       }
   | K_property IDENTIFIER '('
       { /* Start SVA mode to prevent wire creation for property ports */
@@ -5131,14 +5136,14 @@ property_declaration
       }
     tf_port_list_opt ')'
       { pform_end_sva_declaration(); }
-    ';' property_spec semicolon_opt K_endproperty label_opt
+    ';' assertion_variable_declarations_opt property_spec semicolon_opt K_endproperty label_opt
       { /* Property declaration with ports - store with parameter names */
         if (gn_supported_assertions_flag) {
-              if ($9.expr != 0) {
+              if ($10.expr != 0) {
                     /* Resolve any sequence references in the property body */
-                    PSvaExpr* resolved = resolve_sequence_references($9.expr);
+                    PSvaExpr* resolved = resolve_sequence_references($10.expr);
                     /* Store property with port names for parameter substitution */
-                    store_named_property($2, $9.clocking_event, resolved, $9.disable, $5);
+                    store_named_property($2, $10.clocking_event, resolved, $10.disable, $5);
               } else {
                     yywarn(@1, "sorry: property contains unsupported constructs and will be ignored.");
               }
@@ -5149,11 +5154,37 @@ property_declaration
         }
         delete[]$2;
         delete $5;
-        delete[]$12;
+        delete[]$13;
       }
   | K_property error K_endproperty
       { yyerror(@1, "error: Syntax error in property declaration.");
         yyerrok;
+      }
+  ;
+
+  /* Assertion variable declarations for property/sequence local variables (SV 16.10)
+     For now, we parse but ignore these declarations. */
+assertion_variable_declarations_opt
+  : assertion_variable_declarations
+  | /* empty */
+  ;
+
+assertion_variable_declarations
+  : assertion_variable_declarations assertion_variable_declaration
+  | assertion_variable_declaration
+  ;
+
+assertion_variable_declaration
+  : data_type IDENTIFIER ';'
+      { pform_requires_sv(@1, "Property local variable");
+        delete $1;
+        delete[]$2;
+      }
+  | data_type IDENTIFIER '=' expression ';'
+      { pform_requires_sv(@1, "Property local variable");
+        delete $1;
+        delete[]$2;
+        delete $4;
       }
   ;
 
@@ -5163,14 +5194,19 @@ semicolon_opt
   ;
 
   /* Sequence declaration - IEEE1800-2012 A.2.10
+     sequence_declaration ::=
+       sequence sequence_identifier [ ( [ sequence_port_list ] ) ] ;
+         { assertion_variable_declaration }
+         sequence_expr [ ; ]
+       endsequence [ : sequence_identifier ]
      Sequences are like properties but without disable iff. They can have
      clocking events, so we use property_spec which handles that. */
 sequence_declaration
-  : K_sequence IDENTIFIER ';' property_spec semicolon_opt K_endsequence label_opt
+  : K_sequence IDENTIFIER ';' assertion_variable_declarations_opt property_spec semicolon_opt K_endsequence label_opt
       { /* Store sequence declaration for later use in properties */
         if (gn_supported_assertions_flag) {
-              if ($4.expr != 0) {
-                    store_named_sequence($2, $4.clocking_event, $4.expr);
+              if ($5.expr != 0) {
+                    store_named_sequence($2, $5.clocking_event, $5.expr);
               } else {
                     yywarn(@1, "sorry: sequence contains unsupported constructs and will be ignored.");
               }
@@ -5180,7 +5216,7 @@ sequence_declaration
                       " to turn this message off.");
         }
         delete[]$2;
-        delete[]$7;
+        delete[]$8;
       }
   | K_sequence IDENTIFIER '('
       { /* Start SVA mode to prevent wire creation for sequence ports */
@@ -5188,11 +5224,11 @@ sequence_declaration
       }
     tf_port_list_opt ')'
       { pform_end_sva_declaration(); }
-    ';' property_spec semicolon_opt K_endsequence label_opt
+    ';' assertion_variable_declarations_opt property_spec semicolon_opt K_endsequence label_opt
       { /* Store sequence declaration with ports */
         if (gn_supported_assertions_flag) {
-              if ($9.expr != 0) {
-                    store_named_sequence($2, $9.clocking_event, $9.expr, $5);
+              if ($10.expr != 0) {
+                    store_named_sequence($2, $10.clocking_event, $10.expr, $5);
               } else {
                     yywarn(@1, "sorry: sequence contains unsupported constructs and will be ignored.");
               }
@@ -5203,7 +5239,7 @@ sequence_declaration
         }
         delete[]$2;
         delete $5;
-        delete[]$12;
+        delete[]$13;
       }
   | K_sequence error K_endsequence label_opt
       { yyerror(@1, "error: Syntax error in sequence declaration.");
@@ -5364,6 +5400,38 @@ sequence_expr_in_parens
       { $$ = make_sva_delay_expr(make_sva_atom($7, @7), $3, nullptr, true, @1); }
   | K_SEQ_DELAY DEC_NUMBER expression
       { $$ = make_sva_delay(make_sva_atom($3, @3), $2->as_long(), $2->as_long(), @1); }
+  ;
+
+  /* Sequence match items for property local variable assignments (SV 16.10) */
+sequence_match_item_list
+  : sequence_match_item_list ',' sequence_match_item
+  | sequence_match_item
+  ;
+
+sequence_match_item
+  : IDENTIFIER '=' expression
+      { pform_requires_sv(@2, "Sequence match item assignment");
+        delete[]$1;
+        delete $3;
+      }
+  | hierarchy_identifier '=' expression
+      { pform_requires_sv(@2, "Sequence match item assignment");
+        delete $1;
+        delete $3;
+      }
+  | IDENTIFIER K_PLUS_EQ expression
+      { pform_requires_sv(@2, "Sequence match item assignment");
+        delete[]$1;
+        delete $3;
+      }
+  | IDENTIFIER K_INCR
+      { pform_requires_sv(@2, "Sequence match item increment");
+        delete[]$1;
+      }
+  | IDENTIFIER K_DECR
+      { pform_requires_sv(@2, "Sequence match item decrement");
+        delete[]$1;
+      }
   ;
 
   /* The property_qualifier rule is as literally described in the LRM,
@@ -8305,6 +8373,15 @@ expr_primary
 
   | '(' expr_mintypmax ')'
       { $$ = $2; }
+
+    /* Sequence match item syntax (SV 16.10): (expr, var = val)
+       This appears in property/sequence expressions and assigns to local vars.
+       For now we parse this but ignore the assignment, just return the expression.
+       This must be in expr_primary so it can be parsed before property_expr. */
+  | '(' expr_mintypmax ',' sequence_match_item_list ')'
+      { pform_requires_sv(@3, "Sequence match item");
+        $$ = $2;
+      }
 
   /* Various kinds of concatenation expressions. */
 

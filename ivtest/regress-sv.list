@@ -1438,3 +1438,4 @@ sv_assign_expr	normal,-g2012	ivltests
 sv_tagged_union	normal,-g2012	ivltests
 sv_pattern_match	normal,-g2012	ivltests
 sv_clocking_block	normal,-g2012	ivltests
+sv_property_local_var	normal,-g2012	ivltests
