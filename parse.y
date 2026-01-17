@@ -7879,6 +7879,28 @@ expr_primary
         $$ = tmp;
       }
 
+    /* Static member access on a class: MyClass::member
+       IEEE1800-2012: class_scope ::= class_type ::
+       For accessing static class members (not method calls) */
+  | TYPE_IDENTIFIER K_SCOPE_RES IDENTIFIER
+      { /* Create a hierarchical name for the static member access */
+        pform_requires_sv(@2, "Class scope resolution");
+        pform_set_type_referenced(@1, $1.text);
+        pform_name_t*tmp_name = new pform_name_t;
+        /* Push the class name component first */
+        name_component_t class_comp(lex_strings.make($1.text));
+        tmp_name->push_back(class_comp);
+        /* Push the member name */
+        name_component_t member_comp(lex_strings.make($3));
+        tmp_name->push_back(member_comp);
+        PEIdent*tmp = new PEIdent(*tmp_name, @1.lexical_pos);
+        FILE_NAME(tmp, @1);
+        delete[]$1.text;
+        delete[]$3;
+        delete tmp_name;
+        $$ = tmp;
+      }
+
     /* Nested static method call: OuterClass::InnerType::method(args)
        This handles two levels of scope resolution for patterns like:
        - my_component::type_id::create()
@@ -8898,6 +8920,23 @@ lpvalue
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
 	delete $1;
+      }
+
+    /* Static member lvalue: MyClass::member for assignment */
+  | TYPE_IDENTIFIER K_SCOPE_RES IDENTIFIER
+      { pform_requires_sv(@2, "Class scope resolution");
+        pform_set_type_referenced(@1, $1.text);
+        pform_name_t*tmp_name = new pform_name_t;
+        name_component_t class_comp(lex_strings.make($1.text));
+        tmp_name->push_back(class_comp);
+        name_component_t member_comp(lex_strings.make($3));
+        tmp_name->push_back(member_comp);
+        PEIdent*tmp = new PEIdent(*tmp_name, @1.lexical_pos);
+        FILE_NAME(tmp, @1);
+        delete[]$1.text;
+        delete[]$3;
+        delete tmp_name;
+        $$ = tmp;
       }
 
   | '{' expression_list_proper '}'

@@ -629,6 +629,7 @@ sv_class_static_method_call1	normal,-g2012	ivltests
 sv_class_static_method_call2	normal,-g2012	ivltests
 sv_class_static_method_call3	normal,-g2012	ivltests
 sv_class_static_method_call4	normal,-g2012	ivltests
+sv_class_scope_static		normal,-g2012	ivltests
 sv_class_extern_func1		normal,-g2012	ivltests
 sv_class_extern_func2		normal,-g2012	ivltests
 sv_class_extern_task1		normal,-g2012	ivltests
