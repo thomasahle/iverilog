@@ -165,6 +165,7 @@ struct dll_target  : public target_t, public expr_scan_t {
       void expr_ufunc(const NetEUFunc*) override;
       void expr_unary(const NetEUnary*) override;
       void expr_signal(const NetESignal*) override;
+      void expr_assign(const NetEAssign*) override;
 
       ivl_scope_t lookup_scope_(const NetScope*scope);
 
@@ -379,6 +380,13 @@ struct ivl_expr_s {
 		  ivl_assoc_method_t method;  // Method type
 		  ivl_expr_t key;          // Key expression (null for num())
 	    } assoc_method_;
+
+	    struct {
+		  char op_;               // '=' for simple, '+', '-', etc. for compound
+		  unsigned nlval_;        // Number of lvals
+		  ivl_lval_t lval_;       // Left-value (what we're assigning to)
+		  ivl_expr_t rval_;       // Right-value (expression being assigned)
+	    } assign_;
       } u_;
 };
 

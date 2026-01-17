@@ -1978,6 +1978,25 @@ void NetEUFunc::dump(ostream&o) const
       o << scope_path(func_) << "(" << parms_ << ")";
 }
 
+void NetEAssign::dump(ostream&o) const
+{
+      o << "(";
+      if (lval_) {
+	    // NetAssign_ doesn't have a dump method, print basic info
+	    if (const NetNet* sig = lval_->sig())
+		  o << sig->name();
+	    else
+		  o << "<lval>";
+      }
+      o << " ";
+      if (op_ != '=')
+	    o << op_;
+      o << "= ";
+      if (rval_)
+	    rval_->dump(o);
+      o << ")";
+}
+
 void NetEUnary::dump(ostream&o) const
 {
       switch (op_) {

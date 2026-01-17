@@ -744,6 +744,11 @@ void NetEUFunc::expr_scan(struct expr_scan_t*tgt) const
       tgt->expr_ufunc(this);
 }
 
+void NetEAssign::expr_scan(struct expr_scan_t*tgt) const
+{
+      tgt->expr_assign(this);
+}
+
 void NetESignal::expr_scan(struct expr_scan_t*tgt) const
 {
       tgt->expr_signal(this);

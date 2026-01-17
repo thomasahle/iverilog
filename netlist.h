@@ -4088,6 +4088,39 @@ class NetEUFunc  : public NetExpr {
 };
 
 /*
+ * This expression node represents an assignment used as an expression
+ * (SystemVerilog 11.3.6). When evaluated, it performs the assignment
+ * side effect and returns the assigned value.
+ *
+ * Examples:
+ *   b = (a = 5);     // Simple assignment expression
+ *   c = (a += 3);    // Compound assignment expression
+ */
+class NetEAssign : public NetExpr {
+
+    public:
+      // op is '=' for simple assign, '+'/'-'/'*'/etc for compound assign
+      NetEAssign(char op, NetAssign_*lval, NetExpr*rval);
+      ~NetEAssign() override;
+
+      char get_op() const { return op_; }
+      const NetAssign_* get_lval() const { return lval_; }
+      const NetExpr* get_rval() const { return rval_; }
+
+      virtual ivl_variable_type_t expr_type() const override;
+      virtual void dump(std::ostream&) const override;
+      virtual void expr_scan(struct expr_scan_t*) const override;
+      virtual NetEAssign* dup_expr() const override;
+      virtual NexusSet* nex_input(bool rem_out = true, bool always_sens = false,
+                                  bool nested_func = false) const override;
+
+    private:
+      char op_;
+      NetAssign_* lval_;
+      NetExpr* rval_;
+};
+
+/*
  * A call to a nature access function for a branch.
  */
 class NetEAccess : public NetExpr {

@@ -2633,6 +2633,70 @@ static void draw_unary_vec4(ivl_expr_t expr)
       }
 }
 
+/*
+ * Assignment as expression (SystemVerilog 11.3.6):
+ *   b = (a = 5);     // a and b get 5
+ *   c = (a += 3);    // compound assignment, c gets result
+ *
+ * Evaluate the rvalue, duplicate it on the stack, store one copy
+ * to the lvalue, and leave the other on the stack as the result.
+ */
+static void draw_assign_vec4(ivl_expr_t expr)
+{
+      ivl_lval_t lval = ivl_expr_assign_lval(expr);
+      ivl_expr_t rval = ivl_expr_assign_rval(expr);
+      ivl_signal_t lsig = ivl_lval_sig(lval);
+      unsigned lwid = ivl_lval_width(lval);
+
+      /* Evaluate the rvalue onto the vec4 stack */
+      draw_eval_vec4(rval);
+
+      /* Resize to lval width if needed */
+      resize_vec4_wid(rval, lwid);
+
+      /* Duplicate the value - one for the store, one for the expression result */
+      fprintf(vvp_out, "    %%dup/vec4;\n");
+
+      /* Handle the assignment to lval */
+      ivl_expr_t part_off_ex = ivl_lval_part_off(lval);
+      ivl_expr_t word_ex = ivl_lval_idx(lval);
+
+      if (word_ex) {
+	    /* Handle index into an array */
+	    int word_index = allocate_word();
+	    int part_index = 0;
+	    draw_eval_expr_into_integer(word_ex, word_index);
+	    if (part_off_ex) {
+		  int flag_index = allocate_flag();
+		  part_index = allocate_word();
+		  fprintf(vvp_out, "    %%flag_mov %d, 4;\n", flag_index);
+		  draw_eval_expr_into_integer(part_off_ex, part_index);
+		  fprintf(vvp_out, "    %%flag_or 4, %d;\n", flag_index);
+		  clr_flag(flag_index);
+	    }
+	    assert(lsig);
+	    fprintf(vvp_out, "    %%store/vec4a v%p, %d, %d;\n",
+		    lsig, word_index, part_index);
+	    clr_word(word_index);
+	    if (part_index)
+		  clr_word(part_index);
+
+      } else if (part_off_ex) {
+	    /* Dynamically calculated part offset */
+	    int offset_index = allocate_word();
+	    draw_eval_expr_into_integer(part_off_ex, offset_index);
+	    assert(lsig);
+	    fprintf(vvp_out, "    %%store/vec4 v%p_0, %d, %u;\n",
+		    lsig, offset_index, lwid);
+	    clr_word(offset_index);
+
+      } else {
+	    /* Simple assignment - no offset */
+	    assert(lsig);
+	    fprintf(vvp_out, "    %%store/vec4 v%p_0, 0, %u;\n", lsig, lwid);
+      }
+}
+
 void draw_eval_vec4(ivl_expr_t expr)
 {
       if (debug_draw) {
@@ -2725,6 +2789,10 @@ void draw_eval_vec4(ivl_expr_t expr)
 	       string and convert to vec4 for compatibility. */
 	    fprintf(vvp_out, "    %%pushi/str \"\"; String struct member placeholder\n");
 	    fprintf(vvp_out, "    %%pushv/str; Convert to vec4\n");
+	    return;
+
+	  case IVL_EX_ASSIGN:
+	    draw_assign_vec4(expr);
 	    return;
 
 	  case IVL_EX_NULL:

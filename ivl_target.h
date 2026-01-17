@@ -250,7 +250,8 @@ typedef enum ivl_expr_type_e {
       IVL_EX_UNARY = 14,
       IVL_EX_VIFPROP = 27,  /* Virtual interface property access */
       IVL_EX_ASSOC_METHOD = 28,  /* Associative array method call */
-      IVL_EX_STRUCT_MEMBER = 29  /* Unpacked struct member access */
+      IVL_EX_STRUCT_MEMBER = 29,  /* Unpacked struct member access */
+      IVL_EX_ASSIGN = 30  /* Assignment as expression (a = expr) */
 } ivl_expr_type_t;
 
 /* Associative array method types for IVL_EX_ASSOC_METHOD */
@@ -964,10 +965,13 @@ extern ivl_enumtype_t ivl_expr_enumtype(ivl_expr_t net);
 extern const char* ivl_expr_name(ivl_expr_t net);
   /* IVL_EX_BACCESS */
 extern ivl_nature_t ivl_expr_nature(ivl_expr_t net);
-  /* IVL_EX_BINARY IVL_EX_UNARY */
+  /* IVL_EX_BINARY IVL_EX_UNARY IVL_EX_ASSIGN */
 extern char        ivl_expr_opcode(ivl_expr_t net);
   /* IVL_EX_BINARY  IVL_EX_UNARY, IVL_EX_MEMORY IVL_EX_NEW IVL_EX_TERNARY */
 extern ivl_expr_t  ivl_expr_oper1(ivl_expr_t net);
+  /* IVL_EX_ASSIGN - get lval and rval of assignment expression */
+extern ivl_lval_t  ivl_expr_assign_lval(ivl_expr_t net);
+extern ivl_expr_t  ivl_expr_assign_rval(ivl_expr_t net);
   /* IVL_EX_BINARY IVL_EX_NEW IVL_EX_TERNARY */
 extern ivl_expr_t  ivl_expr_oper2(ivl_expr_t net);
   /* IVL_EX_TERNARY */

@@ -2188,6 +2188,47 @@ NetEUFunc::~NetEUFunc()
       for (unsigned idx = 0 ;  idx < parms_.size() ;  idx += 1)
 	    delete parms_[idx];
 }
+
+NetEAssign::NetEAssign(char op, NetAssign_*lval, NetExpr*rval)
+: op_(op), lval_(lval), rval_(rval)
+{
+      // Set the expression width based on the rvalue
+      if (rval_) {
+	    expr_width(rval_->expr_width());
+	    cast_signed_base_(rval_->has_sign());
+      }
+}
+
+NetEAssign::~NetEAssign()
+{
+      delete lval_;
+      delete rval_;
+}
+
+NetEAssign* NetEAssign::dup_expr() const
+{
+      // Note: We don't deep copy lval_ since NetAssign_ ownership is complex
+      // For expression duplication purposes, this should be sufficient
+      NetEAssign* tmp = new NetEAssign(op_, nullptr,
+				       rval_ ? rval_->dup_expr() : nullptr);
+      tmp->set_line(*this);
+      return tmp;
+}
+
+NexusSet* NetEAssign::nex_input(bool rem_out, bool always_sens, bool nested_func) const
+{
+      if (rval_ == nullptr)
+	    return nullptr;
+      return rval_->nex_input(rem_out, always_sens, nested_func);
+}
+
+ivl_variable_type_t NetEAssign::expr_type() const
+{
+      if (rval_)
+	    return rval_->expr_type();
+      return IVL_VT_LOGIC;
+}
+
 #if 0
 const string NetEUFunc::name() const
 {

@@ -514,6 +514,9 @@ extern "C" char ivl_expr_opcode(ivl_expr_t net)
 	  case IVL_EX_UNARY:
 	    return net->u_.unary_.op_;
 
+	  case IVL_EX_ASSIGN:
+	    return net->u_.assign_.op_;
+
 	  default:
 	    assert(0);
       }
@@ -596,6 +599,20 @@ extern "C" ivl_expr_t ivl_expr_oper3(ivl_expr_t net)
 	    assert(0);
       }
       return 0;
+}
+
+extern "C" ivl_lval_t ivl_expr_assign_lval(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_ASSIGN);
+      return net->u_.assign_.lval_;
+}
+
+extern "C" ivl_expr_t ivl_expr_assign_rval(ivl_expr_t net)
+{
+      assert(net);
+      assert(net->type_ == IVL_EX_ASSIGN);
+      return net->u_.assign_.rval_;
 }
 
 extern "C" ivl_parameter_t ivl_expr_parameter(ivl_expr_t net)

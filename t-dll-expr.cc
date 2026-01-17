@@ -823,3 +823,33 @@ void dll_target::expr_unary(const NetEUnary*net)
       expr_->u_.unary_.op_ = net->op();
       expr_->u_.unary_.sub_ = sub;
 }
+
+void dll_target::expr_assign(const NetEAssign*net)
+{
+      assert(expr_ == 0);
+
+      // Build the lval
+      const NetAssign_*lval = net->get_lval();
+      struct ivl_lval_s*cur = new struct ivl_lval_s;
+      memset(cur, 0, sizeof(struct ivl_lval_s));
+      make_single_lval_(net, cur, lval);
+
+      // Build the rval expression
+      net->get_rval()->expr_scan(this);
+      ivl_expr_t rval = expr_;
+      expr_ = 0;
+
+      // Create the assign expression
+      expr_ = static_cast<ivl_expr_t>(calloc(1, sizeof(struct ivl_expr_s)));
+      expr_->type_ = IVL_EX_ASSIGN;
+      expr_->value_= net->expr_type();
+      expr_->net_type= 0;
+      expr_->width_ = net->expr_width();
+      expr_->signed_ = net->has_sign() ? 1 : 0;
+      expr_->sized_ = 1;
+      FILE_NAME(expr_, net);
+      expr_->u_.assign_.op_ = net->get_op();
+      expr_->u_.assign_.nlval_ = 1;
+      expr_->u_.assign_.lval_ = cur;
+      expr_->u_.assign_.rval_ = rval;
+}

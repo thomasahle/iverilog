@@ -186,6 +186,7 @@ struct expr_scan_t {
       virtual void expr_unary(const NetEUnary*);
       virtual void expr_binary(const NetEBinary*);
       virtual void expr_netenum(const NetENetenum*);
+      virtual void expr_assign(const NetEAssign*);
 };
 
 

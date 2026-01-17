@@ -14895,19 +14895,60 @@ unsigned PEAssignExpr::test_width(Design*des, NetScope*scope, width_mode_t&mode)
 NetExpr* PEAssignExpr::elaborate_expr(Design*des, NetScope*scope,
 				      unsigned expr_wid, unsigned flags) const
 {
-      // For now, emit a "sorry" message - full implementation requires
-      // a new NetExpr type that can perform the assignment side effect.
-      cerr << get_fileline() << ": sorry: Assignment as expression "
-	   << "(e.g., 'b = (a -= 1)') is not yet fully supported." << endl;
-      cerr << get_fileline() << ":      : Workaround: split into separate "
-	   << "assignment and expression statements." << endl;
-      des->errors += 1;
+      // Elaborate the lvalue
+      NetAssign_* lv = lval_->elaborate_lval(des, scope, false, false);
+      if (lv == nullptr) {
+	    cerr << get_fileline() << ": error: Cannot elaborate lvalue in "
+		 << "assignment expression." << endl;
+	    des->errors += 1;
+	    return nullptr;
+      }
 
-      // Return an elaborated rvalue expression as a placeholder
-      if (rval_)
-	    return rval_->elaborate_expr(des, scope, expr_wid, flags);
+      // Get the width from the lvalue for type consistency
+      unsigned lv_width = lv->lwidth();
 
-      return 0;
+      // Elaborate the rvalue
+      NetExpr* rv = nullptr;
+
+      if (op_ == '=') {
+	    // Simple assignment: a = expr
+	    rv = rval_->elaborate_expr(des, scope, lv_width, flags);
+      } else {
+	    // Compound assignment: a op= expr
+	    // The effective operation is: a = a op expr
+	    // First elaborate the lval as an expression to get its current value
+	    NetExpr* lv_expr = lval_->elaborate_expr(des, scope, lv_width, flags);
+	    if (lv_expr == nullptr) {
+		  cerr << get_fileline() << ": error: Cannot read lvalue in "
+		       << "compound assignment expression." << endl;
+		  des->errors += 1;
+		  delete lv;
+		  return nullptr;
+	    }
+
+	    // Elaborate the rhs operand
+	    NetExpr* rhs_expr = rval_->elaborate_expr(des, scope, lv_width, flags);
+	    if (rhs_expr == nullptr) {
+		  delete lv;
+		  delete lv_expr;
+		  return nullptr;
+	    }
+
+	    // Create the binary operation: lval op rval
+	    rv = new NetEBinary(op_, lv_expr, rhs_expr, lv_width, lv_expr->has_sign());
+	    rv->set_line(*this);
+      }
+
+      if (rv == nullptr) {
+	    delete lv;
+	    return nullptr;
+      }
+
+      // Create the assignment expression
+      NetEAssign* result = new NetEAssign(op_, lv, rv);
+      result->set_line(*this);
+
+      return result;
 }
 
 NetNet* Design::find_discipline_reference(ivl_discipline_t dis, NetScope*scope)

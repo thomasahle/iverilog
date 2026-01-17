@@ -624,6 +624,12 @@ void expr_scan_t::expr_ufunc(const NetEUFunc*)
 	    "unhandled function call." << endl;
 }
 
+void expr_scan_t::expr_assign(const NetEAssign*)
+{
+      cerr << "expr_scan_t (" << typeid(*this).name() << "): "
+	    "unhandled assignment expression." << endl;
+}
+
 void expr_scan_t::expr_unary(const NetEUnary*)
 {
       cerr << "expr_scan_t (" << typeid(*this).name() << "): "
