@@ -1795,6 +1795,88 @@ assignment_pattern_member
 	tmp->parm = $3;
 	$$ = tmp;
       }
+    /* SystemVerilog type keys: '{int:value, real:value, ...} */
+  | K_int ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("int");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  | K_shortint ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("shortint");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  | K_longint ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("longint");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  | K_byte ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("byte");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  | K_integer ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("integer");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  | K_real ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("real");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  | K_string ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("string");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  | K_logic ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("logic");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  | K_bit ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = perm_string::literal("bit");
+	tmp->parm = $3;
+	$$ = tmp;
+      }
+  | TYPE_IDENTIFIER ':' expression
+      { pform_requires_sv(@1, "Type key in assignment pattern");
+        named_pexpr_t*tmp = new named_pexpr_t;
+	FILE_NAME(tmp, @$);
+	tmp->name = lex_strings.make($1.text);
+	tmp->parm = $3;
+	delete[]$1.text;
+	$$ = tmp;
+      }
   ;
 
 assignment_pattern_member_list
