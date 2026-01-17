@@ -1435,3 +1435,4 @@ sv_mailbox_param	normal,-g2012	ivltests
 sv_out_of_block_method	normal,-g2012	ivltests
 sv_array_replication	normal,-g2012	ivltests
 sv_assign_expr	normal,-g2012	ivltests
+sv_tagged_union	normal,-g2012	ivltests

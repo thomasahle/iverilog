@@ -14592,6 +14592,62 @@ NetExpr*PETypename::elaborate_expr(Design*des, NetScope*,
       return 0;
 }
 
+/*
+ * Tagged union expressions (SV 11.9)
+ */
+unsigned PETagged::test_width(Design*des, NetScope*scope, width_mode_t&mode)
+{
+	// For now, tagged expressions elaborate to a simple integer width
+	// TODO: Properly determine width based on the target union type
+      if (expr_) {
+	    expr_->test_width(des, scope, mode);
+      }
+      expr_type_   = IVL_VT_LOGIC;
+      expr_width_  = 32;
+      min_width_   = 32;
+      signed_flag_ = false;
+      return expr_width_;
+}
+
+NetExpr*PETagged::elaborate_expr(Design*des, NetScope*scope,
+				 ivl_type_t type, unsigned flags) const
+{
+	// Tagged union expressions: return a placeholder value
+	// TODO: Implement proper tagged union value creation
+	// For now, we warn but return a placeholder to allow compilation
+      cerr << get_fileline() << ": warning: Tagged union expressions not yet fully implemented, using placeholder value." << endl;
+
+	// Elaborate the expression if present, to check for errors
+      if (expr_) {
+	    expr_->elaborate_expr(des, scope, type, flags);
+      }
+
+	// Return a placeholder zero value
+      verinum val(verinum::V0, 32);
+      NetEConst*tmp = new NetEConst(val);
+      tmp->set_line(*this);
+      return tmp;
+}
+
+NetExpr*PETagged::elaborate_expr(Design*des, NetScope*scope,
+				 unsigned expr_wid, unsigned flags) const
+{
+	// Tagged union expressions: return a placeholder value
+	// TODO: Implement proper tagged union value creation
+      cerr << get_fileline() << ": warning: Tagged union expressions not yet fully implemented, using placeholder value." << endl;
+
+	// Elaborate the expression if present, to check for errors
+      if (expr_) {
+	    expr_->elaborate_expr(des, scope, expr_wid, flags);
+      }
+
+	// Return a placeholder zero value with the requested width
+      verinum val(verinum::V0, expr_wid ? expr_wid : 32);
+      NetEConst*tmp = new NetEConst(val);
+      tmp->set_line(*this);
+      return tmp;
+}
+
 unsigned PEUnary::test_width(Design*des, NetScope*scope, width_mode_t&mode)
 {
 	// Evaluate the expression width to get the correct type information

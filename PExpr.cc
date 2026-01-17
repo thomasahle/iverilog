@@ -604,6 +604,16 @@ PETypename::~PETypename()
 {
 }
 
+PETagged::PETagged(perm_string member, PExpr*expr)
+: member_(member), expr_(expr)
+{
+}
+
+PETagged::~PETagged()
+{
+      delete expr_;
+}
+
 PEUnary::PEUnary(char op, PExpr*ex)
 : op_(op), expr_(ex)
 {

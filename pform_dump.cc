@@ -559,6 +559,16 @@ void PETypename::dump(ostream&fd) const
       fd << "<type>";
 }
 
+void PETagged::dump(ostream&out) const
+{
+      out << "tagged " << member_;
+      if (expr_) {
+	    out << "(";
+	    expr_->dump(out);
+	    out << ")";
+      }
+}
+
 void PEUnary::dump(ostream&out) const
 {
       switch (op_) {

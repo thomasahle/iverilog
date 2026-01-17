@@ -241,6 +241,14 @@ ivl_type_t string_type_t::elaborate_type_raw(Design*, NetScope*) const
       return &netstring_t::type_string;
 }
 
+ivl_type_t void_type_t::elaborate_type_raw(Design*, NetScope*) const
+{
+	// Void type elaborates to null - used in tagged unions for
+	// members with no data. The struct elaboration will skip
+	// members with null types, which is correct for void members.
+      return 0;
+}
+
 ivl_type_t event_type_t::elaborate_type_raw(Design*, NetScope*) const
 {
       return &netevent_type_t::type_event;

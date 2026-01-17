@@ -765,6 +765,30 @@ class PETypename : public PExpr {
       data_type_t*data_type_;
 };
 
+/*
+ * Tagged union expression (SV 11.9):
+ *   tagged <member_name>          - void member
+ *   tagged <member_name>(expr)    - member with data
+ */
+class PETagged : public PExpr {
+    public:
+      explicit PETagged(perm_string member, PExpr*expr);
+      ~PETagged() override;
+
+      virtual void dump(std::ostream&) const override;
+      virtual unsigned test_width(Design*des, NetScope*scope,
+				  width_mode_t&mode) override;
+      virtual NetExpr*elaborate_expr(Design*des, NetScope*scope,
+				     ivl_type_t type, unsigned flags) const override;
+      virtual NetExpr*elaborate_expr(Design*des, NetScope*,
+				     unsigned expr_wid,
+                                     unsigned flags) const override;
+
+    private:
+      perm_string member_;
+      PExpr*expr_;
+};
+
 class PEUnary : public PExpr {
 
     public:

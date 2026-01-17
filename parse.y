@@ -6361,6 +6361,7 @@ struct_data_type /* IEEE 1800-2012 A.2.2.1 */
 	tmp->packed_flag = $2.packed_flag;
 	tmp->signed_flag = $2.signed_flag;
 	tmp->union_flag = false;
+	tmp->tagged_flag = false;
 	tmp->members .reset($4);
 	$$ = tmp;
       }
@@ -6370,7 +6371,28 @@ struct_data_type /* IEEE 1800-2012 A.2.2.1 */
 	tmp->packed_flag = $2.packed_flag;
 	tmp->signed_flag = $2.signed_flag;
 	tmp->union_flag = true;
+	tmp->tagged_flag = false;
 	tmp->members .reset($4);
+	$$ = tmp;
+      }
+  | K_union K_tagged '{' struct_union_member_list '}'
+      { struct_type_t*tmp = new struct_type_t;
+	FILE_NAME(tmp, @1);
+	tmp->packed_flag = false;
+	tmp->signed_flag = false;
+	tmp->union_flag = true;
+	tmp->tagged_flag = true;
+	tmp->members .reset($4);
+	$$ = tmp;
+      }
+  | K_union K_tagged packed_signing '{' struct_union_member_list '}'
+      { struct_type_t*tmp = new struct_type_t;
+	FILE_NAME(tmp, @1);
+	tmp->packed_flag = $3.packed_flag;
+	tmp->signed_flag = $3.signed_flag;
+	tmp->union_flag = true;
+	tmp->tagged_flag = true;
+	tmp->members .reset($5);
 	$$ = tmp;
       }
   | K_struct packed_signing '{' error '}'
@@ -6381,6 +6403,7 @@ struct_data_type /* IEEE 1800-2012 A.2.2.1 */
 	tmp->packed_flag = $2.packed_flag;
 	tmp->signed_flag = $2.signed_flag;
 	tmp->union_flag = false;
+	tmp->tagged_flag = false;
 	$$ = tmp;
       }
   | K_union packed_signing '{' error '}'
@@ -6391,6 +6414,18 @@ struct_data_type /* IEEE 1800-2012 A.2.2.1 */
 	tmp->packed_flag = $2.packed_flag;
 	tmp->signed_flag = $2.signed_flag;
 	tmp->union_flag = true;
+	tmp->tagged_flag = false;
+	$$ = tmp;
+      }
+  | K_union K_tagged '{' error '}'
+      { yyerror(@3, "error: Errors in tagged union member list.");
+	yyerrok;
+	struct_type_t*tmp = new struct_type_t;
+	FILE_NAME(tmp, @1);
+	tmp->packed_flag = false;
+	tmp->signed_flag = false;
+	tmp->union_flag = true;
+	tmp->tagged_flag = true;
 	$$ = tmp;
       }
   ;
@@ -6417,6 +6452,16 @@ struct_union_member /* IEEE 1800-2012 A.2.2.1 */
       { struct_member_t*tmp = new struct_member_t;
 	FILE_NAME(tmp, @2);
 	tmp->type  .reset($2);
+	tmp->names .reset($3);
+	$$ = tmp;
+      }
+    /* void member for tagged unions (SV 11.9) */
+  | attribute_list_opt K_void list_of_variable_decl_assignments ';'
+      { struct_member_t*tmp = new struct_member_t;
+	FILE_NAME(tmp, @2);
+	void_type_t*vt = new void_type_t;
+	FILE_NAME(vt, @2);
+	tmp->type  .reset(vt);
 	tmp->names .reset($3);
 	$$ = tmp;
       }
@@ -7171,6 +7216,23 @@ expression
   | expression '?' attribute_list_opt expression ':' expression
       { PETernary*tmp = new PETernary($1, $4, $6);
 	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+    /* Tagged union expressions (SV 11.9):
+       tagged <member_name>          - for void members
+       tagged <member_name>(expr)    - for members with data */
+  | K_tagged IDENTIFIER
+      { pform_requires_sv(@1, "Tagged union expression");
+	PETagged*tmp = new PETagged(lex_strings.make($2), 0);
+	FILE_NAME(tmp, @1);
+	delete[]$2;
+	$$ = tmp;
+      }
+  | K_tagged IDENTIFIER '(' expression ')'
+      { pform_requires_sv(@1, "Tagged union expression");
+	PETagged*tmp = new PETagged(lex_strings.make($2), $4);
+	FILE_NAME(tmp, @1);
+	delete[]$2;
 	$$ = tmp;
       }
   ;
