@@ -412,7 +412,7 @@ class PCondit  : public Statement {
 
 class PAssertion : public Statement {
     public:
-      enum Kind { ASSERT, ASSUME, COVER };
+      enum Kind { ASSERT, ASSUME, COVER, EXPECT };
 
       PAssertion(Kind kind, PSvaExpr*expr, PExpr*disable,
                  Statement*pass, Statement*fail);

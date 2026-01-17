@@ -2901,6 +2901,135 @@ concurrent_assertion_statement /* IEEE1800-2012 A.2.10 */
 	}
         $$ = 0;
       }
+    /* IEEE1800-2012: 16.17 Expect statement
+       expect_property_statement ::= expect ( property_spec ) action_block */
+  | K_expect '(' property_spec ')' statement_or_null %prec less_than_K_else
+      { /* Expect statement with optional pass action */
+	if (gn_supported_assertions_flag && $3.expr != 0) {
+	      PSvaExpr* prop_expr = $3.expr;
+	      PEventStatement* prop_clk = $3.clocking_event;
+	      PExpr* prop_disable = $3.disable;
+	      bool resolved = resolve_named_property(prop_expr, prop_clk, prop_disable);
+
+	      if (!resolved && is_unresolved_property_reference($3.expr)) {
+		    yywarn(@1, "expect references undefined property"
+			   " (possibly skipped due to unsupported sequence constructs)."
+			   " Expect ignored.");
+		    delete $5;
+		    $$ = 0;
+	      } else {
+		    Statement*pass_action = $5;
+		    PAssertion*expect_stmt = new PAssertion(PAssertion::EXPECT, prop_expr,
+							    prop_disable, pass_action, 0);
+		    FILE_NAME(expect_stmt, @1);
+		    if (prop_clk) {
+			  prop_clk->set_statement(expect_stmt);
+			  $$ = prop_clk;
+		    } else {
+			  $$ = expect_stmt;
+		    }
+	      }
+	} else {
+	      if (gn_unsupported_assertions_flag) {
+		    yyerror(@1, "sorry: expect statement not supported."
+			    " Try -gno-assertions or -gsupported-assertions"
+			    " to turn this message off.");
+	      }
+	      delete $5;
+	      $$ = 0;
+	}
+      }
+  | K_expect '(' property_spec ')' K_else statement_or_null
+      { /* Expect statement with only fail action */
+	if (gn_supported_assertions_flag && $3.expr != 0) {
+	      PSvaExpr* prop_expr = $3.expr;
+	      PEventStatement* prop_clk = $3.clocking_event;
+	      PExpr* prop_disable = $3.disable;
+	      bool resolved = resolve_named_property(prop_expr, prop_clk, prop_disable);
+
+	      if (!resolved && is_unresolved_property_reference($3.expr)) {
+		    yywarn(@1, "expect references undefined property"
+			   " (possibly skipped due to unsupported sequence constructs)."
+			   " Expect ignored.");
+		    delete $6;
+		    $$ = 0;
+	      } else {
+		    PAssertion*expect_stmt = new PAssertion(PAssertion::EXPECT, prop_expr,
+							    prop_disable, 0, $6);
+		    FILE_NAME(expect_stmt, @1);
+		    if (prop_clk) {
+			  prop_clk->set_statement(expect_stmt);
+			  $$ = prop_clk;
+		    } else {
+			  $$ = expect_stmt;
+		    }
+	      }
+	} else {
+	      if (gn_unsupported_assertions_flag) {
+		    yyerror(@1, "sorry: expect statement not supported."
+			    " Try -gno-assertions or -gsupported-assertions"
+			    " to turn this message off.");
+	      }
+	      delete $6;
+	      $$ = 0;
+	}
+      }
+  | K_expect '(' property_spec ')' statement_or_null K_else statement_or_null
+      { /* Expect statement with both pass and fail actions */
+	if (gn_supported_assertions_flag && $3.expr != 0) {
+	      PSvaExpr* prop_expr = $3.expr;
+	      PEventStatement* prop_clk = $3.clocking_event;
+	      PExpr* prop_disable = $3.disable;
+	      bool resolved = resolve_named_property(prop_expr, prop_clk, prop_disable);
+
+	      if (!resolved && is_unresolved_property_reference($3.expr)) {
+		    yywarn(@1, "expect references undefined property"
+			   " (possibly skipped due to unsupported sequence constructs)."
+			   " Expect ignored.");
+		    delete $5;
+		    delete $7;
+		    $$ = 0;
+	      } else {
+		    PAssertion*expect_stmt = new PAssertion(PAssertion::EXPECT, prop_expr,
+							    prop_disable, $5, $7);
+		    FILE_NAME(expect_stmt, @1);
+		    if (prop_clk) {
+			  prop_clk->set_statement(expect_stmt);
+			  $$ = prop_clk;
+		    } else {
+			  $$ = expect_stmt;
+		    }
+	      }
+	} else {
+	      if (gn_unsupported_assertions_flag) {
+		    yyerror(@1, "sorry: expect statement not supported."
+			    " Try -gno-assertions or -gsupported-assertions"
+			    " to turn this message off.");
+	      }
+	      delete $5;
+	      delete $7;
+	      $$ = 0;
+	}
+      }
+  | K_expect '(' error ')' statement_or_null %prec less_than_K_else
+      { yyerrok;
+        yyerror(@1, "error: Error in property_spec of expect statement.");
+        delete $5;
+        $$ = 0;
+      }
+  | K_expect '(' error ')' K_else statement_or_null
+      { yyerrok;
+        yyerror(@1, "error: Error in property_spec of expect statement.");
+        delete $6;
+        $$ = 0;
+      }
+  | K_expect '(' error ')' statement_or_null K_else statement_or_null
+      { yyerrok;
+        yyerror(@1, "error: Error in property_spec of expect statement.");
+        delete $5;
+        delete $7;
+        $$ = 0;
+      }
   | assert_or_assume K_property '(' error ')' statement_or_null %prec less_than_K_else
       { yyerrok;
         yyerror(@2, "error: Error in property_spec of concurrent assertion item.");
