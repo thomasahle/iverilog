@@ -1351,6 +1351,11 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 	    PExpr* disable;
       } property_spec;
 
+      struct {
+	    Statement* statement;
+	    int mode;  // 0 for #0, 1 for final
+      } deferred_assertion;
+
       PSpecPath* specpath;
       std::list<index_component_t> *dimensions;
 
@@ -1637,7 +1642,7 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <statement> concurrent_assertion_item
 %type <statement> assertion_item
 %type <statement> deferred_immediate_assertion_statement
-%type <statement> deferred_immediate_assertion_item
+%type <deferred_assertion> deferred_immediate_assertion_item
 %type <statement> simple_immediate_assertion_statement
 %type <statement> procedural_assertion_statement
 %type <statement_list> statement_or_null_list statement_or_null_list_opt
@@ -1740,9 +1745,9 @@ assert_or_assume
   ;
 
 assertion_item /* IEEE1800-2012: A.6.10 */
+    /* NOTE: deferred_immediate_assertion_item is handled separately in module_item
+       because it needs special process type handling (#0 vs final). */
   : concurrent_assertion_item
-      { $$ = $1; }
-  | deferred_immediate_assertion_item
       { $$ = $1; }
   ;
 
@@ -3858,9 +3863,129 @@ data_type_or_implicit_or_void
 
 
 deferred_immediate_assertion_item /* IEEE1800-2012: A.6.10 */
-  : block_identifier_opt deferred_immediate_assertion_statement
+    /* For module-level deferred assertions, we need to track the mode
+       (0=#0, 1=final) to use the correct process type. */
+  : block_identifier_opt assert_or_assume '#' DEC_NUMBER '(' expression ')' statement_or_null %prec less_than_K_else
       { delete $1;
-	$$ = $2;
+	if (!$4->is_zero()) {
+	      yyerror(@4, "error: Delay value must be zero for deferred assertion.");
+	}
+	delete $4;
+	if (gn_supported_assertions_flag) {
+	      std::list<named_pexpr_t> arg_list;
+	      PCallTask*tmp1 = new PCallTask(lex_strings.make("$error"), arg_list);
+	      FILE_NAME(tmp1, @2);
+	      PCondit*tmp2 = new PCondit($6, $8, tmp1);
+	      FILE_NAME(tmp2, @2);
+	      $$.statement = tmp2;
+	      $$.mode = 0;  // #0 mode
+	} else {
+	      delete $6;
+	      delete $8;
+	      $$.statement = 0;
+	      $$.mode = 0;
+	}
+      }
+  | block_identifier_opt assert_or_assume '#' DEC_NUMBER '(' expression ')' K_else statement_or_null
+      { delete $1;
+	if (!$4->is_zero()) {
+	      yyerror(@4, "error: Delay value must be zero for deferred assertion.");
+	}
+	delete $4;
+	if (gn_supported_assertions_flag) {
+	      PCondit*tmp = new PCondit($6, 0, $9);
+	      FILE_NAME(tmp, @2);
+	      $$.statement = tmp;
+	      $$.mode = 0;
+	} else {
+	      delete $6;
+	      delete $9;
+	      $$.statement = 0;
+	      $$.mode = 0;
+	}
+      }
+  | block_identifier_opt assert_or_assume '#' DEC_NUMBER '(' expression ')' statement_or_null K_else statement_or_null
+      { delete $1;
+	if (!$4->is_zero()) {
+	      yyerror(@4, "error: Delay value must be zero for deferred assertion.");
+	}
+	delete $4;
+	if (gn_supported_assertions_flag) {
+	      PCondit*tmp = new PCondit($6, $8, $10);
+	      FILE_NAME(tmp, @2);
+	      $$.statement = tmp;
+	      $$.mode = 0;
+	} else {
+	      delete $6;
+	      delete $8;
+	      delete $10;
+	      $$.statement = 0;
+	      $$.mode = 0;
+	}
+      }
+  | block_identifier_opt assert_or_assume K_final '(' expression ')' statement_or_null %prec less_than_K_else
+      { delete $1;
+	if (gn_supported_assertions_flag) {
+	      std::list<named_pexpr_t> arg_list;
+	      PCallTask*tmp1 = new PCallTask(lex_strings.make("$error"), arg_list);
+	      FILE_NAME(tmp1, @2);
+	      PCondit*tmp2 = new PCondit($5, $7, tmp1);
+	      FILE_NAME(tmp2, @2);
+	      $$.statement = tmp2;
+	      $$.mode = 1;  // final mode
+	} else {
+	      delete $5;
+	      delete $7;
+	      $$.statement = 0;
+	      $$.mode = 1;
+	}
+      }
+  | block_identifier_opt assert_or_assume K_final '(' expression ')' K_else statement_or_null
+      { delete $1;
+	if (gn_supported_assertions_flag) {
+	      PCondit*tmp = new PCondit($5, 0, $8);
+	      FILE_NAME(tmp, @2);
+	      $$.statement = tmp;
+	      $$.mode = 1;
+	} else {
+	      delete $5;
+	      delete $8;
+	      $$.statement = 0;
+	      $$.mode = 1;
+	}
+      }
+  | block_identifier_opt assert_or_assume K_final '(' expression ')' statement_or_null K_else statement_or_null
+      { delete $1;
+	if (gn_supported_assertions_flag) {
+	      PCondit*tmp = new PCondit($5, $7, $9);
+	      FILE_NAME(tmp, @2);
+	      $$.statement = tmp;
+	      $$.mode = 1;
+	} else {
+	      delete $5;
+	      delete $7;
+	      delete $9;
+	      $$.statement = 0;
+	      $$.mode = 1;
+	}
+      }
+  | block_identifier_opt K_cover '#' DEC_NUMBER '(' expression ')' statement_or_null
+      { delete $1;
+	if (!$4->is_zero()) {
+	      yyerror(@4, "error: Delay value must be zero for deferred assertion.");
+	}
+	delete $4;
+	delete $6;
+	delete $8;
+	$$.statement = 0;
+	$$.mode = 0;
+      }
+  | block_identifier_opt K_cover K_final '(' expression ')' statement_or_null
+      { delete $1;
+	delete $5;
+	delete $7;
+	$$.statement = 0;
+	$$.mode = 1;
       }
   ;
 
@@ -10174,6 +10299,22 @@ module_item
         Statement*stmt = $2;
         if (stmt) {
               PProcess*tmp = pform_make_behavior(IVL_PR_ALWAYS, stmt, $1);
+              FILE_NAME(tmp, @2);
+        }
+      }
+
+  | attribute_list_opt deferred_immediate_assertion_item
+      { /* Deferred immediate assertions at module scope:
+           - #0 (mode=0): Wrap in IVL_PR_INITIAL for single execution at time 0
+           - final (mode=1): Wrap in IVL_PR_FINAL for execution at end of simulation
+           NOTE: True #0 deferred semantics would require evaluation in the
+           Observed region at every time step, but IVL_PR_INITIAL is a
+           reasonable simplification for basic cases. */
+        Statement*stmt = $2.statement;
+        int mode = $2.mode;
+        if (stmt) {
+              ivl_process_type_t ptype = (mode == 1) ? IVL_PR_FINAL : IVL_PR_INITIAL;
+              PProcess*tmp = pform_make_behavior(ptype, stmt, $1);
               FILE_NAME(tmp, @2);
         }
       }
