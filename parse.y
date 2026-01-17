@@ -2040,6 +2040,21 @@ class_parameter_port
         delete[]$3;
         $$ = tmp;
       }
+    /* Value parameter with 'parameter' keyword, no type (defaults to integer): parameter N = 8 */
+  | K_parameter IDENTIFIER '=' expression
+      { class_param_t*tmp = new class_param_t;
+        FILE_NAME(tmp, @1);
+        tmp->name = lex_strings.make($2);
+        tmp->is_type = false;
+        /* Default to integer type when no type specified (SV 8.25.1) */
+        atom_type_t*int_type = new atom_type_t(atom_type_t::INTEGER, true);
+        FILE_NAME(int_type, @1);
+        tmp->type = int_type;
+        tmp->default_type = nullptr;
+        tmp->default_expr = $4;
+        delete[]$2;
+        $$ = tmp;
+      }
   ;
 
 class_declaration /* IEEE1800-2005: A.1.2 */
