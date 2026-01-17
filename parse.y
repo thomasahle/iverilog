@@ -1533,8 +1533,8 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %type <named_pexpr> assignment_pattern_member
 %type <named_pexprs> assignment_pattern_member_list
 
-%type <citem>  case_item
-%type <citems> case_items
+%type <citem>  case_item case_pattern_item
+%type <citems> case_items case_pattern_items
 %type <case_inside_item>  case_inside_item
 %type <case_inside_items> case_inside_items
 %type <randcase_item>  randcase_item
@@ -6558,6 +6558,36 @@ randcase_items
       }
   ;
 
+  /* case matches pattern items (SV 12.6.1) */
+case_pattern_item
+  : pattern ':' statement_or_null
+      { /* For now, just create a case item that always matches */
+	PCase::Item*tmp = new PCase::Item;
+	tmp->stat = $3;
+	$$ = tmp;
+      }
+  | K_default ':' statement_or_null
+      { PCase::Item*tmp = new PCase::Item;
+	tmp->stat = $3;
+	$$ = tmp;
+      }
+  | K_default statement_or_null
+      { PCase::Item*tmp = new PCase::Item;
+	tmp->stat = $2;
+	$$ = tmp;
+      }
+  ;
+
+case_pattern_items
+  : case_pattern_items case_pattern_item
+      { $1->push_back($2);
+	$$ = $1;
+      }
+  | case_pattern_item
+      { $$ = new std::vector<PCase::Item*>(1, $1);
+      }
+  ;
+
 charge_strength
   : '(' K_small ')'
   | '(' K_medium ')'
@@ -7235,6 +7265,67 @@ expression
 	delete[]$2;
 	$$ = tmp;
       }
+    /* Pattern matching expression (SV 12.6):
+       expression matches pattern */
+  | expression K_matches pattern
+      { pform_requires_sv(@2, "Pattern matching expression");
+	/* For now, return a placeholder - pattern matching always succeeds */
+	/* TODO: Implement proper pattern matching evaluation */
+	delete $1;  /* Discard the expression for now */
+	verinum val(verinum::V1, 1);  /* Return true (match succeeds) */
+	PENumber*tmp = new PENumber(new verinum(val));
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  ;
+
+  /* Pattern for pattern matching (SV 12.6)
+     To avoid grammar conflicts with expression rules, we define specific
+     pattern forms rather than using expression as a catch-all. */
+pattern
+  : tagged_pattern
+  | assignment_pattern_for_match
+  | wildcard_pattern
+  | constant_pattern
+  ;
+
+tagged_pattern
+  : K_tagged IDENTIFIER
+      { /* tagged member_id - matches void tagged union member */
+	delete[]$2;
+      }
+  | K_tagged IDENTIFIER assignment_pattern_for_match
+      { /* tagged member_id '{...} - matches tagged union member with struct pattern */
+	delete[]$2;
+      }
+  ;
+
+assignment_pattern_for_match
+  : K_LP pattern_list '}'
+      { /* '{pattern, pattern, ...} - assignment pattern */
+      }
+  ;
+
+wildcard_pattern
+  : '.' IDENTIFIER
+      { /* .identifier - wildcard binding, captures value into variable */
+	delete[]$2;
+      }
+  | K_default
+      { /* default - matches anything */
+      }
+  ;
+
+constant_pattern
+  : number
+      { delete $1; }
+  | STRING
+      { delete[]$1; }
+  ;
+
+pattern_list
+  : pattern_list ',' pattern
+  | pattern
   ;
 
 expression_opt
@@ -11549,6 +11640,27 @@ statement_item /* This is roughly statement_item in the LRM */
   | unique_priority K_casez '(' expression ')' case_items K_endcase
       { PCase*tmp = new PCase($1, NetCase::EQZ, $4, $6);
 	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+    /* case matches for pattern matching (SV 12.6.1) */
+  | unique_priority K_case '(' expression ')' K_matches case_pattern_items K_endcase
+      { pform_requires_sv(@6, "case matches pattern");
+	/* For now, treat as regular case with all items matching.
+	   TODO: Implement proper pattern matching semantics */
+	PCase*tmp = new PCase($1, NetCase::EQ, $4, $7);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  | unique_priority K_casex '(' expression ')' K_matches case_pattern_items K_endcase
+      { pform_requires_sv(@6, "casex matches pattern");
+	PCase*tmp = new PCase($1, NetCase::EQX, $4, $7);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  | unique_priority K_casez '(' expression ')' K_matches case_pattern_items K_endcase
+      { pform_requires_sv(@6, "casez matches pattern");
+	PCase*tmp = new PCase($1, NetCase::EQZ, $4, $7);
+	FILE_NAME(tmp, @2);
 	$$ = tmp;
       }
   | unique_priority K_case '(' expression ')' K_inside case_inside_items K_endcase
