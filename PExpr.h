@@ -342,11 +342,14 @@ class PEEvent : public PExpr {
 
 	// Use this constructor to create events based on edges or levels.
       PEEvent(edge_t t, PExpr*e);
+	// Constructor with iff condition (SV 9.4.2.3)
+      PEEvent(edge_t t, PExpr*e, PExpr*iff_cond);
 
       ~PEEvent() override;
 
       edge_t type() const;
       PExpr* expr() const;
+      PExpr* iff_expr() const;
 
       virtual void dump(std::ostream&) const override;
 
@@ -355,6 +358,7 @@ class PEEvent : public PExpr {
     private:
       edge_t type_;
       PExpr *expr_;
+      PExpr *iff_;  // iff condition (null if none)
 };
 
 /*

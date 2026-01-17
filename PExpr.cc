@@ -369,12 +369,18 @@ void PEStreamingConcat::dump(std::ostream&out) const
 }
 
 PEEvent::PEEvent(PEEvent::edge_t t, PExpr*e)
-: type_(t), expr_(e)
+: type_(t), expr_(e), iff_(nullptr)
+{
+}
+
+PEEvent::PEEvent(PEEvent::edge_t t, PExpr*e, PExpr*iff_cond)
+: type_(t), expr_(e), iff_(iff_cond)
 {
 }
 
 PEEvent::~PEEvent()
 {
+      delete iff_;
 }
 
 PEEvent::edge_t PEEvent::type() const
@@ -385,12 +391,20 @@ PEEvent::edge_t PEEvent::type() const
 bool PEEvent::has_aa_term(Design*des, NetScope*scope) const
 {
       ivl_assert(*this, expr_);
-      return expr_->has_aa_term(des, scope);
+      bool result = expr_->has_aa_term(des, scope);
+      if (iff_)
+	    result = result || iff_->has_aa_term(des, scope);
+      return result;
 }
 
 PExpr* PEEvent::expr() const
 {
       return expr_;
+}
+
+PExpr* PEEvent::iff_expr() const
+{
+      return iff_;
 }
 
 PENull::PENull(void)

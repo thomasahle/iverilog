@@ -7187,6 +7187,25 @@ event_expression
 	FILE_NAME(tmp, @1);
 	$$ = tmp;
       }
+    /* Event with iff condition (SV 9.4.2.3) */
+  | K_posedge expr_primary K_iff expression
+      { pform_requires_sv(@3, "Event iff condition");
+	PEEvent*tmp = new PEEvent(PEEvent::POSEDGE, $2, $4);
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+  | K_negedge expr_primary K_iff expression
+      { pform_requires_sv(@3, "Event iff condition");
+	PEEvent*tmp = new PEEvent(PEEvent::NEGEDGE, $2, $4);
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
+  | K_edge expr_primary K_iff expression
+      { pform_requires_sv(@3, "Event iff condition");
+	PEEvent*tmp = new PEEvent(PEEvent::EDGE, $2, $4);
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
   ;
 
   /* A branch probe expression applies a probe function (potential or
