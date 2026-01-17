@@ -5382,13 +5382,49 @@ property_expr /* IEEE1800-2012 A.2.10 */
       { $$ = make_sva_concat(make_sva_atom($1, @1), $3->as_long(), $3->as_long(),
                              make_sva_atom($4, @4), @2);
       }
+    /* expression ##n property_expr - allows repetition as right operand */
+  | expression K_SEQ_DELAY DEC_NUMBER property_expr
+      { $$ = make_sva_concat(make_sva_atom($1, @1), $3->as_long(), $3->as_long(), $4, @2);
+      }
+    /* expression ##n expr [*m:n] - delay followed by consecutive repetition with range */
+  | expression K_SEQ_DELAY DEC_NUMBER expression K_REP_STAR DEC_NUMBER ':' DEC_NUMBER ']'
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($4, @4), $6->as_long(),
+                                        $8->as_long(), PSvaExpr::REP_CONSEC, @5);
+        $$ = make_sva_concat(make_sva_atom($1, @1), $3->as_long(), $3->as_long(), rep, @2);
+      }
+    /* expression ##n expr [*m:n] ##k property_expr - full sequence with repetition */
+  | expression K_SEQ_DELAY DEC_NUMBER expression K_REP_STAR DEC_NUMBER ':' DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($4, @4), $6->as_long(),
+                                        $8->as_long(), PSvaExpr::REP_CONSEC, @5);
+        PSvaExpr* concat1 = make_sva_concat(make_sva_atom($1, @1), $3->as_long(), $3->as_long(), rep, @2);
+        $$ = make_sva_concat(concat1, $11->as_long(), $11->as_long(), $12, @10);
+      }
+    /* expression ##n expr [*m] ##k property_expr - with single count repetition */
+  | expression K_SEQ_DELAY DEC_NUMBER expression K_REP_STAR DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($4, @4), $6->as_long(),
+                                        $6->as_long(), PSvaExpr::REP_CONSEC, @5);
+        PSvaExpr* concat1 = make_sva_concat(make_sva_atom($1, @1), $3->as_long(), $3->as_long(), rep, @2);
+        $$ = make_sva_concat(concat1, $9->as_long(), $9->as_long(), $10, @8);
+      }
+    /* expression ##n expr [*m] - with single count */
+  | expression K_SEQ_DELAY DEC_NUMBER expression K_REP_STAR DEC_NUMBER ']'
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($4, @4), $6->as_long(),
+                                        $6->as_long(), PSvaExpr::REP_CONSEC, @5);
+        $$ = make_sva_concat(make_sva_atom($1, @1), $3->as_long(), $3->as_long(), rep, @2);
+      }
   | expression K_SEQ_DELAY '[' expression ':' expression ']' expression
       { $$ = make_sva_concat_expr(make_sva_atom($1, @1), $4, $6, false,
                                   make_sva_atom($8, @8), @2);
       }
+  | expression K_SEQ_DELAY '[' expression ':' expression ']' property_expr
+      { $$ = make_sva_concat_expr(make_sva_atom($1, @1), $4, $6, false, $8, @2);
+      }
   | expression K_SEQ_DELAY '[' expression ':' '$' ']' expression
       { $$ = make_sva_concat_expr(make_sva_atom($1, @1), $4, nullptr, true,
                                   make_sva_atom($8, @8), @2);
+      }
+  | expression K_SEQ_DELAY '[' expression ':' '$' ']' property_expr
+      { $$ = make_sva_concat_expr(make_sva_atom($1, @1), $4, nullptr, true, $8, @2);
       }
   | '(' expression K_SEQ_DELAY DEC_NUMBER expression ')'
       { $$ = make_sva_concat(make_sva_atom($2, @2), $4->as_long(), $4->as_long(),
@@ -5430,14 +5466,97 @@ property_expr /* IEEE1800-2012 A.2.10 */
       { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
                              $3->as_long(), PSvaExpr::REP_GOTO, @2);
       }
+    /* Goto repetition with range: expr [-> min : max ] */
+  | expression K_GOTO_REP DEC_NUMBER ':' DEC_NUMBER ']'
+      { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                             $5->as_long(), PSvaExpr::REP_GOTO, @2);
+      }
+    /* Goto repetition with unbounded range: expr [-> min : $ ] */
+  | expression K_GOTO_REP DEC_NUMBER ':' '$' ']'
+      { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                             -1, PSvaExpr::REP_GOTO, @2);
+      }
+    /* Non-consecutive repetition: expr [= n ] */
+  | expression K_REP_GOTO DEC_NUMBER ']'
+      { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                             $3->as_long(), PSvaExpr::REP_NONCON, @2);
+      }
+    /* Non-consecutive repetition with range: expr [= min : max ] */
+  | expression K_REP_GOTO DEC_NUMBER ':' DEC_NUMBER ']'
+      { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                             $5->as_long(), PSvaExpr::REP_NONCON, @2);
+      }
+    /* Non-consecutive repetition with unbounded range: expr [= min : $ ] */
+  | expression K_REP_GOTO DEC_NUMBER ':' '$' ']'
+      { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                             -1, PSvaExpr::REP_NONCON, @2);
+      }
   | expression K_REP_STAR DEC_NUMBER ']'
       { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
                              $3->as_long(), PSvaExpr::REP_CONSEC, @2);
+      }
+    /* Consecutive repetition with range: expr [* min : max ] */
+  | expression K_REP_STAR DEC_NUMBER ':' DEC_NUMBER ']'
+      { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                             $5->as_long(), PSvaExpr::REP_CONSEC, @2);
+      }
+    /* Consecutive repetition with unbounded range: expr [* min : $ ] */
+  | expression K_REP_STAR DEC_NUMBER ':' '$' ']'
+      { $$ = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                             -1, PSvaExpr::REP_CONSEC, @2);
       }
   | expression K_REP_STAR DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
       { PSvaExpr* rep = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
                                         $3->as_long(), PSvaExpr::REP_CONSEC, @2);
         $$ = make_sva_concat(rep, $6->as_long(), $6->as_long(), $7, @5);
+      }
+    /* Consecutive repetition with range followed by delay: expr [* min : max ] ##n ... */
+  | expression K_REP_STAR DEC_NUMBER ':' DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                                        $5->as_long(), PSvaExpr::REP_CONSEC, @2);
+        $$ = make_sva_concat(rep, $8->as_long(), $8->as_long(), $9, @7);
+      }
+    /* Goto repetition followed by delay: expr [-> n ] ##n ... */
+  | expression K_GOTO_REP DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                                        $3->as_long(), PSvaExpr::REP_GOTO, @2);
+        $$ = make_sva_concat(rep, $6->as_long(), $6->as_long(), $7, @5);
+      }
+    /* Goto repetition with range followed by delay: expr [-> min : max ] ##n ... */
+  | expression K_GOTO_REP DEC_NUMBER ':' DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                                        $5->as_long(), PSvaExpr::REP_GOTO, @2);
+        $$ = make_sva_concat(rep, $8->as_long(), $8->as_long(), $9, @7);
+      }
+    /* Non-consecutive repetition followed by delay: expr [= n ] ##n ... */
+  | expression K_REP_GOTO DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                                        $3->as_long(), PSvaExpr::REP_NONCON, @2);
+        $$ = make_sva_concat(rep, $6->as_long(), $6->as_long(), $7, @5);
+      }
+    /* Non-consecutive repetition with range followed by delay: expr [= min : max ] ##n ... */
+  | expression K_REP_GOTO DEC_NUMBER ':' DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { PSvaExpr* rep = make_sva_repeat(make_sva_atom($1, @1), $3->as_long(),
+                                        $5->as_long(), PSvaExpr::REP_NONCON, @2);
+        $$ = make_sva_concat(rep, $8->as_long(), $8->as_long(), $9, @7);
+      }
+    /* property_expr [*n] - allow property_expr on left of repetition */
+  | property_expr K_REP_STAR DEC_NUMBER ']'
+      { $$ = make_sva_repeat($1, $3->as_long(), $3->as_long(), PSvaExpr::REP_CONSEC, @2);
+      }
+  | property_expr K_REP_STAR DEC_NUMBER ':' DEC_NUMBER ']'
+      { $$ = make_sva_repeat($1, $3->as_long(), $5->as_long(), PSvaExpr::REP_CONSEC, @2);
+      }
+  | property_expr K_REP_STAR DEC_NUMBER ':' '$' ']'
+      { $$ = make_sva_repeat($1, $3->as_long(), -1, PSvaExpr::REP_CONSEC, @2);
+      }
+  | property_expr K_REP_STAR DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { PSvaExpr* rep = make_sva_repeat($1, $3->as_long(), $3->as_long(), PSvaExpr::REP_CONSEC, @2);
+        $$ = make_sva_concat(rep, $6->as_long(), $6->as_long(), $7, @5);
+      }
+  | property_expr K_REP_STAR DEC_NUMBER ':' DEC_NUMBER ']' K_SEQ_DELAY DEC_NUMBER property_expr
+      { PSvaExpr* rep = make_sva_repeat($1, $3->as_long(), $5->as_long(), PSvaExpr::REP_CONSEC, @2);
+        $$ = make_sva_concat(rep, $8->as_long(), $8->as_long(), $9, @7);
       }
   ;
 

@@ -1442,3 +1442,4 @@ sv_type_key_pattern	normal,-g2012	ivltests
 sv_event_iff		normal,-g2012	ivltests
 sv_clocking_block	normal,-g2012	ivltests
 sv_property_local_var	normal,-g2012	ivltests
+sv_seq_repeat		normal,-g2012	ivltests
