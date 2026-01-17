@@ -8,6 +8,6 @@ module test;
   } Variant;
 
   initial begin
-    $display("PASSED - tagged union syntax accepted");
+    $display("PASSED");
   end
 endmodule

@@ -5584,6 +5584,91 @@ streaming_concatenation /* IEEE1800-2005: A.8.1 */
       }
   ;
 
+  /* Clocking block declaration (SV 14.3)
+     For now, we parse the syntax but don't implement the semantics. */
+clocking_declaration
+  : K_clocking IDENTIFIER clocking_block_event ';'
+    clocking_items_opt
+    K_endclocking label_opt
+      { pform_requires_sv(@1, "Clocking block");
+	/* For now, just ignore the clocking block */
+	delete[]$2;
+	delete $7;
+      }
+  | K_default K_clocking IDENTIFIER clocking_block_event ';'
+    clocking_items_opt
+    K_endclocking label_opt
+      { pform_requires_sv(@1, "Default clocking block");
+	delete[]$3;
+	delete $8;
+      }
+  | K_default K_clocking clocking_block_event ';'
+    clocking_items_opt
+    K_endclocking
+      { pform_requires_sv(@1, "Default clocking block");
+      }
+  | K_global K_clocking IDENTIFIER clocking_block_event_opt ';'
+    K_endclocking label_opt
+      { pform_requires_sv(@1, "Global clocking block");
+	delete[]$3;
+	delete $7;
+      }
+  ;
+
+  /* Clocking block event is required for regular and default clocking blocks,
+     but optional for global clocking blocks. */
+clocking_block_event
+  : '@' '(' event_expression_list ')'
+      { delete $3; }
+  | '@' IDENTIFIER
+      { delete[]$2; }
+  ;
+
+clocking_block_event_opt
+  : clocking_block_event
+  | /* empty */
+  ;
+
+clocking_items_opt
+  : clocking_items
+  | /* empty */
+  ;
+
+clocking_items
+  : clocking_items clocking_item
+  | clocking_item
+  ;
+
+clocking_item
+  : K_default K_input clocking_skew_opt K_output clocking_skew_opt ';'
+  | K_default K_input clocking_skew_opt ';'
+  | K_default K_output clocking_skew_opt ';'
+  | K_input clocking_skew_opt list_of_clocking_signals ';'
+  | K_output clocking_skew_opt list_of_clocking_signals ';'
+  | K_inout list_of_clocking_signals ';'
+  ;
+
+clocking_skew_opt
+  : '#' delay_value
+      { delete $2; }
+  | K_posedge
+  | K_negedge
+  | K_edge
+  | /* empty */
+  ;
+
+list_of_clocking_signals
+  : list_of_clocking_signals ',' clocking_signal
+  | clocking_signal
+  ;
+
+clocking_signal
+  : IDENTIFIER
+      { delete[]$1; }
+  | IDENTIFIER '=' expression
+      { delete[]$1; delete $3; }
+  ;
+
   /* The task declaration rule matches the task declaration
      header, then pushes the function scope. This causes the
      definitions in the task_body to take on the scope of the task
@@ -9609,6 +9694,8 @@ module_item
   | task_declaration
 
   | function_declaration
+
+  | clocking_declaration
 
   | external_method_definition
 
