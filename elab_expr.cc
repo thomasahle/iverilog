@@ -1079,6 +1079,58 @@ NetExpr*PEAssignPattern::elaborate_expr(Design*des, NetScope*scope,
 {
       bool need_const = NEED_CONST & flags;
 
+      // Handle replication pattern: '{n{items}} expands to '{items, items, ...}
+      // We need to expand the parms_ vector before proceeding.
+      std::vector<PExpr*> expanded_parms;
+      const std::vector<PExpr*>* use_parms = &parms_;
+
+      if (repeat_ != nullptr) {
+	    // Evaluate the repeat count as a constant expression
+	    // Use elab_and_eval which handles constant folding properly
+	    NetExpr* count_expr = elab_and_eval(des, scope, repeat_, -1, true);
+	    if (!count_expr) {
+		  cerr << get_fileline() << ": error: Replication count is not a valid expression." << endl;
+		  des->errors += 1;
+		  return nullptr;
+	    }
+
+	    NetEConst* count_const = dynamic_cast<NetEConst*>(count_expr);
+	    if (!count_const) {
+		  cerr << get_fileline() << ": error: Replication count must be a constant expression." << endl;
+		  des->errors += 1;
+		  delete count_expr;
+		  return nullptr;
+	    }
+
+	    long count = count_const->value().as_long();
+	    delete count_expr;
+
+	    if (count < 0) {
+		  cerr << get_fileline() << ": error: Replication count cannot be negative." << endl;
+		  des->errors += 1;
+		  return nullptr;
+	    }
+
+	    // Expand the pattern by repeating items count times
+	    for (long i = 0; i < count; i++) {
+		  for (size_t j = 0; j < parms_.size(); j++) {
+			expanded_parms.push_back(parms_[j]);
+		  }
+	    }
+	    use_parms = &expanded_parms;
+      }
+
+      // Now use use_parms instead of parms_ for elaboration
+      // Create a heap-allocated PEAssignPattern with expanded parms if needed
+      if (use_parms != &parms_) {
+	    std::list<PExpr*> parm_list(use_parms->begin(), use_parms->end());
+	    PEAssignPattern* expanded_pattern = new PEAssignPattern(parm_list);
+	    expanded_pattern->set_line(*this);
+	    NetExpr* result = expanded_pattern->elaborate_expr(des, scope, ntype, flags);
+	    delete expanded_pattern;
+	    return result;
+      }
+
       if (auto darray_type = dynamic_cast<const netdarray_t*>(ntype))
 	    return elaborate_expr_array_(des, scope, darray_type, need_const, true);
 
@@ -1122,10 +1174,49 @@ NetExpr* PEAssignPattern::elaborate_expr_array_(Design *des, NetScope *scope,
 	// Special case: If this is an empty pattern (i.e. '{}) then convert
 	// this to a null handle. Internally, Icarus Verilog uses this to
 	// represent nil dynamic arrays.
-      if (parms_.empty()) {
+      if (parms_.empty() && repeat_ == nullptr) {
 	    NetENull *tmp = new NetENull;
 	    tmp->set_line(*this);
 	    return tmp;
+      }
+
+      // Handle replication pattern: expand before processing
+      if (repeat_ != nullptr) {
+	    NetExpr* count_expr = elab_and_eval(des, scope, repeat_, -1, true);
+	    if (!count_expr) {
+		  cerr << get_fileline() << ": error: Replication count is not a valid expression." << endl;
+		  des->errors += 1;
+		  return nullptr;
+	    }
+
+	    NetEConst* count_const = dynamic_cast<NetEConst*>(count_expr);
+	    if (!count_const) {
+		  cerr << get_fileline() << ": error: Replication count must be a constant expression." << endl;
+		  des->errors += 1;
+		  delete count_expr;
+		  return nullptr;
+	    }
+
+	    long count = count_const->value().as_long();
+	    delete count_expr;
+
+	    if (count < 0) {
+		  cerr << get_fileline() << ": error: Replication count cannot be negative." << endl;
+		  des->errors += 1;
+		  return nullptr;
+	    }
+
+	    std::list<PExpr*> expanded_list;
+	    for (long i = 0; i < count; i++) {
+		  for (size_t j = 0; j < parms_.size(); j++) {
+			expanded_list.push_back(parms_[j]);
+		  }
+	    }
+	    PEAssignPattern* expanded_pattern = new PEAssignPattern(expanded_list);
+	    expanded_pattern->set_line(*this);
+	    NetExpr* result = expanded_pattern->elaborate_expr_array_(des, scope, array_type, need_const, up);
+	    delete expanded_pattern;
+	    return result;
       }
 
 	// This is an array pattern, so run through the elements of
@@ -1156,6 +1247,48 @@ NetExpr* PEAssignPattern::elaborate_expr_uarray_(Design *des, NetScope *scope,
 {
       if (dims.size() <= cur_dim)
 	    return nullptr;
+
+      // Handle replication pattern: expand before checking dimensions
+      if (repeat_ != nullptr) {
+	    // Evaluate the repeat count as a constant expression
+	    NetExpr* count_expr = elab_and_eval(des, scope, repeat_, -1, true);
+	    if (!count_expr) {
+		  cerr << get_fileline() << ": error: Replication count is not a valid expression." << endl;
+		  des->errors += 1;
+		  return nullptr;
+	    }
+
+	    NetEConst* count_const = dynamic_cast<NetEConst*>(count_expr);
+	    if (!count_const) {
+		  cerr << get_fileline() << ": error: Replication count must be a constant expression." << endl;
+		  des->errors += 1;
+		  delete count_expr;
+		  return nullptr;
+	    }
+
+	    long count = count_const->value().as_long();
+	    delete count_expr;
+
+	    if (count < 0) {
+		  cerr << get_fileline() << ": error: Replication count cannot be negative." << endl;
+		  des->errors += 1;
+		  return nullptr;
+	    }
+
+	    // Create expanded pattern and elaborate it
+	    std::list<PExpr*> expanded_list;
+	    for (long i = 0; i < count; i++) {
+		  for (size_t j = 0; j < parms_.size(); j++) {
+			expanded_list.push_back(parms_[j]);
+		  }
+	    }
+	    PEAssignPattern* expanded_pattern = new PEAssignPattern(expanded_list);
+	    expanded_pattern->set_line(*this);
+	    NetExpr* result = expanded_pattern->elaborate_expr_uarray_(des, scope, uarray_type,
+								       dims, cur_dim, need_const);
+	    delete expanded_pattern;
+	    return result;
+      }
 
       if (dims[cur_dim].width() != parms_.size()) {
 	    cerr << get_fileline() << ": error: Unpacked array assignment pattern expects "

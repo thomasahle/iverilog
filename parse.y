@@ -1747,6 +1747,35 @@ assignment_pattern /* IEEE1800-2005: A.6.7.1 */
 	delete $2;
 	$$ = tmp;
       }
+    /* IEEE1800-2017: Replication assignment pattern '{n{expr}}
+       This replicates expr n times to form the pattern.
+       For example: '{3{1}} becomes '{1, 1, 1} */
+  | K_LP expression '{' expression_list_proper '}' '}'
+      { pform_requires_sv(@1, "Assignment pattern replication");
+	/* Evaluate n as a constant expression */
+	PExpr*n_expr = $2;
+	std::list<PExpr*>*items = $4;
+
+	/* Create replicated pattern by duplicating items n times.
+	   For now, just pass replication info to PEAssignPattern. */
+	PEAssignPattern*tmp = new PEAssignPattern(n_expr, *items);
+	FILE_NAME(tmp, @1);
+	delete items;
+	$$ = tmp;
+      }
+    /* Replication with single expression: '{n{expr}} */
+  | K_LP expression '{' expression '}' '}'
+      { pform_requires_sv(@1, "Assignment pattern replication");
+	PExpr*n_expr = $2;
+	PExpr*item = $4;
+
+	/* Create single-item replicated pattern */
+	std::list<PExpr*> items;
+	items.push_back(item);
+	PEAssignPattern*tmp = new PEAssignPattern(n_expr, items);
+	FILE_NAME(tmp, @1);
+	$$ = tmp;
+      }
   ;
 
   /* IEEE1800-2017: structure_pattern_key : expression */

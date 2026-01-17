@@ -95,16 +95,22 @@ const char* PExpr::width_mode_name(width_mode_t mode)
 }
 
 PEAssignPattern::PEAssignPattern()
+: repeat_(nullptr)
 {
 }
 
 PEAssignPattern::PEAssignPattern(const list<PExpr*>&p)
-: parms_(p.begin(), p.end())
+: parms_(p.begin(), p.end()), repeat_(nullptr)
 {
 }
 
 PEAssignPattern::PEAssignPattern(const list<named_pexpr_t>&p)
-: named_parms_(p.begin(), p.end())
+: named_parms_(p.begin(), p.end()), repeat_(nullptr)
+{
+}
+
+PEAssignPattern::PEAssignPattern(PExpr*repeat, const list<PExpr*>&p)
+: parms_(p.begin(), p.end()), repeat_(repeat)
 {
 }
 

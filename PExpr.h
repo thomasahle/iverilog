@@ -206,10 +206,13 @@ class PEAssignPattern : public PExpr {
       explicit PEAssignPattern();
       explicit PEAssignPattern(const std::list<PExpr*>&p);
       explicit PEAssignPattern(const std::list<named_pexpr_t>&p); // Named pattern
+      // Replication pattern: '{n{items}} - replicates items n times
+      explicit PEAssignPattern(PExpr*repeat, const std::list<PExpr*>&p);
       ~PEAssignPattern() override;
 
       void dump(std::ostream&) const override;
       bool is_named_pattern() const { return !named_parms_.empty(); }
+      bool is_replication_pattern() const { return repeat_ != nullptr; }
 
       virtual unsigned test_width(Design*des, NetScope*scope, width_mode_t&mode) override;
       virtual NetExpr*elaborate_expr(Design*des, NetScope*scope,
@@ -240,6 +243,7 @@ class PEAssignPattern : public PExpr {
     private:
       std::vector<PExpr*>parms_;
       std::vector<named_pexpr_t>named_parms_; // For named struct aggregates
+      PExpr*repeat_;  // Replication count expression (nullptr if not a replication pattern)
 };
 
 class PEConcat : public PExpr {

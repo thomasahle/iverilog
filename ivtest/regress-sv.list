@@ -1433,3 +1433,4 @@ sv_unique_priority_if	normal,-g2012	ivltests
 sv_statement_labels	normal,-g2012	ivltests
 sv_mailbox_param	normal,-g2012	ivltests
 sv_out_of_block_method	normal,-g2012	ivltests
+sv_array_replication	normal,-g2012	ivltests
