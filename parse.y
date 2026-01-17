@@ -353,6 +353,18 @@ static PSvaExpr* make_sva_or(PSvaExpr* left, PSvaExpr* right, const struct vllty
       return node;
 }
 
+static PSvaExpr* make_sva_iff(PSvaExpr* left, PSvaExpr* right, const struct vlltype& loc)
+{
+      if (!left || !right) {
+            delete left;
+            delete right;
+            return 0;
+      }
+      PSvaExpr* node = PSvaExpr::make_iff(left, right);
+      FILE_NAME(node, loc);
+      return node;
+}
+
 static PSvaExpr* make_sva_concat(PSvaExpr* left, int min_delay, int max_delay,
                                  PSvaExpr* right, const struct vlltype& loc)
 {
@@ -483,6 +495,8 @@ static PSvaExpr* substitute_property_params(PSvaExpr* expr)
             return PSvaExpr::make_and(left, right);
           case PSvaExpr::OR:
             return PSvaExpr::make_or(left, right);
+          case PSvaExpr::IFF:
+            return PSvaExpr::make_iff(left, right);
           case PSvaExpr::IMPLIES:
             return PSvaExpr::make_implies(left, right, false);
           case PSvaExpr::IMPLIES_NONOVERLAP:
@@ -590,6 +604,8 @@ static PSvaExpr* resolve_sequence_references(PSvaExpr* expr, bool* changed)
             return PSvaExpr::make_and(left, right);
           case PSvaExpr::OR:
             return PSvaExpr::make_or(left, right);
+          case PSvaExpr::IFF:
+            return PSvaExpr::make_iff(left, right);
           case PSvaExpr::IMPLIES:
             return PSvaExpr::make_implies(left, right, false);
           case PSvaExpr::IMPLIES_NONOVERLAP:
@@ -1673,7 +1689,10 @@ Module::port_t *module_declare_port(const YYLTYPE&loc, char *id,
 %nonassoc K_XOR_EQ K_LS_EQ K_RS_EQ K_RSS_EQ K_NB_TRIGGER
 %right K_TRIGGER K_LEQUIV
 %right '?' ':' K_inside
+ /* low precedence token for expression->property_expr reduction */
+%nonassoc less_than_property_ops
 %right K_IMPLIES_OV K_IMPLIES_NOV
+%left K_iff
 %left K_LOR K_or
 %left K_LAND K_and
 %left '|'
@@ -5358,6 +5377,8 @@ property_expr /* IEEE1800-2012 A.2.10 */
       { $$ = make_sva_and($1, $3, @2); }
   | property_expr K_or property_expr
       { $$ = make_sva_or($1, $3, @2); }
+  | property_expr K_iff property_expr
+      { $$ = make_sva_iff($1, $3, @2); }
   | K_first_match '(' sequence_expr_in_parens ')'
       { $$ = make_sva_first_match($3, @1); }
   | property_expr K_SEQ_DELAY DEC_NUMBER property_expr
@@ -7613,6 +7634,12 @@ expression
 
   | expression K_LEQUIV attribute_list_opt expression
       { PEBinary*tmp = new PEBLogic('Q', $1, $4);
+	FILE_NAME(tmp, @2);
+	$$ = tmp;
+      }
+  | expression K_iff attribute_list_opt expression
+      { /* iff is bi-implication in SVA context, treat like <-> (logical equivalence) */
+	PEBinary*tmp = new PEBLogic('Q', $1, $4);
 	FILE_NAME(tmp, @2);
 	$$ = tmp;
       }
